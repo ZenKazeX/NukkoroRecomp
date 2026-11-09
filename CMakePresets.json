@@ -111,7 +111,8 @@
       "configurePreset": "release",
       "configuration": "Release",
       "targets": [
-        "ShadowTheHedgehog"
+        "ShadowTheHedgehog",
+      "ShadowPadConfig"
       ],
       "jobs": 2
     },
