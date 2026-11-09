@@ -84,15 +84,20 @@ void write_file(const std::filesystem::path& path, u32 size, u32 seed) {
     out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
 }
 
+// Written once. Both machines mount this folder; rewriting it for the second one deleted the first one's files, and
+// on a loaded machine a deleted file can still be unreadable when the first machine reads it.
 std::filesystem::path mount_root() {
-    const auto dir = gekko::test_support::scratch_directory("gekko-native-cri-file-device-tests");
-    std::error_code ec;
-    std::filesystem::remove_all(dir, ec);
-    write_file(dir / "a.adx", 0x1234u, 1u);   // not a whole number of sectors
-    write_file(dir / "b.sfd", 0x1000u, 2u);   // exactly two
-    write_file(dir / "big.bin", 0x5000u, 3u);
-    write_file(dir / "sub" / "c.bin", 0x900u, 4u);
-    return dir;
+    static const std::filesystem::path root = [] {
+        const auto dir = gekko::test_support::scratch_directory("gekko-native-cri-file-device-tests");
+        std::error_code ec;
+        std::filesystem::remove_all(dir, ec);
+        write_file(dir / "a.adx", 0x1234u, 1u);   // not a whole number of sectors
+        write_file(dir / "b.sfd", 0x1000u, 2u);   // exactly two
+        write_file(dir / "big.bin", 0x5000u, 3u);
+        write_file(dir / "sub" / "c.bin", 0x900u, 4u);
+        return dir;
+    }();
+    return root;
 }
 
 std::vector<u8> read_file(const std::filesystem::path& path) {

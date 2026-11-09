@@ -402,11 +402,11 @@ int main() {
         });
         require(differing_pixels(nothing, drawn) == 0u, "a clear with nothing to clear changed the picture");
         // 5. negative control: the clear colour matters (green instead of red gives a different image than red)
-        const std::vector<std::uint8_t> green = h.frame([&] {
+        const std::vector<std::uint8_t> green_clear = h.frame([&] {
             triangle_owner(tri_order[0], tri_order[1], tri_order[2]);
             h.driver->raster_clear(cpu, 0, 0, static_cast<std::int32_t>(kWidth), static_cast<std::int32_t>(kHeight), 0xFF00FF00u, true, false);
         });
-        require(differing_pixels(green, full) > 0u, "a different clear colour draws the same image (the test is blind)");
+        require(differing_pixels(green_clear, full) > 0u, "a different clear colour draws the same image (the test is blind)");
         std::printf("PASS rw raster clear (WARP): full colour clear uniform, rectangle clear exact outside (%zu inside pixels changed), "
                     "depth-only keeps the colour, no-op clears change nothing\n", inside_changed);
 
