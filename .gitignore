@@ -15,7 +15,7 @@ __pycache__/
 *.pyc
 
 # Game data: never commit anything from the disc
-game/
+/game/
 sys/
 files/
 *.dol
