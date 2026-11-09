@@ -49,6 +49,8 @@ session-report.json
 
 # The setup window's art pack is part of the repository (see installer/ART_PACK.md)
 !installer/art/**
+# So is the configurator's art.
+!tools/padconfig/art/**
 
 # Logs and local tool settings
 *.log

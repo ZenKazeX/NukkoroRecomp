@@ -1,9 +1,11 @@
-# Shadow the Hedgehog: static recompilation for PC (work in progress)
+# Nukkoro Recompiled: Shadow the Hedgehog for PC
 
-This project builds Shadow the Hedgehog (GameCube, PAL) for Windows from your own disc. At build time a static
-recompiler translates the game's executable into C++. That code runs on a runtime in which console mechanisms are
-being replaced with PC implementations one part at a time. Much of the GameCube architecture is still emulated, so this
-is not a native port yet; it is a work in progress.
+**This is not a native port.** It is a static recompilation of Shadow the Hedgehog (GameCube, PAL), made with GekkoForge,
+and it is still under development. Expect bugs and missing features.
+
+At build time, GekkoForge translates the game's executable from your own disc into C++. That code runs on a runtime in
+which console mechanisms are being replaced with PC implementations one part at a time. Much of the GameCube
+architecture is still emulated.
 
 **This repository contains no game code or data.** You need your own legally dumped **PAL** disc (game ID **GUPP8P**).
 The installer builds the game from your disc, so do not share the installed game: it contains code built from that disc.
