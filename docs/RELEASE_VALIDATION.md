@@ -106,7 +106,7 @@ game files:
 
 - Choosing a button by pressing it on a real controller in the configurator, and the pressed highlight.
 
-- The setup window's clicks. Its build and backend were tested, not its interface.
+- A person clicking through the setup window. Its own scripted run went through every page and a complete install.
 - Shortcuts in the real Desktop and Start menu. Their code ran with folders inside this repository, as the work was
   limited to it.
 - Another machine, or a clean Windows install.

@@ -28,13 +28,15 @@ your disc, so please keep it to yourself.
 
 1. In Dolphin, right-click the game and choose *Properties*. On the *Filesystem* tab, right-click the disc at the top and
    choose *Extract Entire Disc...*.
-2. Run `Install.cmd`.
+2. Download `NukkoroRecomp-<version>-Setup.exe` from [Releases](https://github.com/ZenKazeX/NukkoroRecomp/releases) and run
+   it. Windows may warn about an unknown publisher, because the file is unsigned. Choose *More info*, then *Run anyway*.
 3. Choose the extracted disc folder, the install location and the shortcuts you want, then start the install.
 
-The first build takes about 10 to 30 minutes. Afterwards the extracted disc folder is no longer needed. Running the setup
-again on the same folder updates the game and keeps your saves.
+The first build takes about 10 to 30 minutes. Afterwards the extracted disc folder is no longer needed, and you can delete
+the build files in `C:\Users\Public\NukkoroRecomp`. Running the setup again on the same folder updates the game and keeps
+your saves.
 
-To install from a console instead:
+From a copy of this repository, run `Install.cmd` instead. To install from a console:
 
 ```powershell
 .\Install.cmd -DiscPath "D:\Dumps\Shadow PAL" -InstallPath "D:\Games\Shadow the Hedgehog Recompiled"

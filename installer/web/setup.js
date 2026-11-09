@@ -63,7 +63,6 @@ function loadArt(present) {
   audio.addEventListener('canplay', () => { $('#music').hidden = false; }, { once: true });
   audio.volume = 0.25;
   audio.src = 'https://art.nukkoro.local/audio/music.mp3';
-  audio.play().catch(() => {});
   $('#music-on').addEventListener('change', e => { if (e.target.checked) audio.play().catch(() => {}); else audio.pause(); });
   $('#music-volume').addEventListener('input', e => {
     audio.volume = e.target.value / 100;
