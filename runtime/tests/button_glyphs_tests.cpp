@@ -143,6 +143,8 @@ void disc(const std::filesystem::path& files) {
         if (!mount(assets, files)) return;
         ButtonGlyphs glyphs;
         GamepadBinding binding;
+        binding.b = shadow::peripheral::kGamepadEast;  // by label: each letter on the button of the same name
+        binding.x = shadow::peripheral::kGamepadWest;
         if (pass == 1) {  // the user's pad.cfg: GC B on the west button, GC X on the east one
             binding.b = shadow::peripheral::kGamepadWest;
             binding.x = shadow::peripheral::kGamepadEast;
@@ -209,6 +211,8 @@ void sharp(const std::filesystem::path& files) {
         if (!mount(assets, files)) return;
         ButtonGlyphs glyphs;
         GamepadBinding binding;
+        binding.b = shadow::peripheral::kGamepadEast;  // by label: each letter on the button of the same name
+        binding.x = shadow::peripheral::kGamepadWest;
         if (pass == 1) {  // the user's pad.cfg: GC X on the east button, so the cell shows the Xbox B
             binding.b = shadow::peripheral::kGamepadWest;
             binding.x = shadow::peripheral::kGamepadEast;
@@ -335,6 +339,8 @@ void dump_all(const std::filesystem::path& files, const std::string& dir) {
         if (!mount(assets, files)) return;
         ButtonGlyphs glyphs;
         GamepadBinding binding;
+        binding.b = shadow::peripheral::kGamepadEast;  // by label: each letter on the button of the same name
+        binding.x = shadow::peripheral::kGamepadWest;
         if (swapped == 1) {
             binding.b = shadow::peripheral::kGamepadWest;
             binding.x = shadow::peripheral::kGamepadEast;

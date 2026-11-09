@@ -296,7 +296,7 @@ GC_BUTTONS = [
 # The buttons the game's prompts show (runtime gekko/button_glyphs.h; pad.cfg button_style).
 BUTTON_STYLES = ("auto", "original", "xbox", "playstation", "switch")
 PAD_DEFAULTS = {
-    "a": 0x1000, "b": 0x2000, "x": 0x4000, "y": 0x8000, "start": 0x0010,
+    "a": 0x1000, "b": 0x4000, "x": 0x2000, "y": 0x8000, "start": 0x0010,
     "l": 0x0100, "r": 0x0000, "z": 0x0200,
     "dpad_up": 0x0001, "dpad_down": 0x0002, "dpad_left": 0x0004, "dpad_right": 0x0008,
 }

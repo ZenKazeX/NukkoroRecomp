@@ -3786,6 +3786,34 @@ if(SHADOW_BUILD_TESTS)
     endif()
 endif()
 
+# The button mapping configurator: a small program installed beside the game, writing the pad.cfg the game reads.
+if(WIN32 AND TARGET ShadowTheHedgehog)
+    add_executable(ShadowPadConfig WIN32 tools/padconfig/main.cpp tools/padconfig/pad_config.cpp tools/padconfig/controller_view.cpp tools/padconfig/padconfig.rc
+                   runtime/lift/peripheral/gamepad_binding.cpp)
+    target_include_directories(ShadowPadConfig PRIVATE runtime/lift tools/padconfig)
+    target_compile_features(ShadowPadConfig PRIVATE cxx_std_20)
+    target_link_libraries(ShadowPadConfig PRIVATE comctl32 gdiplus)
+    set_source_files_properties(tools/padconfig/padconfig.rc PROPERTIES OBJECT_DEPENDS
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/padconfig/art/top.png;${CMAKE_CURRENT_SOURCE_DIR}/tools/padconfig/art/tilted.png")
+    set_target_properties(ShadowPadConfig PROPERTIES RUNTIME_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:ShadowTheHedgehog>")
+    if(MSVC)
+        target_compile_options(ShadowPadConfig PRIVATE /W4 /permissive-)
+        set_property(TARGET ShadowPadConfig PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+    if(SHADOW_BUILD_TESTS)
+        add_executable(pad_config_tests runtime/tests/pad_config_tests.cpp tools/padconfig/pad_config.cpp
+                       runtime/lift/peripheral/gamepad_binding.cpp)
+        target_include_directories(pad_config_tests PRIVATE runtime/lift runtime/tests tools/padconfig)
+        target_compile_features(pad_config_tests PRIVATE cxx_std_20)
+        if(MSVC)
+            target_compile_options(pad_config_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET pad_config_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME pad_config_tests COMMAND pad_config_tests)
+        set_tests_properties(pad_config_tests PROPERTIES TIMEOUT 60 LABELS "menu")
+    endif()
+endif()
+
 # gekko/system.h changes System's members under SHADOW_RENDER_LIFTED, and the runtime is compiled with it in a lifted
 # tree. A test that includes the header without it reads the wrong offsets, so every program linking the runtime gets it.
 if(SHADOW_RENDER_LIFTED AND SHADOW_BUILD_TESTS)

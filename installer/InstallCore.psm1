@@ -7,6 +7,7 @@ Set-StrictMode -Version 2.0
 $script:RepoRoot = Split-Path -Parent $PSScriptRoot
 $script:Shards = 48
 $script:GameExe = 'ShadowTheHedgehog.exe'
+$script:ConfigExe = 'ShadowPadConfig.exe'
 
 function Get-RepoRoot { $script:RepoRoot }
 
@@ -182,7 +183,7 @@ function Get-InstallSteps([string]$discRoot, [string]$target) {
     @(
         # robocopy copies bytes as they are; exit codes below 8 are success.
         [pscustomobject]@{ Name = 'Copy game'; File = 'robocopy'; WorkingDirectory = $script:RepoRoot; MaxExit = 7
-            Arguments = "`"$binDir`" `"$target`" $script:GameExe /COPY:DAT /R:2 /W:1 /NP /NJH" },
+            Arguments = "`"$binDir`" `"$target`" $script:GameExe $script:ConfigExe /COPY:DAT /R:2 /W:1 /NP /NJH" },
         [pscustomobject]@{ Name = 'Copy game files'; File = 'robocopy'; WorkingDirectory = $script:RepoRoot; MaxExit = 7
             Arguments = "`"$(Join-Path $discRoot 'files')`" `"$(Join-Path $target 'files')`" /E /COPY:DAT /R:2 /W:1 /NP /NJH /NDL /NFL" }
     )
@@ -284,6 +285,9 @@ function Write-InstallManifest([string]$target, [string]$discRoot, [string[]]$sh
     $exe = Get-Item -LiteralPath (Join-Path $target $script:GameExe)
     [void]$files.Add([ordered]@{ path = $script:GameExe; size = $exe.Length; sha256 = (Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant() })
     [void]$seen.Add($script:GameExe)
+    $config = Get-Item -LiteralPath (Join-Path $target $script:ConfigExe)
+    [void]$files.Add([ordered]@{ path = $script:ConfigExe; size = $config.Length; sha256 = (Get-FileHash -LiteralPath $config.FullName -Algorithm SHA256).Hash.ToLowerInvariant() })
+    [void]$seen.Add($script:ConfigExe)
     $source = (Join-Path $discRoot 'files').TrimEnd('\')
     foreach ($file in (Get-ChildItem -LiteralPath $source -Recurse -File -Force)) {
         $relative = 'files' + $file.FullName.Substring($source.Length)
@@ -329,6 +333,13 @@ function New-GameShortcuts([string]$target, [bool]$desktop, [bool]$startMenu,
     }
     if ($startMenu) {
         New-Item -ItemType Directory -Force -Path $startMenuDir | Out-Null
+        $link = $shell.CreateShortcut((Join-Path $startMenuDir 'Controller Buttons.lnk'))
+        $link.TargetPath = Join-Path $target $script:ConfigExe
+        $link.WorkingDirectory = $target
+        $link.IconLocation = (Join-Path $target $script:ConfigExe) + ',0'
+        $link.Description = 'Choose which controller buttons do what in the game.'
+        $link.Save()
+        $made += $link.FullName
         $link = $shell.CreateShortcut((Join-Path $startMenuDir 'Uninstall Shadow the Hedgehog Recompiled.lnk'))
         $link.TargetPath = Join-Path $target 'Uninstall.cmd'
         $link.WorkingDirectory = $target
