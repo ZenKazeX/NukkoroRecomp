@@ -17,6 +17,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--shipping", type=Path, required=True)
     parser.add_argument("--reference", type=Path, required=True)
+    # A SHADOW_SHIPPING tree: development controls are refused at parse time, in both executables.
+    parser.add_argument("--shipping-build", action="store_true")
     args = parser.parse_args()
     # Oracle controls the reference executable still has; shipping refuses them
     # before constructing any owner.
@@ -72,6 +74,10 @@ def main():
             for control in (["--renderer", "native"], ["--native-renderer"],
                             ["--native-health-bar"], ["--ui-test", "all"]):
                 result = invoke(executable, [*control, "--help"], work)
+                if args.shipping_build and control[0] == "--ui-test":
+                    assert result.returncode == 2 and "not part of this build" in result.stderr, \
+                        (executable.name, control, result.returncode, result.stderr)
+                    continue
                 assert result.returncode == 0, (executable.name, control, result.returncode, result.stderr)
         assert not list(Path(work).iterdir()), "selection must not construct persistent owners"
     print(f"shipping selection: {len(reference_only)} reference-only controls refused by shipping and "

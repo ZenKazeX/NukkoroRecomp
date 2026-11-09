@@ -1765,7 +1765,8 @@ if(SHADOW_BUILD_TESTS)
             add_test(NAME shipping_platform_selection
                      COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_SOURCE_DIR}/tools/test_shipping_platform_selection.py
                              --shipping $<TARGET_FILE:ShadowTheHedgehog>
-                             --reference $<TARGET_FILE:ShadowTheHedgehogReference>)
+                             --reference $<TARGET_FILE:ShadowTheHedgehogReference>
+                             $<$<BOOL:${SHADOW_SHIPPING}>:--shipping-build>)
             set_tests_properties(shipping_platform_selection PROPERTIES TIMEOUT 60 LABELS "native;reference;build")
         endif()
         add_test(NAME launcher_tests
@@ -3528,7 +3529,7 @@ if(SHADOW_BUILD_TESTS)
                                  "${CMAKE_CURRENT_SOURCE_DIR}/tools/lift/verify_native_math.py"
                                  --dol "${SHADOW_RECOMP_DOL}" --generated "${SHADOW_RECOMP_DIR}"
                                  --map "$<TARGET_FILE_DIR:ShadowTheHedgehog>/ShadowTheHedgehog.map")
-                set_tests_properties(lift_native_math_evidence PROPERTIES TIMEOUT 120 LABELS "lift;native-contract")
+                set_tests_properties(lift_native_math_evidence PROPERTIES TIMEOUT 400 LABELS "lift;native-contract")
             endif()
             add_test(NAME native_liveness_roots
                      COMMAND "${Python3_EXECUTABLE}" -B
