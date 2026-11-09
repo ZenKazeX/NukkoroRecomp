@@ -39,6 +39,15 @@
       }
     },
     {
+      "name": "shipping-tests",
+      "displayName": "Regression tests against the Shipping configuration",
+      "inherits": "release",
+      "binaryDir": "${sourceDir}/.build/${presetName}",
+      "cacheVariables": {
+        "SHADOW_BUILD_TESTS": "ON"
+      }
+    },
+    {
       "name": "host-tools",
       "displayName": "Build-machine tools for cross builds (ppcrecomp)",
       "generator": "Visual Studio 18 2026",
