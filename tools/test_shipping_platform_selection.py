@@ -18,7 +18,7 @@ def main():
     parser.add_argument("--shipping", type=Path, required=True)
     parser.add_argument("--reference", type=Path, required=True)
     # A SHADOW_SHIPPING tree: development controls are refused at parse time, in both executables.
-    parser.add_argument("--shipping-build", action="store_true")
+    parser.add_argument("--shipping-build", type=int, default=0)
     args = parser.parse_args()
     # Oracle controls the reference executable still has; shipping refuses them
     # before constructing any owner.

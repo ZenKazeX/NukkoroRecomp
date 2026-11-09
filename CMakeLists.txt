@@ -1766,7 +1766,7 @@ if(SHADOW_BUILD_TESTS)
                      COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_SOURCE_DIR}/tools/test_shipping_platform_selection.py
                              --shipping $<TARGET_FILE:ShadowTheHedgehog>
                              --reference $<TARGET_FILE:ShadowTheHedgehogReference>
-                             $<$<BOOL:${SHADOW_SHIPPING}>:--shipping-build>)
+                             --shipping-build=$<BOOL:${SHADOW_SHIPPING}>)
             set_tests_properties(shipping_platform_selection PROPERTIES TIMEOUT 60 LABELS "native;reference;build")
         endif()
         add_test(NAME launcher_tests
