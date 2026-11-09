@@ -284,6 +284,7 @@ void wait_point_contract(System& system, RecompiledCode& code) {
         const std::string mode = verify ? " (verified)" : "";
         prepare(verify, 0u);
         const u64 armed = system.game_ticks();
+        c.set_decrementer_delivery(true);  // as a guest mtdec does (a System starts with delivery off)
         c.set_decrementer(kIdleEdge);
         u64 reads = 0;
         system.guest_memory().set_access_trace([&reads](u32 address, std::size_t size, bool writing) {

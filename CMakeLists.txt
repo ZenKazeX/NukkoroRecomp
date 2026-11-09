@@ -3353,7 +3353,7 @@ if(SHADOW_BUILD_TESTS)
             set_property(TARGET compiler_body_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
         endif()
         add_test(NAME compiler_body_tests COMMAND compiler_body_tests "${SHADOW_RECOMP_DOL}")
-        set_tests_properties(compiler_body_tests PROPERTIES LABELS "reference;codegen")
+        set_tests_properties(compiler_body_tests PROPERTIES TIMEOUT 600 LABELS "reference;codegen")
         # The generated lowered call sites (extract/lift-sites.txt) against the
         # lifted subsystems: what each site writes back to its translated caller.
         add_executable(lift_sites_reference_tests runtime/tests/lift_sites_reference_tests.cpp)

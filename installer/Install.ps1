@@ -14,7 +14,9 @@ param(
     [Parameter(Mandatory = $true)][string]$DiscPath,
     [Parameter(Mandatory = $true)][string]$InstallPath,
     [switch]$NoShortcuts,
-    [ValidateRange(1, 64)][int]$Jobs = 2
+    [ValidateRange(1, 64)][int]$Jobs = 2,
+    [string]$DesktopFolder = [Environment]::GetFolderPath('Desktop'),
+    [string]$StartMenuFolder = (Join-Path ([Environment]::GetFolderPath('Programs')) 'Shadow the Hedgehog Recompiled')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -48,5 +50,5 @@ $ok = Invoke-GameInstall $disc $target.Path $python $Jobs $shortcuts $shortcuts 
         'error' { Write-Host ""; Write-Host "ERROR: $($e.message) Log: $($e.log)" -ForegroundColor Red }
         'done' { Write-Host ""; Write-Host "Installed to $($e.target)" -ForegroundColor Green }
     }
-}
+} $DesktopFolder $StartMenuFolder
 if (-not $ok) { exit 1 }

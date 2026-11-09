@@ -1,4 +1,4 @@
-# Installer logic shared by the wizard (InstallWizard.ps1) and the scripted mode (Install.ps1).
+# Installer logic shared by the setup window (Backend.ps1) and the scripted mode (Install.ps1).
 # Nothing here touches the user interface; long steps run as child processes that write to a log file,
 # so the caller decides how to wait (a WinForms timer, or a console loop).
 
@@ -236,15 +236,77 @@ function Get-BuildFraction([string]$text, [double]$previous) {
 
 # ---- finishing touches --------------------------------------------------------
 
+# The source revision this build came from. Git's stderr must not stop the install, so this function does not use Stop.
+function Get-SourceRevision {
+    $result = [ordered]@{ commit = 'unknown'; modified_files = $null }
+    if (-not (Get-Command git -CommandType Application -ErrorAction SilentlyContinue)) { return $result }
+    $ErrorActionPreference = 'Continue'
+    $commit = git -C $script:RepoRoot rev-parse HEAD 2>$null | Select-Object -First 1
+    if ($LASTEXITCODE -ne 0 -or $commit -notmatch '^[0-9a-f]{40}$') { return $result }
+    $result.commit = $commit
+    $result.modified_files = @(git -C $script:RepoRoot status --porcelain 2>$null).Count
+    return $result
+}
+
+# The settings the build really used, read back from its CMake cache rather than assumed from the preset.
+function Get-BuildConfiguration {
+    $config = [ordered]@{ preset = 'release'; configuration = 'Release' }
+    $cache = Join-Path $script:RepoRoot '.build\release\CMakeCache.txt'
+    if (-not (Test-Path -LiteralPath $cache)) { return $config }
+    $wanted = 'SHADOW_SHIPPING', 'SHADOW_RENDER_LIFTED', 'SHADOW_ENABLE_PLUME', 'SHADOW_ENABLE_TRACY', 'SHADOW_BUILD_TESTS',
+              'SHADOW_BUILD_REFERENCE', 'SHADOW_RECOMP_SHARDS', 'CMAKE_GENERATOR', 'CMAKE_CXX_COMPILER'
+    foreach ($line in [System.IO.File]::ReadAllLines($cache)) {
+        if ($line -match '^([A-Z0-9_]+):[A-Z]+=(.*)$' -and $wanted -contains $Matches[1]) { $config[$Matches[1]] = $Matches[2] }
+    }
+    return $config
+}
+
 function Write-InstallInfo([string]$target, $disc) {
     $info = [ordered]@{
         installed = (Get-Date).ToString('s')
         disc_game_id = $disc.GameId
         disc_main_dol_sha1 = $disc.Sha1
         source = $script:RepoRoot
+        source_revision = Get-SourceRevision
+        build = Get-BuildConfiguration
         exe_sha256 = (Get-FileHash -LiteralPath (Join-Path $target $script:GameExe) -Algorithm SHA256).Hash.ToLowerInvariant()
     }
-    $info | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $target 'install-info.json') -Encoding UTF8
+    $info | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $target 'install-info.json') -Encoding UTF8
+}
+
+# Records exactly what setup put in the folder, which is all the uninstaller will ever remove. Only files setup copied
+# are listed, so anything else in the folder (saves, settings, the player's own files) is never in the record. Entries
+# from an earlier install that are still on disk are carried over, so an update cannot orphan them.
+function Write-InstallManifest([string]$target, [string]$discRoot, [string[]]$shortcuts, [string[]]$shortcutFolders) {
+    $path = Join-Path $target 'install-manifest.json'
+    $files = New-Object System.Collections.ArrayList
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    $exe = Get-Item -LiteralPath (Join-Path $target $script:GameExe)
+    [void]$files.Add([ordered]@{ path = $script:GameExe; size = $exe.Length; sha256 = (Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant() })
+    [void]$seen.Add($script:GameExe)
+    $source = (Join-Path $discRoot 'files').TrimEnd('\')
+    foreach ($file in (Get-ChildItem -LiteralPath $source -Recurse -File -Force)) {
+        $relative = 'files' + $file.FullName.Substring($source.Length)
+        $copied = Join-Path $target $relative
+        if (-not (Test-Path -LiteralPath $copied -PathType Leaf)) { throw "The copy is missing $relative" }
+        $size = (Get-Item -LiteralPath $copied -Force).Length
+        if ($size -ne $file.Length) { throw "The copy of $relative has the wrong size" }
+        [void]$files.Add([ordered]@{ path = $relative; size = $size })
+        [void]$seen.Add($relative)
+    }
+    $allShortcuts = @($shortcuts | Where-Object { $_ })
+    $allFolders = @($shortcutFolders | Where-Object { $_ })
+    if (Test-Path -LiteralPath $path -PathType Leaf) {
+        $previous = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json
+        foreach ($entry in @($previous.files)) {
+            if ($seen.Contains([string]$entry.path) -or -not (Test-Path -LiteralPath (Join-Path $target $entry.path) -PathType Leaf)) { continue }
+            [void]$files.Add($entry)
+        }
+        $allShortcuts = @($allShortcuts + @($previous.shortcuts) | Where-Object { $_ } | Select-Object -Unique)
+        $allFolders = @($allFolders + @($previous.shortcut_folders) | Where-Object { $_ } | Select-Object -Unique)
+    }
+    $manifest = [ordered]@{ schema = 1; product = 'Shadow the Hedgehog Recompiled'; files = @($files); shortcuts = @($allShortcuts); shortcut_folders = @($allFolders) }
+    $manifest | ConvertTo-Json -Depth 4 -Compress | Set-Content -LiteralPath $path -Encoding UTF8
 }
 
 function New-GameShortcuts([string]$target, [bool]$desktop, [bool]$startMenu,
@@ -265,6 +327,15 @@ function New-GameShortcuts([string]$target, [bool]$desktop, [bool]$startMenu,
         $link.Save()
         $made += $link.FullName
     }
+    if ($startMenu) {
+        New-Item -ItemType Directory -Force -Path $startMenuDir | Out-Null
+        $link = $shell.CreateShortcut((Join-Path $startMenuDir 'Uninstall Shadow the Hedgehog Recompiled.lnk'))
+        $link.TargetPath = Join-Path $target 'Uninstall.cmd'
+        $link.WorkingDirectory = $target
+        $link.Description = 'Removes the game. Your saves and settings are kept.'
+        $link.Save()
+        $made += $link.FullName
+    }
     return $made
 }
 
@@ -277,7 +348,9 @@ $script:StageNames = @('Configure the build', 'Translate and compile the game', 
 #   @{type='log'; text}, @{type='done'; target; exe}, @{type='error'; message; log}.
 # Overall progress: configure 0-3%, compile 3-85%, copy 85-99%, finish 100%.
 function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$jobs, [bool]$desktop, [bool]$startMenu,
-                            [scriptblock]$OnEvent) {
+                            [scriptblock]$OnEvent,
+                            [string]$desktopDir = [Environment]::GetFolderPath('Desktop'),
+                            [string]$startMenuDir = (Join-Path ([Environment]::GetFolderPath('Programs')) 'Shadow the Hedgehog Recompiled')) {
     $log = Join-Path $script:RepoRoot '.build\install.log'
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $log) | Out-Null
     Set-Content -LiteralPath $log -Value "Install started $(Get-Date -Format s)" -Encoding UTF8
@@ -328,7 +401,10 @@ function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$j
     & $OnEvent @{ type = 'stage'; index = $last; name = $script:StageNames[$last]; state = 'run' }
     try {
         Write-InstallInfo $targetPath $disc
-        foreach ($made in (New-GameShortcuts $targetPath $desktop $startMenu)) { & $OnEvent @{ type = 'log'; text = "Shortcut: $made`n" } }
+        foreach ($name in @('Uninstall.ps1', 'Uninstall.cmd')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $targetPath -Force }
+        $shortcuts = @(New-GameShortcuts $targetPath $desktop $startMenu $desktopDir $startMenuDir)
+        foreach ($made in $shortcuts) { & $OnEvent @{ type = 'log'; text = "Shortcut: $made`n" } }
+        Write-InstallManifest $targetPath $disc.Root $shortcuts $(if ($startMenu) { @($startMenuDir) } else { @() })
         Copy-Item -LiteralPath $log -Destination (Join-Path $targetPath 'install.log') -Force
     } catch {
         & $fail $last "Finishing failed: $($_.Exception.Message)"
@@ -342,5 +418,6 @@ function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$j
 
 Export-ModuleMember -Function Get-RepoRoot, Get-BuiltExe, Get-DefaultInstallFolder, Format-Size, Test-Prerequisites,
     Resolve-DiscFolder, Test-DiscFolder, Get-FolderSize, Test-InstallFolder, Get-BuildSteps, Get-InstallSteps,
-    Start-Step, Test-StepSucceeded, Stop-Step, Read-LogTail, Get-BuildFraction, Write-InstallInfo, New-GameShortcuts,
+    Start-Step, Test-StepSucceeded, Stop-Step, Read-LogTail, Get-BuildFraction, Write-InstallInfo, Write-InstallManifest,
+    Get-SourceRevision, Get-BuildConfiguration, New-GameShortcuts,
     Invoke-GameInstall

@@ -28,6 +28,9 @@ The installer builds the game from your disc, so do not share the installed game
 6. **Install:** the game is built from your disc (the first build takes 10-30 minutes). The game and a copy of the disc's
    `files/` folder are then copied to the install folder.
 
+To remove the game, run `Uninstall.cmd` in the install folder or use the Start menu's uninstall shortcut. It removes only
+what setup installed and keeps your saves and settings; `Uninstall.cmd -RemoveSaves` deletes those too.
+
 Settings, saves and the memory card are kept in the install folder. After installing, the extracted disc folder is no
 longer needed. If you run the setup again on the same folder, it updates the game and keeps your saves.
 
