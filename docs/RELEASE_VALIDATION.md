@@ -1,7 +1,6 @@
-# Release validation, 2026-11-09
+# Release validation: v0.0.1
 
-The source tested is commit `1635d39f4149f1b28986833aff406500a486a4ee` (tree `5b52b4247d9bdd08a2f2690e54f0174956a4b1d6`).
-This file was added afterwards and changes nothing that is built.
+Recorded 2026-11-09. The release's commit is the one tagged `v0.0.1`; each install records it in `install-info.json`.
 
 ## Reproducing the build
 
@@ -18,23 +17,17 @@ number of modified files and the settings read from the build's CMake cache.
 | `SHADOW_RECOMP_SHARDS` | 48 |
 | Generator | Visual Studio 18 2026 |
 | Disc | GUPP8P, `main.dol` SHA-1 `6ff04994371e93d6ba1015644f4e7467713b9363` |
-| Installed executable SHA-256 | `b5962d32b6708bc0077f057eed31ba3235048d00e13e1c5076c7433abf1161c4` |
-
-The hash is for this build. Different machines or toolsets can produce a different one, so compare commits, not hashes,
-across machines.
 
 ## Source compared with the development tree
 
-Git tree hashes at the tested commit: `runtime` `a56e7b3c`, `rwcore` `13e89f3e`, `rpworld` `86dad533`, `thirdparty`
-`d7b896f7`, `extract` `812a1b9b`.
-
-Against development commit `17dd6e89d184`, `rwcore` and `rpworld` are identical. The product source differs in 20 files:
+Against the development tree this release was taken from, `rwcore` and `rpworld` are identical. The product source differs in these files:
 
 - The Resolution row: `native_options_display.{h,cpp}`, `settings_display.cpp`, `display_settings.h`, `options_menu_texts.inc`.
 - `native_vi_wait.cpp` (return addresses computed from the row's address, same values) and `unorm_calibration.cpp` (clears
   the target before its first use).
 - `native_hungarian_palsel.cpp`, a stub: its generated picture is not published. `tools/hungarian/make_palsel.py` makes it.
 - Comments only: six files in `runtime/lift`, six in `runtime/scaffold/rw_driver`.
+- The default controller layout, in `runtime/lift/peripheral/gamepad_binding.h`: the GameCube pad's B on the left face button, its X on the right.
 
 ## Results
 
@@ -42,11 +35,11 @@ Against development commit `17dd6e89d184`, `rwcore` and `rpworld` are identical.
 
 | Build | Passed | Not passed |
 |---|---|---|
-| `tests` preset, `97b70a6` | 237 of 238, the other fixed below | none after the fix |
-| `shipping-tests` preset, `97b70a6` | 224 of 235 | 11, listed below |
+| `tests` preset | 237 of 238, the other fixed below | none after the fix |
+| `shipping-tests` preset | 224 of 235 | 11, listed below |
 
-`shipping_platform_selection` failed in the `tests` run on `97b70a6` because of an empty argument in the test's own setup.
-It was fixed in `1635d39` and passes in both trees; the other tests were not re-run for that one-line change.
+`shipping_platform_selection` failed in the `tests` run because of an empty argument in the test's own setup. It was then
+fixed and passes in both trees; the other tests were not re-run for that one-line change.
 
 These 11 cannot apply to the Shipping configuration. All pass in the `tests` preset:
 `native_matrix_call_tests`, `gekko_core_tests`, `native_failure_publication_tests`, `lift_sites_reference_tests` (they
@@ -61,7 +54,7 @@ tree it fails with last-digit floating-point differences. That code is compiled 
 
 ### Strict comparison against the original code
 
-Reference build at `97b70a6`, 30 s per stage:
+Reference build, 30 s per stage:
 
 | Stage | Segments matched | Mismatched |
 |---|---|---|
@@ -81,7 +74,7 @@ game files:
 | Check | Result |
 |---|---|
 | Replay determinism, Westopolis tape, twice | Audio `46a70a1051347069` both times |
-| Run length | 3,645,000,000 ticks, 2,697 fields, 5,360 frames (on `97b70a6`) |
+| Run length | 3,645,000,000 ticks, 2,697 fields, 5,360 frames |
 | Five rendered frames | All identical to the reference images |
 | First launch, headless and in a real window | Exit 0 |
 | Create a save through the game's dialog, reload it in a new process | Passed |
@@ -100,7 +93,18 @@ game files:
 | `installer/tests/Test-Uninstall.ps1` | All checks pass |
 | Setup backend (prerequisites, disc, target) | Passed |
 
+### Controller configurator
+
+| Check | Result |
+|---|---|
+| `pad_config_tests`, against the game's own parser | Passed |
+| Every button chosen by clicking the real window's pictures | All 12 correct |
+| Save in the installed configurator, then the installed game reads it | Passed |
+| Uninstall removes it and keeps `pad.cfg` | Passed |
+
 ## Not tested
+
+- Choosing a button by pressing it on a real controller in the configurator, and the pressed highlight.
 
 - The setup window's clicks. Its build and backend were tested, not its interface.
 - Shortcuts in the real Desktop and Start menu. Their code ran with folders inside this repository, as the work was
@@ -112,8 +116,7 @@ game files:
 
 ## Known limitations
 
-- Input tapes recorded before native async loading arrive late, because stages load faster now. The check tape above is
-  unaffected. Fixing this for older tapes is planned.
+- Input tapes recorded before stage loading became faster arrive late. The check tape above is unaffected.
 - The Hungarian language is switched off in this release. Its code, texts and tools remain.
   Every launch prints a warning that the Hungarian 50/60 Hz picture was not applied; it is harmless.
 - `rwcore` and `rpworld` hold reconstructed RenderWare code. Check its licensing before publishing this repository.

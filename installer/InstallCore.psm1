@@ -240,6 +240,12 @@ function Get-BuildFraction([string]$text, [double]$previous) {
 # The source revision this build came from. Git's stderr must not stop the install, so this function does not use Stop.
 function Get-SourceRevision {
     $result = [ordered]@{ commit = 'unknown'; modified_files = $null }
+    # A downloaded package carries its commit in this file; a clone keeps the file's unexpanded placeholder.
+    $stamp = Join-Path $PSScriptRoot 'revision.txt'
+    if (Test-Path -LiteralPath $stamp) {
+        $packaged = (Get-Content -LiteralPath $stamp -Raw).Trim()
+        if ($packaged -match '^[0-9a-f]{40}$') { $result.commit = $packaged; $result.modified_files = 0; return $result }
+    }
     if (-not (Get-Command git -CommandType Application -ErrorAction SilentlyContinue)) { return $result }
     $ErrorActionPreference = 'Continue'
     $commit = git -C $script:RepoRoot rev-parse HEAD 2>$null | Select-Object -First 1
