@@ -1068,15 +1068,15 @@ def _h_estimate(st, tx, w, name):
             # SNaN -> QNaN VXSNAN ("** No result if FPSCR[VE] = 1"), QNaN -> QNaN PAGE 525/526
             flags = set() if v.quiet else {"VXSNAN"}
             alts = _no_result(flags) if (flags and fps & FP["VE"]) else _nan_alts([v], flags, ())
-        elif fps & FP["NI"] and v.denorm:
-            # NI = 1: "Zero" Table 2-21 PAGE 84, zero sign not given; for ps_res the replacement may
-            # be signalled as UX (UX is in ps_res's Affected list PAGE 525; ps_rsqrte has none)
-            alts = []
-            for s in (0, 1):
-                for a in _estimate_one(name, V(s << 63), fps):
-                    alts += _alts(a.bits, a.vmask, a.flags, {"UX"} if name == "ps_res" else (), 0, 0,
-                                  a.fprf, a.suppress)
         else:
+            # FPSCR[NI] = 1 does NOT flush the operand of an estimate. Table 2-21 (PAGE 84) says a
+            # denormalized operand is replaced by zero, but the hardware-verified behaviour (hwtests
+            # cputest/ni.cpp, inputs_expected_flushed = false; Common/FloatUtils.h fres_expected /
+            # frsqrte_expected, compared against a real Gekko) estimates the denormal itself: a single
+            # denormal operand has |x| < 2^-126, so 1/x is far above the single range (ps_res then
+            # delivers the largest single, or an estimate of the true reciprocal at the boundary) and a
+            # negative one is an invalid square root (QNaN), not -0 -> -inf.  The generic path below
+            # bounds exactly that: the true value, no zero replacement.
             alts = _estimate_one(name, v, fps)
         # "FR (undefined), FI (undefined)" PAGE 525/527; XX is not in either Affected list
         halves[k] = [x for a in alts for x in _alts(a.bits, a.vmask, a.flags, (), None, None, a.fprf,

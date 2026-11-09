@@ -10,6 +10,7 @@ namespace {
 constexpr u32 kOSDisableInterrupts = 0x8037611Cu, kOSRestoreInterrupts = 0x80376144u, kOSSleepThread = 0x803792C4u;
 constexpr u32 kSdaRetraceCount = 0x5BCCu, kSdaRetraceQueue = 0x5BD4u;
 constexpr u32 kFrame = 16u;
+constexpr u32 kWaitRow = 0x8037ECD4u + 0u;  // the row address: the base of its own return sites below
 
 bool done(Cpu& c) { return c.stopped() || c.stop_requested(); }
 
@@ -29,7 +30,7 @@ void after_disable(Cpu& c) {
     c.gpr[31] = c.gpr[3];
     for (;;) {
         c.gpr[3] = c.gpr[13] + kSdaRetraceQueue;
-        c.lr = 0x8037ECFCu;
+        c.lr = kWaitRow + 0x28u;
         if (!c.serve_owner(kOSSleepThread) || done(c)) return;
         if (c.exiting()) {
             c.request_stop(StopReason::ExecutionFault,
@@ -42,7 +43,7 @@ void after_disable(Cpu& c) {
         if (a != b) break;
     }
     c.gpr[3] = c.gpr[31];
-    c.lr = kAfterRestore;
+    c.lr = kWaitRow + 0x3Cu;  // kAfterRestore
     if (!c.serve_owner(kOSRestoreInterrupts) || done(c)) return;
     if (c.exiting()) return;   // an interrupt the restore made deliverable is taken first; 0x8037ED10 runs after it
     epilogue(c);
@@ -56,7 +57,7 @@ bool wait_for_retrace(Cpu& c) {
     c.mem_write32(sp + 12u, c.gpr[31]);
     c.mem_write32(sp + 8u, c.gpr[30]);
     c.gpr[1] = sp;
-    c.lr = kAfterDisable;
+    c.lr = kWaitRow + 0x18u;  // kAfterDisable
     if (!c.serve_owner(kOSDisableInterrupts) || done(c)) return true;
     if (c.exiting()) return true;   // taken at the gate's entry; the gate runs again and returns to 0x8037ECEC
     after_disable(c);

@@ -34,7 +34,8 @@
         "SHADOW_RENDER_LIFTED": "OFF",
         "SHADOW_SHIPPING": "OFF",
         "SHADOW_BUILD_TESTS": "ON",
-        "SHADOW_RECOMP_SHARDS": "64"
+        "SHADOW_RECOMP_SHARDS": "64",
+        "SHADOW_ENABLE_PLUME": "ON"
       }
     },
     {

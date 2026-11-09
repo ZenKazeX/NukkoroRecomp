@@ -320,7 +320,7 @@
   },
   {
    "candidate": "R01-FPSCR-STATUS",
-   "fingerprint": "c2bce4253bca3abb8fa75b3e60d20ee87244046e",
+   "fingerprint": "45ae8340a05c2d16c67328b003701c3c1fcb39fb",
    "signature": [
     "common-mode",
     "ps_res",
@@ -1813,7 +1813,7 @@
   },
   {
    "candidate": "R01-FPSCR-STATUS",
-   "fingerprint": "fd5d2b5115ab381baa368877984eb5f29c2074e0",
+   "fingerprint": "749c1123addb4531c67d8cfca085af75a81f4b90",
    "signature": [
     "common-mode",
     "ps_rsqrte",

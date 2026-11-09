@@ -912,14 +912,10 @@ def _exec_estimate(st, ctx, name, d, b, rc):
         v = _opnd(st, b, h)
         if v.nan:
             outs = _nan_prop(st, [v])  # table PAGE 525/526: SNaN -> QNaN VXSNAN ("** No result if VE=1"), QNaN -> QNaN
-        elif st.fpscr & NI and v.denormal:
-            # [crosscheck fix] FPSCR[NI]=1: Table 2-21 PAGE 84 "Zero", sign not given; for ps_res the replacement
-            # may be signalled as UX (UX is in ps_res's Affected list, PAGE 525; ps_rsqrte's has no UX)
-            outs = _estimate_value(st, name, _V(0)) + _estimate_value(st, name, _V(0x80000000))
-            if name == "ps_res":
-                for o in outs:
-                    o.amb |= UX
         else:
+            # FPSCR[NI]=1 does not flush the operand of an estimate (hardware-verified: hwtests cputest/ni.cpp
+            # inputs_expected_flushed = false, Common/FloatUtils.h fres_expected / frsqrte_expected against a
+            # real Gekko), contrary to Table 2-21 PAGE 84: the denormal itself is estimated.
             outs = _estimate_value(st, name, v)
         for o in outs:
             o.fr = None  # "FR (undefined), FI (undefined)" PAGE 525 / PAGE 527; XX is not Affected

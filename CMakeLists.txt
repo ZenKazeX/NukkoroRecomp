@@ -14,6 +14,8 @@ if(WIN32)
 endif()
 
 option(SHADOW_BUILD_TESTS "Build native runtime tests" ON)
+set(SHADOW_PRIVATE_TEST_DATA "${CMAKE_CURRENT_SOURCE_DIR}/test_data" CACHE PATH
+    "Folder with the test inputs that cannot be published (RAM images of the game); docs/BUILDING.md")
 
 # The --verify-recomp oracle's runner (ShadowTheHedgehogReference, built by name) and the reference CPU runtime it
 # links, in a tree that builds no tests - the lifted renderer's (build-lifted), whose generated code differs from the
@@ -2261,7 +2263,7 @@ if(SHADOW_BUILD_TESTS)
             set_property(TARGET se_manager_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
         endif()
         # A MEM1 image of the original game at the start of Lethal Highway (Dolphin, retail disc).
-        set(se_manager_image "${CMAKE_CURRENT_SOURCE_DIR}/test_data/se-manager/lethal-highway-mem1.raw")
+        set(se_manager_image "${SHADOW_PRIVATE_TEST_DATA}/se-manager/lethal-highway-mem1.raw")
         add_test(NAME se_manager_contract_tests
                  COMMAND se_manager_contract_tests "${SHADOW_RECOMP_DOL}" "${sound_table_game}/files/sound"
                          "${se_manager_image}")
@@ -2270,6 +2272,7 @@ if(SHADOW_BUILD_TESTS)
         # (docs/DOLRECON.md "C++ reconstruction").
         file(GLOB dolrecon_lifted_sources CONFIGURE_DEPENDS
              "${CMAKE_CURRENT_SOURCE_DIR}/runtime/tests/generated/dolrecon_lifted_*.cpp")
+        if(dolrecon_lifted_sources)
         add_executable(dolrecon_lift_tests runtime/tests/dolrecon_lift_tests.cpp ${dolrecon_lifted_sources})
         target_include_directories(dolrecon_lift_tests PRIVATE runtime/tests runtime/tests/generated)
         target_link_libraries(dolrecon_lift_tests PRIVATE shadow_lift shadow_runtime_reference)
@@ -2279,6 +2282,7 @@ if(SHADOW_BUILD_TESTS)
         endif()
         add_test(NAME dolrecon_lift_tests COMMAND dolrecon_lift_tests "${SHADOW_RECOMP_DOL}")
         set_tests_properties(dolrecon_lift_tests PROPERTIES TIMEOUT 1800 LABELS "reference;native-contract")
+        endif()
         # The native MSL math library against the original words (docs/NATIVE_MSL_MATH.md).
         add_executable(native_msl_tests runtime/tests/native_msl_tests.cpp)
         target_link_libraries(native_msl_tests PRIVATE shadow_lift shadow_runtime_reference)
@@ -3203,7 +3207,7 @@ if(SHADOW_BUILD_TESTS)
             # decoded PNGs for visual inspection go to the build tree.
             file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/gx-texture-decode-png")
             add_test(NAME ${native_test} COMMAND ${native_test}
-                     "${CMAKE_CURRENT_SOURCE_DIR}/test_data/renderer-re/final-haunt-b45.mem1"
+                     "${SHADOW_PRIVATE_TEST_DATA}/renderer-re/final-haunt-b45.mem1"
                      "${CMAKE_CURRENT_BINARY_DIR}/gx-texture-decode-png")
         elseif(native_test STREQUAL "rw_geometry_convert_tests")
             # test_data/renderer-re/final-haunt-b45.mem1 (SHA-256 065e797a...c553a) is
@@ -3213,7 +3217,7 @@ if(SHADOW_BUILD_TESTS)
             # addresses, 8/20/5 entries, RE-02 section 11.2 DL totals) are tied to this
             # exact heap image, so the original bytes are kept, not a regeneration.
             add_test(NAME ${native_test} COMMAND ${native_test}
-                     "${CMAKE_CURRENT_SOURCE_DIR}/test_data/renderer-re/final-haunt-b45.mem1")
+                     "${SHADOW_PRIVATE_TEST_DATA}/renderer-re/final-haunt-b45.mem1")
         else()
             add_test(NAME ${native_test} COMMAND ${native_test})
         endif()
@@ -3681,7 +3685,8 @@ if(SHADOW_BUILD_TESTS)
                          COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/tools/platform/retired_wait_reach.py"
                                  --pruned "${SHADOW_RECOMP_DIR}/recomp_pruned.csv"
                                  --retired "${CMAKE_CURRENT_SOURCE_DIR}/extract/wait-points-retired.txt")
-                set_tests_properties(native_wait_points_retired_reach PROPERTIES TIMEOUT 900 LABELS "native;build")
+                set_tests_properties(native_wait_points_retired_reach PROPERTIES TIMEOUT 900 LABELS "native;build"
+                                     ENVIRONMENT "SHADOW_RECOMP_DOL=${SHADOW_RECOMP_DOL}")
             endif()
             add_test(NAME native_wait_points_classifier
                      COMMAND "${Python3_EXECUTABLE}" -B -m unittest test_wait_points

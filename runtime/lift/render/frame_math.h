@@ -69,7 +69,7 @@ inline constexpr std::uint32_t kSkipClear = 64;
 inline constexpr std::uint32_t kOpaqueCheck = 128;
 // Every vertex and texel alpha of the draw is 255: the fragment alpha is the material constant's (shaders/mesh.hlsl).
 inline constexpr std::uint32_t kExactAlpha = 1024;
-// MatFX BUMPENVMAP (0x804A4E00): the base pass is the GameCube's four-stage bump + environment combine
+// MatFX BUMPENVMAP: the base pass is the original four-stage bump + environment combine
 // (shaders/mesh.hlsl PSBase). The block's spare view_row .w lanes carry the bump scale and the environment map.
 inline constexpr std::uint32_t kBumpEnvironment = 2048;
 inline constexpr std::uint32_t kBumpFramebufferAlpha = 4096;  // the environment slot's useFrameBufferAlpha
@@ -314,7 +314,7 @@ inline void fill_bump_environment(const ExtraPass& extra, std::uint32_t environm
                                   std::uint32_t environment_sampler, DrawConstants* out) {
     out->flags |= kBumpEnvironment | (extra.framebuffer_alpha ? kBumpFramebufferAlpha : 0u);
     out->coefficient = extra.coefficient;
-    out->cutoff = -1.0f;  // 0x804987C8(1): the alpha compare always passes
+    out->cutoff = -1.0f;  // the alpha compare always passes
     out->view_row[0][3] = extra.bump_shift;
     std::memcpy(&out->view_row[1][3], &environment_srv, sizeof(float));
     std::memcpy(&out->view_row[2][3], &environment_sampler, sizeof(float));

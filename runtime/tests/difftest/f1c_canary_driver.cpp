@@ -68,6 +68,7 @@
 // Cpu::set_hardware_tick services and their `retired` argument, coalesced charges - no longer exists, so no
 // observable contract remains; the per-service ledger (each service's `retired` == the instructions since the
 // previous one) and the coalesced-iteration checks of B1 went with them. Asking for B2 or B3 is an error.
+#include "gekko/os_exception_vector.h"
 #include "gekko/cpu.h"
 #include "gekko/cpu_diag.h"
 #include "gekko/guest_memory.h"
@@ -237,13 +238,15 @@ u64 table_hash(const RecompiledCode& code) {
 
 std::vector<u8> expected_hle_slots(const std::vector<std::pair<u32, std::string>>& hooks) {
     // Cpu::rebuild_hle_slots for a non-verifying, non-faulted machine (kHleSlotEmpty 1, kHleSlotAll 3).
-    std::vector<u32> slots(1024u, 1u);
+    // The table is Cpu::kHleSlotCount (4096) words = 16 KiB since 2026-11-04 (it was 1024 words).
+    constexpr std::size_t kSlots = 4096u;
+    std::vector<u32> slots(kSlots, 1u);
     for (const auto& [address, name] : hooks) {
-        u32& slot = slots[(address >> 2) & 1023u];
-        slot = slot == 1u ? address : 3u;
+        u32& slot = slots[(address >> 2) & (kSlots - 1u)];
+        slot = (slot == 1u && address != 1u && address != 3u) ? address : 3u;
     }
-    std::vector<u8> bytes(4096u);
-    std::memcpy(bytes.data(), slots.data(), 4096u);
+    std::vector<u8> bytes(kSlots * sizeof(u32));
+    std::memcpy(bytes.data(), slots.data(), bytes.size());
     return bytes;
 }
 
@@ -301,8 +304,8 @@ void capture_invariants(Machine& m, Invariants& inv, Report& rep) {
         rep.fail("Cpu pointer fields memory_/recompiled_ not located exactly once");
     inv.hle_slots_bytes = expected_hle_slots(inv.hooks);
     std::size_t found = 0;
-    for (std::size_t off = 0; off + 4096u <= size; off += 4u) {
-        if (std::memcmp(object + off, inv.hle_slots_bytes.data(), 4096u) == 0) {
+    for (std::size_t off = 0; off + inv.hle_slots_bytes.size() <= size; off += 4u) {
+        if (std::memcmp(object + off, inv.hle_slots_bytes.data(), inv.hle_slots_bytes.size()) == 0) {
             if (found == 0) inv.hle_slots_offset = off;
             ++found;
         }
@@ -352,7 +355,7 @@ void check_invariants(Machine& m, Invariants& inv, Report& rep, const std::strin
         if (!ok) rep.fail(when + ": Cpu::fm_base_ does not match the MSR translation mode");
     }
     if (inv.hle_slots_offset != ~std::size_t{0} &&
-        std::memcmp(object + inv.hle_slots_offset, inv.hle_slots_bytes.data(), 4096u) != 0)
+        std::memcmp(object + inv.hle_slots_offset, inv.hle_slots_bytes.data(), inv.hle_slots_bytes.size()) != 0)
         rep.fail(when + ": HLE slot table bytes changed");
     const auto& entries = m.cpu->hle_entries();
     if (entries.size() != inv.hooks.size()) rep.fail(when + ": HLE hook count changed");
@@ -385,13 +388,16 @@ void load_code(Machine& m) {
     }
 }
 
-// The OS's exception entry as __OSExceptionInit / OSSetCurrentContext leave it. The F1c image has no
-// __OSExceptionVector template (its bytes are zero), so each vector is zero but for `li r3, <index>` at +0x68,
-// which is what the native entry checks; the system call is PPCSync's head (zero here too).
+// The OS's exception entry as __OSExceptionInit / __OSInitSystemCall / OSSetCurrentContext leave it. The native
+// exception entry (gekko/os_exception_entry.cpp) performs the vector's work itself, but only after it has checked
+// that the guest built the whole 38-word vector page (os_exception_page_word: the __OSExceptionVector template with
+// `li r3, <index>` at +0x68, PPCSync's head over the first seven words for the system call). The F1c image carries
+// none of those bytes, so the harness writes the same pages the guest's OS init would.
 void install_os_entry(Machine& m) {
-    m.bus->write32(0x80000500u + 0x68u, 0x38600004u);  // li r3, 4 (external)
-    m.bus->write32(0x80000900u + 0x68u, 0x38600008u);  // li r3, 8 (decrementer)
-    m.bus->write32(0x80000C00u + 0x68u, 0x38600009u);  // li r3, 9 (system call)
+    gekko::write_os_exception_vector(*m.bus, 0x80000500u, 4u);  // external
+    gekko::write_os_exception_vector(*m.bus, 0x80000900u, 8u);  // decrementer
+    for (u32 word = 0; word < gekko::kOsVectorWords; ++word)
+        m.bus->write32(0x80000C00u + 4u * word, gekko::os_exception_page_word(word, 9u));  // system call
     m.bus->write32(0x80003000u + 4u * 4u, f1c::kExternalHandler);
     m.bus->write32(0x80003000u + 4u * 8u, f1c::kDecrementerHandler);
     m.bus->write32(0x800000D4u, f1c::kOsContext);

@@ -566,11 +566,10 @@ void audio_rows() {
           "audio: set clamps above at 100");
     check(!r.step("audio.master_volume", 1), "audio: stepping past 100 reports no change");
     r.set("audio.master_volume", 35);
-    check(r.dirty(gs::Category::Audio), "audio: dirty with a pending volume");
-    check(rig.v(gs::Category::Audio, "audio.master_volume").applied == 100, "audio: applied unchanged until apply");
-    check(gekko::g_gain == 1.0f, "audio: the owner is untouched by a pending change");
+    check(!r.dirty(gs::Category::Audio), "audio: a volume slider applies as it moves, nothing pending");
+    check(gekko::g_gain == 0.35f, "audio: the owner receives the moved volume at once");
     std::string err;
-    check(r.apply_pending(gs::Category::Audio, &err) == gs::ApplyResult::Applied, "audio: volume applied");
+    check(r.apply_pending(gs::Category::Audio, &err) == gs::ApplyResult::Nothing, "audio: nothing left to apply after a slider");
     check(gekko::g_gain == 0.35f, "audio: the owner receives 0.35 (runtime state, not the label)");
     check(rig.game.apply_calls == 0, "audio: a PC-only change never runs the game's apply (no fade)");
     check(contains(rig.file(), "master_volume=35\n"), "audio: saved to options.cfg");
@@ -633,9 +632,9 @@ void audio_rows() {
     r.set("audio.master_volume", 10);
     r.set("audio.speaker", 0);
     r.discard_pending(gs::Category::Audio);
-    check(!r.dirty(gs::Category::Audio) && rig.v(gs::Category::Audio, "audio.master_volume").pending == 35 &&
-              rig.v(gs::Category::Audio, "audio.speaker").pending == 2,
-          "audio: discard puts pending back to what is in effect");
+    check(!r.dirty(gs::Category::Audio) && rig.v(gs::Category::Audio, "audio.master_volume").pending == 10 &&
+              gekko::g_gain == 0.10f && rig.v(gs::Category::Audio, "audio.speaker").pending == 2,
+          "audio: discard puts game options back; a moved volume is already in effect and stays");
     check(r.apply_pending(gs::Category::Audio) == gs::ApplyResult::Nothing, "audio: nothing to apply after discard");
 
     // reset_defaults: volume and speaker; the languages stay
@@ -644,7 +643,7 @@ void audio_rows() {
     r.apply_pending(gs::Category::Audio);
     r.begin(gs::Category::Audio);
     r.reset_defaults(gs::Category::Audio);
-    check(r.dirty(gs::Category::Audio) && gekko::g_gain == 0.35f, "audio: defaults are pending, not applied");
+    check(r.dirty(gs::Category::Audio) && gekko::g_gain == 0.10f, "audio: defaults are pending, not applied");
     check(r.apply_pending(gs::Category::Audio) == gs::ApplyResult::Applied, "audio: defaults applied");
     check(gekko::g_gain == 1.0f && rig.game.spk == 0u, "audio: master 100 %, stereo");
     check(rig.game.vc == 0u && rig.game.lang == 5u, "audio: Restore defaults leaves the voice and subtitle language alone");
@@ -687,9 +686,9 @@ void audio_voice_unavailable_and_game_down() {
         check(!rig.reg.set("audio.speaker", 1) && !rig.reg.set("audio.subtitles", 3), "game down: no change possible");
         std::string err;
         check(!rig.reg.run("audio.sound_test", &err) && contains(err, "Options screen"), "game down: run refused");
-        check(rig.change(gs::Category::Audio, "audio.master_volume", 20) == gs::ApplyResult::Applied &&
-                  rig.game.apply_calls == 0,
-              "game down: the PC volume still applies");
+        check(rig.change(gs::Category::Audio, "audio.master_volume", 20) == gs::ApplyResult::Nothing &&
+                  rig.game.apply_calls == 0 && gekko::g_gain == 0.20f,
+              "game down: the PC volume still applies, as the slider moves");
         // The game goes away between begin and apply.
         rig.game.up = true;
         rig.reg.begin(gs::Category::Audio);
@@ -713,7 +712,8 @@ void game_failure_paths() {
     check(r.apply_pending(gs::Category::Audio, &err) == gs::ApplyResult::Failed && contains(err, "fake apply failed"),
           "failure: the game's refusal is reported");
     check(gekko::g_gain == 0.60f, "failure: the PC part was applied before the game part failed (in effect)");
-    check(!contains(rig.file(), "master_volume=60"), "failure: nothing saved after a Failed apply");
+    check(contains(rig.file(), "master_volume=60\n"), "failure: the live volume was saved as it moved");
+    check(!contains(rig.file(), "speaker=1\n"), "failure: the failed game option is not saved");
     check(r.dirty(gs::Category::Audio) && rig.v(gs::Category::Audio, "audio.speaker").pending == 1 &&
               rig.v(gs::Category::Audio, "audio.speaker").applied == 0,
           "failure: the game option stays pending, not applied");
@@ -977,7 +977,7 @@ void trial_interaction() {
 
     // Every other category refuses its apply while the trial runs - and keeps its pending values.
     r.begin(gs::Category::Audio);
-    r.set("audio.master_volume", 45);
+    r.set("audio.speaker", 1);
     std::string err;
     check(r.apply_pending(gs::Category::Audio, &err) == gs::ApplyResult::Failed && contains(err, "waiting for confirmation"),
           "trial: Audio apply refused while the trial runs");
@@ -993,15 +993,17 @@ void trial_interaction() {
     check(r.report().apply_failures >= 3u, "trial: the registry counts the refusals");
     // Reading and stepping still work (the page stays usable).
     r.begin(gs::Category::Audio);
-    check(r.step("audio.master_volume", -1) && r.dirty(gs::Category::Audio), "trial: pending values can still change");
+    check(r.step("audio.speaker", 1) && r.dirty(gs::Category::Audio), "trial: pending values can still change");
 
     // Confirm ends the trial; the earlier refusals now apply.
     g_now += std::chrono::seconds(3);
     check(r.confirm(&err) && !r.trial().active, "trial: confirm");
     r.begin(gs::Category::Audio);
-    r.set("audio.master_volume", 45);
-    check(r.apply_pending(gs::Category::Audio) == gs::ApplyResult::Applied && gekko::g_gain == 0.45f,
+    r.set("audio.speaker", 2);
+    check(r.apply_pending(gs::Category::Audio) == gs::ApplyResult::Applied && rig.game.spk == 2u,
           "trial: Audio applies after the confirm");
+    r.set("audio.master_volume", 45);
+    check(gekko::g_gain == 0.45f && !r.dirty(gs::Category::Audio), "trial: the live volume works after the confirm");
     // Restore-all while a trial is pending, as the menu runs it, leaves nothing half-applied.
     r.begin(gs::Category::Display);
     r.set("display.mode", 0);

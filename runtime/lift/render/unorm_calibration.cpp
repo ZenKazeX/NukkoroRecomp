@@ -152,6 +152,9 @@ bool Renderer::calibrate_unorm_resolve(DXGI_FORMAT output_format, std::string* w
         ID3D12DescriptorHeap* heaps[] = {heap_.heap(), samplers_.heap()};
         list->SetDescriptorHeaps(2, heaps);
         list->SetGraphicsRootSignature(root_.Get());
+        // A committed target without zeroed memory must be initialised before its first use.
+        const float clear_colour[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+        list->ClearRenderTargetView(rtv, clear_colour, 0, nullptr);
         list->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
         const D3D12_VIEWPORT viewport{0.0f, 0.0f, static_cast<float>(info.width), static_cast<float>(info.height),
                                       0.0f, 1.0f};

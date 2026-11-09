@@ -85,6 +85,15 @@ DISAGREEMENT CLASSES FOUND AND HOW THEY WERE RESOLVED
       completes.  A right: the estimates are "correct to a precision of one part in 4096" (PAGE 525/526);
       FPRF is the sign-normal class, and for ps_res OX / UX / FPRF are undefined when the admissible interval
       crosses the single range.  B fixed.
+  D17 FPSCR[NI] = 1 with a denormal operand of ps_res / ps_rsqrte (F1b difftest, 2026-11-09).  Both models
+      zeroed the operand (Table 2-21 PAGE 84), which the hardware does not do for the estimates: hwtests
+      cputest/ni.cpp (inputs_expected_flushed = false) and Common/FloatUtils.h fres_expected / frsqrte_expected
+      (verified against a real Gekko) estimate the denormal itself, and the engines reproduce those tables
+      exhaustively (runtime/tests ppc_recomp_tests estimates_against_hwtests).  Evidence vectors: ps-00186
+      (ps_res, ps0 2^-127-ish, NI = 1 -> 0x47D6560E00000000, a finite estimate not +-inf), ps-00190 (ps_res
+      ps1 negative denormal -> a finite -2^127-range estimate) and ps-00230 (ps_rsqrte ps0 negative
+      denormal -> default QNaN, as for any negative operand, not -0 -> -inf).  Both models now treat the
+      denormal like any other finite operand.  The Table 2-21 reading stays for the arithmetic instructions.
   D14 psq_st type 0 of a negative denormal.  B: total UB.  A: only the stored sign bit undefined.  A right:
       "In the case of a denorm, the value 0.0 is stored in the L1 cache" (PAGE 112).  B fixed.
   D15 psq_st integer type of a negative NaN.  A: positive overflow value.  B: total UB.  The manuals conflict:

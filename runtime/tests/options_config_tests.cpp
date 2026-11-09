@@ -348,10 +348,10 @@ void test_providers() {
     check(!reg.dirty(gs::Category::Controls), "page: nothing pending after begin");
 
     // Change, apply: engine state changes, the file holds it.
-    check(reg.set("audio.master_volume", 40) && reg.dirty(gs::Category::Audio), "volume: set marks dirty");
-    check(gekko::audio_output_gain() == 0.65f, "volume: pending is not yet in effect");
+    check(reg.set("audio.master_volume", 40) && !reg.dirty(gs::Category::Audio), "volume: the slider applies as it moves");
+    check(gekko::audio_output_gain() == 0.4f, "volume: in effect at once");
     std::string error;
-    check(reg.apply_pending(gs::Category::Audio, &error) == gs::ApplyResult::Applied, "volume: applied");
+    check(reg.apply_pending(gs::Category::Audio, &error) == gs::ApplyResult::Nothing, "volume: nothing left to apply");
     check(gekko::audio_output_gain() == 0.4f, "volume: engine gain changed");
     check(read_file(file("prov.cfg")).find("master_volume=40") != std::string::npos ||
               read_file(file("prov.cfg")).find("master_volume=40") != std::string::npos,
@@ -361,7 +361,6 @@ void test_providers() {
     // Discard (B): pending dropped, nothing persisted.
     const std::string before_discard = read_file(file("prov.cfg"));
     reg.begin(gs::Category::Audio);
-    reg.set("audio.master_volume", 5);
     reg.set("audio.subtitles", 4);
     reg.discard_pending(gs::Category::Audio);
     check(!reg.dirty(gs::Category::Audio) && find(reg.list(gs::Category::Audio), "audio.master_volume")->pending == 40,

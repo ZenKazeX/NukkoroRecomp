@@ -21,12 +21,12 @@ struct SheetScale {
     float y = 1.0f;
 };
 
-// [r2-0x19B0] (0x805F8DD0): the sheet's distance in front of the eye, along the camera's view.
+// The sheet's distance in front of the eye, along the camera's view.
 inline constexpr float kWatchSheetDistance = 1.1f;
-// [r2-0x19AC] (0x805F8DD4): a window half-extent to the unit quad's whole extent.
+// A window half-extent to the unit quad's whole extent.
 inline constexpr float kWatchSheetSpan = 2.0f;
 
-// fn_80268660's scale of a window, in its order (0x80268714..0x80268728): span x (window x distance), each step one
+// The original scale of a window, in its order: span x (window x distance), each step one
 // single-precision multiply.
 inline SheetScale watch_camera_sheet_scale(render::ViewWindow window) noexcept {
     return SheetScale{kWatchSheetSpan * (window.x * kWatchSheetDistance),

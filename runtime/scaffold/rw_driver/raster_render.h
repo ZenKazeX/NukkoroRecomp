@@ -1,5 +1,5 @@
+// SCAFFOLDING (R2): RwRasterRender, the driver's raster-to-target blit - deleted by R6: the lift of RenderWare's raster path owns it
 #pragma once
-// SCAFFOLDING (R2): RwRasterRender, the GameCube driver's raster-to-target blit (core 0x80499924) - deleted by R6.
 //
 // Original (read in full from the pinned DOL; docs/agents/os-other.md step 13):
 //   r3 = source raster, r4 = rect {x, y, w, h} (words), r5 = scaled flag, r6 = fast (alpha blended) flag.

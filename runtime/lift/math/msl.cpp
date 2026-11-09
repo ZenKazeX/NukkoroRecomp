@@ -709,7 +709,7 @@ double acos(double x) noexcept {
 // 805FBAB8..805FBBC0, bp / dp_h / dp_l at 80515368. The fused steps are the compiled ones. Every intermediate of the
 // log / exp evaluation is finite and normal or zero for finite y and normal x, except: a denormal x (scaled by 2^53,
 // a multiply whose operand Flush reads as zero), a denormal y (its products: the same), and p_l + p_h (a sum of
-// two products that can overflow with opposite signs: the Gekko's NaN rules). The square root of y = 0.5 is the
+// two products that can overflow with opposite signs: the original CPU's NaN rules). The square root of y = 0.5 is the
 // software sqrt 803B2D2C (through 803B2F98), exact like std::sqrt for every x >= 0 that reaches it.
 namespace {
 const double kPowBp[2] = {1.0, 1.5};

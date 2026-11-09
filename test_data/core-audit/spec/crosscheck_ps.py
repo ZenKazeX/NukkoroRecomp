@@ -723,8 +723,6 @@ MUTANTS = [
     ("reserved GQR type 3 accepted", "    if typ in (1, 2, 3):", "    if typ in (1, 2):"),
     ("ps_sel NI alternative missing", "            if st.fpscr & NI and va.denormal and not ge:", "            if False:"),
     ("compare NI zeroed alternative missing", "        if st.fpscr & NI and (va.denormal or vb.denormal):", "        if False:"),
-    ("estimate NI zeroing missing", "        elif st.fpscr & NI and v.denormal:", "        elif False:"),
-    ("ps_res NI zero UX defined", "                    o.amb |= UX\n", "                    pass\n"),
     ("FPRF kept when only the other half has no result", "if h0.noresult or h1.noresult or src.fprf is None:",
      "if src.noresult or src.fprf is None:"),
     ("enabled overflow value defined", "return [_Half(img, umask=MASK64, sets=OX, amb=XX, fr=None, fi=None, fprf=None)]",

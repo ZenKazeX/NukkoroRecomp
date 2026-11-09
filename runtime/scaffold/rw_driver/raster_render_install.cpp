@@ -1,4 +1,4 @@
-// SCAFFOLDING (R2): the draw of RwRasterRender (raster_render.h) over the driver, and its owner install - deleted by R6
+// SCAFFOLDING (R2): RwRasterRender, the driver's raster-to-target blit - deleted by R6: the lift of RenderWare's raster path owns it
 #include "raster_render.h"
 
 #include "gekko/cpu.h"
