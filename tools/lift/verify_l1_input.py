@@ -2,7 +2,7 @@
 
   verify_l1_input.py --dol <main.dol> [--sites extract/lift-sites.txt] [--functions extract/functions.csv]
 
-extract/lift-sites.txt lowers 10 call sites into the lifted peripheral layer, retires 5 data words, and lowers
+extract/lift-sites.txt lowers 9 call sites into the lifted peripheral layer, retires 5 data words, and lowers
 the 2 calls that start the disc-error screen module (docs/DISC_SYSTEM_MAP.md cut 1). The generator checks each
 line's word mechanically; this script checks the claims that make the lines valid:
 
@@ -45,6 +45,8 @@ ON_RESET = 0x80381C44
 PAD_LIBRARY = (0x80380C94, 0x80381D00)
 SI_LIBRARY = (0x803B6000, 0x803B7300)
 RETRACE_HANDLER = 0x8037E290  # pruned: the retrace is a native delivery (NativeVideo)
+OS_INIT = 0x80370E68  # a native owner (NativeBoot::os_init): its body is not compiled; its SIInit call (0x8037101C,
+# once the tenth lowered site) is gone with it, and the native OSInit never calls SIInit
 ENTRIES = {
     0x80380C94: 'PADReset', 0x80380DA4: 'PADRecalibrate', 0x80380EB8: 'PADInit', 0x80381008: 'PADRead',
     0x80381308: 'PADControlAllMotors', 0x803813D4: 'PADControlMotor', 0x803B633C: 'SIInit',
@@ -135,7 +137,7 @@ def main() -> int:
             sites[int(line[1], 16)] = (int(line[2], 16), line[3])
         elif line[0] == 'retire':
             retired[int(line[1], 16)] = int(line[2], 16)
-    claim(len(sites) == 12, f'12 sites listed: 10 peripheral, 2 disc-error (found {len(sites)})')
+    claim(len(sites) == 11, f'11 sites listed: 9 peripheral, 2 disc-error (found {len(sites)})')
 
     # ---- 1. what each site calls ------------------------------------------------------------------------------
     words = dict(dol.text_words())
@@ -231,7 +233,8 @@ def main() -> int:
         caller = owner(address)
         allowed = (caller in retired_methods or caller is not None and
                    (PAD_LIBRARY[0] <= caller < PAD_LIBRARY[1] or SI_LIBRARY[0] <= caller < SI_LIBRARY[1]) or
-                   caller == RETRACE_HANDLER or caller == ON_RESET or caller == DISC_ERROR_SCREEN)
+                   caller == RETRACE_HANDLER or caller == ON_RESET or caller == DISC_ERROR_SCREEN or
+                   caller == OS_INIT)
         claim(allowed, f'0x{address:08X} (in 0x{(caller or 0):08X}) still calls {ENTRIES[target]}')
 
     # ---- 7. the deleted code is gone from the generated image (with --pruned) -----------------------------------

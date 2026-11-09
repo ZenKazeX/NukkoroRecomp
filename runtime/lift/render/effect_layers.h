@@ -12,6 +12,7 @@
 // the game thread asks whether it must tag, the presenter filters), so they are atomics.
 
 #include <atomic>
+#include <cstdlib>
 #include <cstdint>
 #include <string>
 
@@ -85,7 +86,21 @@ public:
     void all_on() noexcept;
     // Whether the game thread must stamp draws with their layer this frame: only while a switch is not at its default
     // (the classification walks the guest's call chain, which costs nothing when nobody asked for it).
-    bool tagging() const noexcept { return !state().everything(); }
+    // SHADOW_R2_TAG_LAYERS=1 (measurement, non-shipping): stamp every draw with its layer while every layer stays on, so
+    // GEKKO_GPU_TRACE_DRAWS can attribute GPU time per effect (docs/EFFECT_PERFORMANCE.md). It changes nothing drawn;
+    // a layer change does flush a pending 2D strip, so a tagged run may issue a few more draws.
+    bool tagging() const noexcept { return !state().everything() || forced_tagging(); }
+    static bool forced_tagging() noexcept {
+#if defined(GEKKO_SHIPPING)
+        return false;
+#else
+        static const bool on = [] {
+            const char* v = std::getenv("SHADOW_R2_TAG_LAYERS");
+            return v != nullptr && v[0] == '1';
+        }();
+        return on;
+#endif
+    }
     // "glare,fog" -> those layers off. False (and nothing changed) when a name is unknown; `error` names it.
     bool parse_off_list(const std::string& list, std::string* error);
     bool parse_solo(const std::string& name, std::string* error);

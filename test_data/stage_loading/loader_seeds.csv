@@ -1,0 +1,551 @@
+address,group,role,files,evidence
+0x801E5B70,STAGE_FLOW,frame driver system switch: builds StageSequence::Manager for kind 5,,re_A 1
+0x802CE764,STAGE_FLOW,StageSequence::Manager vf1: picks the phase from 0x805ED220 (jump table 0x805592A8),,re_A 1
+0x802D10BC,STAGE_FLOW,StageSequence::PlayOnce::Phase ctor,,re_A 1
+0x802D11CC,STAGE_FLOW,PlayOnce builder: StageManager(*0x80585788 0),,system.cpp boot-stage; re_A 1
+0x80178C2C,STAGE_FLOW,StageManager ctor: pauses background reads (0x805EF1DC=1) shows the loading screen requests InitAction,,re_A 2
+0x80178A48,STAGE_FLOW,StageManager vf1: per-frame state machine (0 build 1 retry dat.one 2 play 3 teardown),,re_A 1
+0x801783D4,STAGE_FLOW,StageManager state 0: builds every stage task; sync font set; queues stgNNNN_dat.one,,re_A 1
+0x80177684,STAGE_FLOW,TStageInitalizeTask ctor,,re_A 2
+0x80177510,STAGE_FLOW,TStageInitalizeTask update: 30-pass countdown clears the read pause; waits for start blocks; closes the loading screen; sets 0x805F0CC8,,re_A 2
+0x80205F80,STAGE_FLOW,StageAction::InitAction vf0: waits for 0x805F0CC8 then requests PlayAction,,re_A 2
+0x802BEFA4,LOADING_SCREEN,NowLoading ctor (task; suspends group 5; pacer off),,re_A 3
+0x802BECB0,LOADING_SCREEN,CNowLoadingThread ctor (a Task not an OS thread; own RwCamera; presents itself),,re_A 3
+0x80209288,LOADING_SCREEN,StageTitle: csdFiles/stageTitle/StageTitle%04d%s.txd,StageTitleNNNN*.txd,strrefs
+0x800453E0,ASYNC_IO,TBGReadManager update: spawns TBGRead workers from the 3 FIFO lists 0x805742A0,,NATIVE_THREADS.md
+0x80045680,ASYNC_IO,TBGRead step (worker thread),,NATIVE_THREADS.md
+0x80043D5C,ASYNC_IO,TExpandBG step (worker thread; PRS),,NATIVE_THREADS.md
+0x8004CC94,ASYNC_IO,ONE async open (background read request),,re_A 4
+0x8004CC28,ASYNC_IO,ONE async open completion,,re_A 4
+0x8004CE1C,ASYNC_IO,ONE sync open (RW stream; whole archive),,re_A 4
+0x8004C938,ASYNC_IO,ONE member lookup,,DISC_SYSTEM_MAP 3
+0x8004C770,ASYNC_IO,ONE member extract: PRS inline or TExpandBG with a callback,,re_A 4; re_C 2
+0x800450C4,ASYNC_IO,synchronous whole-file read,,re_A
+0x80045014,ASYNC_IO,synchronous stream open,,re_A
+0x8004D564,ASYNC_IO,TOneFileAsyncManager (16 jobs),,DISC_SYSTEM_MAP 3; re_A 4
+0x8004ADD8,ASYNC_IO,TOneFileAsync<RpDMorphAnimation> load,,re_A 4
+0x8004AE60,ASYNC_IO,TOneFileAsync<RpDMorphAnimation> task,,re_A 4
+0x8004B318,ASYNC_IO,TOneFileAsync<RpWorld> load (RG1 / COLI),,re_A 4; re_B 2
+0x8004B3A0,ASYNC_IO,TOneFileAsync<RpWorld> task,,re_A 4; re_B 2
+0x8004B734,ASYNC_IO,TOneFileAsync<RtDict> load,,re_A 4
+0x8004B7BC,ASYNC_IO,TOneFileAsync<RtDict> task,,re_A 4
+0x8004BB4C,ASYNC_IO,TOneFileAsync<RpClump> load,,re_A 4
+0x8004BBD4,ASYNC_IO,TOneFileAsync<RpClump> task,,re_A 4
+0x8004BF68,ASYNC_IO,TOneFileAsync<RwTexDictionary> load,,re_A 4
+0x8004BFF0,ASYNC_IO,TOneFileAsync<RwTexDictionary> task,,re_A 4
+0x8004C380,ASYNC_IO,TOneFileAsync raw bytes load (spins without a callback),,re_A 4; re_B 1
+0x8004C408,ASYNC_IO,TOneFileAsync raw bytes task,,re_A 4
+0x800149F4,ASYNC_IO,ResourceOneFile vf1 (sync / async),,re_A 4
+0x8006A23C,ASYNC_IO,ResourceOneFileReq vf1 sub6: .BIN members,,re_C 2
+0x8006A3C0,ASYNC_IO,ref_XNCP: TXD DFF RP2 BON MTN CCL UVA CSD ADB members,,re_C 2
+0x8001299C,ASYNC_IO,ResourceManagerTask enqueue (0x8056FF94),,re_C 2
+0x80177868,WORLD_DATA,opens stgNNNN_dat.one (async),stgNNNN_dat.one,re_B 1
+0x80177964,WORLD_DATA,dat.one member callback: PTP / BDT / ADB,PATH.PTP STGNNNN.BDT *.ADB,re_B 1
+0x80177B30,WORLD_DATA,PATH.PTP after PRS: relocates (fn_8040F66C) to the path manager,PATH.PTP,re_B 1
+0x8003ADB4,WORLD_DATA,TBlockManage ctor,STGNNNN.BDT,re_B 1
+0x8003AB90,WORLD_DATA,BDT records (swap; cap 168) + sync stgNNNN_texCM.one,STGNNNN.BDT stgNNNN_texCM.one,re_B 1
+0x80046BB4,WORLD_DATA,texCM TXD load,stgNNNN_texCM.one,re_B 1
+0x8004FEE0,WORLD_DATA,ADB append to the texture change data manager (0x80571C00),*.ADB,re_B 1
+0x8003AAE8,WORLD_BLOCKS,TBlockManage update: block mask + load / unload,,re_B 2; DRAW_DISTANCE
+0x8003A8D4,WORLD_BLOCKS,block mask from BDT boxes,,re_B 2
+0x8003A6DC,WORLD_BLOCKS,load wanted / release unwanted blocks,,re_B 2
+0x800462EC,WORLD_BLOCKS,creates a LandALoadMananger for a block,stgNNNN_NN.one,re_B 2
+0x80046AF0,WORLD_BLOCKS,LandALoadMananger ctor (%s/%s_%02d.one),stgNNNN_NN.one,re_B 2
+0x800466B4,WORLD_BLOCKS,LandALoadMananger update (states; TEX%02d; RG1 layers; COLI),stgNNNN_NN.one stgNNNN_TEXnn.one,re_B 2
+0x80046438,WORLD_BLOCKS,RG1 world loaded callback (slot layer; ADB register),*.RG1,re_B 2
+0x80046418,WORLD_BLOCKS,COLI world loaded callback (slot+0xB8; state 5),*_COLI_NN.BSP,re_B 2
+0x800473A8,WORLD_BLOCKS,block release,,re_B 2
+0x800471BC,WORLD_BLOCKS,land draw (current mask),,re_B 2
+0x8004625C,WORLD_BLOCKS,LandDispManager ctor,,re_B
+0x80177798,ENVIRONMENT,light setup,stgNNNN_light.bin,re_B 3
+0x80048738,ENVIRONMENT,light.bin open (sync),stgNNNN_light.bin,re_B 3
+0x8004867C,ENVIRONMENT,light.bin whole-file read (RtFS),stgNNNN_light.bin,re_B 3
+0x8016AD3C,ENVIRONMENT,TFogSet ctor,stgNNNN.fog,re_B 3
+0x8016A66C,ENVIRONMENT,fog async read request,stgNNNN.fog,re_B 3
+0x8016A4EC,ENVIRONMENT,fog read callback,stgNNNN.fog,re_B 3
+0x8016A904,ENVIRONMENT,TFogSet update,stgNNNN.fog,re_B 3
+0x801CEC6C,ENVIRONMENT,stage camera setup,stgNNNN_cam.dat,re_B 3
+0x801C85AC,ENVIRONMENT,SetCameraDataManager::RequestFileLoad (sync),stgNNNN_cam.dat,re_B 3
+0x801C8340,ENVIRONMENT,cam.dat parser (24-byte header + 0xDC records),stgNNNN_cam.dat,re_B 3
+0x801C9B48,ENVIRONMENT,StageCameraManager ctor,stgNNNN_cam.dat,re_B 3
+0x800CBC54,SET_OBJECTS,set data load: setid.bin then cmn / nrm or hrd / ds1,setid.bin stgNNNN_cmn/_nrm/_hrd/_ds1.dat,re_C 1
+0x800CB1A4,SET_OBJECTS,sky2 layout parser (sync; swap ffffffiisccii; cap 0x800),stgNNNN_*.dat,re_C 1
+0x800CB044,SET_OBJECTS,setid.bin load,setid.bin,re_C 1
+0x800CA7F0,SET_OBJECTS,mark used types from setid.bin,,re_C 1
+0x800CA780,SET_OBJECTS,preload pass: stageLoad of every used type (table 0x8052C1A0),,re_C 1
+0x800CB0EC,SET_OBJECTS,layer flag forcing,,re_C 1
+0x800CB820,SET_OBJECTS,SetManagerTask ctor,,re_A
+0x800CB794,SET_OBJECTS,SetManagerTask update: spawn scan gated on no pending resources,,re_C 1
+0x800CAC08,SET_OBJECTS,layout manager 1P update (spawn / respawn),,DRAW_DISTANCE
+0x800CAA2C,SET_OBJECTS,layout manager 2P update,,DRAW_DISTANCE
+0x800CA8D8,SET_OBJECTS,spawn test + factory create,,DRAW_DISTANCE
+0x80169248,OBJECT_RESOURCES,GadgetStageDataEnd stageLoad: queues stgNNNN_gdt.one + _fx.one,stgNNNN_gdt.one stgNNNN_fx.one,re_C 2
+0x8006B59C,OBJECT_RESOURCES,stageLoad helper by name (appends a request to 0x80576FA4),,re_C 2
+0x8006B634,OBJECT_RESOURCES,stageLoad helper by member index,,re_C 2
+0x8027B1B4,OBJECT_RESOURCES,character archive open (sync ResourceOneFile; refcount),character/*.one,re_C 3
+0x802F33BC,OBJECT_RESOURCES,HINT_CONTROLLER stageLoad,stgNNNN_hint.bin,re_C 3
+0x801D3EA8,AUDIO_TEXT,ActStageController ctor: builds sng_stgNNNN.adx name,sng_stgNNNN.adx,re_C 3
+0x801D8A20,AUDIO_TEXT,sound/AudioData*.bin (sync),sound/AudioData*.bin,re_C 3
+0x8004A6AC,AUDIO_TEXT,stage fonts (%s.fnt; sync),*.fnt,re_C 3
+0x80012700,ASYNC_IO,ResourceManagerTask per-frame service (vtable; trace: 171 calls in the load window),,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x80012608,ASYNC_IO,ResourceManagerTask helper (vtable; trace),,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x80012684,ASYNC_IO,ResourceManagerTask helper (vtable; trace),,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x80014790,ASYNC_IO,ResourceOneFile vf8 (trace),,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x8001483C,ASYNC_IO,ResourceOneFile vf6 (trace),,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x800148E0,ASYNC_IO,ResourceOneFile vf5 (trace),,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x8006B090,ASYNC_IO,ResourceOneFileReq vf5 (trace),,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x8006B114,ASYNC_IO,ResourceOneFileReq vf4 (trace),,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x8006B190,ASYNC_IO,ResourceOneFileReq vf3 (trace),,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x8006B1B8,ASYNC_IO,ResourceOneFileReq vf1 (trace),,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x8006B2AC,ASYNC_IO,ResourceOneFileReq helper (trace),,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x8040F50C,ASYNC_IO,ResourceOneFileReq vf4 sub0 (trace),,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x8004620C,WORLD_BLOCKS,LandDispManager update (vtable; per frame),,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x80046A60,WORLD_BLOCKS,LandALoadMananger dtor,,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x80209158,LOADING_SCREEN,StageTitleTask construct,,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x802BE9A8,LOADING_SCREEN,CNowLoadingThread update,,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x802BE9D4,LOADING_SCREEN,CNowLoadingThread vf2 (draw),,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x802BEBD0,LOADING_SCREEN,CNowLoadingThread dtor,,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x802BED74,LOADING_SCREEN,NowLoading update (removes the loading thread; re-enables group 5),,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x802BEF0C,LOADING_SCREEN,NowLoading helper (trace),,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x80177704,STAGE_FLOW,TStageInitalizeTask dtor (2.245 s in the trace: load done),,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x80206068,STAGE_FLOW,StageAction::InitAction ctor,,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x80206020,STAGE_FLOW,StageAction::InitAction dtor,,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x8020618C,STAGE_FLOW,StageAction::PlayAction ctor (first gameplay frame marker),,trace 2026-11-03 (vtable dispatch; no static call edge)
+0x8015DC98,OBJECT_RESOURCES,GadgetCommonDataStart stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8015DC94,OBJECT_RESOURCES,GadgetCommonDataStart stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802DFC04,OBJECT_RESOURCES,Sample stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802DFC00,OBJECT_RESOURCES,Sample stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800F6C74,OBJECT_RESOURCES,CONTAINER stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800F6C70,OBJECT_RESOURCES,CONTAINER stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800F9D64,OBJECT_RESOURCES,HRD_CONTAINER stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800F9D60,OBJECT_RESOURCES,HRD_CONTAINER stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800FC1D4,OBJECT_RESOURCES,UNBRK_CONTAINER stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800FC1D0,OBJECT_RESOURCES,UNBRK_CONTAINER stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800FD0AC,OBJECT_RESOURCES,WEAPON_CONTAINER stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800FD0A8,OBJECT_RESOURCES,WEAPON_CONTAINER stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80278748,OBJECT_RESOURCES,SECRET CONTAINER stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80278744,OBJECT_RESOURCES,SECRET CONTAINER stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800E6EB0,OBJECT_RESOURCES,BALLOON stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800E6EAC,OBJECT_RESOURCES,BALLOON stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801205AC,OBJECT_RESOURCES,SPRING stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801205A8,OBJECT_RESOURCES,SPRING stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800FF434,OBJECT_RESOURCES,DASHPANEL stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800FF430,OBJECT_RESOURCES,DASHPANEL stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8010E958,OBJECT_RESOURCES,JUMP_BOARD stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8010E954,OBJECT_RESOURCES,JUMP_BOARD stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80112790,OBJECT_RESOURCES,RING stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8011278C,OBJECT_RESOURCES,RING stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8010F948,OBJECT_RESOURCES,LONGSPRING stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8010F944,OBJECT_RESOURCES,LONGSPRING stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80117850,OBJECT_RESOURCES,SAVEPOINT stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80117830,OBJECT_RESOURCES,SAVEPOINT stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8012B00C,OBJECT_RESOURCES,WEIGHT stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8012B008,OBJECT_RESOURCES,WEIGHT stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8010670C,OBJECT_RESOURCES,GOALRING stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80106708,OBJECT_RESOURCES,GOALRING stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80123544,OBJECT_RESOURCES,SWITCH stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80123540,OBJECT_RESOURCES,SWITCH stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801005DC,OBJECT_RESOURCES,DASHRING stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801005D8,OBJECT_RESOURCES,DASHRING stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801249DC,OBJECT_RESOURCES,TARGETSWITCH stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801249D8,OBJECT_RESOURCES,TARGETSWITCH stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800EE1F0,OBJECT_RESOURCES,BOMB stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800EE1EC,OBJECT_RESOURCES,BOMB stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801026E8,OBJECT_RESOURCES,FAN stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801026E4,OBJECT_RESOURCES,FAN stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8011C374,OBJECT_RESOURCES,SECRETKEY stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8011C370,OBJECT_RESOURCES,SECRETKEY stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8011BA14,OBJECT_RESOURCES,SECRETDOOR stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8011BA10,OBJECT_RESOURCES,SECRETDOOR stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800ECD84,OBJECT_RESOURCES,BREAK_BLAST stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800ECD80,OBJECT_RESOURCES,BREAK_BLAST stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800F178C,OBJECT_RESOURCES,BRK_OBJ stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800F1788,OBJECT_RESOURCES,BRK_OBJ stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800F2610,OBJECT_RESOURCES,CAGE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800F260C,OBJECT_RESOURCES,CAGE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800F38C8,OBJECT_RESOURCES,CAPTURE_CAGE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800F38C4,OBJECT_RESOURCES,CAPTURE_CAGE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80109DB0,OBJECT_RESOURCES,HINTRING stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80109DAC,OBJECT_RESOURCES,HINTRING stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801277E0,OBJECT_RESOURCES,UD_REEL stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801277DC,OBJECT_RESOURCES,UD_REEL stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8010BFA8,OBJECT_RESOURCES,ITEM_BOX stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8010BFA4,OBJECT_RESOURCES,ITEM_BOX stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80104424,OBJECT_RESOURCES,FIRE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80104420,OBJECT_RESOURCES,FIRE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80101594,OBJECT_RESOURCES,ENERGY_CORE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80101590,OBJECT_RESOURCES,ENERGY_CORE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80110C00,OBJECT_RESOURCES,POISON_GAS stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80110BFC,OBJECT_RESOURCES,POISON_GAS stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8012997C,OBJECT_RESOURCES,WARP_HOLE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80129894,OBJECT_RESOURCES,WARP_HOLE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80114D20,OBJECT_RESOURCES,ROCKET stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80114D1C,OBJECT_RESOURCES,ROCKET stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8011E560,OBJECT_RESOURCES,SET_VEHICLE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8011E55C,OBJECT_RESOURCES,SET_VEHICLE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8011F068,OBJECT_RESOURCES,SET_WEAPON stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8011F064,OBJECT_RESOURCES,SET_WEAPON stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80119E70,OBJECT_RESOURCES,SET_CHARACTOR stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80119E6C,OBJECT_RESOURCES,SET_CHARACTOR stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800EDDCC,OBJECT_RESOURCES,BlockChange stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800EDDC8,OBJECT_RESOURCES,BlockChange stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800F4F44,OBJECT_RESOURCES,CATCHSTICK stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800F4F40,OBJECT_RESOURCES,CATCHSTICK stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8011E07C,OBJECT_RESOURCES,PARTICLE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8011E078,OBJECT_RESOURCES,PARTICLE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801078C8,OBJECT_RESOURCES,HEALING_UNIT stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801078C4,OBJECT_RESOURCES,HEALING_UNIT stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80105750,OBJECT_RESOURCES,Fruit stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8010574C,OBJECT_RESOURCES,Fruit stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801EF344,OBJECT_RESOURCES,LIGHT_COLI stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801EF304,OBJECT_RESOURCES,LIGHT_COLI stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802C8D78,OBJECT_RESOURCES,DebugDebugMissionClearCollision stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802C8D74,OBJECT_RESOURCES,DebugDebugMissionClearCollision stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80258C38,OBJECT_RESOURCES,DARKSPINENTRANCE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80258C34,OBJECT_RESOURCES,DARKSPINENTRANCE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027C364,OBJECT_RESOURCES,SET GENERATOR stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027C360,OBJECT_RESOURCES,SET GENERATOR stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80231CB0,OBJECT_RESOURCES,MissionClearCollision stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80231CAC,OBJECT_RESOURCES,MissionClearCollision stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802F3364,OBJECT_RESOURCES,HINT CONTROLLER stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80125974,OBJECT_RESOURCES,TANK stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80125970,OBJECT_RESOURCES,TANK stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8015DC38,OBJECT_RESOURCES,GadgetCommonDataEnd stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8015DC04,OBJECT_RESOURCES,GadgetCommonDataEnd stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8005E428,OBJECT_RESOURCES,WeaponDataStart stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8005E424,OBJECT_RESOURCES,WeaponDataStart stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8005E3C8,OBJECT_RESOURCES,WeaponDataEnd stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8005E394,OBJECT_RESOURCES,WeaponDataEnd stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801693D8,OBJECT_RESOURCES,GadgetStageDataStart stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801693D4,OBJECT_RESOURCES,GadgetStageDataStart stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80121EEC,OBJECT_RESOURCES,STICK stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80121EE8,OBJECT_RESOURCES,STICK stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80125A08,OBJECT_RESOURCES,TURNOVER stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80125A04,OBJECT_RESOURCES,TURNOVER stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800E5ED4,OBJECT_RESOURCES,ART WORK stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800E5ED0,OBJECT_RESOURCES,ART WORK stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800E5E44,OBJECT_RESOURCES,ART WORK ZONE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800E5E40,OBJECT_RESOURCES,ART WORK ZONE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800E43C4,OBJECT_RESOURCES,ART GADGET stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800E43C0,OBJECT_RESOURCES,ART GADGET stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800E4334,OBJECT_RESOURCES,ART GADGET ZONE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800E4330,OBJECT_RESOURCES,ART GADGET ZONE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80149744,OBJECT_RESOURCES,FOOTING stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80149740,OBJECT_RESOURCES,FOOTING stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80149C98,OBJECT_RESOURCES,MOVE_FOOTING stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80149C94,OBJECT_RESOURCES,MOVE_FOOTING stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80147F18,OBJECT_RESOURCES,ELEVATOR stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80147F14,OBJECT_RESOURCES,ELEVATOR stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801443C4,OBJECT_RESOURCES,DOOR stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801443C0,OBJECT_RESOURCES,DOOR stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80143488,OBJECT_RESOURCES,DAMAGE BLOCK stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80143484,OBJECT_RESOURCES,DAMAGE BLOCK stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80102660,OBJECT_RESOURCES,FAN STAGE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8010265C,OBJECT_RESOURCES,FAN STAGE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8014F204,OBJECT_RESOURCES,FIRE_VINE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8014F200,OBJECT_RESOURCES,FIRE_VINE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801406B8,OBJECT_RESOURCES,BREAKWALL stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801406B4,OBJECT_RESOURCES,BREAKWALL stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8014C150,OBJECT_RESOURCES,NOBI_KUSA stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8014C14C,OBJECT_RESOURCES,NOBI_KUSA stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80142178,OBJECT_RESOURCES,CATAPULT stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80142174,OBJECT_RESOURCES,CATAPULT stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80145954,OBJECT_RESOURCES,EGG_BALLOON stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80145950,OBJECT_RESOURCES,EGG_BALLOON stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80273DFC,OBJECT_RESOURCES,E_B_COLI stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80273DF8,OBJECT_RESOURCES,E_B_COLI stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802FA3BC,OBJECT_RESOURCES,SECRET DISK stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802FA3B8,OBJECT_RESOURCES,SECRET DISK stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800DE81C,OBJECT_RESOURCES,TORNADO stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800DE818,OBJECT_RESOURCES,TORNADO stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800DFD04,OBJECT_RESOURCES,TORNADO_COLLI stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800DFD00,OBJECT_RESOURCES,TORNADO_COLLI stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800D6438,OBJECT_RESOURCES,ROLL_CIRCLE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800D6434,OBJECT_RESOURCES,ROLL_CIRCLE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800D8270,OBJECT_RESOURCES,STONE_POLE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800D826C,OBJECT_RESOURCES,STONE_POLE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800DD9EC,OBJECT_RESOURCES,STONE_STATUE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800DD9E8,OBJECT_RESOURCES,STONE_STATUE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800D3844,OBJECT_RESOURCES,POWER_DEVICE_CAGE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800D3840,OBJECT_RESOURCES,POWER_DEVICE_CAGE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800CC418,OBJECT_RESOURCES,EggFleet stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800CC414,OBJECT_RESOURCES,EggFleet stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800D4DA0,OBJECT_RESOURCES,POWER_DEVICE_NAKED stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800D4D9C,OBJECT_RESOURCES,POWER_DEVICE_NAKED stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800D5644,OBJECT_RESOURCES,RainEffect stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800D5640,OBJECT_RESOURCES,RainEffect stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802DFC60,OBJECT_RESOURCES,TESTNAKAZAWA stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802DFC5C,OBJECT_RESOURCES,TESTNAKAZAWA stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8012FADC,OBJECT_RESOURCES,CIRCUS_BALL stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8012FAD8,OBJECT_RESOURCES,CIRCUS_BALL stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801356E0,OBJECT_RESOURCES,FIRE_RING stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801356DC,OBJECT_RESOURCES,FIRE_RING stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80134C24,OBJECT_RESOURCES,Cream stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80134C20,OBJECT_RESOURCES,Cream stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8012E278,OBJECT_RESOURCES,Chao stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8012E274,OBJECT_RESOURCES,Chao stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80139684,OBJECT_RESOURCES,Monster stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80139680,OBJECT_RESOURCES,Monster stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8013A978,OBJECT_RESOURCES,MonsterControl stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8013A974,OBJECT_RESOURCES,MonsterControl stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80237094,OBJECT_RESOURCES,GiantLantern stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80237090,OBJECT_RESOURCES,GiantLantern stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80132FAC,OBJECT_RESOURCES,Coaster stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80132FA0,OBJECT_RESOURCES,Coaster stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8013F658,OBJECT_RESOURCES,ThreatObj stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8013F64C,OBJECT_RESOURCES,ThreatObj stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8013B2C8,OBJECT_RESOURCES,PARK_BALLOON stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8013B2A8,OBJECT_RESOURCES,PARK_BALLOON stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8013DD00,OBJECT_RESOURCES,SHOOTING_PANEL stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8013DCFC,OBJECT_RESOURCES,SHOOTING_PANEL stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80136EF8,OBJECT_RESOURCES,GONG stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80136EF4,OBJECT_RESOURCES,GONG stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8012DA5C,OBJECT_RESOURCES,CandleStick stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8012DA38,OBJECT_RESOURCES,CandleStick stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801438E8,OBJECT_RESOURCES,MORPHDOOR stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801438E4,OBJECT_RESOURCES,MORPHDOOR stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800E01B8,OBJECT_RESOURCES,CityChaosEmerald stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800E01B4,OBJECT_RESOURCES,CityChaosEmerald stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800E2D14,OBJECT_RESOURCES,FallBuilding stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800E2D10,OBJECT_RESOURCES,FallBuilding stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800E0D6C,OBJECT_RESOURCES,CityLaser stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x800E0D68,OBJECT_RESOURCES,CityLaser stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802F7500,OBJECT_RESOURCES,CITYGADGET stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802F74FC,OBJECT_RESOURCES,CITYGADGET stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802F8B0C,OBJECT_RESOURCES,Helicopter stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802F8B08,OBJECT_RESOURCES,Helicopter stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802F3D38,OBJECT_RESOURCES,CITY_BOMB_BIG stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802F3D34,OBJECT_RESOURCES,CITY_BOMB_BIG stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802F58B8,OBJECT_RESOURCES,CITY_BOMB_SMALL stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802F58B4,OBJECT_RESOURCES,CITY_BOMB_SMALL stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x803200B0,OBJECT_RESOURCES,BK_TANK stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x803200AC,OBJECT_RESOURCES,BK_TANK stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80322908,OBJECT_RESOURCES,BK_TANK_COLI stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80322904,OBJECT_RESOURCES,BK_TANK_COLI stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8032C414,OBJECT_RESOURCES,GUN_BUILDING stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8032C410,OBJECT_RESOURCES,GUN_BUILDING stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8032B584,OBJECT_RESOURCES,FALL_HIWAY stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8032B580,OBJECT_RESOURCES,FALL_HIWAY stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8032AD88,OBJECT_RESOURCES,FALL_LARGE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8032AD84,OBJECT_RESOURCES,FALL_LARGE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801F7C20,OBJECT_RESOURCES,ELEC_CIRCUIT stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801F7C1C,OBJECT_RESOURCES,ELEC_CIRCUIT stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801F808C,OBJECT_RESOURCES,ELEC_ENTRANCE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801F8088,OBJECT_RESOURCES,ELEC_ENTRANCE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802C8658,OBJECT_RESOURCES,ELEC_EXIT stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802C8654,OBJECT_RESOURCES,ELEC_EXIT stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801538E0,OBJECT_RESOURCES,ELEC_LIGHT stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801538DC,OBJECT_RESOURCES,ELEC_LIGHT stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80259818,OBJECT_RESOURCES,ELEC_PANEL stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802597D0,OBJECT_RESOURCES,ELEC_PANEL stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80152818,OBJECT_RESOURCES,ELEC_BAR stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80152814,OBJECT_RESOURCES,ELEC_BAR stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80158010,OBJECT_RESOURCES,ELEC_SECURITY stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80157FE8,OBJECT_RESOURCES,ELEC_SECURITY stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80158A68,OBJECT_RESOURCES,ELEC_BIGBLOCK stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80158A64,OBJECT_RESOURCES,ELEC_BIGBLOCK stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801F8FEC,OBJECT_RESOURCES,ELEC_WALL stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801F8FE8,OBJECT_RESOURCES,ELEC_WALL stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801FA304,OBJECT_RESOURCES,ELEC_WALLSWITCH stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801FA300,OBJECT_RESOURCES,ELEC_WALLSWITCH stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80263C18,OBJECT_RESOURCES,ELEC_BARRIER stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80263C14,OBJECT_RESOURCES,ELEC_BARRIER stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801F4800,OBJECT_RESOURCES,ELEC_CORE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801F47FC,OBJECT_RESOURCES,ELEC_CORE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80264300,OBJECT_RESOURCES,ELEC_BOMB stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802642FC,OBJECT_RESOURCES,ELEC_BOMB stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80248D68,OBJECT_RESOURCES,ELEC_ACCESS stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80248D64,OBJECT_RESOURCES,ELEC_ACCESS stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80266AFC,OBJECT_RESOURCES,ELEC_FAN stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80266AF8,OBJECT_RESOURCES,ELEC_FAN stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801593FC,OBJECT_RESOURCES,ELEC_SPRING stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801593F8,OBJECT_RESOURCES,ELEC_SPRING stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801F6944,OBJECT_RESOURCES,ELEC_FIREWALL stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801F6940,OBJECT_RESOURCES,ELEC_FIREWALL stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8021C0CC,OBJECT_RESOURCES,ELEC_CUBE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8021C0C8,OBJECT_RESOURCES,ELEC_CUBE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8021B118,OBJECT_RESOURCES,ELEC_SMALLCUBE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8021B114,OBJECT_RESOURCES,ELEC_SMALLCUBE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8021C988,OBJECT_RESOURCES,ELEC_PILLAR stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8021C984,OBJECT_RESOURCES,ELEC_PILLAR stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80231374,OBJECT_RESOURCES,ELEC_SMALLPILLAR stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80231370,OBJECT_RESOURCES,ELEC_SMALLPILLAR stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8023171C,OBJECT_RESOURCES,ELEC_WAKKA stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80231718,OBJECT_RESOURCES,ELEC_WAKKA stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80230918,OBJECT_RESOURCES,ELEC_KYUU stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80230914,OBJECT_RESOURCES,ELEC_KYUU stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8026752C,OBJECT_RESOURCES,ELEC_ROLLHEXA stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80267528,OBJECT_RESOURCES,ELEC_ROLLHEXA stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802DD7E4,OBJECT_RESOURCES,ELEC_FOOTINGROTATE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802DD7E0,OBJECT_RESOURCES,ELEC_FOOTINGROTATE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8033C8AC,OBJECT_RESOURCES,ELEC_CIRCUITCOLLI stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8033C8A8,OBJECT_RESOURCES,ELEC_CIRCUITCOLLI stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8031653C,OBJECT_RESOURCES,BombingWall stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80316538,OBJECT_RESOURCES,BombingWall stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8031A404,OBJECT_RESOURCES,Researcher stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8031A400,OBJECT_RESOURCES,Researcher stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80316EFC,OBJECT_RESOURCES,BombServer stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80316EF8,OBJECT_RESOURCES,BombServer stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80317708,OBJECT_RESOURCES,GunLift stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80317704,OBJECT_RESOURCES,GunLift stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80224790,OBJECT_RESOURCES,DEFENSE_SYSTEM stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8022478C,OBJECT_RESOURCES,DEFENSE_SYSTEM stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80223384,OBJECT_RESOURCES,DEFENSE_SHIELD stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80223380,OBJECT_RESOURCES,DEFENSE_SHIELD stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8021D6B4,OBJECT_RESOURCES,METEOR_L stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8021D6B0,OBJECT_RESOURCES,METEOR_L stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8021E520,OBJECT_RESOURCES,METEOR_S stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8021E51C,OBJECT_RESOURCES,METEOR_S stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802286CC,OBJECT_RESOURCES,GRINDGADGET stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802286C8,OBJECT_RESOURCES,GRINDGADGET stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8022813C,OBJECT_RESOURCES,ARKCANNON stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80228138,OBJECT_RESOURCES,ARKCANNON stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8026B558,OBJECT_RESOURCES,SPACEGADGET stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8026B554,OBJECT_RESOURCES,SPACEGADGET stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80247178,OBJECT_RESOURCES,GravityChangeSwitch stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80247158,OBJECT_RESOURCES,GravityChangeSwitch stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8024832C,OBJECT_RESOURCES,GravityChangeZone stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8024830C,OBJECT_RESOURCES,GravityChangeZone stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80247C98,OBJECT_RESOURCES,GravityChangeCollision stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80247C78,OBJECT_RESOURCES,GravityChangeCollision stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80259474,OBJECT_RESOURCES,GravitySignBoard stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80259454,OBJECT_RESOURCES,GravitySignBoard stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8026E7F8,OBJECT_RESOURCES,ArkLaser stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8026E7F4,OBJECT_RESOURCES,ArkLaser stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8026B990,OBJECT_RESOURCES,BACKDROP stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8026B98C,OBJECT_RESOURCES,BACKDROP stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802631E4,OBJECT_RESOURCES,FootingBreak stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802631E0,OBJECT_RESOURCES,FootingBreak stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80261A4C,OBJECT_RESOURCES,FootingRoll stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80261A48,OBJECT_RESOURCES,FootingRoll stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8022C81C,OBJECT_RESOURCES,SECURITY LASER stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8022C818,OBJECT_RESOURCES,SECURITY LASER stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8022DD78,OBJECT_RESOURCES,SUPER COMPUTER stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8022DD74,OBJECT_RESOURCES,SUPER COMPUTER stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8022B0FC,OBJECT_RESOURCES,MAGMA GUARD stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8022B0F8,OBJECT_RESOURCES,MAGMA GUARD stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80228DB8,OBJECT_RESOURCES,CLOSE WALL stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80228DB4,OBJECT_RESOURCES,CLOSE WALL stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80229AE8,OBJECT_RESOURCES,DEFENSE WALL stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80229AE4,OBJECT_RESOURCES,DEFENSE WALL stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8022C008,OBJECT_RESOURCES,POP FOOTING stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8022C004,OBJECT_RESOURCES,POP FOOTING stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80257D90,OBJECT_RESOURCES,RAIL SWITCH stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80257D8C,OBJECT_RESOURCES,RAIL SWITCH stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80256A50,OBJECT_RESOURCES,BASE DOOR stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80256A4C,OBJECT_RESOURCES,BASE DOOR stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8025530C,OBJECT_RESOURCES,ESCAPE_PLANE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80255308,OBJECT_RESOURCES,ESCAPE_PLANE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8025EBE4,OBJECT_RESOURCES,E_P_COLI stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8025EBE0,OBJECT_RESOURCES,E_P_COLI stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802ABEFC,OBJECT_RESOURCES,PLANE RAIL stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802ABEF8,OBJECT_RESOURCES,PLANE RAIL stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80268184,OBJECT_RESOURCES,WATCH CAMERA stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80268180,OBJECT_RESOURCES,WATCH CAMERA stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027BD5C,OBJECT_RESOURCES,MAGMA stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027BD58,OBJECT_RESOURCES,MAGMA stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80301A7C,OBJECT_RESOURCES,BA Shield stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80301A78,OBJECT_RESOURCES,BA Shield stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80303D24,OBJECT_RESOURCES,BD Hologram stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80303D20,OBJECT_RESOURCES,BD Hologram stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80302540,OBJECT_RESOURCES,BA Switch stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8030253C,OBJECT_RESOURCES,BA Switch stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x803005B0,OBJECT_RESOURCES,BA Mine stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x803005AC,OBJECT_RESOURCES,BA Mine stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80304698,OBJECT_RESOURCES,SUCTION PILLAR stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80304694,OBJECT_RESOURCES,SUCTION PILLAR stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802FE820,OBJECT_RESOURCES,BA GUNSHIP stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802FE81C,OBJECT_RESOURCES,BA GUNSHIP stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80304248,OBJECT_RESOURCES,BD True stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80304244,OBJECT_RESOURCES,BD True stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8016914C,OBJECT_RESOURCES,GadgetStageDataEnd stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801A238C,OBJECT_RESOURCES,EnemyEntryStart stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801A2364,OBJECT_RESOURCES,EnemyEntryStart stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80196EB8,OBJECT_RESOURCES,GUN_SOLDIER stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80196E90,OBJECT_RESOURCES,GUN_SOLDIER stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80193E54,OBJECT_RESOURCES,GUN_BEETLE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80193E2C,OBJECT_RESOURCES,GUN_BEETLE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802873A8,OBJECT_RESOURCES,GUN_BIGFOOT stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80287380,OBJECT_RESOURCES,GUN_BIGFOOT stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80195378,OBJECT_RESOURCES,GUN_ROBOT stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80195350,OBJECT_RESOURCES,GUN_ROBOT stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802889AC,OBJECT_RESOURCES,BK_GIANT stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80288984,OBJECT_RESOURCES,BK_GIANT stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8018CB50,OBJECT_RESOURCES,BK_SOLDIER stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8018CB28,OBJECT_RESOURCES,BK_SOLDIER stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80190070,OBJECT_RESOURCES,BK_WINGLARGE stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80190048,OBJECT_RESOURCES,BK_WINGLARGE stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801916C0,OBJECT_RESOURCES,BK_WINGSMALL stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80191698,OBJECT_RESOURCES,BK_WINGSMALL stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8019212C,OBJECT_RESOURCES,BK_WORM stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80192104,OBJECT_RESOURCES,BK_WORM stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801898E0,OBJECT_RESOURCES,BK_LARVA stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801898B8,OBJECT_RESOURCES,BK_LARVA stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802AF78C,OBJECT_RESOURCES,BK_CHAOS stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802AF764,OBJECT_RESOURCES,BK_CHAOS stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802AC318,OBJECT_RESOURCES,BK_NINJA stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802AC2F0,OBJECT_RESOURCES,BK_NINJA stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8017BE10,OBJECT_RESOURCES,EGG_PAWN stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8017BDE8,OBJECT_RESOURCES,EGG_PAWN stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80289C0C,OBJECT_RESOURCES,EGG_PIERROT stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80289BDC,OBJECT_RESOURCES,EGG_PIERROT stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8029C680,OBJECT_RESOURCES,EGG_SHADOWANDROID stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8029C658,OBJECT_RESOURCES,EGG_SHADOWANDROID stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80233760,OBJECT_RESOURCES,BLACK_BULL_0210 stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80233730,OBJECT_RESOURCES,BLACK_BULL_0210 stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80243FCC,OBJECT_RESOURCES,BLACK_BULL_0412 stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80243F9C,OBJECT_RESOURCES,BLACK_BULL_0412 stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8024F59C,OBJECT_RESOURCES,HEAVY_DOG_0410 stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8024F56C,OBJECT_RESOURCES,HEAVY_DOG_0410 stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802545CC,OBJECT_RESOURCES,HEAVY_DOG_0510 stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8025459C,OBJECT_RESOURCES,HEAVY_DOG_0510 stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80283CC8,OBJECT_RESOURCES,BLACK_DOOM stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x80283C98,OBJECT_RESOURCES,BLACK_DOOM stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802EB478,OBJECT_RESOURCES,EGG_MECA_0310 stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802EB448,OBJECT_RESOURCES,EGG_MECA_0310 stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802EAE54,OBJECT_RESOURCES,EGG_MECA_0411 stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802EAE24,OBJECT_RESOURCES,EGG_MECA_0411 stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802EA7FC,OBJECT_RESOURCES,EGG_MECA_0511 stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802EA7CC,OBJECT_RESOURCES,EGG_MECA_0511 stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802FE4A8,OBJECT_RESOURCES,EGG_LASTMECH stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x802FE47C,OBJECT_RESOURCES,EGG_LASTMECH stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8030E11C,OBJECT_RESOURCES,DEVIL_DOOM stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8030E0EC,OBJECT_RESOURCES,DEVIL_DOOM stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801A2360,OBJECT_RESOURCES,EnemyEntryEnd stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801A235C,OBJECT_RESOURCES,EnemyEntryEnd stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801C09F8,OBJECT_RESOURCES,VehicleDataStart stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801C09F4,OBJECT_RESOURCES,VehicleDataStart stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801B8E70,OBJECT_RESOURCES,Noraml Car stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801B8C84,OBJECT_RESOURCES,Noraml Car stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801B8E44,OBJECT_RESOURCES,Open Car stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801B8C60,OBJECT_RESOURCES,Open Car stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801B8E18,OBJECT_RESOURCES,Armed Car stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801B8C3C,OBJECT_RESOURCES,Armed Car stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801B8DEC,OBJECT_RESOURCES,Bike stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801B8C18,OBJECT_RESOURCES,Bike stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801C0998,OBJECT_RESOURCES,VehicleDataEnd stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x801C096C,OBJECT_RESOURCES,VehicleDataEnd stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027ACFC,OBJECT_RESOURCES,Sonic stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027AB4C,OBJECT_RESOURCES,Sonic stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027ACD8,OBJECT_RESOURCES,Tails stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027AB28,OBJECT_RESOURCES,Tails stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027ACB4,OBJECT_RESOURCES,Knuckles stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027AB04,OBJECT_RESOURCES,Knuckles stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027AC90,OBJECT_RESOURCES,Amy stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027AAE0,OBJECT_RESOURCES,Amy stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027AC6C,OBJECT_RESOURCES,Rouge stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027AABC,OBJECT_RESOURCES,Rouge stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027AC48,OBJECT_RESOURCES,Omega stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027AA98,OBJECT_RESOURCES,Omega stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027AC24,OBJECT_RESOURCES,Vector stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027AA74,OBJECT_RESOURCES,Vector stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027AC00,OBJECT_RESOURCES,Espio stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027AA50,OBJECT_RESOURCES,Espio stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027ABDC,OBJECT_RESOURCES,Maria stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027AA2C,OBJECT_RESOURCES,Maria stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027ABB8,OBJECT_RESOURCES,Charmy stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027AA08,OBJECT_RESOURCES,Charmy stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027AB94,OBJECT_RESOURCES,Eggman stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027A9E4,OBJECT_RESOURCES,Eggman stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027AB70,OBJECT_RESOURCES,DoomsEye stageLoad (object-type table 0x8052C1A0),,re_C 1 factory table
+0x8027A9C0,OBJECT_RESOURCES,DoomsEye stageRelease (object-type table 0x8052C1A0),,re_C 1 factory table

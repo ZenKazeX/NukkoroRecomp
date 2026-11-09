@@ -73,6 +73,17 @@ bool spans_canvas_width(const HudBounds& bounds, float canvas_width) noexcept {
     return x0 <= kEdgeTolerance && x1 >= canvas_width - kEdgeTolerance;
 }
 
+bool overflows_canvas_width(const HudBounds& bounds, float canvas_width) noexcept {
+    // Past the coverage test's own slack on either side: art authored at the frame (0..640, 0.5..640.5, or a unit or
+    // two outside it) never is. Either, not both: the title's after-images scale about the wordmark's centre
+    // (x 287), not the canvas's, so one reaching both edges is far past the left one but can be only a few units past
+    // the right (frame 2178 of the title entrance: -72.4..646.4).
+    constexpr float kEdgeTolerance = 8.0f;
+    const float x0 = std::min(bounds.x0, bounds.x1);
+    const float x1 = std::max(bounds.x0, bounds.x1);
+    return x0 < -kEdgeTolerance || x1 > canvas_width + kEdgeTolerance;
+}
+
 bool spans_canvas_height(const HudBounds& bounds, float canvas_height) noexcept {
     return std::fabs(bounds.y1 - bounds.y0) >= canvas_height * 0.90f;
 }
@@ -436,6 +447,16 @@ HudLayout::Decision HudLayout::layout_draw(const HudBounds& bounds,
 
     HudAnchor anchor = classify_hud_anchor(bounds, textured, false, canvas_width_, canvas_height_);
     bool covers = spans_canvas_width(bounds, canvas_width_);
+    // A textured sprite across the canvas width and zoomed past a side edge, not as tall as the canvas, is content larger than
+    // the screen, not a band: the title screen's after-images of the SHADOW wordmark (honban.gncp scene "Title",
+    // casts title2..title6, 512 x 128 scaled up about their centre). Filled, it was stretched to the view's width
+    // and left the wordmark it echoes; it is laid out with its widget, as the wordmark is.
+    if (covers && textured && !zoomed_sprites_fill_ && overflows_canvas_width(bounds, canvas_width_) &&
+        !spans_canvas_height(bounds, canvas_height_)) {
+        covers = false;
+        decision.beyond_canvas = true;
+        ++stats_.zoomed_sprites;
+    }
     if (group_kind_ == HudGroupKind::ScreenCover) {
         const bool curtain_column = !textured && spans_canvas_height(bounds, canvas_height_);
         if (curtain_column) {

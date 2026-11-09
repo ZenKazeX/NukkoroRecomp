@@ -62,8 +62,12 @@ struct BusVolume {
     std::uint16_t delta = 0;  // signed per-sample step (two's complement), used when the bus ramps
 };
 
+// A host-side per-voice gain (Options > Audio category volumes, gekko/audio_categories.h): Q15, applied after the
+// voice's envelope and before its bus sends. Unity is skipped entirely, so the DSP's arithmetic is untouched.
+constexpr std::uint32_t kUnityVoiceGain = 0x8000u;
+
 struct VoiceFrame {
-    std::uint32_t slot = 0;                       // stable voice identity 0..63 (native per-voice state)
+    std::uint32_t slot = 0;                     // stable voice identity 0..63 (native per-voice state)
     bool restart = false;                         // the voice (re)started: take start_history
     std::array<std::int16_t, 4> start_history{};  // the 4 samples "before" a (re)start, SDK-primed (oldest first)
     SourceView source;
@@ -74,6 +78,7 @@ struct VoiceFrame {
     std::uint16_t envelope_delta = 0;             // signed per-sample step
     std::uint16_t mixer_control = 0;              // bus enables and ramps (05 section 7.6)
     std::array<BusVolume, kBusCount> volume{};
+    std::uint32_t gain = kUnityVoiceGain;         // host category gain, 0..kUnityVoiceGain (not part of the PB)
 };
 
 // How the frame's buses become the stereo output (the SDK's AXSetMode, as the list builder 0x803850AC expresses it).

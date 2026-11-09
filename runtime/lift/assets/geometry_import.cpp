@@ -400,7 +400,6 @@ bool import_clump(ByteView bytes, const Chunk& clump, Clump* out, std::string* e
 
 // ---- worlds -----------------------------------------------------------------------------------------------------------
 
-namespace {
 
 bool import_sector(ByteView bytes, const Chunk& sector, WorldSector* out, std::string* error) {
     std::vector<Chunk> parts;
@@ -468,7 +467,6 @@ bool import_sector(ByteView bytes, const Chunk& sector, WorldSector* out, std::s
     return import_prepared_mesh(arrays, materials, out, error);
 }
 
-}  // namespace
 
 void append_strip_triangles(const std::uint32_t* strip, std::size_t count, std::vector<std::uint32_t>& out) {
     append_strip(strip, count, out);

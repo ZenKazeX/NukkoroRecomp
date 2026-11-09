@@ -1,5 +1,6 @@
 #include "render/gpu_device.h"
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <utility>
@@ -32,6 +33,51 @@ bool fail(std::string* error, const std::string& what) {
     if (error != nullptr)
         *error = what;
     return false;
+}
+
+// GPU clock boost (NVIDIA only; every other vendor: nothing happens). The driver's power policy keeps this light load
+// at its lowest clocks and changes power state mid-play; measured (docs/PERF_60FPS_2026-11-04.md "Dropped refreshes"):
+// at 2560x1440 the GPU runs ~2.4x slower for ~18 frames around a P5 -> P8 change and misses 5 refreshes, at 5K the
+// stage-start smoke burst overruns 16.7 ms at 885 MHz. NvAPI_D3D_SetSleepMode's bLowLatencyBoost asks the driver to
+// keep maximum clocks for this device ("even in scenarios where it is idle most of the frame"). Only the boost is
+// requested: low latency mode and the frame limit stay off, so pacing is unchanged. It changes when the GPU finishes,
+// never what it computes. The driver's own nvapi64.dll is loaded at run time through nvapi_QueryInterface; the ids
+// and the parameter layout are NVIDIA's (NVAPI SDK, MIT: nvapi_interface.h, nvapi.h NV_SET_SLEEP_MODE_PARAMS_V1).
+// The setting belongs to the device and ends with it; nothing is written to the driver's profiles.
+// SHADOW_R2_GPU_BOOST=0 turns it off.
+void request_gpu_clock_boost(ID3D12Device* device) {
+    if (const char* env = std::getenv("SHADOW_R2_GPU_BOOST"); env != nullptr && env[0] == '0')
+        return;
+    HMODULE nvapi = LoadLibraryExW(L"nvapi64.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (nvapi == nullptr)
+        return;  // not an NVIDIA driver
+    using QueryInterface = void* (*)(unsigned int);
+    const auto query = reinterpret_cast<QueryInterface>(GetProcAddress(nvapi, "nvapi_QueryInterface"));
+    if (query == nullptr)
+        return;
+    using Initialize = int (*)();
+    using SetSleepMode = int (*)(IUnknown*, void*);
+    const auto initialize = reinterpret_cast<Initialize>(query(0x0150E828u));        // NvAPI_Initialize
+    const auto set_sleep_mode = reinterpret_cast<SetSleepMode>(query(0xAC1CA9E0u));  // NvAPI_D3D_SetSleepMode
+    if (initialize == nullptr || set_sleep_mode == nullptr || initialize() != 0) {
+        std::fprintf(stderr, "[gpu] clock boost: unavailable\n");
+        return;
+    }
+    struct SleepModeParamsV1 {  // NV_SET_SLEEP_MODE_PARAMS_V1
+        std::uint32_t version;
+        std::uint8_t low_latency_mode;
+        std::uint8_t low_latency_boost;
+        std::uint32_t minimum_interval_us;
+        std::uint8_t use_markers_to_optimize;
+        std::uint8_t reserved[31];
+    };
+    static_assert(sizeof(SleepModeParamsV1) == 44);
+    SleepModeParamsV1 params{};
+    params.version = static_cast<std::uint32_t>(sizeof(SleepModeParamsV1)) | (1u << 16);  // MAKE_NVAPI_VERSION(.., 1)
+    params.low_latency_boost = 1;
+    const int status = set_sleep_mode(device, &params);
+    std::fprintf(stderr, "[gpu] clock boost: %s (%d)\n", status == 0 ? "on" : "refused", status);
+    // nvapi64.dll stays loaded: the driver holds the setting for the device's lifetime.
 }
 
 D3D_SHADER_MODEL highest_shader_model(ID3D12Device* device) {
@@ -251,6 +297,7 @@ bool Device::create(const DeviceOptions& options, std::string* error) {
                      static_cast<unsigned long>(stable_hr));
     }
 #endif
+    request_gpu_clock_boost(device_.Get());
     if (!direct_.create(device_.Get(), D3D12_COMMAND_LIST_TYPE_DIRECT, L"shadow.direct", error))
         return false;
     if (!copy_.create(device_.Get(), D3D12_COMMAND_LIST_TYPE_COPY, L"shadow.copy", error))

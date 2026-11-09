@@ -2,8 +2,17 @@
 #include "gekko/thread_name.h"  // ES-T1
 
 #include "gekko/camera.h"
+#include "gekko/native_axfx_effects.h"
+#include "gekko/native_guest_scheduler.h"
+#include "gekko/native_os_arena_clock.h"
+#include "gekko/native_os_debug.h"
+#include "gekko/native_trk.h"
+#include "gekko/native_gx_display.h"
+#include "gekko/native_gx_texobj.h"
+#include "gekko/menu_backgrounds.h"
 #include "gekko/world_anchor.h"
 #include "gekko/audio_audit.h"
+#include "gekko/audio_categories.h"
 #include "gekko/ax_adpcm_decode.h"
 #include "gekko/ax_voice_select.h"
 #include "gekko/cpu_diag.h"
@@ -14,12 +23,19 @@
 #endif
 
 #include "gekko/display.h"
+#include "gekko/native_hungarian_text.h"
 #include "gekko/native_save_text.h"
+#include "gekko/display_settings.h"
+#include "gekko/pc_settings.h"
+#include "gekko/settings_game.h"
+#include "gekko/voice_language.h"
 #include "gekko/profiling.h"
 #include "gekko/process_profile.h"
 #include "render/view.h"
 
 #include <algorithm>
+#include <atomic>
+#include <iterator>
 #include <cmath>
 #include <cstring>
 #include <chrono>
@@ -27,9 +43,13 @@
 #include <cstdio>
 #include <functional>
 #include <fstream>
+#include <iostream>
 #include <limits>
 #include <memory>
 #include <sstream>
+#include <string>
+#include <unordered_map>
+#include <vector>
 #include <utility>
 
 #if defined(SHADOW_TRACY)
@@ -47,6 +67,29 @@ namespace gekko {
 namespace {
 
 constexpr u32 kBi2GuestAddress = 0x817fe000u;
+
+// A NUL-terminated guest string (at most 64 bytes) for the voice-routing report.
+std::string guest_cstring(Cpu& cpu, u32 address) {
+    std::string out;
+    if (address < 0x80000000u || address >= 0x81800000u) return out;
+    for (u32 i = 0; i < 64u; ++i) {
+        const char c = static_cast<char>(cpu.mem_read8(address + i));
+        if (c == 0) break;
+        out.push_back(c);
+    }
+    return out;
+}
+
+// One voice-routing decision: kind, voice language G+0x5C at the time, the name the game asked for and the one it
+// gets. The first 96 are printed ("[voice] ..."), all are counted (n=).
+void voice_report(Cpu& cpu, const char* kind, const char* requested, const char* resolved, u32 language) {
+    static std::atomic<unsigned> count{0};
+    const unsigned n = ++count;
+    if (n > 96u) return;
+    std::printf("[voice] n=%u %s G+0x5C=%u lr=0x%08X requested=\"%s\" resolved=\"%s\"\n", n, kind, language, cpu.lr,
+                requested, resolved);
+    std::fflush(stdout);
+}
 
 // A pointer a hook may follow: `bytes` of the game's mapped memory.
 bool guest_pointer(Cpu& cpu, u32 pointer, u32 bytes = 4u) {
@@ -583,7 +626,14 @@ System::System() : cpu_(memory_) {
     // The lifted subsystems the lowered call sites reach (docs/lift-20261006).
     cpu_.set_lifted(&lifted_);
     audio_ = std::make_unique<NativeAudio>(cpu_, memory_, *interrupts_);
-    audio_->set_mixer([this](u32 command_list) { run_ax_mix(command_list); });
+    audio_->set_ax_frame(ax_frame::kAiCallback, [this](Cpu& c, u32 scratch, u32 step, u32& target, u32& r3, u32& r4) {
+        ax_frame::Call call;
+        if (!ax_frame::frame_advance(c, ax_engine_, scratch, step, call)) return false;
+        target = call.target;
+        r3 = call.r3;
+        r4 = call.r4;
+        return true;
+    });
     frame_limiter_ = std::make_unique<NativeFrameLimiter>(
         cpu_, [this](u64 target) { return advance_game_time(target); },
         [this] { return advance_to_next_event(); });
@@ -591,7 +641,7 @@ System::System() : cpu_(memory_) {
     object_range_ = std::make_unique<NativeObjectRange>(cpu_);
     motion_store_ = std::make_unique<NativeMotionStore>(cpu_, memory_);
     sound_banks_ = std::make_unique<NativeSoundBanks>(cpu_, memory_);
-    stream_ring_ = std::make_unique<NativeStreamRing>(cpu_, memory_, *audio_);
+    stream_ring_ = std::make_unique<NativeStreamRing>(cpu_, memory_);
     // Attached effects follow their object as it is this frame (docs/RENDER_FLICKER.md "Fourth bug").
     attached_effects_ = std::make_unique<NativeAttachedEffects>(cpu_);
     // The GX library's draw sync, breakpoint and FIFO API, and the immediate
@@ -603,13 +653,18 @@ System::System() : cpu_(memory_) {
     // The memory card (the PC's save storage under the game's CARD file
     // system) and the OS's other external-interface clients.
     card_ = std::make_unique<NativeCard>(cpu_, memory_, *interrupts_);
+    save_store_ = std::make_unique<SaveStore>(cpu_, memory_);
     ipl_ = std::make_unique<NativeIpl>(cpu_, *interrupts_);
     // The console's reset and boot controls (OSResetSystem ends the program).
     reset_controls_ = std::make_unique<NativeReset>(cpu_);
+    boot_ = std::make_unique<NativeBoot>(cpu_);
+    boot_->bind_interrupts(*interrupts_);
     // The game's disc-error screen module, with no drive (DISC_SYSTEM_MAP.md cut 1).
     disc_error_ = std::make_unique<NativeDiscError>(cpu_);
     // The layout manager's link-group lists in one pass (GPU_FILL.md "stage start").
     link_groups_ = std::make_unique<NativeLinkGroups>(cpu_);
+    world_line_ = std::make_unique<NativeWorldLine>(cpu_);
+    world_collision_ = std::make_unique<NativeWorldCollision>(cpu_, world_line_.get());
     // The game's directory scan, over the asset namespace (DISC_SYSTEM_MAP.md cut 2).
     directory_scan_ = std::make_unique<NativeDirectoryScan>(cpu_, assets_);
     game_memory_ = std::make_unique<GameMemory>(cpu_);
@@ -1124,8 +1179,13 @@ bool System::native_frustum_test(Cpu& cpu) {
     //
     // It now takes the same exact camera as everything else, so world culling
     // and world-anchored UI cannot disagree about where the screen ends.
+    // ElecCoreWall (0x80264C64, the call returning to 0x80264CF8) is the one caller whose verdict changes object state
+    // (its animation 1 -> 3, docs/ASPECT_INVENTORY.md G2): it tests against the logic aspect, so a replay at another
+    // picture shape starts the wall when the recording did. Every other caller only decides what is drawn.
+    constexpr u32 kElecCoreWallVisibleReturn = 0x80264CF8u;
+    const float aspect = cpu.lr == kElecCoreWallVisibleReturn ? logic_aspect_ : 0.0f;
     camera::Camera cam;
-    if (!canonical_camera(cpu, camera, cam)) {
+    if (!canonical_camera(cpu, camera, cam, aspect)) {
         ++native_visibility_stats_.deferred_layout;
         return false;
     }
@@ -1329,7 +1389,7 @@ bool System::canonical_camera(Cpu& cpu, camera::Camera& out) {
     return canonical_camera(cpu, cpu.mem_read32(0x8056FF1Cu), out);
 }
 
-bool System::canonical_camera(Cpu& cpu, u32 camera_ptr, camera::Camera& out) {
+bool System::canonical_camera(Cpu& cpu, u32 camera_ptr, camera::Camera& out, float aspect) {
     const auto sane = [&cpu](u32 p) { return guest_pointer(cpu, p); };
     if (!sane(camera_ptr)) return false;
     const u32 frame_ptr = cpu.mem_read32(camera_ptr + 0x04u);
@@ -1360,7 +1420,8 @@ bool System::canonical_camera(Cpu& cpu, u32 camera_ptr, camera::Camera& out) {
             top_w = static_cast<float>(cpu.mem_read32(top + 0x0Cu));
             top_h = static_cast<float>(cpu.mem_read32(top + 0x10u));
         }
-        const shadow::render::RasterView view = shadow::render::raster_view(w, h, top_w, top_h, display_.aspect());
+        const shadow::render::RasterView view =
+            shadow::render::raster_view(w, h, top_w, top_h, aspect > 0.0f ? aspect : display_.aspect());
         view_aspect = view.view_aspect;
         canvas_aspect = view.canvas_aspect;
         if (!(view_aspect > 0.0f) || !std::isfinite(view_aspect)) return false;
@@ -1569,6 +1630,12 @@ void System::set_memory_card_path(std::filesystem::path path,
     if (card_->present()) ipl_->bind_card(card_->source_path(), card_->backing_path(), card_->image());
 }
 
+void System::set_save_file(std::filesystem::path save) {
+    ipl_->bind_save_folder(save.parent_path());
+    save_store_->set_path(std::move(save));
+    save_store_active_ = true;
+}
+
 bool System::memory_card_present() const noexcept {
     return card_->present();
 }
@@ -1599,20 +1666,140 @@ void System::play_menu_sound(void* system, Cpu& cpu, u32 id) {
     cpu.gpr[6] = saved[3];
 }
 
-bool System::mount_assets(const std::filesystem::path& files_root, std::vector<u8> identity,
+bool System::mount_assets(std::unique_ptr<shadow::runtime::v1::Storage> storage, std::vector<u8> identity,
                           std::string& error) {
-    if (pc_save_text_) {
-        assets_.replace(std::string(save_text::kEnglishTable),
-                        [](const assets::AssetSystem::TreeReader& read, std::vector<u8>& bytes,
-                           std::string& build_error) {
-                            std::vector<u8> table;
-                            std::vector<u8> glyphs;
-                            if (!read(save_text::kEnglishTable, table) || !read(save_text::kEnglishGlyphs, glyphs)) {
-                                build_error = "the English save-message table or its glyph list is missing";
+    // The PC Options menu's own settings (gekko/pc_settings.h): options.cfg beside display.cfg, read once and applied
+    // (master volume, rumble strength, camera inversion; the defaults are the original behaviour).
+    // The settings registry's six categories (gekko/settings_game.h; the launcher may have added its own first).
+    {
+        char build[64];
+        std::snprintf(build, sizeof(build), "%s %s x64", __DATE__, __TIME__);
+        settings::add_default_providers(build);
+    }
+    if (!pc_settings().loaded()) {
+        const std::filesystem::path display_cfg = display_settings().cfg_path();
+        const std::filesystem::path path =
+            display_cfg.empty() ? std::filesystem::path("options.cfg") : display_cfg.parent_path() / "options.cfg";
+        std::vector<std::string> warnings;
+        pc_settings().load(path, &warnings);
+        for (const std::string& w : warnings) std::cerr << "[options] " << w << '\n';
+        // A saved Hungarian reads as English while the option is withdrawn; options.cfg changes only if the player saves.
+        if (!hungarian::kOffered && pc_settings().current().language == hungarian::kLanguage) {
+            auto english = pc_settings().current();
+            english.language = 1;
+            pc_settings().apply(english);
+            std::cerr << "[options] Hungarian is not offered in this build: English text\n";
+        }
+    }
+    // Hungarian (gekko/native_hungarian_text.h): PC settings language 6 keeps the game on its English text language and
+    // serves the Hungarian font files under the English names. Every such file has two contents, English and
+    // Hungarian, both built at this mount; which one a read gets follows the setting at that read (hungarian::selected()),
+    // so switching needs no restart: the game re-reads the files when it reloads its language assets (a stage load, the
+    // Options language apply) and gets the content of the moment. The Front End's table is built by the Options loop below,
+    // which adds its own messages to it.
+    const auto hungarian_selector = []() -> std::size_t { return hungarian::selected() ? 1u : 0u; };
+    // The Options menu: "Magyar" is offered and served live (the menu's own texts take the Hungarian column of
+    // options_menu_texts.inc while it is selected).
+    settings::set_hungarian_state(hungarian::kOffered, hungarian::kOffered);
+    for (const std::string& family : hungarian::families()) {
+        for (const char* extension : {"fnt", "txd", "met"}) {
+            if (family == "Advertise" && std::string_view(extension) == "fnt") continue;
+            const std::string path = hungarian::font_path(family, extension);
+            const std::string kind(extension);
+            const bool pc_save_table = pc_save_text_ && path == save_text::kEnglishTable;
+            assets::AssetSystem::Replacement english = [path, pc_save_table](const assets::AssetSystem::TreeReader& read,
+                                                                           std::vector<u8>& bytes,
+                                                                           std::string& build_error) {
+                if (!pc_save_table) {
+                    if (read(path, bytes)) return true;
+                    build_error = path + " is missing";
+                    return false;
+                }
+                std::vector<u8> table;
+                std::vector<u8> glyphs;
+                if (!read(save_text::kEnglishTable, table) || !read(save_text::kEnglishGlyphs, glyphs)) {
+                    build_error = "the English save-message table or its glyph list is missing";
+                    return false;
+                }
+                return save_text::rewrite_table(table, glyphs, save_text::pc_english_messages(), bytes, build_error);
+            };
+            assets::AssetSystem::Replacement hungarian_variant =
+                [family, kind](const assets::AssetSystem::TreeReader& read, std::vector<u8>& bytes,
+                               std::string& build_error) {
+                    hungarian::Font font;
+                    if (!hungarian::build_font(family, read, font, build_error)) return false;
+                    bytes = kind == "fnt" ? std::move(font.fnt) : kind == "txd" ? std::move(font.txd) : std::move(font.met);
+                    return true;
+                };
+            std::vector<assets::AssetSystem::Replacement> variants;
+            variants.push_back(std::move(english));
+            variants.push_back(std::move(hungarian_variant));
+            assets_.replace_switchable(path, std::move(variants), hungarian_selector);
+        }
+    }
+    {
+        // The PAL 50/60 Hz screen is a picture with its words baked in (palSel/PalSelEn.txd).
+        std::vector<assets::AssetSystem::Replacement> variants;
+        variants.push_back([](const assets::AssetSystem::TreeReader& read, std::vector<u8>& bytes, std::string& build_error) {
+            if (read(hungarian::kPalSelPath, bytes)) return true;
+            build_error = "palSel/PalSelEn.txd is missing";
+            return false;
+        });
+        variants.push_back([](const assets::AssetSystem::TreeReader& read, std::vector<u8>& bytes, std::string& build_error) {
+            std::vector<u8> original;
+            if (!read(hungarian::kPalSelPath, original)) {
+                build_error = "palSel/PalSelEn.txd is missing";
+                return false;
+            }
+            return hungarian::palsel_file(original, bytes, build_error);
+        });
+        assets_.replace_switchable(std::string(hungarian::kPalSelPath), std::move(variants), hungarian_selector);
+    }
+    // The Japanese character voice banks (gekko/voice_language.h): the PAL disc's sound/B3/B4/B5_*_J.mlt are an
+    // English-layout older set (identical to the Japanese disc's *_E.mlt); the Japanese disc's *_J.mlt have the PAL
+    // *_E.mlt program layout and are the Japanese voices. They are served under the PAL names when all three are
+    // present and layout-compatible; otherwise the PAL files stay.
+    //
+    // The dialogue-voice archive (gekko/voice_language.h VoiceArchive, the user's request of 2026-11-05: a voice change
+    // as seamless as the text change): one composed archive under PRS_VOICE_E.afs whose clips come from the English or
+    // the Japanese disc file at every read, by options.cfg's voice (0 Japanese). The game opens it once (the open hook
+    // below always asks for the English name) and never has to reload it or stop its sounds on a voice change.
+    voice_archive_ready_ = false;
+    if (japanese_voices_available()) {
+        auto archive = std::make_shared<VoiceArchive>();
+        std::string why;
+        if (archive->open(voice_archive_paths(), &why)) {
+            assets_.replace_virtual("PRS_VOICE_E.afs", archive->size(),
+                                    [archive](u64 offset, u64 length, u8* dest, u64& got) {
+                                        return archive->read(offset, length, dest, got, pc_settings().current().voice == 0);
+                                    });
+            voice_archive_ready_ = true;
+            options_display_.set_seamless_voice(true);
+            std::cerr << "[voice] switchable dialogue archive: " << archive->size() << " bytes, both languages\n";
+        } else {
+            std::cerr << "[voice] the switchable dialogue archive is not served (" << why
+                      << "); a voice change reloads the archive as the game does\n";
+        }
+    }
+    for (const JapaneseBank& bank : japanese_banks()) {
+        const std::string english = bank.game_path.substr(0, bank.game_path.size() - 5) + "E.mlt";  // ..._J.mlt -> _E.mlt
+        assets_.replace(bank.game_path,
+                        [bank, english](const assets::AssetSystem::TreeReader& read, std::vector<u8>& bytes,
+                                        std::string& build_error) {
+                            std::ifstream in(bank.host_file, std::ios::binary);
+                            std::vector<u8> japanese((std::istreambuf_iterator<char>(in)),
+                                                     std::istreambuf_iterator<char>());
+                            std::vector<u8> pal_english;
+                            if (japanese.empty() || !read(english, pal_english)) {
+                                build_error = bank.game_path + ": the Japanese bank or the PAL English bank is missing";
                                 return false;
                             }
-                            return save_text::rewrite_table(table, glyphs, save_text::pc_english_messages(), bytes,
-                                                            build_error);
+                            if (!japanese_bank_compatible(japanese, pal_english)) {
+                                build_error = bank.game_path + ": the Japanese disc's bank has another program layout";
+                                return false;
+                            }
+                            bytes = std::move(japanese);
+                            return true;
                         });
     }
     // The Options menu's Display tile (gekko/native_options_display.h), per language: the tile's art in Options2,
@@ -1633,22 +1820,31 @@ bool System::mount_assets(const std::filesystem::path& files_root, std::vector<u
                             return options_display::place_tile_art(txd, bytes, build_error);
                         });
         const std::string base = "FONTS/ADVERTISE/Advertise_" + suffix;
-        const bool english_save_words = pc_save_text_ && language == options_display::Language::EN;
-        assets_.replace(base + ".fnt", [this, base, language, english_save_words](
+        const auto make_front_end = [this, base, language](bool hungarian_here, bool english_save_words) {
+            return assets::AssetSystem::Replacement([this, base, language, english_save_words, hungarian_here](
                                            const assets::AssetSystem::TreeReader& read, std::vector<u8>& bytes,
                                            std::string& build_error) {
             std::vector<u8> table, sheets;
-            if (!read(base + ".fnt", table) || !read(base + ".txd", sheets)) {
-                build_error = base + ".fnt or its glyph sheets are missing";
-                return false;
-            }
             std::vector<std::vector<u8>> glyph_lists;
-            for (u32 n = 0; n < 100u; ++n) {
-                char name[16];
-                std::snprintf(name, sizeof(name), "%02u.met", n);
-                std::vector<u8> met;
-                if (!read(base + name, met)) break;
-                glyph_lists.push_back(std::move(met));
+            if (hungarian_here) {
+                // The Hungarian front end under the English names (gekko/native_hungarian_text.h).
+                hungarian::Font font;
+                if (!hungarian::build_font("Advertise", read, font, build_error)) return false;
+                table = std::move(font.fnt);
+                sheets = std::move(font.txd);
+                glyph_lists.push_back(std::move(font.met));
+            } else {
+                if (!read(base + ".fnt", table) || !read(base + ".txd", sheets)) {
+                    build_error = base + ".fnt or its glyph sheets are missing";
+                    return false;
+                }
+                for (u32 n = 0; n < 100u; ++n) {
+                    char name[16];
+                    std::snprintf(name, sizeof(name), "%02u.met", n);
+                    std::vector<u8> met;
+                    if (!read(base + name, met)) break;
+                    glyph_lists.push_back(std::move(met));
+                }
             }
             if (glyph_lists.empty()) {
                 build_error = base + " has no glyph list";
@@ -1657,24 +1853,115 @@ bool System::mount_assets(const std::filesystem::path& files_root, std::vector<u
             std::u16string on, off;
             save_text::message_text(table, 346u, on);  // the game's own ON / OFF
             save_text::message_text(table, 347u, off);
-            options_display_.set_font_files(language, std::move(sheets), glyph_lists, on, off);
+            // The Hungarian variant (served in place of the English one while Magyar is selected) does not touch the
+            // overlay's per-language state: it belongs to the language the game reports (EN).
+            if (!hungarian_here) options_display_.set_font_files(language, std::move(sheets), glyph_lists, on, off);
             if (english_save_words) {
+                // The save messages' copies in this front-end table, in PC words (every language since 2026-11-05:
+                // save_text::pc_messages). English must succeed; another language whose front-end atlas lacks a glyph
+                // keeps its original copies (logged) rather than losing the whole table.
+                const std::string suffix = base.substr(base.rfind('_') + 1);
+                const bool english = suffix == "EN";
                 std::vector<u8> save_table, reworded;
                 std::vector<save_text::Rewording> rewordings;
                 u32 count = 0;
-                if (!read(save_text::kEnglishTable, save_table) ||
-                    !save_text::rewordings_of(save_table, save_text::pc_english_messages(), rewordings,
-                                              build_error) ||
-                    !save_text::reword_table(table, glyph_lists[0], rewordings, reworded, count, build_error)) {
-                    if (build_error.empty()) build_error = "the English save-message table is missing";
-                    return false;
+                std::string reword_error;
+                if (!read("FONTS/SAVE/Save_" + suffix + ".fnt", save_table) ||
+                    !save_text::rewordings_of(save_table, save_text::pc_messages(suffix), rewordings, reword_error) ||
+                    !save_text::reword_table(table, glyph_lists, rewordings, reworded, count, reword_error)) {
+                    if (reword_error.empty()) reword_error = "Save_" + suffix + ".fnt is missing";
+                    if (english) {
+                        build_error = reword_error;
+                        return false;
+                    }
+                    std::cerr << "[save-text] " << base << ".fnt: save-message copies kept as they are: " << reword_error
+                              << '\n';
+                } else {
+                    table = std::move(reworded);
                 }
-                table = std::move(reworded);
             }
-            return options_display::reword_help(table, glyph_lists, language, bytes, build_error);
+            // The PC Options menu's descriptions (gekko/native_options_menu.h): new messages the help line shows,
+            // inserted in id order with the help line's entry words (message 5001's).
+            u32 missing = 0;
+            std::vector<u8> inserted;
+            if (!options_display::insert_messages(table, glyph_lists,
+                                                  options_menu::help_messages(language, hungarian_here), 5001u,
+                                                  inserted, missing, build_error))
+                return false;
+            if (missing != 0u)
+                std::cerr << "[options] " << base << ": " << missing
+                          << " description glyphs the sheets lack were left out\n";
+            // The sound test's track names (messages 6100 + track) and the table the menu reads value texts from.
+            std::vector<std::u16string> tracks;
+            for (u32 track = 0; track < 64u; ++track) {
+                std::u16string name;
+                if (!options_display::message_by_id(table, 6100u + track, name)) break;
+                tracks.push_back(std::move(name));
+            }
+            if (!hungarian_here) {
+                options_display_.set_track_names(language, std::move(tracks));
+                options_menu::set_front_end_table(language, inserted);
+            } else {
+                // The PC Options rows while Magyar is selected (live switch): the Hungarian sheets, ON / OFF, track
+                // names and table, kept apart from the English slot's.
+                options_display_.set_hungarian_font_files(std::move(sheets), glyph_lists, on, off, std::move(tracks));
+                options_menu::set_hungarian_front_end_table(inserted);
+            }
+            options_display_.set_messages_ready(true);
+            std::cerr << "[options] " << base << ".fnt built" << (hungarian_here ? " (Hungarian)" : "") << ": "
+                      << inserted.size() << " bytes from " << table.size() << '\n';
+            bytes = std::move(inserted);
+            return true;
+        });
+        };
+        if (language == options_display::Language::EN) {
+            std::vector<assets::AssetSystem::Replacement> variants;
+            variants.push_back(make_front_end(false, pc_save_text_));
+            variants.push_back(make_front_end(true, false));
+            assets_.replace_switchable(base + ".fnt", std::move(variants), hungarian_selector);
+        } else {
+            assets_.replace(base + ".fnt", make_front_end(false, pc_save_text_));
+            // The save screen's own table in PC words (English: the Hungarian loop's switchable Save_EN.fnt above).
+            if (pc_save_text_ && !save_text::pc_messages(suffix).empty()) {
+                const std::string save_path = "FONTS/SAVE/Save_" + suffix + ".fnt";
+                assets_.replace(save_path, [save_path, suffix](const assets::AssetSystem::TreeReader& read,
+                                                                std::vector<u8>& bytes, std::string& build_error) {
+                    std::vector<u8> table;
+                    if (!read(save_path, table)) {
+                        build_error = save_path + " is missing";
+                        return false;
+                    }
+                    std::vector<std::vector<u8>> glyph_lists;
+                    for (u32 n = 0; n < 10u; ++n) {
+                        char name[16];
+                        std::snprintf(name, sizeof(name), "%02u.met", n);
+                        std::vector<u8> met;
+                        if (!read("FONTS/SAVE/Save_" + suffix + name, met)) break;
+                        glyph_lists.push_back(std::move(met));
+                    }
+                    return save_text::rewrite_table(table, glyph_lists, save_text::pc_messages(suffix), bytes,
+                                                    build_error);
+                });
+            }
+        }
+    }
+    // Five menu backgrounds at full height (gekko/menu_backgrounds.h): the retail layouts leave a band at the bottom.
+    for (const menu_backgrounds::Screen& screen : menu_backgrounds::kScreens) {
+        const std::string path(screen.path);
+        const std::string scene(screen.scene);
+        assets_.replace(path, [path, scene](const assets::AssetSystem::TreeReader& read, std::vector<u8>& bytes,
+                                            std::string& build_error) {
+            std::vector<u8> gncp;
+            if (!read(path, gncp)) {
+                build_error = path + " is missing";
+                return false;
+            }
+            if (menu_backgrounds::fill(gncp, scene, bytes, build_error)) return true;
+            build_error = path + ": " + build_error;
+            return false;
         });
     }
-    if (!assets_.mount(files_root, std::move(identity), error)) return false;
+    if (!assets_.mount(std::move(storage), std::move(identity), error)) return false;
     // The prompts' controller buttons: patched into the button sheets as the game reads them.
     button_glyphs_.attach(assets_);
     return true;
@@ -1704,11 +1991,62 @@ void System::enable_file_api() {
             [decoder](const u8* first, const std::function<bool(const PrsDecoded&)>& accept) {
                 return decoder->take(PrsAhead::key_of(first), accept);
             });
+        game_memory_->set_prs_ahead_ready(
+            [decoder](const u8* first, const std::function<bool(const PrsDecoded&)>& check) {
+                return decoder->ready(PrsAhead::key_of(first), check);
+            });
     }
     cri_file_device_ = std::make_unique<NativeCriFileDevice>(cpu_, assets_, *file_api_);
     cri_file_device_->install();
     rtgcnfs_ = std::make_unique<NativeRtGcnFs>(cpu_, assets_, *file_api_);
     rtgcnfs_->install();
+    native_jobs_ = std::make_unique<NativeJobs>(cpu_);
+    native_jobs_->install();
+    native_expand_jobs_ = std::make_unique<NativeExpandJobs>(cpu_);
+    native_expand_jobs_->set_game_memory(game_memory_.get());
+    if (rtgcnfs_->chunked_read_installed()) {
+        native_expand_jobs_->set_chunked_read([rtgcnfs = rtgcnfs_.get()](Cpu& c, u32 file, u32 destination, u32 chunk) {
+            return rtgcnfs->chunked_read(c, file, destination, chunk);
+        });
+    }
+#if defined(SHADOW_RENDER_LIFTED)
+    // The lifted build has no guest loader threads (their code is pruned behind the owners of fn_8004C770 and TBGReadManager::update):
+    // the native loaders must be installed in their default mode. Anything else needs the reference build.
+    if (!native_expand_jobs_->install()) {
+        std::fprintf(stderr,
+                     "native expand jobs: the lifted build runs the native loaders in their default mode only "
+                     "(GEKKO_NATIVE_EXPAND_JOBS unset or 5 with GEKKO_NATIVE_BG_READ on, no SHADOW_NATIVE_JOBS); that mode needs the reference build.\n");
+        std::exit(2);
+    }
+#else
+    native_expand_jobs_->install();
+#endif
+    native_one_ = std::make_unique<NativeOne>(cpu_);
+    native_one_->set_sync_read([rtgcnfs = rtgcnfs_.get()](Cpu& c, u32 file, u32 destination, u32 count) {
+        return rtgcnfs->read_sync(c, file, destination, count);
+    });
+    native_one_->install();
+    native_cri_ = std::make_unique<NativeCri>(cpu_, *interrupts_);
+    native_cri_->install();
+    native_svm_ = std::make_unique<NativeSvm>(cpu_);
+    native_svm_->install();
+    native_sj_ = std::make_unique<NativeSj>(cpu_, *native_svm_);
+    native_sj_->install();
+    native_adx_output_ = std::make_unique<NativeAdxOutput>(
+        cpu_, *native_sj_, [ring = stream_ring_.get()](Cpu&, u32 source, u32 destination, u32 bytes, std::string& why) {
+            return ring->copy(source, destination, bytes, why);
+        });
+    native_adx_output_->install();
+    native_jobs_->set_cri(native_cri_.get());
+    {
+        NativeCri* const cri = native_cri_.get();
+        video_->set_retrace_tick([cri](Cpu& c, u32& frame) { return cri->retrace_tick(c, frame); });
+        cpu_.set_idle_work_hook([cri](Cpu& c) { return cri->idle_point(c); });
+#if !defined(SHADOW_RENDER_LIFTED)
+        guest_scheduler::install_cri(*cri);
+#endif
+    }
+    errata_installed_ = errata::install(cpu_, errata_stats_);
 }
 
 void System::enable_gameplay_scheduler() {
@@ -1815,6 +2153,170 @@ void System::start() {
     GEKKO_PROFILE_ZONE("cpu/start");
     cpu_.clear_stop();
 
+    // Diagnostics (non-shipping): GEKKO_CALL_CENSUS=<file>, GEKKO_CALL_CENSUS_ADDRS=<hex>[,<hex>...]. Every call of a
+    // listed guest function appends "address,game_ticks,r3,r4,lr,f1 bits" and is then DECLINED, so the guest body runs exactly
+    // as without the census (an observation, docs/CPU_FINAL_HAUNT.md "Motion player"). Frames: the GEKKO_FRAME_WORK
+    // log's game ticks.
+#if !defined(GEKKO_SHIPPING)
+    if (const char* path = std::getenv("GEKKO_CALL_CENSUS"); path != nullptr && path[0] != '\0') {
+        static std::FILE* census = std::fopen(path, "w");
+        if (census != nullptr) {
+            std::fputs("address,game_ticks,r3,r4,lr,f1,r3_word\n", census);
+            // GEKKO_CALL_CENSUS_R3_WORD=<hex offset>: also the word at r3 + offset (0 when unmapped).
+            static const char* word_env = std::getenv("GEKKO_CALL_CENSUS_R3_WORD");
+            static const long word_offset = word_env != nullptr ? std::strtol(word_env, nullptr, 16) : -1;
+            const char* list = std::getenv("GEKKO_CALL_CENSUS_ADDRS");
+            for (const char* at = list != nullptr ? list : ""; *at != '\0';) {
+                char* end = nullptr;
+                const u32 address = static_cast<u32>(std::strtoul(at, &end, 16));
+                if (end == at) break;
+                install_chained_hle(
+                    address,
+                    [address](Cpu& cpu) {
+                        u32 word = 0u;
+                        if (word_offset >= 0) {
+                            const u32 at_word = cpu.gpr[3] + static_cast<u32>(word_offset);
+                            if ((at_word & 3u) == 0u && cpu.guest_memory().mapped(GcAddr(at_word), 4u))
+                                word = cpu.mem_read32(at_word);
+                        }
+                        std::fprintf(census, "%08X,%llu,%08X,%08X,%08X,%016llX,%08X\n", address,
+                                     static_cast<unsigned long long>(cpu.game_clock().now()), cpu.gpr[3], cpu.gpr[4],
+                                     cpu.lr, static_cast<unsigned long long>(cpu.fpr[1].bits[0]), word);
+                        return false;
+                    },
+                    "call census (declines)");
+                at = *end == ',' ? end + 1 : end;
+            }
+        }
+    }
+    // Diagnostics (non-shipping): GEKKO_CALL_COUNT=<out file>, GEKKO_CALL_COUNT_LIST=<file, one hex entry per line>.
+    // Every listed guest function counts its calls (the hook declines, so the guest body runs as without it); the
+    // totals "address,calls" are written when the process exits. Ranks guest code by calls without a line per call.
+    if (const char* out = std::getenv("GEKKO_CALL_COUNT"); out != nullptr && out[0] != '\0') {
+        if (const char* list = std::getenv("GEKKO_CALL_COUNT_LIST"); list != nullptr && list[0] != '\0') {
+            struct Totals {
+                std::string path;
+                std::vector<std::pair<u32, unsigned long long>> rows;
+                ~Totals() {
+                    if (std::FILE* file = std::fopen(path.c_str(), "w")) {
+                        std::fputs("address,calls\n", file);
+                        for (const auto& row : rows) std::fprintf(file, "%08X,%llu\n", row.first, row.second);
+                        std::fclose(file);
+                    }
+                }
+            };
+            static Totals totals;
+            totals.path = out;
+            std::ifstream entries(list);
+            std::string line;
+            while (std::getline(entries, line)) {
+                if (line.empty()) continue;
+                totals.rows.emplace_back(static_cast<u32>(std::strtoul(line.c_str(), nullptr, 16)), 0ull);
+            }
+            for (std::size_t i = 0; i < totals.rows.size(); ++i)
+                install_chained_hle(
+                    totals.rows[i].first, [i](Cpu&) { ++totals.rows[i].second; return false; }, "call count (declines)");
+        }
+    }
+    // GEKKO_POISON_WORKERS=<hex byte> (docs/NATIVE_WORKERS.md W0 item 2): does any game code depend on the dead bytes of
+    // the background loader threads? Declining hooks fill a SonicteamUSA::System::Thread's 0x1000-byte stack (object
+    // +0xC) with the byte when its dtor 0x8035A0C8 is entered (the thread has exited; the dtor frees the stack), and
+    // its OSThread (object +0x10, 0x318 bytes) when operator delete 0x803A1334 frees the object. A replay with and
+    // without it that stays identical in gameplay shows no reader of those stale bytes.
+    // GEKKO_POISON_WORKERS_PARTS=stack or thread poisons only that part (default both).
+    if (const char* poison = std::getenv("GEKKO_POISON_WORKERS"); poison != nullptr && poison[0] != '\0') {
+        const u8 byte = static_cast<u8>(std::strtoul(poison, nullptr, 16));
+        const char* parts_env = std::getenv("GEKKO_POISON_WORKERS_PARTS");
+        const std::string parts = parts_env != nullptr ? parts_env : "stack,thread";
+        const bool stacks = parts.find("stack") != std::string::npos;
+        const bool threads = parts.find("thread") != std::string::npos;
+        auto pending = std::make_shared<std::unordered_set<u32>>();
+        install_chained_hle(
+            0x8035A0C8u,
+            [byte, pending, stacks, threads](Cpu& cpu) {
+                const u32 object = cpu.gpr[3];
+                const u32 stack = cpu.mem_read32(object + 0xCu);
+                if (threads) pending->insert(object);
+                if (stacks && stack >= 0x80000000u && cpu.guest_memory().mapped(GcAddr(stack), 0x1000u)) {
+                    for (u32 i = 0; i < 0x1000u; i += 4u) cpu.mem_write32(stack + i, byte * 0x01010101u);
+                }
+                return false;
+            },
+            "poison workers: stack at the Thread dtor (declines)");
+        install_chained_hle(
+            0x803A1334u,
+            [byte, pending](Cpu& cpu) {
+                const u32 object = cpu.gpr[3];
+                if (pending->erase(object) != 0u) {
+                    for (u32 i = 0x10u; i < 0x328u; i += 4u) cpu.mem_write32(object + i, byte * 0x01010101u);
+                }
+                return false;
+            },
+            "poison workers: OSThread at operator delete (declines)");
+    }
+    // GEKKO_CALL_CENSUS_COUNTS=<file>, GEKKO_CALL_CENSUS_COUNTS_ADDRS=<file of hex addresses, one per line>: the same
+    // declining hook on every listed function, aggregated instead of one line per call - calls, first and last game
+    // tick per function, and each (function, LR) pair once with its count (LR = the return site: the caller of a call,
+    // the caller's caller of a tail call). Written at process exit (the player census, tools/dolrecon/player_census.py).
+    if (const char* path = std::getenv("GEKKO_CALL_CENSUS_COUNTS"); path != nullptr && path[0] != '\0') {
+        struct Counts {
+            struct Calls {
+                u64 calls = 0, first = 0, last = 0;
+            };
+            std::string path;
+            std::unordered_map<u32, Calls> calls;
+            std::unordered_map<u64, u64> edges;  // (callee << 32) | lr -> calls
+            ~Counts() {
+                std::FILE* f = std::fopen(path.c_str(), "w");
+                if (f == nullptr) return;
+                std::vector<std::pair<u32, Calls>> rows(calls.begin(), calls.end());
+                std::sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+                std::fputs("address,calls,first_tick,last_tick\n", f);
+                for (const auto& [address, c] : rows)
+                    std::fprintf(f, "%08X,%llu,%llu,%llu\n", address, static_cast<unsigned long long>(c.calls),
+                                 static_cast<unsigned long long>(c.first), static_cast<unsigned long long>(c.last));
+                std::vector<std::pair<u64, u64>> pairs(edges.begin(), edges.end());
+                std::sort(pairs.begin(), pairs.end());
+                for (const auto& [key, n] : pairs)
+                    std::fprintf(f, "edge,%08X,%08X,%llu\n", static_cast<u32>(key >> 32), static_cast<u32>(key),
+                                 static_cast<unsigned long long>(n));
+                std::fclose(f);
+            }
+        };
+        static Counts counts;  // destroyed (written) at process exit
+        counts.path = path;
+        std::ifstream list(std::getenv("GEKKO_CALL_CENSUS_COUNTS_ADDRS") != nullptr
+                               ? std::getenv("GEKKO_CALL_CENSUS_COUNTS_ADDRS")
+                               : "");
+        std::string line;
+        std::size_t hooked = 0;
+        while (std::getline(list, line)) {
+            char* end = nullptr;
+            const u32 address = static_cast<u32>(std::strtoul(line.c_str(), &end, 16));
+            if (end == line.c_str() || address == 0u) continue;
+            counts.calls.try_emplace(address);
+            // Counted before an owner already hooked there (a natively served call is still a call); the owner then
+            // decides as before.
+            Cpu::HleHandler owner;
+            for (const auto& entry : cpu_.hle_entries())
+                if (entry.address == address) owner = entry.handler;
+            cpu_.install_hle(
+                address,
+                [address, owner](Cpu& cpu) {
+                    Counts::Calls& c = counts.calls[address];
+                    const u64 now = cpu.game_clock().now();
+                    if (c.calls++ == 0u) c.first = now;
+                    c.last = now;
+                    ++counts.edges[(u64{address} << 32) | cpu.lr];
+                    return owner ? owner(cpu) : false;
+                },
+                "call census counts");
+            ++hooked;
+        }
+        std::fprintf(stderr, "[call-census] counting %zu functions -> %s\n", hooked, path);
+    }
+#endif
+
     // The Metrowerks 64-bit divide helpers (guest software, not hardware),
     // served by one host division; a zero divisor declines to the recovered
     // body. --no-divide-intrinsics runs the recovered loops for A/B.
@@ -1856,6 +2358,11 @@ void System::start() {
         cpu_.install_hle(
             0x8047FC08u, [this](Cpu& cpu) { return matrix_multiply_.serve(cpu); }, "RenderWare RwMatrixMultiply");
     }
+    // RenderWare's vector transforms (gekko/native_rw_vector.h): the originals' float chains on host floats, declined to
+    // the guest body when the FPU or GQR0 is not what the psq loads assume.
+    rw_vector::install(cpu_);
+    rw_view_cache::install(cpu_);  // the driver camera view-matrix cache (gekko/native_rw_view_cache.h)
+    rw_matrix::install(cpu_);  // RwMatrixInvert (gekko/native_rw_matrix.h)
     // The character-collision broad phase's four bounding tests (gekko/chara_colli_intrinsic.h): a rejected test
     // served natively, every other declined to the guest body. --no-chara-colli-intrinsic: A/B.
     if (chara_colli_intrinsic_) {
@@ -1996,6 +2503,45 @@ void System::start() {
         },
         "mwPlyGetStat");
 
+    // RwCameraEndUpdate at 0x80486504 - READ-ONLY OBSERVER (SHADOW_CAMERA_TRACE=<file>): one record per camera update
+    // the game ends, for replaying the game's camera path in the native engine (tools/native_stage_clip). At the end of
+    // an update the camera's frame has been synced by its begin, so the LTM is the one the frame was rendered with.
+    // Record: 23 little-endian words - u32 sequence, camera address, frame-buffer raster width, height, projection;
+    // f32 view window x, y, view offset x, y, near, far; the frame's LTM right, up, at, pos (12 floats; zero without a
+    // frame). Returns false: the original runs untouched.
+    if (const char* path = std::getenv("SHADOW_CAMERA_TRACE"); path != nullptr && path[0] != '\0') {
+        static std::FILE* trace = std::fopen(path, "wb");
+        static u32 sequence = 0;
+        if (trace != nullptr) {
+            cpu_.install_hle(
+                0x80486504u,
+                [](Cpu& cpu) {
+                    const u32 camera = cpu.gpr[3];
+                    const auto word = [&cpu](u32 a) { return cpu.mem_read32(a); };
+                    const u32 frame = word(camera + 0x04u), raster = word(camera + 0x60u);
+                    u32 record[23] = {sequence++,
+                                      camera,
+                                      raster != 0 ? word(raster + 0x0Cu) : 0u,
+                                      raster != 0 ? word(raster + 0x10u) : 0u,
+                                      word(camera + 0x14u),
+                                      word(camera + 0x68u),
+                                      word(camera + 0x6Cu),
+                                      word(camera + 0x78u),
+                                      word(camera + 0x7Cu),
+                                      word(camera + 0x80u),
+                                      word(camera + 0x84u)};
+                    if (frame != 0) {   // RwFrame::ltm at +0x50: right +0x50, up +0x60, at +0x70, pos +0x80
+                        static constexpr u32 kLtm[12] = {0x50, 0x54, 0x58, 0x60, 0x64, 0x68,
+                                                         0x70, 0x74, 0x78, 0x80, 0x84, 0x88};
+                        for (int i = 0; i < 12; ++i) record[11 + i] = word(frame + kLtm[i]);
+                    }
+                    std::fwrite(record, sizeof record, 1, trace);
+                    return false;
+                },
+                "RwCameraEndUpdate (camera trace)");
+        }
+    }
+
     // RwCameraTestSphere at 0x80486718 - READ-ONLY OBSERVER.
     //
     // Widescreen in this port is host-side only: load_matrices widens the
@@ -2061,37 +2607,177 @@ void System::start() {
         },
         "GiHPGaugeEnemy draw (native health bar)");
 
-    // The Options menu's Display tile (gekko/native_options_display.h): the sixth slot shown and owned natively. The
-    // setup and page entries only take notes and decline; the row draw and the three button queries are served for
-    // item 5 alone, every other caller and item runs the game's own code.
+    // The PC Options menu (gekko/native_options_menu.h): six categories on the game's Options screen. The setup, page
+    // and help-line entries take notes or change an argument and decline; the row draw and the page's button queries
+    // are served for the six categories, every other caller runs the game's own code.
     options_display_.set_sound(&System::play_menu_sound, this);
     cpu_.install_hle(
-        options_display::kSetup,
+        options_menu::kSetup,
         [this](Cpu& cpu) {
             // The front-end's language: the JP disc's own, else the console's (OSGetLanguage: the SRAM byte).
-            static constexpr options_display::Language kByConsole[] = {
-                options_display::Language::EN, options_display::Language::GE, options_display::Language::FR,
-                options_display::Language::SP, options_display::Language::IT, options_display::Language::EN};
-            const std::vector<u8>& identity = assets_.identity_block();
-            const u8 console = ipl_ != nullptr ? ipl_->settings()[0x16] : 0u;
-            options_display_.set_language(identity.size() > 3u && identity[3] == 'J'
-                                              ? options_display::Language::JP
-                                              : kByConsole[console < 6u ? console : 0u]);
+            // The menu draws in the game's own text language (settings + 0x58, the game's enum 0 JP, 1 EN, 2 FR,
+            // 3 SP, 4 GE, 5 IT - the Subtitles row, set at boot from options.cfg), so its rows match the game's text.
+            static constexpr options_display::Language kByGame[] = {
+                options_display::Language::JP, options_display::Language::EN, options_display::Language::FR,
+                options_display::Language::SP, options_display::Language::GE, options_display::Language::IT};
+            const u32 text_language = cpu.mem_read32(0x8057E7B8u);
+            options_display_.set_language(kByGame[text_language < 6u ? text_language : 1u]);
             return options_display_.setup(cpu);
         },
-        "Options setup (Display tile shown)");
+        "Options setup (six categories shown)");
     cpu_.install_hle(
-        options_display::kPage, [this](Cpu& cpu) { return options_display_.page(cpu); },
-        "Options page input (Display tile notes)");
+        options_menu::kPage, [this](Cpu& cpu) { return options_display_.page(cpu); }, "Options page input (notes)");
     cpu_.install_hle(
-        options_display::kDrawRows, [this](Cpu& cpu) { return options_display_.draw_rows(cpu); },
-        "Options page rows (Display tile)");
+        options_menu::kDrawRows, [this](Cpu& cpu) { return options_display_.draw_rows(cpu); },
+        "Options page rows (PC menu)");
     cpu_.install_hle(
-        options_display::kRepeatPress, [this](Cpu& cpu) { return options_display_.repeat_press(cpu); },
-        "Options repeat press (Display tile)");
+        options_menu::kRepeatPress, [this](Cpu& cpu) { return options_display_.repeat_press(cpu); },
+        "Options repeat press (PC menu)");
     cpu_.install_hle(
-        options_display::kEdgePress, [this](Cpu& cpu) { return options_display_.edge_press(cpu); },
-        "Options edge press (Display tile)");
+        options_menu::kEdgePress, [this](Cpu& cpu) { return options_display_.edge_press(cpu); },
+        "Options edge press (PC menu)");
+    cpu_.install_hle(
+        options_menu::kSetText, [this](Cpu& cpu) { return options_display_.set_text(cpu); },
+        "Options help line (PC menu descriptions)");
+
+    // Subtitles on/off (options.cfg "subtitles", Audio row "Show subtitles"; the original game has no such switch -
+    // its "Subtitle" item only picks the text language). Every subtitle of a spoken line - the stage hint / radio /
+    // enemy lines (HintController, HintRing, HintCollision and the ~110 producers of fn_801FB210), the in-engine
+    // cutscene lines (fn_802D4BC4 / fn_802D4CC0) and the FMV lines of Movie_<lang>.fnt (fn_802D3454, per movie
+    // frame) - is queued into ONE message manager (fn_8010A14C -> fn_801FB210) and shown by ONE consumer, the
+    // MessageTask update fn_801FB5AC, whose only draw is `bl fn_80049BE8` at 0x801FB828 (return address 0x801FB82C;
+    // the same call also finds the entry whose voice id (+0x10) it plays, and sets the timing). fn_80049BE8 is the
+    // generic "draw this font message at (f1, f2)" of the whole game (menus, the pause window's mission text, the
+    // save screens: callers fn_800B9F14, fn_802BF228, fn_802BF3C0, fn_802E54B8 - all NOT subtitles, untouched), and
+    // its glyph drawing is fn_8004A09C, which has that one caller (0x80049C94, return 0x80049C98) and whose result
+    // nobody reads. The text engine's state it touches (the layout cache at 0x80574400) is private to the text
+    // functions, so a skipped call only leaves the cache for the next message to rebuild. So: skip fn_8004A09C when
+    // it is reached from fn_80049BE8 that was itself called from 0x801FB828 (the saved LR in 49BE8's frame,
+    // r1 + 0x34, is 0x801FB82C). Nothing else changes: the message still lasts its time, the voice still plays,
+    // cutscenes and movies flow as before, no guest state is written. With subtitles on the handler returns false
+    // and the recovered body runs untouched.
+    cpu_.install_hle(
+        0x8004A09Cu,
+        [](Cpu& cpu) {
+            constexpr u32 kDrawReturn = 0x80049C98u;             // after `bl fn_8004A09C` in fn_80049BE8
+            constexpr u32 kMessageTaskReturn = 0x801FB82Cu;      // after `bl fn_80049BE8` in the MessageTask update
+            if (cpu.lr != kDrawReturn || pc_settings().current().subtitles) return false;
+            if (cpu.mem_read32(cpu.gpr[1] + 0x34u) != kMessageTaskReturn) return false;
+            cpu.gpr[3] = 1u;  // the body's own return value (drawn); the caller ignores it
+            return true;
+        },
+        "Subtitles on/off (skips the voice-line subtitle text draw only)");
+    // The Japanese voices (gekko/voice_language.h). Every language-dependent file the game opens is picked by the
+    // REGION (settings + 0x40: 0 = Japan) on its own; on PAL the voice language (settings + 0x5C: 0 Japanese,
+    // 1 English) never reached them. Each HLE below changes only the name argument at the one call whose caller
+    // address identifies it, and reports what it saw ("[voice] ..." lines: voice language, requested name,
+    // resolved name; the first 96 of each run, then counted in the "Voice routing:" line the launcher prints).
+    //
+    // Boot order (Bug B): the sound system's Init (fn_801E258C, once at boot) opens PRS_VOICE by G+0x5C, but the
+    // PC settings' voice reached G+0x5C only with the save-load hook, later - English was loaded and Japanese showed
+    // in the menu. Init's own settings reset runs after its entry, so the voice is applied at the call that loads
+    // the dialogue archive (0x801E2790 -> 0x801D690C -> 0x801D844C), after the reset and before any voice file is
+    // chosen. The same write at Init's entry keeps G+0x5C right for anything that reads it earlier.
+    const auto apply_boot_voice = [](Cpu& cpu, const char* where) {
+        constexpr u32 kVoiceLanguage = 0x8057E7BCu;
+        const int wanted = pc_settings().current().voice;
+        const u32 before = cpu.mem_read32(kVoiceLanguage);
+        if (wanted == 0 && japanese_voices_available()) cpu.mem_write32(kVoiceLanguage, 0u);
+        else if (wanted == 1) cpu.mem_write32(kVoiceLanguage, 1u);
+        voice_report(cpu, where, "(options.cfg voice)", wanted < 0 ? "unset" : (wanted == 0 ? "0" : "1"), before);
+    };
+    cpu_.install_hle(
+        0x801E258Cu,
+        [apply_boot_voice](Cpu& cpu) {
+            apply_boot_voice(cpu, "boot-apply-init");
+            return false;
+        },
+        "Voice language from options.cfg at the sound system's Init entry (Bug B)");
+    cpu_.install_hle(
+        0x801D690Cu,
+        [apply_boot_voice](Cpu& cpu) {
+            if (cpu.lr == 0x801E2794u) apply_boot_voice(cpu, "boot-apply-dialogue");
+            return false;
+        },
+        "Voice language from options.cfg before the boot dialogue archive load (Bug B)");
+    // The dialogue-voice archive is opened by 0x801D844C whenever the voice language differs from the one loaded;
+    // at that call (0x803C7B40 returning to 0x801D84C0, the PRS_VOICE_E branch) the file follows the voice language
+    // when the Japanese files are served.
+    cpu_.install_hle(
+        0x803C7B40u,
+        [this](Cpu& cpu) {
+            constexpr u32 kVoiceBranchReturn = 0x801D84C0u, kVoiceBranchReturnJ = 0x801D84A4u,
+                          kVoiceLanguage = 0x8057E7BCu;
+            constexpr u32 kPrsVoiceJ = 0x804D15D0u;  // "PRS_VOICE_J.afs"
+            constexpr u32 kPrsVoiceE = 0x804D15E0u;  // "PRS_VOICE_E.afs" (main.dol .data)
+            if (cpu.lr != kVoiceBranchReturn && cpu.lr != kVoiceBranchReturnJ) return false;
+            const u32 language = cpu.mem_read32(kVoiceLanguage);
+            const u32 requested = cpu.gpr[4];
+            if (voice_archive_ready_) {
+                cpu.gpr[4] = kPrsVoiceE;  // the composed archive serves both languages under the English name
+            } else if (cpu.lr == kVoiceBranchReturn && japanese_voices_available() && language == 0u) {
+                cpu.gpr[4] = kPrsVoiceJ;
+            }
+            voice_report(cpu, "dialogue", guest_cstring(cpu, requested).c_str(), guest_cstring(cpu, cpu.gpr[4]).c_str(),
+                         language);
+            return false;
+        },
+        "Dialogue voice archive by voice language (Japanese voices)");
+    // The in-stage character voice banks (B3_SHADOW, B4_SUBHERO, B5_SUBDARK; reloaded at every stage entry by
+    // StageEnter 0x801D66E0): the bank selector 0x801F2A80 (sound manager vtable +0x1C) picks _J only when the
+    // region is 0, else _E, and loads the name through slot +0x18 = 0x801F2CE4. At its three English branches
+    // (returning to 0x801F2B9C / 0x801F2BF0 / 0x801F2C44) the name follows the voice language. The PAL disc's own
+    // *_J.mlt are an older English-layout set; System::mount_assets serves the Japanese disc's real *_J.mlt under
+    // those names when they are present and layout-compatible.
+    cpu_.install_hle(
+        0x801F2CE4u,
+        [](Cpu& cpu) {
+            constexpr u32 kVoiceLanguage = 0x8057E7BCu;
+            struct Swap {
+                u32 return_address, japanese_name;
+            };
+            static constexpr Swap kSwaps[] = {{0x801F2B9Cu, 0x804D40B4u},   // sound/B3_SHADOW_J.mlt
+                                              {0x801F2BF0u, 0x804D40E4u},   // sound/B4_SUBHERO_J.mlt
+                                              {0x801F2C44u, 0x804D4114u}};  // sound/B5_SUBDARK_J.mlt
+            const u32 language = cpu.mem_read32(kVoiceLanguage);
+            const u32 requested = cpu.gpr[4];
+            bool bank = false;
+            for (const Swap& s : kSwaps) {
+                if (cpu.lr != s.return_address) continue;
+                bank = true;
+                if (language == 0u) cpu.gpr[4] = s.japanese_name;
+            }
+            if (bank)
+                voice_report(cpu, "bank", guest_cstring(cpu, requested).c_str(), guest_cstring(cpu, cpu.gpr[4]).c_str(),
+                             language);
+            return false;
+        },
+        "Character voice banks by voice language (Japanese voices)");
+    // Shadow's spoken power-move calls (Chaos Blast, Chaos Control, its slow form): fn_801D3C28 takes the pair
+    // {_j, _e} of table 0x8053DE30 by the region (settings + 0x40) and plays it through 0x801D54D8 (returning to
+    // 0x801D3CB4). The _j files come from the player's Japanese disc (gekko/voice_language.h); with them served, the
+    // English name becomes its Japanese twin when the voice language is Japanese.
+    cpu_.install_hle(
+        0x801D54D8u,
+        [](Cpu& cpu) {
+            constexpr u32 kJingleReturn = 0x801D3CB4u, kVoiceLanguage = 0x8057E7BCu;
+            struct Swap {
+                u32 english_name, japanese_name;
+            };
+            static constexpr Swap kSwaps[] = {{0x804D13F8u, 0x804D13E0u},   // sng_jin_cblast_e/_j.adx
+                                              {0x804D1424u, 0x804D1410u},   // sng_jin_cctrl_e/_j.adx
+                                              {0x804D1450u, 0x804D1438u}};  // sng_jin_ccslow_e/_j.adx
+            if (cpu.lr != kJingleReturn) return false;
+            const u32 language = cpu.mem_read32(kVoiceLanguage);
+            const u32 requested = cpu.gpr[4];
+            if (japanese_voices_available() && language == 0u)
+                for (const Swap& s : kSwaps)
+                    if (cpu.gpr[4] == s.english_name) cpu.gpr[4] = s.japanese_name;
+            voice_report(cpu, "power-move", guest_cstring(cpu, requested).c_str(),
+                         guest_cstring(cpu, cpu.gpr[4]).c_str(), language);
+            return false;
+        },
+        "Power-move voice calls by voice language (Japanese voices)");
 
     // fn_801C28A8: `addi r3,r3,28; blr`. Called from fn_80271F9C at 0x80272094
     // with r3 = the camera-mode object; the caller then reads (fovX, fovY) as
@@ -2509,6 +3195,26 @@ void System::start() {
     // The game's room reverb: the mixer's native effect, run by the game's own aux callback dispatch
     // (gekko/native_reverb_owner.h).
     install_reverb_owner();
+    // The sound start-up's three further AXFX effects (ReverbStd, Chorus, Delay) are never registered as aux
+    // callbacks: their init / shutdown are owned (gekko/native_axfx_effects.h).
+    axfx_effects::install(cpu_);
+    // The AX library's registration entries (gekko/native_ax_registration.h, audio-ax step 1).
+    ax_registration::install(cpu_);
+    // The AX voice setters (gekko/native_ax_voice.h, audio-ax stage c).
+    ax_voice::install(cpu_);
+    // The native AX sync (gekko/native_ax_sync.h, audio-ax stage e step 1).
+    ax_sync::install(cpu_, ax_pb_image_);
+    ax_frame::install(cpu_, ax_lists_);
+    ax_engine_.image = &ax_pb_image_;
+    ax_engine_.lists = &ax_lists_;
+    ax_engine_.mix = [this](u32 list) { run_ax_mix(list); };
+    ax_frame::install_engine(cpu_, ax_engine_);
+    // The OS font library (gekko/native_os_font.h): OSGetFontEncode natively, the ROM font loaders never entered.
+    os_font::install(cpu_);
+    // The game's 3-vector helpers (gekko/native_vec_math.h): Sub, Add, Scale, AddTo, SubFrom, Dot, Cross, Length.
+    vec_math::install(cpu_);
+    // The AX mixer library's MIXQuit / MIXSetSoundMode (gekko/native_mix_entries.h).
+    mix_entries::install(cpu_);
     // The sound-effect table lookup (gekko/native_sound_tables.h): the original lookup and its helper are not generated.
     cpu_.install_hle(sound_tables::kLookup, [this](Cpu& cpu) {
         sound_tables::serve_lookup(cpu, sound_table_report_);
@@ -2553,11 +3259,46 @@ void System::start() {
     stream_ring_->install();
     attached_effects_->install();
     gx_sync_->install();
-    card_->install();
+    gx_state::install(cpu_);  // the GX state API (docs/agents/card-saves.md, gxA): served, nothing kept
+    gx_display::install(cpu_);  // the display-copy and FIFO-setup leaves (gekko/native_gx_display.h)
+    gx_texobj::install(cpu_);  // the GX texture-object functions, reproduced exactly (gekko/native_gx_texobj.h)
+    rw_raster::install(cpu_, *gx_sync_);  // the RenderWare raster life cycle (docs/agents/card-saves.md, rwR2)
+    // The game's saves: the native save store (one host GCI) or, with set_memory_card_path (the reference tests'
+    // oracle), the card model.
+    if (save_store_active_) save_store_->install();
+    else card_->install();
     ipl_->install();
+    rw_image::install(cpu_);  // RwImageGetRaster (standard function 6; docs/agents/gx-rw-plan.md, rwR2 step 3)
+    rw_pixel::install(cpu_);  // the GameCube driver's colour <-> pixel standard functions (docs/agents/gx-rw-plan.md, rwR2)
+    (void)os_settings::install(cpu_);  // the console settings accessors, released through the UnlockSram owner above
+    os_heap::install(cpu_);  // the OS heap routines (OSInitAlloc / OSCreateHeap / OSAllocFromHeap / OSFreeToHeap ...)
+    os_panic::install(cpu_);  // OSPanic: the game own end (The End.) ends the program
+    os_misc::install(cpu_, debug_console_);  // OSGetConsoleType and the empty DVD callback 0x80378320
+#if !defined(SHADOW_RENDER_LIFTED)
+    guest_scheduler::install(*interrupts_);  // the reference build's guest SelectThread / OSLoadContext (guest-thread modes)
+#endif
+    os_threads::install(cpu_);         // the scheduler-disable count (docs/agents/cri-threads.md, os.threads S1)
+    os_threads::install_waits(cpu_, *interrupts_, [this](Cpu& c, const bool* ready) {  // Yield / Sleep / Wakeup of the one guest thread
+        return native_cri_ != nullptr && native_cri_->run_idle_in_wait(c, ready);          // (os.threads S5); CRI's Idle pass between events
+    });
+    // The OS arena accessors and the time-base readers, served from the arena cells and the native game clock
+    // (gekko/native_os_arena_clock.h).
+    os_arena_clock::install(cpu_);
+    // The debug UART's bring-up (gekko/native_os_debug.h); its enable word is what the IPL module's WriteUARTN checks.
+    os_debug::install(cpu_);
+    // OSReport: formatted natively, the text goes to the host debug console (gekko/native_os_report.h).
+    os_report::install(cpu_, debug_console_);
+    // DBInit and the TRK console procedures: no debugger in this program (gekko/native_trk.h).
+    trk::install(cpu_);
+    os_machine_check::install(cpu_, debug_console_);  // DMAErrorHandler: prints its two lines, then stops (no host machine check)
+    math_affine::install(cpu_);  // the 3x4 matrix leaves 0x8040C6CC / C5EC / C7E0 (docs/agents/os-other.md, step 15)
+    ax_mix_alloc::install(cpu_);  // the AX MIX table alloc / free wrappers (class D of audio.ax)
     reset_controls_->install();
+    boot_->install();
     disc_error_->install();
     link_groups_->install();
+    world_line_->install();
+    world_collision_->install();
     directory_scan_->install();
     game_memory_->install();
     // Every listed platform site goes to the subsystem whose table lists it.
@@ -2580,17 +3321,12 @@ void System::start() {
 u32 System::platform_value(Cpu& cpu, u32 site) { return video_->platform_value(cpu, site); }
 
 u16 System::platform_read16(Cpu& cpu, u32 site, u32 effective) {
-    if (NativeGxSync::is_platform_site(site)) return gx_sync_->platform_read16(cpu, site, effective);
     return video_->platform_read16(cpu, site, effective);
 }
 
 void System::platform_write16(Cpu& cpu, u32 site, u32 effective, u16 value) {
-    // The only written platform sites left are GX's performance selects (the
-    // reset path's DCR writes went with stage 6; dead sites emit nothing).
-    if (NativeGxSync::is_platform_site(site)) {
-        gx_sync_->platform_write16(cpu, site, effective, value);
-        return;
-    }
+    // No written platform site is answered any more (the reset path's DCR writes went with stage 6, GX's performance
+    // selects with GXInit; dead sites emit nothing).
     char detail[160];
     std::snprintf(detail, sizeof(detail), "unlisted platform site 0x%08X wrote 0x%04X to 0x%08X", site,
                   static_cast<unsigned>(value), effective);
@@ -2754,10 +3490,35 @@ void System::install_boot_stage_hooks() {
 
             cpu.mem_write32(kGameSystemManager, 5u);
             cpu.mem_write32(kSequenceKindRequested, boot_stage_.kind);
+            if (boot_stage_.reset_play_record) {
+                // fn_80206680(0x8057E82C), which the 2P select, the story menu and Expert call before their hand-off:
+                // memset(+0x08, 0, 0x50); +0x05 = 1; +0x58..+0x5A = 0 (the hard flag is +0x59); +0x5C = 5.
+                constexpr u32 kPlayRecord = 0x8057E82Cu;
+                for (u32 at = 0x08u; at < 0x58u; at += 4u) cpu.mem_write32(kPlayRecord + at, 0u);
+                cpu.mem_write8(kPlayRecord + 0x05u, 1u);
+                cpu.mem_write8(kPlayRecord + 0x58u, 0u);
+                cpu.mem_write8(kPlayRecord + 0x59u, 0u);
+                cpu.mem_write8(kPlayRecord + 0x5Au, 0u);
+                cpu.mem_write32(kPlayRecord + 0x5Cu, 5u);
+            }
             if (boot_stage_.kind == 1u) {
-                cpu.mem_write32(kPlayStoryMode, 0u);  // a new game
+                cpu.mem_write32(kPlayStoryMode, boot_stage_.story_mode);  // 0 a new game, 2 Last Story
             } else if (boot_stage_.kind == 7u) {
                 // PlayFlashback takes no id: its phase reads its own state.
+            } else if (boot_stage_.kind == 3u || boot_stage_.kind == 4u) {
+                // The 2P battle select (0x802C1514 one arena / 0x802C148C three): the arena(s) at 0x80585794
+                // (Play2POnce) or 0x80585798 / 9C / A0 (Play2PThree), the characters at 0x8057E89C / 0x8057E8A0.
+                if (boot_stage_.kind == 3u) {
+                    cpu.mem_write32(0x80585794u, boot_stage_.stages[0]);
+                } else {
+                    for (u32 i = 0; i < 3u; ++i) cpu.mem_write32(0x80585798u + i * 4u, boot_stage_.stages[i]);
+                }
+                cpu.mem_write32(0x8057E89Cu, boot_stage_.characters[0]);
+                cpu.mem_write32(0x8057E8A0u, boot_stage_.characters[1]);
+            } else if (boot_stage_.kind == 6u) {
+                // Expert (PlayHard): continue (0x805857A8 = 1) at the save block's run position.
+                cpu.mem_write32(0x805857A8u, 1u);
+                cpu.mem_write32(0x80577A18u + 0x9Cu, boot_stage_.expert_index);
             } else {
                 cpu.mem_write32(boot_stage_.kind == 2u ? kPlayEventId : kPlayOnceStageId, boot_stage_.id);
             }
@@ -2772,19 +3533,64 @@ void System::install_boot_stage_hooks() {
                              ? "[boot-stage] event%04u handed to StageSequence::PlayEvent at %.3f s "
                                "of game time\n"
                          : boot_stage_.kind == 1u
-                             ? "[boot-stage] story %u (new game) handed to StageSequence::PlayStory at "
+                             ? "[boot-stage] story mode %u (0 new game, 2 Last Story) handed to StageSequence::PlayStory at "
                                "%.3f s of game time\n"
                          : boot_stage_.kind == 7u
                              ? "[boot-stage] flashback %u handed to StageSequence::PlayFlashback at "
                                "%.3f s of game time\n"
+                         : boot_stage_.kind == 3u
+                             ? "[boot-stage] stg%04u handed to StageSequence::Play2POnce at %.3f s "
+                               "of game time\n"
+                         : boot_stage_.kind == 4u
+                             ? "[boot-stage] stg%04u (first of three) handed to StageSequence::Play2PThree at "
+                               "%.3f s of game time\n"
+                         : boot_stage_.kind == 6u
+                             ? "[boot-stage] Expert run position %u handed to StageSequence::PlayHard at "
+                               "%.3f s of game time\n"
                              : "[boot-stage] stg%04u handed to StageSequence::PlayOnce at %.3f s "
                                "of game time\n",
-                         boot_stage_.id,
+                         boot_stage_.kind == 6u ? boot_stage_.expert_index : boot_stage_.id,
                          static_cast<double>(cpu.game_clock().now()) /
                              static_cast<double>(kGameTicksPerSecond));
             return false;
         },
         "boot-stage: Select Mode hand-off at AdvFolder's first phase request");
+
+    // --boot-cutscene. The story sequence's two loops ask the story manager for their next entry with
+    // 0x8025D810(story, &entry, kind, pop 0): 0x802D21B4 (a new game's, kind 0) from 0x802D21E4, and 0x802D1900 (kind
+    // 1) from 0x802D1948. The entry is {event, stage, kind}; one without a stage becomes a cutscene step:
+    // 0x802D224C / 0x802D19B0 format the event as "E%04d.sfd" and 0x802D33A4 builds the step, which reads the number
+    // back and loads event/eventNNNN.scr (the movie when there is none). The first such query is answered once with
+    // {cutscene, 0, the kind asked}, as 0x8025D810 answers from its queue (r3 = 1, the entry copied out, nothing
+    // popped); every later query is the game's own.
+    // --boot-story-stage answers it with {0, stage, the kind asked} instead: an entry with a stage (> 0, other than
+    // the sequence's current one at +0xC) becomes `new StageManager(stage, 1)` (0x802D2208..0x802D2220).
+    if (boot_stage_.cutscene != 0u || boot_stage_.story_stage != 0u) {
+        constexpr u32 kStoryNext = 0x8025D810u;
+        constexpr u32 kStoryLoopQuery = 0x802D21E8u;  // liveness-roots: value-only
+        constexpr u32 kOtherLoopQuery = 0x802D194Cu;  // liveness-roots: value-only
+        install_chained_hle(
+            kStoryNext,
+            [this](Cpu& cpu) {
+                if (boot_stage_.cutscene_handed || (cpu.lr != kStoryLoopQuery && cpu.lr != kOtherLoopQuery) ||
+                    cpu.gpr[4] == 0u) {
+                    return false;
+                }
+                const u32 entry = cpu.gpr[4];
+                cpu.mem_write32(entry, boot_stage_.cutscene);
+                cpu.mem_write32(entry + 4u, boot_stage_.story_stage);
+                cpu.mem_write32(entry + 8u, cpu.gpr[5]);  // the kind asked
+                cpu.gpr[3] = 1u;
+                boot_stage_.cutscene_handed = true;
+                std::fprintf(stderr, "[boot-stage] %s%04u handed to PlayStory as its first story entry at %.3f s "
+                                     "of game time\n",
+                             boot_stage_.story_stage != 0u ? "stg" : "event",
+                             boot_stage_.story_stage != 0u ? boot_stage_.story_stage : boot_stage_.cutscene,
+                             static_cast<double>(cpu.game_clock().now()) / static_cast<double>(kGameTicksPerSecond));
+                return true;
+            },
+            "boot-cutscene / boot-story-stage: PlayStory's first story entry");
+    }
 
     // PAL 50/60 Hz screen (0x80306638 exec, called from 0x80307000; object
     // fields +0x10 cursor, +0x14 mode, +0x18 fade state, +0x1C timer). A
@@ -2869,18 +3675,25 @@ void System::install_ui_probe_hooks() {
     if (!ui_probe_enabled_) {
         return;
     }
-    cpu_.install_hle(
-        0x80380138u,
-        [this](Cpu& cpu) {
-            // c = the IPL video-mode word this host writes as 1 in
-            // apply_boot_configuration; d = whether the native display runs.
-            // If HorVer.tv is 0 while 0x800000cc is 1, VIInit did not take
-            // the IPL word.
-            note_movie_event(cpu, 0x80380138u, cpu.mem_read32(0x805F2114u), cpu.lr,
-                             cpu.mem_read32(0x800000CCu), video_->enabled() ? 1u : 0u);
-            return false;
-        },
-        "VIGetTvFormat (ui probe)");
+    {
+        // VIGetTvFormat is a native owner (NativeVideo): the probe runs in front of it and the owner serves the call.
+        Cpu::HleHandler owner;
+        for (const auto& entry : cpu_.hle_entries()) {
+            if (entry.address == 0x80380138u) owner = entry.handler;
+        }
+        cpu_.install_hle(
+            0x80380138u,
+            [this, owner](Cpu& cpu) {
+                // c = the IPL video-mode word this host writes as 1 in
+                // apply_boot_configuration; d = whether the native display runs.
+                // If HorVer.tv is 0 while 0x800000cc is 1, VIInit did not take
+                // the IPL word.
+                note_movie_event(cpu, 0x80380138u, cpu.mem_read32(0x805F2114u), cpu.lr,
+                                 cpu.mem_read32(0x800000CCu), video_->enabled() ? 1u : 0u);
+                return owner ? owner(cpu) : false;
+            },
+            "VIGetTvFormat (ui probe, then the native owner)");
+    }
     // VIInit derives HorVer.tv from the display it finds (NativeVideo::vi_init:
     // the running PAL display, or the NTSC cold start) and only promotes 0 to 5
     // (VI_EURGB60) when the IPL word at 0x800000cc is 1. VIInit is a native
@@ -3106,9 +3919,6 @@ void System::install_movie_trace_hooks() {
         0x803C5330u, [this](Cpu&) { ++movie_counts_.cri_thread_prio24; return false; },
         "CRI prio-24 decode thread body (trace)");
     cpu_.install_hle(
-        0x803CC24Cu, [this](Cpu&) { ++movie_counts_.svm_exec_idle; return false; },
-        "SVM_ExecSvr svtype 6 idle server (trace)");
-    cpu_.install_hle(
         0x80408C44u, [this](Cpu&) { ++movie_counts_.idle_thrd_proc; return false; },
         "MWSFSVR_IdleThrdProc (trace)");
     cpu_.install_hle(
@@ -3143,9 +3953,6 @@ void System::install_movie_trace_hooks() {
     cpu_.install_hle(
         0x803F92E0u, [this](Cpu&) { ++movie_counts_.m2_module2; return false; },
         "module 2 method 2 - MPEG video decoder tick (trace)");
-    cpu_.install_hle(
-        0x803CC3FCu, [this](Cpu&) { ++movie_counts_.svm_exec_vsync; return false; },
-        "SVM_ExecSvr svtype 2 vsync server (trace)");
     cpu_.install_hle(
         0x80408CECu, [this](Cpu&) { ++movie_counts_.vsync_thrd_proc; return false; },
         "MWSFSVR_VsyncThrdProc (trace)");
@@ -3369,7 +4176,23 @@ void System::dump_movie_frame(Cpu& cpu) {
 //     format 25 PCM8   byte address
 // Advancing a PCM16 voice in bytes would run it at twice speed and put the
 // Sofdec clock out by the same factor.
+// The mixer's writes into a voice's PB (state and current address): the native image for the SDK's PB array, guest memory otherwise.
+void System::ax_pb_write16(u32 pb, u32 offset, u16 value) {
+    if (AxPbImage::owns(pb)) ax_pb_image_.w16(AxPbImage::index_of(pb), offset, value);
+    else memory_.write16(pb + offset, value);
+}
+u32 System::ax_pb_peek32(u32 pb, u32 offset) const {
+    return AxPbImage::owns(pb) ? ax_pb_image_.r32(AxPbImage::index_of(pb), offset) : memory_.peek32(pb + offset);
+}
+// States of versions before 31 hold the DSP side's lagging copy in guest memory (the SDK's PB array and its update rings): take it over.
+void System::import_ax_pb_image_from_guest() {
+    memory_.read_block(AxPbImage::kBase, ax_pb_image_.pb.data(), static_cast<u32>(ax_pb_image_.pb.size()));
+    memory_.read_block(AxPbImage::kRingBase, ax_pb_image_.ring.data(), static_cast<u32>(ax_pb_image_.ring.size()));
+}
+
 void System::reset_host_audio_state() noexcept {
+    ax_pb_image_.clear();
+    ax_lists_.clear();
     ax_voice_pb_.fill(0u);
     ax_pb_order_.fill(0u);
     ax_pb_count_ = 0u;
@@ -3392,16 +4215,20 @@ void System::reset_host_audio_state() noexcept {
 }
 
 void System::install_reverb_owner() {
-    // ReverbHiInit and ReverbHiShutdown stay translated SDK code (they allocate and free the delay lines the
-    // native effect no longer uses); their entries only tell the effect which parameters and object it serves.
+    // ReverbHiInit and ReverbHiShutdown are native owners (native_reverb_owner.h): the game-visible results only; the
+    // delay lines the translated init allocated for the effect are not allocated (gate 2: nothing reads them).
     cpu_.install_hle(reverb::kInit, [this](Cpu& cpu) {
-        reverb::observe_init(cpu, reverb_binding_, audio_mixer_->effect());
-        return false;  // the original initialization runs
-    }, "room reverb: ReverbHiInit (parameters to the native effect)");
+        if (!reverb::serve_init(cpu, reverb_binding_, audio_mixer_->effect())) {
+            char detail[96];
+            std::snprintf(detail, sizeof(detail), "ReverbHiInit with an unreadable context 0x%08X", cpu.gpr[3]);
+            cpu.request_stop(StopReason::ExecutionFault, detail);
+        }
+        return true;  // an owner never declines
+    }, "room reverb: ReverbHiInit (native)");
     cpu_.install_hle(reverb::kShutdown, [this](Cpu& cpu) {
-        reverb::observe_shutdown(cpu, reverb_binding_);
-        return false;  // the original release runs
-    }, "room reverb: ReverbHiShutdown");
+        reverb::serve_shutdown(cpu, reverb_binding_);
+        return true;
+    }, "room reverb: ReverbHiShutdown (native)");
     // The callback itself is native: the translated body, its crossfeed and HandleReverb are not generated
     // (extract/native-owners.txt).
     cpu_.install_hle(reverb::kCallback, [this](Cpu& cpu) {
@@ -3447,6 +4274,25 @@ void System::reset_ax_voice(u32 voice) noexcept {
     ax_adpcm_cursor_state_[voice] = AxAdpcmVoiceCursor{};
 }
 
+namespace {
+// One voice's parameter block, read through ONE resolved pointer. select_ax_parameter_blocks proved every accepted
+// block mapped for kAxParameterBlockBytes, so each field read is the same bytes GuestMemory::read16 returns; the
+// per-field out-of-line read16 (host_pointer, trace and journal checks, resolve) ran ~70 times per voice per 5 ms
+// frame (2026-11-04: read16 0.045 ms/frame on the game thread). The pointer is the live block: the advance's own
+// write16s to it are seen by later reads. An installed access trace sees one read of the whole block.
+struct AxPbView {
+    const u8* bytes;
+    GuestMemory& memory;
+    u32 pb;
+    // A voice's PB is the DSP side's lagging copy in the native image (ax_pb_image.h); a PB the guest placed elsewhere is read from guest memory.
+    AxPbView(GuestMemory& m, u32 address, const AxPbImage& image)
+        : bytes(AxPbImage::owns(address) ? image.block(AxPbImage::index_of(address)) : m.host_pointer(address, kAxParameterBlockBytes)),
+          memory(m),
+          pb(address) {}
+    u16 operator()(u32 offset) const { return bytes != nullptr ? load_be16(bytes + offset) : memory.read16(pb + offset); }
+};
+}  // namespace
+
 bool System::select_ax_parameter_blocks(u32 head) {
     std::array<u32, kAxVoiceSlots> addresses{}, links{};
     u32 count = 0;
@@ -3460,7 +4306,10 @@ bool System::select_ax_parameter_blocks(u32 head) {
             break;
         links[count] = head;
         addresses[count++] = address;
-        head = memory_.read32(address);
+        // The SDK's PBs form one chain in index order (AXInit links PB i to PB i + 1 and nothing ever changes the links): the native
+        // image needs no stored link; a PB the guest placed elsewhere carries its own.
+        head = AxPbImage::owns(address) ? (AxPbImage::index_of(address) + 1u < AxPbImage::kCount ? address + AxPbImage::kStride : 0u)
+                                       : memory_.read32(address);
     }
     // Normally the previous frame's chain again: already free of overlaps, and every block keeps its slot.
     const bool unchanged = ax_chain_unchanged(addresses.data(), count, ax_voice_pb_, ax_pb_order_, ax_pb_count_);
@@ -3512,7 +4361,8 @@ void System::advance_ax_accepted_voices() {
     for (u32 index = 0; index < ax_pb_count_; ++index) {
         const u32 voice = ax_pb_order_[index];
         const u32 pb = ax_voice_pb_[voice];
-        if (memory_.read16(pb + 14u) != 1u) {
+        const AxPbView pb16{memory_, pb, ax_pb_image_};
+        if (pb16(14u) != 1u) {
             ax_voice_was_running_[voice] = false;
             ax_span_active_[voice] = false;
             continue;
@@ -3529,19 +4379,19 @@ void System::advance_ax_accepted_voices() {
             ax_adpcm_cursor_state_[voice].valid = false;
             ax_voice_was_running_[voice] = true;
         }
-        const u32 ratio = (static_cast<u32>(memory_.read16(pb + 166u)) << 16) |
-                          memory_.read16(pb + 168u);
+        const u32 ratio = (static_cast<u32>(pb16(166u)) << 16) |
+                          pb16(168u);
         if (ratio == 0u) {
             continue;
         }
-        const u32 format = memory_.read16(pb + 112u);
-        const u32 loop_flag = memory_.read16(pb + 110u);
-        const u32 loop_address = (static_cast<u32>(memory_.read16(pb + 114u)) << 16) |
-                                 memory_.read16(pb + 116u);
-        const u32 end_address = (static_cast<u32>(memory_.read16(pb + 118u)) << 16) |
-                                memory_.read16(pb + 120u);
-        const u32 current = (static_cast<u32>(memory_.read16(pb + 122u)) << 16) |
-                            memory_.read16(pb + 124u);
+        const u32 format = pb16(112u);
+        const u32 loop_flag = pb16(110u);
+        const u32 loop_address = (static_cast<u32>(pb16(114u)) << 16) |
+                                 pb16(116u);
+        const u32 end_address = (static_cast<u32>(pb16(118u)) << 16) |
+                                pb16(120u);
+        const u32 current = (static_cast<u32>(pb16(122u)) << 16) |
+                            pb16(124u);
         // The loop address is meaningful only for a looping voice. One-shots
         // commonly leave it equal to or above endAddress; rejecting them here
         // prevents state from ever reaching stopped and leaves the guest waiting
@@ -3594,10 +4444,10 @@ void System::advance_ax_accepted_voices() {
 
         ax_span_start_[voice] = current;
         ax_span_active_[voice] = true;
-        memory_.write16(pb + 122u, static_cast<u16>((next >> 16) & 0xffffu));
-        memory_.write16(pb + 124u, static_cast<u16>(next & 0xffffu));
+        ax_pb_write16(pb, 122u, static_cast<u16>((next >> 16) & 0xffffu));
+        ax_pb_write16(pb, 124u, static_cast<u16>(next & 0xffffu));
         if (state == 0u) {
-            memory_.write16(pb + 14u, 0u);
+            ax_pb_write16(pb, 14u, 0u);
             ax_voice_was_running_[voice] = false;
         }
         ++ax_report_.voice_advances;
@@ -3646,7 +4496,7 @@ int ax_command_rank(u16 id) noexcept {
 }
 }  // namespace
 
-bool System::parse_ax_list(u32 command_list, u32& head, u32& output, shadow::audio::FrameSettings& settings) {
+bool System::parse_ax_list(u32 command_list, u32& head, u32& output, shadow::audio::FrameSettings& settings, bool quiet) {
     const auto valid_address = [this](u32 value, u32 size, u32& address) {
         return ax_contract_address(value, address) && (address & 1u) == 0u &&
                memory_.mapped(GcAddr(address), size);
@@ -3732,11 +4582,24 @@ bool System::parse_ax_list(u32 command_list, u32& head, u32& output, shadow::aud
             }
         }
     }
-    ++ax_report_.lists_unparsed;
-    char detail[160];
-    std::snprintf(detail, sizeof(detail), "AX invalid command list at 0x%08X: %s", command_list, why);
-    cpu_.request_stop(StopReason::ExecutionFault, detail);
+    if (!quiet) {
+        ++ax_report_.lists_unparsed;
+        char detail[160];
+        std::snprintf(detail, sizeof(detail), "AX invalid command list at 0x%08X: %s", command_list, why);
+        cpu_.request_stop(StopReason::ExecutionFault, detail);
+    }
     return false;
+}
+
+// States of versions before 32 keep the next frame lists in guest memory (the SDK's two command-list slots): take them over.
+void System::import_ax_lists_from_guest() {
+    ax_lists_.clear();
+    for (u32 i = 0; i < AxLists::kCount; ++i) {
+        u32 head = 0u, output = 0u;
+        shadow::audio::FrameSettings settings;
+        if (!parse_ax_list(AxLists::kBase + i * AxLists::kStride, head, output, settings, true)) continue;
+        ax_lists_.slot[i] = AxLists::List{settings, output, head, true};
+    }
 }
 
 void System::run_ax_mix(u32 command_list) {
@@ -3754,9 +4617,25 @@ void System::run_ax_mix(u32 command_list) {
         }
     } mix_timer{this, ax_mix_start};
     ++ax_report_.lists;
-    u32 head = 0, output = 0;
-    shadow::audio::FrameSettings settings;
-    if (!parse_ax_list(command_list, head, output, settings) || !select_ax_parameter_blocks(head)) return;
+    audio_->note_command_list(command_list);
+    // The frame's settings are the native list the previous frame's builder (ax_frame::next_frame) stored for this slot; the
+    // PB chain starts at the SDK's PB array (every voice, in index order).
+    if (!AxLists::owns(command_list) || !ax_lists_.slot[AxLists::index_of(command_list)].valid) {
+        ++ax_report_.lists_unparsed;
+        char detail[96];
+        std::snprintf(detail, sizeof(detail), "AX invalid command list 0x%08X: not a built command-list slot", command_list);
+        cpu_.request_stop(StopReason::ExecutionFault, detail);
+        return;
+    }
+    const AxLists::List& built = ax_lists_.slot[AxLists::index_of(command_list)];
+    const shadow::audio::FrameSettings settings = built.settings;
+    u32 output = 0u;
+    if (!ax_contract_address(built.output, output) || (output & 1u) != 0u || !memory_.mapped(GcAddr(output), 640u)) {
+        ++ax_report_.lists_unparsed;
+        cpu_.request_stop(StopReason::ExecutionFault, "AX frame output buffer is not mapped");
+        return;
+    }
+    if (!select_ax_parameter_blocks(built.head)) return;
     if (settings.aux_a) ++ax_report_.effect_scheduled;
     // Parsing and complete chain validation precede every source/state effect.
     // This executes synchronously on the accepting producer thread: neither
@@ -3774,6 +4653,12 @@ void System::run_ax_mix(u32 command_list) {
     const SoundArena::Source banks = sound_banks_->arena().source();
     const SoundArena::Source ring = stream_ring_->arena().source();
 
+    // Options > Audio category volumes (gekko/audio_categories.h): each AX voice's category is read from the game's own
+    // ownership tables, only while a category is off 100 % (otherwise nothing is read and VoiceFrame::gain stays unity).
+    audio_category::VoiceKinds voice_kinds;
+    const bool categorised = !audio_category::all_unity();
+    if (categorised) audio_category::build_voice_kinds([this](u32 address) { return memory_.peek32(address); }, voice_kinds);
+
     for (u32 index = 0; index < ax_pb_count_; ++index) {
         const u32 voice = ax_pb_order_[index];
         if (!ax_span_active_[voice]) {
@@ -3781,26 +4666,27 @@ void System::run_ax_mix(u32 command_list) {
         }
         ax_span_active_[voice] = false;
         const u32 pb = ax_voice_pb_[voice];
-        const u32 format = memory_.read16(pb + 112u);
-        const u32 loop_flag = memory_.read16(pb + 110u);
-        const u32 ratio = (static_cast<u32>(memory_.read16(pb + 166u)) << 16) |
-                          memory_.read16(pb + 168u);
-        const u32 loop_address = (static_cast<u32>(memory_.read16(pb + 114u)) << 16) |
-                                 memory_.read16(pb + 116u);
-        const u32 end_address = (static_cast<u32>(memory_.read16(pb + 118u)) << 16) |
-                                memory_.read16(pb + 120u);
-        const u32 envelope = memory_.read16(pb + 100u);
-        const s32 volume_left = static_cast<s32>(memory_.read16(pb + 18u));
-        const s32 volume_right = static_cast<s32>(memory_.read16(pb + 22u));
+        const AxPbView pb16{memory_, pb, ax_pb_image_};
+        const u32 format = pb16(112u);
+        const u32 loop_flag = pb16(110u);
+        const u32 ratio = (static_cast<u32>(pb16(166u)) << 16) |
+                          pb16(168u);
+        const u32 loop_address = (static_cast<u32>(pb16(114u)) << 16) |
+                                 pb16(116u);
+        const u32 end_address = (static_cast<u32>(pb16(118u)) << 16) |
+                                pb16(120u);
+        const u32 envelope = pb16(100u);
+        const s32 volume_left = static_cast<s32>(pb16(18u));
+        const s32 volume_right = static_cast<s32>(pb16(22u));
         if (audio_audit::enabled()) {
             audio_audit::event(audio_audit::Lane::Guest, "voice-mix", cpu_.game_clock().now(),
-                pb, ax_span_start_[voice], memory_.peek32(pb + 122u),
+                pb, ax_span_start_[voice], ax_pb_peek32(pb, 122u),
                 loop_address, end_address, ratio, format);
             audio_audit::event(audio_audit::Lane::Guest, "voice-config",
-                cpu_.game_clock().now(), pb, format, memory_.read16(pb + 8u),
-                memory_.read16(pb + 16u), static_cast<u32>(volume_left),
+                cpu_.game_clock().now(), pb, format, pb16(8u),
+                pb16(16u), static_cast<u32>(volume_left),
                 static_cast<u32>(volume_right),
-                static_cast<u64>(envelope) | (static_cast<u64>(memory_.read16(pb + 102u)) << 16u));
+                static_cast<u64>(envelope) | (static_cast<u64>(pb16(102u)) << 16u));
         }
         if (loop_flag != 0u && loop_address > end_address) {
             continue;
@@ -3881,7 +4767,7 @@ void System::run_ax_mix(u32 command_list) {
             ++ax_report_.adpcm_cursor_voices;
             s16 coefficients[16];
             for (u32 c = 0; c < 16u; ++c) {
-                coefficients[c] = static_cast<s16>(memory_.read16(pb + 126u + c * 2u));
+                coefficients[c] = static_cast<s16>(pb16(126u + c * 2u));
             }
             AdpcmDecodeContext ctx;
             ctx.samples = samples;
@@ -3890,9 +4776,9 @@ void System::run_ax_mix(u32 command_list) {
             ctx.end_address = end_address;
             ctx.loop_address = loop_address;
             ctx.looping = loop_flag != 0u;
-            ctx.loop_pred_scale = memory_.read16(pb + 180u);
-            ctx.loop_yn1 = static_cast<s16>(memory_.read16(pb + 182u));
-            ctx.loop_yn2 = static_cast<s16>(memory_.read16(pb + 184u));
+            ctx.loop_pred_scale = pb16(180u);
+            ctx.loop_yn1 = static_cast<s16>(pb16(182u));
+            ctx.loop_yn2 = static_cast<s16>(pb16(184u));
 
             AxAdpcmVoiceCursor& cursor = ax_adpcm_cursor_state_[voice];
             s16* ring = ax_adpcm_ring_->voice[voice].data();
@@ -3962,8 +4848,8 @@ void System::run_ax_mix(u32 command_list) {
                 cursor.nibble = span_start & ~(kAdpcmNibblesPerFrame - 1u);
                 cursor.predictor = 0;
                 cursor.scale = 0;
-                cursor.yn1 = static_cast<s16>(memory_.read16(pb + 162u));
-                cursor.yn2 = static_cast<s16>(memory_.read16(pb + 164u));
+                cursor.yn1 = static_cast<s16>(pb16(162u));
+                cursor.yn2 = static_cast<s16>(pb16(164u));
                 cursor.decoded = 0;
                 cursor.valid = true;
                 skip = span_abs - adpcm_nibble_to_sample(cursor.nibble);
@@ -4001,12 +4887,12 @@ void System::run_ax_mix(u32 command_list) {
             s32 yn1 = ax_adpcm_yn1_[voice];
             s32 yn2 = ax_adpcm_yn2_[voice];
             if (ax_adpcm_position_[voice] != frame_start) {
-                yn1 = static_cast<s16>(memory_.read16(pb + 162u));
-                yn2 = static_cast<s16>(memory_.read16(pb + 164u));
+                yn1 = static_cast<s16>(pb16(162u));
+                yn2 = static_cast<s16>(pb16(164u));
             }
             s16 coefficients[16];
             for (u32 c = 0; c < 16u; ++c) {
-                coefficients[c] = static_cast<s16>(memory_.read16(pb + 126u + c * 2u));
+                coefficients[c] = static_cast<s16>(pb16(126u + c * 2u));
             }
             // Enough decoded samples to cover the furthest position the
             // resampler will ask for, plus a frame of slack. In sample units
@@ -4081,7 +4967,7 @@ void System::run_ax_mix(u32 command_list) {
         // is zero either way).
         if (!main_audible && format == 0u) ++ax_report_.muted_adpcm_voices;
 
-        const u32 src_type = memory_.read16(pb + 8u);
+        const u32 src_type = pb16(8u);
         const u32 start_frac = ax_span_frac_[voice];
         const auto addressed_at = [&](u64 step) -> s32 {
             u64 position = static_cast<u64>(ax_span_start_[voice]) + step;
@@ -4153,7 +5039,7 @@ void System::run_ax_mix(u32 command_list) {
         frame.restart = ax_voice_restarted_[voice];
         ax_voice_restarted_[voice] = false;  // consumed by this frame's mix
         for (u32 k = 0; k < 4u; ++k) {
-            frame.start_history[k] = static_cast<s16>(memory_.read16(pb + 172u + k * 2u));  // words 86..89
+            frame.start_history[k] = static_cast<s16>(pb16(172u + k * 2u));  // words 86..89
         }
         frame.source.samples = window;
         frame.source.count = static_cast<u32>(count);
@@ -4163,16 +5049,17 @@ void System::run_ax_mix(u32 command_list) {
                     : src_type == 0u ? shadow::audio::SrcMode::Polyphase
                                      : shadow::audio::SrcMode::Linear;
         frame.envelope = static_cast<u16>(envelope);
-        frame.envelope_delta = memory_.read16(pb + 102u);  // word 51
-        frame.mixer_control = memory_.read16(pb + 12u);    // word 6
+        frame.envelope_delta = pb16(102u);  // word 51
+        frame.mixer_control = pb16(12u);    // word 6
+        if (categorised) frame.gain = audio_category::gain(voice_kinds.find(pb));
         // Words 9..26: {volume, delta} for main L, main R, aux A L, aux A R, aux B L, aux B R, aux B S, main S, aux A S.
         constexpr shadow::audio::Bus kPbBusOrder[9] = {
             shadow::audio::kMainL, shadow::audio::kMainR, shadow::audio::kAuxAL, shadow::audio::kAuxAR,
             shadow::audio::kAuxBL, shadow::audio::kAuxBR, shadow::audio::kAuxBS, shadow::audio::kMainS,
             shadow::audio::kAuxAS};
         for (u32 b = 0; b < 9u; ++b) {
-            frame.volume[kPbBusOrder[b]].value = memory_.read16(pb + 18u + b * 4u);
-            frame.volume[kPbBusOrder[b]].delta = memory_.read16(pb + 20u + b * 4u);
+            frame.volume[kPbBusOrder[b]].value = pb16(18u + b * 4u);
+            frame.volume[kPbBusOrder[b]].delta = pb16(20u + b * 4u);
         }
     }
 
@@ -4258,7 +5145,7 @@ std::string System::movie_trace_report() const {
     out << "  ADXGC init            (0x803c5150)   " << movie_counts_.adxgc_init << "\n";
     out << "  OSResumeThread        (0x80378ecc)   " << movie_counts_.os_resume_thread << "\n";
     out << "  CRI prio-24 DECODER   (0x803c5330)   " << movie_counts_.cri_thread_prio24 << "\n";
-    out << "  SVM_ExecSvr idle      (0x803cc24c)   " << movie_counts_.svm_exec_idle << "\n";
+    out << "  SVM_ExecSvr idle      (0x803cc24c)   " << native_svm_->stats().server_calls_by_type[6] << "\n";
     out << "  MWSFSVR_IdleThrdProc  (0x80408c44)   " << movie_counts_.idle_thrd_proc << "\n";
     out << "  mwPlyExecSvrHndl      (0x80408a68)   " << movie_counts_.exec_svr_hndl << "\n";
     out << "  mwlSfdExecSvr         (0x80408b30)   " << movie_counts_.sfd_exec_svr << "\n";
@@ -4267,7 +5154,7 @@ std::string System::movie_trace_report() const {
     out << "  method-2 chain depth  module0=" << movie_counts_.m2_module0
         << " module1=" << movie_counts_.m2_module1 << " module2(MPEG)="
         << movie_counts_.m2_module2 << "\n";
-    out << "  SVM_ExecSvr vsync     (0x803cc3fc)   " << movie_counts_.svm_exec_vsync << "\n";
+    out << "  SVM_ExecSvr vsync     (0x803cc3fc)   " << native_svm_->stats().server_calls_by_type[2] << "\n";
     out << "  MWSFSVR_VsyncThrdProc (0x80408cec)   " << movie_counts_.vsync_thrd_proc << "\n";
     out << "  chain pumps           fn_803fa858(m4)=" << movie_counts_.pump_a858
         << " fn_803fadac(m4)=" << movie_counts_.pump_adac
@@ -4464,8 +5351,8 @@ bool System::advance_game_time(u64 target) {
     GameClock& clock = cpu_.game_clock();
     for (;;) {
         if (cpu_.stopped() || cpu_.stop_requested()) return false;
-        // A deliverable interrupt is the guest's to take before time moves on.
-        if (cpu_.interrupt_pending()) return false;
+        // A deliverable interrupt is the guest's to take before time moves on (in a native wait, a latched source).
+        if (cpu_.interrupt_pending() || (cpu_.native_interrupt() && interrupts_->wait_active())) return false;
         schedule_devices();
         GameEvent event = GameEvent::Count;
         const u64 when = clock.next(event);
@@ -4490,6 +5377,7 @@ void System::idle_wait() {
     // re-read it after every event. A deliverable interrupt still returns at
     // once, before the clock moves (advance_game_time).
     ++idle_waits_;
+    if (native_cri_) native_cri_->note_wait(cpu_);
     (void)advance_to_next_event();
 }
 
@@ -4643,11 +5531,10 @@ std::string System::progress_report() const {
         // docs/memory-architecture-20261006: the game's address window.
         std::snprintf(line, sizeof(line),
                       "  Game memory: %zu regions, %llu bytes committed of %llu reserved; %llu OS exception "
-                      "entries (native, no real mode); %llu BAT configurations (nothing to configure)",
+                      "entries (native, no real mode)",
                       memory_.regions().size(), static_cast<unsigned long long>(memory_.committed_bytes()),
                       static_cast<unsigned long long>(memory_.reserved_bytes()),
-                      static_cast<unsigned long long>(cpu_diag().os_exception_entries),
-                      static_cast<unsigned long long>(game_memory_->stats().bat_configurations));
+                      static_cast<unsigned long long>(cpu_diag().os_exception_entries));
         out << line << "\n";
     }
 
@@ -4668,7 +5555,7 @@ std::string System::progress_report() const {
                       "  GX sync: %llu tokens (%llu with an interrupt request), %llu draw-done "
                       "(%llu delivered), %llu breakpoints (%llu delivered, %llu callbacks, %llu disabled), "
                       "%llu FIFO binds, %llu FIFO reads, %llu draw-sync reads, %llu shutdown calls, "
-                      "%llu performance selects",
+                      "%llu inits",
                       static_cast<unsigned long long>(sync.tokens),
                       static_cast<unsigned long long>(sync.token_interrupts),
                       static_cast<unsigned long long>(sync.draw_dones),
@@ -4681,10 +5568,20 @@ std::string System::progress_report() const {
                       static_cast<unsigned long long>(sync.fifo_reads),
                       static_cast<unsigned long long>(sync.draw_sync_reads),
                       static_cast<unsigned long long>(sync.shutdown_calls),
-                      static_cast<unsigned long long>(sync.platform_writes));
+                      static_cast<unsigned long long>(sync.inits));
         out << line << "\n";
     }
-    {
+    if (save_store_active_) {
+        const SaveStore::Stats& s = save_store_->stats();
+        out << "  Save store: " << save_store_->path().string() << (save_store_->has_file() ? "" : " (no file)")
+            << "; " << s.starts << " jobs (" << s.reads << " reads, " << s.overwrites << " overwrites, " << s.creates
+            << " creates, " << s.scans << " scans, " << s.free_queries << " space queries, " << s.deletes
+            << " deletes, " << s.formats << " formats), " << s.failures << " failed (last result " << s.last_result
+            << "), " << s.writes << " writes (" << s.write_failures << " failed); options applied "
+            << s.options_applied << ", taken " << s.options_taken << ", Options exit saves skipped "
+            << s.options_exit_saves_skipped << ", boot languages " << s.boot_languages << "; stray card calls "
+            << s.stray_card_calls << "\n";
+    } else {
         const NativeCard::Stats& card = card_->stats();
         std::snprintf(line, sizeof(line),
                       "  Memory card A: %s, %llu probes, %llu mounts (%llu failed), %llu unmounts; "
@@ -4715,6 +5612,12 @@ std::string System::progress_report() const {
                       static_cast<unsigned long long>(ipl.uart_lines),
                       static_cast<unsigned long long>(ipl.uart_bytes),
                       static_cast<unsigned long long>(ipl.uart_disabled));
+        out << line << "\n";
+        const os_report::DebugConsole::Stats& console = debug_console_.stats();
+        std::snprintf(line, sizeof(line),
+                      "  OSReport console: %llu lines (%llu bytes in %llu calls, %llu calls suppressed on a retail console)",
+                      static_cast<unsigned long long>(console.lines), static_cast<unsigned long long>(console.bytes),
+                      static_cast<unsigned long long>(console.calls), static_cast<unsigned long long>(console.suppressed));
         out << line << "\n";
     }
     {
@@ -4853,11 +5756,10 @@ std::string System::progress_report() const {
     {
         const NativeAudio::Stats& audio = audio_->stats();
         std::snprintf(line, sizeof(line),
-                      "  Audio: %llu passes (%llu silent), %llu AX lists, %llu DSP mails, %llu DSP DMA completions",
+                      "  Audio: %llu passes (%llu silent), %llu AX lists, %llu DSP DMA completions",
                       static_cast<unsigned long long>(audio.passes),
                       static_cast<unsigned long long>(audio.silent_passes),
                       static_cast<unsigned long long>(audio.command_lists),
-                      static_cast<unsigned long long>(audio.dsp_mails),
                       static_cast<unsigned long long>(audio.transfer_completions));
         out << line << "\n";
     }

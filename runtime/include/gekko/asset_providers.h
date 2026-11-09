@@ -30,6 +30,7 @@
 
 #include <atomic>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -202,12 +203,41 @@ public:
 
     // Returns the key to store in the registry record.
     u64 add(std::vector<u8> bytes);
+    // Several contents for one file, one of them served at a time: `selector` is asked at every read or map and
+    // returns the index of the variant to serve (clamped). The registry's declared size for the file is the largest
+    // variant's; a shorter variant reads as zeros past its end (copy_with_zero_fill). Used where the content depends on
+    // a runtime setting (the Hungarian text files, gekko/native_hungarian_text.h) so the setting takes effect at the
+    // next read without a remount.
+    u64 add_switchable(std::vector<std::vector<u8>> variants, std::function<std::size_t()> selector,
+                       std::string name = {});
+    // A file produced at every read by `reader` (AssetSystem::replace_virtual): nothing held, never mapped (map()
+    // returns no span, so every access reads).
+    using VirtualReader = std::function<bool(u64 offset, u64 length, u8* dest, u64& got)>;
+    u64 add_virtual(u64 size, VirtualReader reader, std::string name = {});
 
     ByteSpan map(u64 key, u64 size) override;
     bool read(u64 key, u64 offset, u64 length, u8* dest, u64& got) override;
 
 private:
+    // Not bit 63: the mount stores keys as s64 and treats a negative one as "not replaced" (AssetSystem::mount's
+    // replacement_of_entry), which served every switchable file from the disc, zero-padded to the largest variant.
+    static constexpr u64 kGroupBit = 1ull << 62;
+    struct Group {
+        std::vector<u64> files;
+        std::function<std::size_t()> selector;
+        std::string name;  // the file's path, for the log line when the chosen variant changes
+        std::unique_ptr<std::atomic<std::size_t>> chosen = std::make_unique<std::atomic<std::size_t>>(~std::size_t{0});
+    };
+    static constexpr u64 kVirtualBit = 1ull << 61;
+    struct Virtual {
+        u64 size;
+        VirtualReader reader;
+        std::string name;
+    };
+    const std::vector<u8>* file_of(u64 key) const;
     std::vector<std::vector<u8>> files_;
+    std::vector<Group> groups_;
+    std::vector<Virtual> virtuals_;
 };
 
 }  // namespace gekko::assets

@@ -63,7 +63,7 @@ float OptionsDisplayOverlay::width(const std::u16string& s, float scale) const {
         if (c == u' ') {
             w += kSpace;
         } else if (g != nullptr) {
-            w += g->width > 12u ? g->width : static_cast<float>(g->ink_right - g->ink_left) + 1.0f;
+            w += g->width >= 24u ? g->width : static_cast<float>(g->ink_right - g->ink_left) + 1.0f;
         } else if (c == u'%' && f.find(u'/') && f.find(u'o')) {
             w += width(u"/", 1.0f) + width(u"o", 1.0f) * 0.4f + 1.0f;
         } else if (c == u':' && f.find(u'.')) {
@@ -101,7 +101,7 @@ void OptionsDisplayOverlay::glyph(char16_t c, float& x, float y, float scale, st
         }
         return;
     }
-    const bool wide = g->width > 12u;
+    const bool wide = g->width >= 24u;  // the JP sheets' wide cells; Hungarian letter boxes are 4..14 px (ink-drawn)
     const float sx = static_cast<float>(wide ? g->x : g->x + g->ink_left);
     const float sw = static_cast<float>(wide ? g->width : std::max<int>(1, g->ink_right - g->ink_left));
     const float sh = g->height;
@@ -152,19 +152,45 @@ void OptionsDisplayOverlay::append(render::FramePacket& packet, render::Renderer
     }
     font_ = &shared.font;
     runs_.clear();
-    const std::uint32_t first = page.scroll;
-    for (std::uint32_t i = 0; i < od::kVisibleRows && first + i < page.lines.size(); ++i) {
-        const od::Page::Line& line = page.lines[first + i];
-        const float y = kSlotY + kSlotStep * static_cast<float>(i) - kTextLift;
-        const bool cursor = page.focused && first + i == page.cursor;
-        const std::u16string value = cursor ? u"< " + line.value + u" >" : line.value;
-        // A label and value wider than the panel are drawn smaller to fit.
-        float scale = kLabelScale;
-        const float need = width(line.label, scale) + width(value, scale) + kGap;
-        if (need > kValueRight - kTextX) scale *= (kValueRight - kTextX) / need;
-        const std::uint32_t colour = text_colour(cursor ? kSelectedColour : kRowColour, page.focused);
-        text(line.label, kTextX, y, scale, colour);
-        text(value, kValueRight - width(value, scale), y, scale, colour);
+    if (!page.dialog.empty()) {
+        // The display confirmation: its lines in the page's slots, the question in the selected colour.
+        for (std::uint32_t i = 0; i < page.dialog.size() && i < od::kVisibleRows; ++i) {
+            const float y = kSlotY + kSlotStep * static_cast<float>(i) - kTextLift;
+            const std::uint32_t colour = text_colour(i == 0u ? kSelectedColour : kRowColour, true);
+            float scale = kLabelScale;
+            const float need = width(page.dialog[i], scale);
+            if (need > kValueRight - kTextX) scale *= (kValueRight - kTextX) / need;
+            text(page.dialog[i], kTextX, y, scale, colour);
+        }
+    } else {
+        const std::uint32_t first = page.scroll;
+        for (std::uint32_t i = 0; i < od::kVisibleRows && first + i < page.lines.size(); ++i) {
+            const od::Page::Line& line = page.lines[first + i];
+            const float y = kSlotY + kSlotStep * static_cast<float>(i) - kTextLift;
+            const bool cursor = page.focused && first + i == page.cursor;
+            // A choice shows "< value >" under the cursor; an action or a list entry is its label alone; an
+            // information row shows its value and never takes the selected colour's arrows.
+            const bool choice = !line.value.empty() && !line.info;
+            const std::u16string value = cursor && choice ? u"< " + line.value + u" >" : line.value;
+            float scale = kLabelScale;
+            const float need = width(line.label, scale) + (value.empty() ? 0.0f : width(value, scale) + kGap);
+            if (need > kValueRight - kTextX) scale *= (kValueRight - kTextX) / need;
+            const std::uint32_t colour = text_colour(cursor ? kSelectedColour : kRowColour, page.focused);
+            text(line.label, kTextX, y, scale, colour);
+            if (!value.empty()) text(value, kValueRight - width(value, scale), y, scale, colour);
+        }
+        // The scroll position: "n/m" above the first slot, right-aligned, and a mark where more rows are hidden.
+        if (!page.counter.empty() && page.focused) {
+            const float scale = 0.6f;
+            const float y = kSlotY - kSlotStep * 0.62f;
+            text(page.counter, kValueRight - width(page.counter, scale), y, scale, text_colour(kRowColour, true));
+            const std::uint32_t mark = text_colour(kSelectedColour, true);
+            if (page.more_above) text(u"-", kTextX, y, scale, mark);
+            if (page.more_below) {
+                const float yb = kSlotY + kSlotStep * (static_cast<float>(od::kVisibleRows) - 0.45f) - kTextLift;
+                text(u"...", kTextX, yb, scale, mark);
+            }
+        }
     }
     font_ = nullptr;
 

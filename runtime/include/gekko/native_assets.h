@@ -191,6 +191,7 @@ private:
         u64 last_use = 0;
         std::list<u64>::iterator lru_pos;
         bool lru_linked = false;
+        std::string source;  // the file its dictionary came from (an eviction lets that file be parsed again)
     };
 
     void worker_loop();
@@ -203,6 +204,7 @@ private:
     shadow::execution::Executor executor_;
     std::vector<std::string> queue_;
     std::unordered_map<std::string, bool> seen_;
+    std::vector<std::string> evicted_sources_;  // guarded by assets_mutex_; notify_file forgets them in seen_
     mutable std::mutex mutex_;
     std::condition_variable cv_;
     bool stop_ = false;

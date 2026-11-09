@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "gekko/camera.h"
 #include "gekko/render_geometry.h"
@@ -50,9 +51,22 @@ struct DisplayConfig {
     int window_width = 640;
     int window_height = 480;
     bool fullscreen = false;
-    // 0 = follow the window / output size.
+    bool exclusive = false;  // fullscreen as the monitor's display mode fullscreen_width x fullscreen_height
+    // The exclusive display mode (fullscreen_width / fullscreen_height); 0 x 0: the desktop's own mode.
+    int fullscreen_width = 0;
+    int fullscreen_height = 0;
+    // The legacy renderer's render size. The lifted build ignores it (with a warning): the picture follows the window
+    // or screen and the resolution scale.
     int render_width = 0;
     int render_height = 0;
+    std::optional<double> aspect_ratio;  // the screen ratio exactly (0 = Auto); the enum below is the legacy view
+    std::optional<double> render_scale;  // the resolution scale: percent per side of the picture (25..200)
+    // Values display.cfg held that this build accepts only changed (an older build's render_scale=400 is 200 now):
+    // said once at startup; the file is not rewritten for them.
+    std::vector<std::string> warnings;
+    std::optional<int> msaa;             // the scene's MSAA samples: 1 (off), 2, 4, 8, 16, 32
+    std::optional<int> anisotropy;       // the game's filtered textures: 1 (off), 2, 4, 8, 16
+    std::optional<double> gameplay_aspect;  // the game logic's aspect: 0 follow, 4/3 original, a ratio
     AspectMode aspect = AspectMode::Auto;
     float custom_aspect = 16.0f / 9.0f;
     float hud_scale = 1.0f;

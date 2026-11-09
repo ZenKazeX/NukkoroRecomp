@@ -21,6 +21,10 @@ double tan(double x) noexcept;                                   // 803B2BD4
 double atan2(double y, double x, SubnormalMode mode) noexcept;   // __ieee754_atan2 803AFAEC
 double acos(double x) noexcept;                                  // 803AF678 (its domain error returns MSL's
                                                                  // __float_nan word as a double, no errno)
+// __ieee754_pow 803B0444 (MSL's: x < 0 with a non-integer y returns __float_nan as a double and sets errno to EDOM,
+// which the port does not have; |y| > 2^31 with |x| within an ulp of 1 starts from x - 1, not |x| - 1). Flush: a
+// denormal operand of a multiply reads as zero (the hardware's NI rule); docs/NATIVE_MSL_MATH.md.
+double pow(double x, double y, SubnormalMode mode) noexcept;
 
 // frsp: the double rounded to single as the original CPU does (Flush: |x| < 2^-126 becomes a zero of its sign).
 float round_to_single(double x, SubnormalMode mode) noexcept;

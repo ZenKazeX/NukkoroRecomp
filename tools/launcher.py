@@ -623,7 +623,7 @@ class Launcher(tk.Tk):
     def _save_cfg(self):
         data = {
             "exe": self.exe_var.get(),
-            "display_mode": self.mode_var.get(),
+            "display_mode_v2": self.mode_var.get(),
             "aspect_family": self.family_var.get(),
             "resolution": self.resolution_value,
             "custom_width": self.width_var.get(),
@@ -743,10 +743,12 @@ class Launcher(tk.Tk):
         disp = ttk.LabelFrame(right, text="Display", padding=6)
         disp.pack(fill="x")
         self.displays = None  # the selected build's --list-displays report (None: an older build)
-        old_mode = "Borderless fullscreen" if self._get("fullscreen", False) else "Windowed"
-        self.mode_var = tk.StringVar(value=self._get("display_mode", old_mode))
+        # The default is the game's own settings (display.cfg): no display flag. Before 2026-11-05 the launcher passed
+        # its size on every launch and overrode what the player set in the Options menu; a mode stored then is not
+        # taken over - an override is chosen again explicitly (stored under display_mode_v2).
+        self.mode_var = tk.StringVar(value=self._get("display_mode_v2", rp.GAME_SETTINGS))
         if self.mode_var.get() not in rp.DISPLAY_MODES:
-            self.mode_var.set("Windowed")
+            self.mode_var.set(rp.GAME_SETTINGS)
         ttk.Label(disp, text="Display mode").grid(row=0, column=0, sticky="w")
         mode_box = ttk.Combobox(disp, textvariable=self.mode_var, width=24, state="readonly",
                                 values=rp.DISPLAY_MODES)
@@ -792,8 +794,8 @@ class Launcher(tk.Tk):
         ttk.Combobox(disp, textvariable=self.renderer_var, width=12, state="readonly",
                      values=["auto", "native", "legacy"]).grid(row=5, column=1, sticky="w")
         # Object draw distance (docs/DRAW_DISTANCE.md): the native far-object proxies, render only. 1 = the original
-        # game, 8 = the default (to a pixel). Passed only when it is not 8, so builds without the flag still launch.
-        self.draw_distance_var = tk.DoubleVar(value=float(self._get("draw_distance", 8.0)))
+        # game (the default), 8 = to a pixel. Passed only when it is not 1, so builds without the flag still launch.
+        self.draw_distance_var = tk.DoubleVar(value=float(self._get("draw_distance", 1.0)))
         ttk.Label(disp, text="Draw distance").grid(row=6, column=0, sticky="w")
         ddf = ttk.Frame(disp)
         ddf.grid(row=6, column=1, sticky="w")
@@ -1285,7 +1287,9 @@ class Launcher(tk.Tk):
         fill = self.mode_var.get() == "Borderless fullscreen" and bool(native)
         if fill:
             self.family_var.set(rp.classify(native[0], native[1])[0])
-        self.family_box.configure(state="disabled" if fill else "readonly")
+        game_settings = self.mode_var.get() == rp.GAME_SETTINGS
+        self.family_box.configure(state="disabled" if fill or game_settings else "readonly")
+        self.resolution_box.configure(state="disabled" if game_settings else "readonly")
         self._resolution_items = rp.choices(self.family_var.get(), native, modes, fill_screen=fill)
         self.resolution_box.configure(values=[label for label, _ in self._resolution_items])
         # Keep the stored choice when this family lists it; else the native desktop.
@@ -1469,11 +1473,15 @@ class Launcher(tk.Tk):
         if uitest:
             cmd += ["--ui-test", uitest]
 
-        # The display: one exact size, used for the window or the fullscreen picture AND as the render size.
-        size, size_error = self._chosen_size()
-        if size_error:
+        # The display: the game's own settings (display.cfg, no flag), or an explicit session override - one exact
+        # size, used for the window or the fullscreen picture AND as a Manual game resolution.
+        size, size_error = (None, None) if self.mode_var.get() == rp.GAME_SETTINGS else self._chosen_size()
+        if self.mode_var.get() == rp.GAME_SETTINGS:
+            notes.append("Display: the game's own settings (display.cfg, set in the Options menu).")
+        elif size_error:
             errors.append(size_error)
         elif size:
+            notes.append("Display: a session override (%dx%d); the game does not save it." % size)
             flags = rp.command_flags(self.mode_var.get(), size)
             if not getattr(self, "render_size_flags", True):
                 # A build from before the exact render size: the window / fullscreen choice only.
@@ -1483,7 +1491,7 @@ class Launcher(tk.Tk):
             cmd += flags
         if self.renderer_var.get() in ("native", "legacy"):
             cmd += ["--renderer", self.renderer_var.get()]
-        if self.draw_distance_var.get() != 8.0:
+        if self.draw_distance_var.get() != 1.0:
             cmd += ["--draw-distance", "%g" % self.draw_distance_var.get()]
         # The effect layer switches: only what differs from "everything drawn" (older builds lack the flags).
         effects_off = [name for name, var in self.effect_vars.items() if not var.get()]
@@ -1617,7 +1625,7 @@ class Launcher(tk.Tk):
                              daemon=True).start()
         placing = (self.placement_var.get() != "Windows decides"
                    and not self.headless_var.get()
-                   and self.mode_var.get() != "Borderless fullscreen")
+                   and self.mode_var.get() == "Windowed")
         if placing:
             threading.Thread(target=self._place_game_window, args=(proc,), daemon=True).start()
 

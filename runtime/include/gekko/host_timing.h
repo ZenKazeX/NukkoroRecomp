@@ -148,6 +148,14 @@ public:
     // overshoot, and carrying that forward would compound into a permanent
     // speed loss of overshoot/period on every single tick.
     void note_wake(TimePoint actual_wake) noexcept;
+    // gekko/phase_lock.h: moves where wall time is mapped onto game time (positive: later). Game time is untouched.
+    void shift_anchor(Duration shift) noexcept { wall_origin_ += shift; }
+    // render/burst_ahead.h: a one-off jump of the anchor AND the catch-up ladder (positive: later), so one frame earlier
+    // is run at once instead of at the catch-up rate, and one frame later is one frame of sleep. Game time is untouched.
+    void jump_anchor(Duration shift) noexcept {
+        wall_origin_ += shift;
+        last_release_ += shift;
+    }
 
     const Config& config() const noexcept { return config_; }
     const Stats& stats() const noexcept { return stats_; }
@@ -168,6 +176,47 @@ private:
     TimePoint last_release_{};
     std::chrono::nanoseconds previous_debt_{};
     bool have_previous_debt_ = false;
+};
+
+// The precise frame-boundary wake (V-Sync off; docs/FRAME_PACING.md "V-Sync off", 2026-11-06). The high-resolution
+// waitable timer wakes the pacer 0.29 ms (p50) / 0.70 ms (p99) / 1.26 ms (max) after its deadline, a different amount
+// every time (Westopolis tape, 21,773 wakes). With V-Sync off the frame is presented right after the boundary wake, so
+// that lateness IS the frame's release time: one interval is 16.667 ms + this lateness - the previous one, up to
+// ~17.7 ms. So the timer is armed `guard()` before the deadline and the rest is a yield spin to the deadline itself.
+// The guard follows the timer's own lateness (the second largest of the last kWindow wakes + kMargin), so the spin is
+// no longer than this machine's timer needs; a timer that lands within the guard is never late at the deadline. One
+// stalled wake (a preemption) costs that one frame, not a long spin for the next kWindow frames (code review
+// 2026-11-06); a second one in the window raises the guard.
+class WakeGuard {
+public:
+    static constexpr std::size_t kWindow = 64;
+    static constexpr std::chrono::nanoseconds kMargin{100'000};   // 0.1 ms over the worst recent lateness
+    static constexpr std::chrono::nanoseconds kMinimum{250'000};  // even a perfect timer gets 0.25 ms
+    static constexpr std::chrono::nanoseconds kMaximum{2'000'000};
+    static constexpr std::chrono::nanoseconds kInitial{1'500'000};  // before anything was measured
+    // How late the timer woke after the time it was armed for (negative: early, counted as 0).
+    void note_lateness(std::chrono::nanoseconds late) noexcept {
+        ring_[next_++ % kWindow] = late.count() > 0 ? late.count() : 0;
+        if (count_ < kWindow) ++count_;
+    }
+    std::chrono::nanoseconds guard() const noexcept {
+        if (count_ == 0) return kInitial;
+        long long worst = 0, second = 0;  // the two largest lateness values in the window
+        for (std::size_t i = 0; i < count_; ++i) {
+            if (ring_[i] > worst) {
+                second = worst;
+                worst = ring_[i];
+            } else if (ring_[i] > second) {
+                second = ring_[i];
+            }
+        }
+        const long long g = (count_ == 1 ? worst : second) + kMargin.count();
+        return std::chrono::nanoseconds(g < kMinimum.count() ? kMinimum.count() : g > kMaximum.count() ? kMaximum.count() : g);
+    }
+
+private:
+    long long ring_[kWindow]{};
+    std::size_t next_ = 0, count_ = 0;
 };
 
 class RenderClock {

@@ -81,7 +81,17 @@ constexpr u32 kSaveMagic = 0x4B474B53u;  // 'SKGK'
 // Version 24 (docs/ARAM.md step 5): no ARAM image after the guest window - the sound samples live in native stores,
 // regions of the window; the GCAX banks' and the stream ring's placement follows the audio block. Versions 19-23
 // load: their ARAM image is taken over by the stores (adopt_aram_image).
-constexpr u32 kSaveVersion = 24u;
+// 25: the native jobs block; 26: native CRI (docs/NATIVE_THREADS.md); 27: native SVM; 28: the native expand jobs'
+// queue (GEKKO_NATIVE_EXPAND_JOBS=3, docs/NATIVE_STREAMING_REPLACEMENT_PLAN.md phase 2); 29: a kind per queued job
+// (W2's read jobs, GEKKO_NATIVE_EXPAND_JOBS=5); 30: the expand jobs' mode 1/2 creation stamp.
+// 31: the AX DSP side's lagging copy of the voice parameter blocks and update rings is native (AxPbImage), saved at the end
+// of the audio block; versions before 31 hold it in guest memory (the SDK's PB array) and load by taking that over.
+// 32: the frame builder's two next-frame lists are native (AxLists, native_ax_frame.h), saved after the PB image; older versions hold
+// them in guest memory (the SDK's command-list slots) and load by parsing those.
+constexpr u32 kSaveVersion = 33u;
+// 33: no layout change; the AX frame is native and its guest bodies (__AXOutNewFrame, the AI / DSP callbacks, the DSP mailbox) are gone. States of
+// older versions are converted at load (audio_state.cpp); one saved while the CPU was inside one of those bodies has no code to resume in and
+// faults at the first DSP register access.
 constexpr u32 kFirstVersionWithoutAram = 24u;
 constexpr u32 kAramImageBytes = 0x01000000u;  // the 16 MiB image versions 19-23 carry
 
@@ -326,6 +336,14 @@ bool save_state(System& system, const std::filesystem::path& path, std::string* 
         GEKKO_PROFILE_TEXT(target.c_str(), target.size());
     }
 
+    // A native wait (os.threads OSSleepThread) is processing an event's callbacks on the native stack: the host call chain
+    // that would finish it is not part of a file. Between two events the wait holds no state a restart does not recreate.
+    if (system.interrupts().sync_event_active()) {
+        GEKKO_PROFILE_MESSAGE_LITERAL("mem/savestate refused: native event");
+        fail(error, "savestate refused: a native event is running its callbacks inside a wait. Save between events.");
+        return false;
+    }
+
     // The card's working image is the host file: commit what the persistence
     // debounce still holds, so the file matches the machine saved below.
     system.card().flush();
@@ -377,6 +395,18 @@ bool save_state(System& system, const std::filesystem::path& path, std::string* 
 #endif
         system.card().save_state(blob);
         system.ipl().save_state(blob);
+        if (system.native_expand_jobs() != nullptr) {  // enable_file_api creates the four services together
+            system.native_jobs().save_state(blob);
+            system.native_cri().save_state(blob);
+            system.native_svm().save_state(blob);
+            system.expand_jobs().save_state(blob);
+        } else {
+            // No mounted assets (the unit tests' System): the four services are idle, their state is their initial one.
+            NativeJobs(system.cpu()).save_state(blob);
+            NativeCri(system.cpu(), system.interrupts()).save_state(blob);
+            NativeSvm(system.cpu()).save_state(blob);
+            NativeExpandJobs(system.cpu()).save_state(blob);
+        }
         GEKKO_PROFILE_VALUE(blob.size() - before);
     }
     {
@@ -609,6 +639,27 @@ bool load_state(System& system, const std::filesystem::path& path, std::string* 
 #endif
         if (!system.card().load_state(cursor, end)) return bad("native card");
         if (!system.ipl().load_state(cursor, end)) return bad("native IPL services");
+        // Without mounted assets (the unit tests' System) the four services are idle: their blocks are read into
+        // idle instances and dropped.
+        NativeJobs idle_jobs(system.cpu());
+        NativeCri idle_cri(system.cpu(), system.interrupts());
+        NativeSvm idle_svm(system.cpu());
+        NativeExpandJobs idle_expand(system.cpu());
+        // enable_file_api creates all four together; the expand jobs' const accessor is the existence test.
+        const bool services = system.native_expand_jobs() != nullptr;
+        NativeJobs& jobs = services ? system.native_jobs() : idle_jobs;
+        NativeCri& cri = services ? system.native_cri() : idle_cri;
+        NativeSvm& svm = services ? system.native_svm() : idle_svm;
+        NativeExpandJobs& expand = services ? system.expand_jobs() : idle_expand;
+        if (version >= 25u && !jobs.load_state(cursor, end)) return bad("native jobs");
+        if (version >= 26u && !cri.load_state(cursor, end)) return bad("native CRI");
+        // Before 27 the SVM's state was CRI's own block in guest memory (restored above): it is taken from there.
+        if (version >= 27u) {
+            if (!svm.load_state(cursor, end)) return bad("native SVM");
+        } else {
+            svm.import_guest(system.cpu());
+        }
+        if (version >= 28u && !expand.load_state(cursor, end, version)) return bad("native expand jobs");
         if (game_ticks != system.game_ticks()) return bad("game clock header");
         GEKKO_PROFILE_VALUE(cursor - before);
     }
@@ -682,6 +733,8 @@ bool load_state(System& system, const std::filesystem::path& path, std::string* 
                 "the reverb tail restarts empty after restore.\n");
         } else {
             system.reset_host_audio_state();
+            system.import_ax_pb_image_from_guest();
+            system.import_ax_lists_from_guest();
             std::fprintf(stderr, "[savestate] version 19 has no decoder/mixer history; "
                                  "audio continuation may differ until history is rebuilt.\n");
         }

@@ -252,6 +252,48 @@ u32 RwDriver::im2d(Cpu& c, u32 type, u32 vertex_array, u32 count, u32 index_arra
     return 1u;
 }
 
+// ClearQuad (0x80499E58), the raster-level clear the original draws as one screen quad: colour replaced (blend ONE /
+// ZERO), depth set to the farthest (z test always, z write on) - or only the depth (the colour kept: blend ZERO / ONE),
+// whatever the scene had drawn there. The rectangle is in raster pixels like an Im2D vertex; one that covers the whole
+// view stretches over it. Like RwCameraClear it leaves the alpha-test mode at 1 and (outside a bracket, with nothing to
+// clear or an empty rectangle) draws nothing.
+u32 RwDriver::raster_clear(Cpu& c, std::int32_t x, std::int32_t y, std::int32_t w, std::int32_t h, u32 rgba, bool colour,
+                           bool depth) {
+    (void)c;
+    ++stats_.raster_clears;
+    states_.alpha_test_off = 1u;
+    if (!bracket_valid_ || (!colour && !depth) || w <= 0 || h <= 0) {
+        ++stats_.raster_clears_ignored;
+        return 1u;
+    }
+    const View& view = views_[bracket_view_];
+    constexpr float kFarthest = 0.99999994f;   // the original's vertex z (binary32 0x3F7FFFFF)
+    render::ImmediateVertex vertices[4];
+    const float x0 = static_cast<float>(x), y0 = static_cast<float>(y);
+    const float x1 = static_cast<float>(x + w), y1 = static_cast<float>(y + h);
+    const float corner[4][2] = {{x0, y0}, {x1, y0}, {x0, y1}, {x1, y1}};
+    for (int i = 0; i < 4; ++i) {
+        vertices[i].position = render::Float3{corner[i][0], corner[i][1], kFarthest};
+        vertices[i].colour = colour ? rgba : 0xFF000000u;
+        vertices[i].uv[0] = vertices[i].uv[1] = 0.0f;
+    }
+    immediate_indices_.assign({0u, 1u, 2u, 2u, 1u, 3u});
+    render::Recipe r;
+    r.src = colour ? render::Blend::One : render::Blend::Zero;
+    r.dst = colour ? render::Blend::Zero : render::Blend::One;
+    r.depth_test = false;
+    r.depth_write = depth;
+    r.cull = render::Cull::None;
+    r.fog = false;
+    r.alpha_cutoff = 0.0f;
+    const bool whole = x0 <= view.x + 0.5f && y0 <= view.y + 0.5f && x1 >= view.x + view.width - 0.5f &&
+                       y1 >= view.y + view.height - 0.5f;
+    const render::Anchor anchor = whole ? render::Anchor::Fill : render::Anchor::Center;
+    shadow::rwim::Binding binding;
+    imm_.draw2d(vertices, 4u, render::Topology::Triangles, immediate_indices_, false, binding, r, &anchor);
+    return 1u;
+}
+
 // NE-RW2: the strip is collected and continued by the immediate modes (runtime/lift/rwim); this layer tells them when
 // it has ended (its group, pass, bracket or frame).
 void RwDriver::strip_flush() {
@@ -279,6 +321,10 @@ shadow::rwim::Placement RwDriver::place(const shadow::rwim::Bounds& bounds, bool
     shadow::rwim::Placement placement;
     placement.laid_out = decision.laid_out;
     placement.anchor = anchor_of(decision.anchor);
+    // A centred sprite zoomed past the canvas's side (the title logo's after-images): placed as Center, cut at the
+    // view's edge as the console's screen edge cut it, not at the 4:3 box's.
+    if (decision.beyond_canvas && placement.anchor == render::Anchor::Center && decision.region < 0)
+        placement.anchor = render::Anchor::Continued;
     const View& bracket = views_[bracket_view_];
     if (decision.region >= 0 && static_cast<std::size_t>(decision.region) < bracket.region_ids.size()) {
         placement.region = decision.region;

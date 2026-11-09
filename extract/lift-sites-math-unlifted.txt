@@ -6,3 +6,5 @@ site 0x8000F6F0 0x4BFFFCE5 msl_tanf
 site 0x8000F720 0x4BFFFCB5 msl_tanf
 site 0x8000F884 0x4BFFFB51 msl_tanf
 site 0x8000F898 0x4BFFFB3D msl_tanf
+# fn_80397770 (a GX setter) is pruned in the lifted build (rwR4 owners); its msl_cosf site stays for the unlifted renderer.
+site 0x803977E8 0x4801B78D msl_cosf

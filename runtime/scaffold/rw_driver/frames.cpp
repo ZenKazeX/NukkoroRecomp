@@ -1,6 +1,7 @@
 // SCAFFOLDING (R2): camera brackets, clears and the present as views, passes and frame packets - deleted by R5: the render tree's lift describes views and passes to the renderer itself
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <utility>
 
@@ -291,6 +292,23 @@ void RwDriver::submit_frame(Cpu& c) {
             ++stats_.mode_switch_blanks;
         }
     }
+    // VISetBlack(TRUE): the console's VI shows black while the flag is in force, whatever the frame buffer holds (the
+    // game keeps drawing and flipping). The frame is shown as one black frame (presentation only: the game's frame and
+    // state are untouched), like the mode switch's.
+    const bool display_black = display_blank_ && display_blank_();
+    if (display_black) {
+        render::FramePacket blank;
+        blank.tick = packet.tick;
+        blank.game_ticks = packet.game_ticks;
+        blank.background = render::Float4{0.0f, 0.0f, 0.0f, 1.0f};
+        packet = std::move(blank);
+        ++stats_.display_blanks;
+    }
+    static const bool trace_black = std::getenv("SHADOW_TRACE_VI_BLACK") != nullptr;
+    if (trace_black)
+        std::fprintf(stderr, "[vi-black] present %llu tick %llu black %d\n",
+                     static_cast<unsigned long long>(stats_.frames + 1u),
+                     static_cast<unsigned long long>(packet.game_ticks), display_black ? 1 : 0);
     if (frame_observer_)
         frame_observer_(packet);
     material_probe_.frame(packet);
@@ -322,6 +340,7 @@ void RwDriver::submit_frame(Cpu& c) {
     frames_.push(std::move(packet));
     stats_.frames_dropped += frames_.stats().dropped - dropped_before;
     ++stats_.frames;
+    uv_stage_check(c);
     if (skin_hash_ && frame_skins_ != 0u)
         std::fprintf(stderr, "[skinhash] %llu %u %016llX\n", static_cast<unsigned long long>(stats_.frames), frame_skins_,
                      static_cast<unsigned long long>(frame_skin_hash_));

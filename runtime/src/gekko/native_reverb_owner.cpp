@@ -27,15 +27,22 @@ bool read_parameters(const GuestMemory& memory, u32 context, shadow::audio::Reve
     return true;
 }
 
-void observe_init(const Cpu& cpu, Binding& binding, shadow::audio::EffectStage& effect) noexcept {
+bool serve_init(Cpu& cpu, Binding& binding, shadow::audio::EffectStage& effect) noexcept {
+    const u32 context = cpu.gpr[3];
     shadow::audio::Reverb::Parameters parameters;
-    binding.context = cpu.gpr[3];
-    binding.configured = read_parameters(cpu.guest_memory(), binding.context, parameters) &&
-                         effect.configure(parameters);
+    if (context + kBypassOffset < context || cpu.guest_memory().peek(GcAddr(context + kBypassOffset), 1u) == nullptr ||
+        !read_parameters(cpu.guest_memory(), context, parameters))
+        return false;
+    cpu.mem_write8(context + kBypassOffset, 0u);  // stb r0, 0x1C4(r31), before the parameters are judged
+    binding.context = context;
+    binding.configured = effect.configure(parameters);
+    cpu.gpr[3] = binding.configured ? 1u : 0u;
+    return true;
 }
 
-void observe_shutdown(const Cpu& cpu, Binding& binding) noexcept {
+void serve_shutdown(Cpu& cpu, Binding& binding) noexcept {
     if (cpu.gpr[3] == binding.context) binding.configured = false;
+    cpu.gpr[3] = 1u;
 }
 
 CallbackResult serve_callback(const Cpu& cpu, const Binding& binding, shadow::audio::EffectStage& effect) noexcept {

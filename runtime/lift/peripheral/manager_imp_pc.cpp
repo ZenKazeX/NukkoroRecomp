@@ -54,6 +54,7 @@ const ControllerSample& ManagerImpPc::sample(std::size_t port) const noexcept {
 
 void ManagerImpPc::read(PortReading* out, std::size_t count) noexcept {
     ++stats_.frames_read;
+    if (live_source_) live_source_(*this);
     for (std::size_t port = 0; port < count; ++port) {
         PortReading reading;
         if (port < kPorts && samples_[port].connected) {

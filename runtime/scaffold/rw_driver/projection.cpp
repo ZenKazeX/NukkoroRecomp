@@ -119,6 +119,17 @@ void RwDriver::set_output_aspect(float aspect) noexcept {
         output_aspect_bits_.store(as_bits(aspect), std::memory_order_release);
 }
 
+void RwDriver::set_logic_aspect(float aspect) noexcept {
+    logic_aspect_bits_.store(aspect > 0.0f && std::isfinite(aspect) ? as_bits(aspect) : 0u, std::memory_order_release);
+}
+
+float RwDriver::logic_aspect() const noexcept {
+    if (event_framed_.load(std::memory_order_acquire))
+        return kAuthoredScreenAspect;  // an in-engine event: 4:3 for the logic too, as for the picture
+    const u32 bits = logic_aspect_bits_.load(std::memory_order_acquire);
+    return bits != 0u ? as_float(bits) : as_float(output_aspect_bits_.load(std::memory_order_acquire));
+}
+
 float RwDriver::output_aspect() const noexcept {
     if (event_framed_.load(std::memory_order_acquire))
         return kAuthoredScreenAspect;  // an in-engine event is shown 4:3 (sample_event_framing)
@@ -126,8 +137,11 @@ float RwDriver::output_aspect() const noexcept {
 }
 
 void RwDriver::sample_event_framing(Cpu& c) noexcept {
+    const u32 stage_actions = c.mem_read32(c.gpr[13] + layout::kSdaStageActionManager);
+    const bool goal = stage_actions != 0u &&
+                      c.mem_read32(stage_actions + layout::kStageActionCurrent) == layout::kStageActionGoal;
     const bool event = c.mem_read8(c.gpr[13] + layout::kSdaEventHoldsInterval) != 0u &&
-                       c.mem_read8(layout::kSystemObject + layout::kSystemTwoPlayers) == 0u;
+                       c.mem_read8(layout::kSystemObject + layout::kSystemTwoPlayers) == 0u && !goal;
 #if !defined(GEKKO_SHIPPING)
     if (event != event_framed_.load(std::memory_order_relaxed))
         std::fprintf(stderr, "[lifted-render] in-engine event %s at frame %llu\n", event ? "begins" : "ends",
@@ -194,7 +208,9 @@ u32 RwDriver::displayed_screen_point(Cpu& c, u32 out, u32 camera_state, u32 worl
     const float fov_y = as_float(c.mem_read32(object + kCameraFov + 4u));
     const render::ViewWindow game{game_tan(0.5f * (fov_x * scale_x)), game_tan(0.5f * (fov_y * scale_y))};
     const float canvas_aspect = rect.h > 0.0f ? rect.w / rect.h : kAuthoredScreenAspect;
-    const float view_aspect = output_aspect() * canvas_aspect / kAuthoredScreenAspect;
+    // The enemy AI's on-screen verdict: the logic aspect (the output's in live play; a replay's recorded one), so
+    // a replay at another picture shape decides exactly as the recording did (gekko/gameplay_aspect.h).
+    const float view_aspect = logic_aspect() * canvas_aspect / kAuthoredScreenAspect;
     const render::ViewWindow shown = render::displayed_window(game, canvas_aspect, view_aspect, framing_);
     float p[3];
     for (u32 i = 0; i < 3; ++i)
@@ -349,8 +365,10 @@ u32 RwDriver::im2d_primitive_projected(Cpu& c, u32 type, u32 vertices, u32 count
 // console that window WAS the picture. Here the picture is the authored window (render/view.h): square pixels by
 // default, the game's own window with --framing game. The lowered fn_8000F860 call gives the camera that window, so
 // everything that maps the renderer's camera onto the canvas - RenderWare's view matrix, the lens flare, the
-// refraction patches, the rain and watch-camera sheets - reads the picture that is drawn (docs/boundary-20261007/
-// DESIGN.md 8); the camera's frustum is the displayed picture's (System::native_frustum_build, DESIGN.md 7).
+// refraction patches - reads the picture that is drawn (docs/boundary-20261007/DESIGN.md 8); the camera's frustum is
+// the displayed picture's (System::native_frustum_build, DESIGN.md 7). What the game sizes to cover the whole picture
+// from this window covers only its authored part on a wider or narrower view: the watch camera's noise sheet takes
+// the displayed window (game_owners.cpp GameOwners::watch_camera_sheet_scale); the rain box does not yet (P11).
 // The tangents are fn_8000F860's (0.5 x the angle through the game's tanf: bit-identical); the canvas is the camera's
 // raster (its viewport's, attached by fn_8027211C before the sync).
 u32 RwDriver::camera_picture_window(Cpu& c, u32 out, u32 fov) {

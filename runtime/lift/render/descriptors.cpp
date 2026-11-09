@@ -137,6 +137,9 @@ void CpuDescriptorPool::free(D3D12_CPU_DESCRIPTOR_HANDLE handle) {
 
 // ---- SamplerHeap --------------------------------------------------------------------------------------------
 
+template <typename T>
+static T clamp_level(T v, T lo, T hi) noexcept { return v < lo ? lo : (v > hi ? hi : v); }
+
 bool SamplerHeap::create(Device& device, std::uint32_t max_anisotropy, std::string* error) {
     D3D12_DESCRIPTOR_HEAP_DESC desc{};
     desc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER;
@@ -149,31 +152,42 @@ bool SamplerHeap::create(Device& device, std::uint32_t max_anisotropy, std::stri
         return false;
     }
     heap_->SetName(L"shadow.samplers");
-    const std::uint32_t increment = device.d3d()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+    anisotropy_ = max_anisotropy;
+    for (std::uint32_t f = 0; f < 3; ++f)
+        for (std::uint32_t u = 0; u < 3; ++u)
+            for (std::uint32_t v = 0; v < 3; ++v) write(device, f, u, v, max_anisotropy);
+    return true;
+}
+
+void SamplerHeap::set_anisotropy(Device& device, std::uint32_t anisotropy) {
+    if (heap_ == nullptr || anisotropy == anisotropy_)
+        return;
+    anisotropy_ = anisotropy;
+    for (std::uint32_t u = 0; u < 3; ++u)
+        for (std::uint32_t v = 0; v < 3; ++v) write(device, static_cast<std::uint32_t>(Filter::Anisotropic), u, v, anisotropy);
+}
+
+void SamplerHeap::write(Device& device, std::uint32_t f, std::uint32_t u, std::uint32_t v, std::uint32_t anisotropy) {
     const D3D12_TEXTURE_ADDRESS_MODE modes[3] = {D3D12_TEXTURE_ADDRESS_MODE_WRAP, D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
                                                  D3D12_TEXTURE_ADDRESS_MODE_MIRROR};
+    // The anisotropic slots at level 1 (Off) are the console's linear filter; Direct3D 12 hardware supports 16 at most.
+    const std::uint32_t level = clamp_level<std::uint32_t>(anisotropy, 1u, 16u);
     const D3D12_FILTER filters[3] = {D3D12_FILTER_MIN_MAG_MIP_POINT, D3D12_FILTER_MIN_MAG_MIP_LINEAR,
-                                     D3D12_FILTER_ANISOTROPIC};
-    for (std::uint32_t f = 0; f < 3; ++f) {
-        for (std::uint32_t u = 0; u < 3; ++u) {
-            for (std::uint32_t v = 0; v < 3; ++v) {
-                D3D12_SAMPLER_DESC sampler{};
-                sampler.Filter = filters[f];
-                sampler.AddressU = modes[u];
-                sampler.AddressV = modes[v];
-                sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
-                sampler.MaxAnisotropy = f == 2 ? max_anisotropy : 1;
-                sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
-                sampler.MinLOD = 0.0f;
-                sampler.MaxLOD = D3D12_FLOAT32_MAX;
-                D3D12_CPU_DESCRIPTOR_HANDLE handle = heap_->GetCPUDescriptorHandleForHeapStart();
-                handle.ptr += static_cast<SIZE_T>(sampler_index(static_cast<Filter>(f), static_cast<Address>(u),
-                                                                static_cast<Address>(v))) * increment;
-                device.d3d()->CreateSampler(&sampler, handle);
-            }
-        }
-    }
-    return true;
+                                     level > 1u ? D3D12_FILTER_ANISOTROPIC : D3D12_FILTER_MIN_MAG_MIP_LINEAR};
+    D3D12_SAMPLER_DESC sampler{};
+    sampler.Filter = filters[f];
+    sampler.AddressU = modes[u];
+    sampler.AddressV = modes[v];
+    sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_CLAMP;
+    sampler.MaxAnisotropy = f == 2u ? level : 1u;
+    sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
+    sampler.MinLOD = 0.0f;
+    sampler.MaxLOD = D3D12_FLOAT32_MAX;
+    const std::uint32_t increment = device.d3d()->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER);
+    D3D12_CPU_DESCRIPTOR_HANDLE handle = heap_->GetCPUDescriptorHandleForHeapStart();
+    handle.ptr += static_cast<SIZE_T>(sampler_index(static_cast<Filter>(f), static_cast<Address>(u),
+                                                    static_cast<Address>(v))) * increment;
+    device.d3d()->CreateSampler(&sampler, handle);
 }
 
 }  // namespace shadow::render

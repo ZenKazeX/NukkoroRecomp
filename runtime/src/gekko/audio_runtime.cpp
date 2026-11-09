@@ -1,6 +1,7 @@
 #include "gekko/audio_runtime.h"
 #include "gekko/thread_name.h"  // ES-T1
 #include "gekko/audio_audit.h"
+#include "gekko/schedule_offset.h"
 #include "native_memory.h"
 
 #include <algorithm>
@@ -9,6 +10,7 @@
 #include <cmath>
 #include <condition_variable>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <mutex>
@@ -50,6 +52,7 @@
 // TracyD3D12, which pulls in windows.h, so this file's own WIN32_LEAN_AND_MEAN
 // and NOMINMAX guards are the ones that take effect either way.
 #include "gekko/profiling.h"
+#include "render/present_trace.h"
 
 namespace gekko {
 namespace {
@@ -160,9 +163,10 @@ u32 AudioDeviceFormat::bytes_per_sample() const noexcept {
 // AudioResampler
 // ---------------------------------------------------------------------------
 
-bool AudioResampler::configure(u64 source_num, u64 source_den, u32 output_rate) {
+bool AudioResampler::configure(u64 source_num, u64 source_den, u32 output_rate, bool fine_ratio) {
     up_ = 0;
     down_ = 0;
+    trim_ = 0;
     if (source_num == 0u || source_den == 0u || output_rate == 0u) return false;
     if (source_den > std::numeric_limits<u64>::max() / output_rate) return false;
     u64 up = static_cast<u64>(output_rate) * source_den;
@@ -170,6 +174,10 @@ bool AudioResampler::configure(u64 source_num, u64 source_den, u32 output_rate) 
     const u64 divisor = std::gcd(up, down);
     up /= divisor;
     down /= divisor;
+    if (fine_ratio) {
+        up *= kFineScale;
+        down *= kFineScale;
+    }
     // phase_ * kPhases and phase_ + down_ must stay far inside 64 bits.
     if (up > (u64(1) << 40) || down > (u64(1) << 40)) return false;
 
@@ -249,10 +257,11 @@ AudioFrameIndex64 AudioResampler::input_needed(AudioFrameIndex64 output_frames) 
     // (n-1)*down_ in 32-bit (or an overflowing u64) wraps the output instant
     // backward, so the consumer thinks it needs no input and emits silence
     // while the ring still holds samples.
-    if (down_ != 0u && n_minus_1 > (std::numeric_limits<u64>::max() - phase_) / down_) {
+    const u64 step = this->step();
+    if (step != 0u && n_minus_1 > (std::numeric_limits<u64>::max() - phase_) / step) {
         return input_room();
     }
-    const AudioFrameIndex64 advance = (phase_ + n_minus_1 * down_) / up_;
+    const AudioFrameIndex64 advance = (phase_ + n_minus_1 * step) / up_;
     if (center_ > std::numeric_limits<u64>::max() - advance) {
         return input_room();
     }
@@ -338,7 +347,7 @@ AudioFrameIndex64 AudioResampler::pull(float* interleaved, AudioFrameIndex64 max
             interleaved[static_cast<std::size_t>(produced) * 2u + 1u] = horizontal_sum(sum_right);
         }
         ++produced;
-        phase_ += down_;
+        phase_ += step();
         while (phase_ >= up_) {
             phase_ -= up_;
             ++center_;
@@ -487,6 +496,29 @@ struct AudioRuntime::Impl {
     void print_underrun_records() noexcept;
 
     // Consumer-private.
+    // SHADOW_AUDIO_RATE_TRIM=1 (default off; docs/TIMING_ARCHITECTURE.md 7): the resampler's ratio follows the ring's
+    // fill, so that a game clock running a few ppm off the device (a display-locked game clock) neither fills nor
+    // drains the ring. The target is the fill the ring settles at on its own (learned over the first seconds of
+    // playback), so the latency stays what it is today. Off: the resampler is configured exactly as before.
+    struct RateTrim {
+        bool enabled = false;
+        u64 learn_wakes = 0;     // wakes seen so far (the first kSettleWakes are not averaged)
+        double learn_sum = 0.0;
+        double target = 0.0;     // source frames
+        double smoothed = 0.0;   // fill, exponentially smoothed (~1 s at 10 ms wakes)
+        double ppm = 0.0;        // the trim applied
+        double units_per_ppm = 0.0;
+        std::chrono::steady_clock::time_point traced{};
+        // The fill right after the start still holds the prime (measured 2026-10-31: ~1,350 frames for the first
+        // seconds, ~1,000 once settled); a target learned there raised the steady fill by ~11 ms. So: let 20 s pass,
+        // then average 10 s.
+        static constexpr u64 kSettleWakes = 2000;        // ~20 s at 10 ms wakes
+        static constexpr u64 kLearnWakes = 3000;         // settle + ~10 s averaged
+        static constexpr double kAlpha = 0.01;
+        static constexpr double kPpmPerFrame = 0.5;      // 10 ppm costs 20 frames (0.6 ms) of steady offset
+        static constexpr double kMaxPpm = 300.0;
+    } rate_trim;
+    void update_rate_trim(SampleCounter64 fill) noexcept;
     SampleCounter64 tail = 0;
     u64 seen_epoch = 0;
     bool running = false;  // past the prime
@@ -679,7 +711,14 @@ bool AudioRuntime::Impl::configure_consumer(const AudioDeviceFormat& device,
         set_error("unsupported device format");
         return false;
     }
-    if (!resampler.configure(kAudioSourceRateNum, kAudioSourceRateDen, device.rate)) {
+    rate_trim = RateTrim{};
+    {
+        // Default ON since 2026-11-04 (with the phase lock: a 12-minute run kept the ring within its noise, 0 underruns;
+        // docs/PERF_60FPS_2026-11-04.md). SHADOW_AUDIO_RATE_TRIM=0 or --no-audio-rate-trim: the fixed ratio as before.
+        const char* v = std::getenv("SHADOW_AUDIO_RATE_TRIM");
+        rate_trim.enabled = !(v != nullptr && v[0] == '0');
+    }
+    if (!resampler.configure(kAudioSourceRateNum, kAudioSourceRateDen, device.rate, rate_trim.enabled)) {
         set_error("resampler rejected the device rate");
         return false;
     }
@@ -840,6 +879,18 @@ void AudioRuntime::Impl::emit_silence(u8* out, AudioFrameIndex64 frames) noexcep
                 static_cast<std::size_t>((frames - done) * frame_bytes));
 }
 
+namespace {
+// The player's master volume (Options > Audio, gekko/pc_settings.h): a linear gain on the endpoint stream, after
+// the game's mix, so the game's PCM is never touched. 1 = unity: the multiply is skipped (bit-identical output).
+std::atomic<float> g_output_gain{1.0f};
+}  // namespace
+
+void set_audio_output_gain(float gain) noexcept {
+    g_output_gain.store(std::clamp(gain, 0.0f, 1.0f), std::memory_order_relaxed);
+}
+
+float audio_output_gain() noexcept { return g_output_gain.load(std::memory_order_relaxed); }
+
 void AudioRuntime::Impl::convert(const float* stereo, AudioFrameIndex64 frames, u8* out) noexcept {
     const u32 channels = format.channels;
     const u32 sample_bytes = format.bytes_per_sample();
@@ -898,10 +949,16 @@ void AudioRuntime::Impl::convert(const float* stereo, AudioFrameIndex64 frames, 
     // fade run (from emit_silence), never per frame.
     GEKKO_PROFILE_ZONE("aud/convert");
     GEKKO_PROFILE_VALUE(frames);
+    // The master volume, ramped across the chunk from the last chunk's gain (no zipper noise); unity skips it.
+    static float last_gain = 1.0f;  // the consumer thread's own (convert runs on it alone)
+    const float target_gain = g_output_gain.load(std::memory_order_relaxed);
+    const bool unity = target_gain == 1.0f && last_gain == 1.0f;
+    const float gain_step = frames > 0 ? (target_gain - last_gain) / static_cast<float>(frames) : 0.0f;
     for (AudioFrameIndex64 i = 0; i < frames; ++i) {
         const std::size_t at = static_cast<std::size_t>(i);
-        const float left = clamp(stereo[at * 2u]);
-        const float right = clamp(stereo[at * 2u + 1u]);
+        const float gain = unity ? 1.0f : last_gain + gain_step * static_cast<float>(i + 1);
+        const float left = clamp(unity ? stereo[at * 2u] : stereo[at * 2u] * gain);
+        const float right = clamp(unity ? stereo[at * 2u + 1u] : stereo[at * 2u + 1u] * gain);
         u8* const frame = out + static_cast<std::size_t>(i * frame_bytes);
         if (channels == 1u) {
             write(frame, 0.5f * (left + right));
@@ -911,7 +968,33 @@ void AudioRuntime::Impl::convert(const float* stereo, AudioFrameIndex64 frames, 
         write(frame + sample_bytes, right);
         if (channels > 2u) std::memset(frame + 2u * sample_bytes, 0, (channels - 2u) * sample_bytes);
     }
+    if (frames > 0) last_gain = target_gain;
     if (clipped != 0u) add(kClipped, clipped);
+}
+
+void AudioRuntime::Impl::update_rate_trim(SampleCounter64 fill) noexcept {
+    RateTrim& t = rate_trim;
+    const double f = static_cast<double>(fill);
+    if (t.learn_wakes < RateTrim::kLearnWakes) {
+        if (t.learn_wakes >= RateTrim::kSettleWakes) t.learn_sum += f;
+        if (++t.learn_wakes == RateTrim::kLearnWakes) {
+            t.target = t.learn_sum / static_cast<double>(RateTrim::kLearnWakes - RateTrim::kSettleWakes);
+            t.smoothed = t.target;
+            t.units_per_ppm = static_cast<double>(resampler.down()) * 1e-6;
+        }
+        return;
+    }
+    t.smoothed += RateTrim::kAlpha * (f - t.smoothed);
+    // Fuller than the target: consume faster (more input per output frame).
+    t.ppm = std::clamp((t.smoothed - t.target) * RateTrim::kPpmPerFrame, -RateTrim::kMaxPpm, RateTrim::kMaxPpm);
+    resampler.set_trim(static_cast<std::int64_t>(std::llround(t.ppm * t.units_per_ppm)));
+    const auto now = std::chrono::steady_clock::now();
+    if (now - t.traced >= std::chrono::seconds(1)) {
+        t.traced = now;
+        shadow::render::present_trace::record(shadow::render::present_trace::Ev::AudioTrim,
+            static_cast<std::uint64_t>(std::llround(t.ppm * 1000.0)), static_cast<std::uint64_t>(std::llround(t.target)),
+            static_cast<std::uint64_t>(std::llround(t.smoothed)));
+    }
 }
 
 void AudioRuntime::Impl::render(u8* out, AudioFrameIndex64 frames) noexcept {
@@ -938,6 +1021,16 @@ void AudioRuntime::Impl::render(u8* out, AudioFrameIndex64 frames) noexcept {
     auto& slot = fill_histogram[static_cast<std::size_t>(std::min<u64>(bucket, Report::kFillBuckets - 1u))];
     slot.store(slot.load(std::memory_order_relaxed) + 1u, std::memory_order_relaxed);
 
+    // gekko/schedule_offset.h: a lead the game runs ahead with adds that much audio to the queue. The prime and the
+    // trim work on the NEUTRAL queue (fill minus the lead), so a prime during a lead, or a trim target learned during
+    // one, does not leave the queue short once the lead is given back.
+    const u64 lead_frames = gekko::schedule_offset::applied_lead_frames(kAudioSourceRateNum, kAudioSourceRateDen);
+    const u64 neutral_fill = fill > lead_frames ? fill - lead_frames : 0u;
+    gekko::schedule_offset::audio_queued_ns().store(
+        static_cast<std::int64_t>(fill * kAudioSourceRateDen * 1'000'000'000ull / kAudioSourceRateNum),
+        std::memory_order_relaxed);
+    if (running && rate_trim.enabled) update_rate_trim(neutral_fill);
+
     const auto feed_resampler = [this](AudioFrameIndex64 need) noexcept {
         while (need != 0u) {
             const AudioFrameIndex64 take = std::min({need, resampler.input_room(), kFeedFrames});
@@ -952,7 +1045,7 @@ void AudioRuntime::Impl::render(u8* out, AudioFrameIndex64 frames) noexcept {
     };
 
     if (!running) {
-        if (holding || fill < prime_frames) {
+        if (holding || neutral_fill < prime_frames) {
             emit_silence(out, frames);
             add(kPrimeSilence, frames);
             add(kOutput, frames);
@@ -1061,6 +1154,8 @@ struct Endpoint {
     IMMDevice* device = nullptr;
     IAudioClient* client = nullptr;
     IAudioRenderClient* render = nullptr;
+    IAudioClock* clock = nullptr;  // only while the present trace records (the AudioClock rows)
+    std::chrono::steady_clock::time_point clock_sampled{};
     std::wstring id;
     UINT32 buffer_frames = 0;
     bool started = false;
@@ -1314,6 +1409,12 @@ bool AudioRuntime::Impl::open_endpoint(IMMDeviceEnumerator* enumerator, Endpoint
     if (SUCCEEDED(hr)) {
         hr = endpoint.client->GetService(__uuidof(IAudioRenderClient), reinterpret_cast<void**>(&endpoint.render));
     }
+    // Measurement only (docs/FRAME_TELEMETRY.md, AudioClock): the device's own clock against QPC, to measure how the
+    // audio device, the display and the game clock drift apart. A failure only leaves the rows out.
+    if (SUCCEEDED(hr) && shadow::render::present_trace::enabled() &&
+        FAILED(endpoint.client->GetService(__uuidof(IAudioClock), reinterpret_cast<void**>(&endpoint.clock)))) {
+        endpoint.clock = nullptr;
+    }
     if (FAILED(hr)) {
         set_error(hresult_text("IAudioClient setup", hr));
         close_endpoint(endpoint);
@@ -1373,6 +1474,7 @@ bool AudioRuntime::Impl::open_endpoint(IMMDeviceEnumerator* enumerator, Endpoint
 
 void AudioRuntime::Impl::close_endpoint(Endpoint& endpoint) noexcept {
     if (endpoint.client != nullptr && endpoint.started) endpoint.client->Stop();
+    release(endpoint.clock);
     release(endpoint.render);
     release(endpoint.client);
     release(endpoint.device);
@@ -1462,6 +1564,15 @@ bool AudioRuntime::Impl::render_endpoint(Endpoint& endpoint) {
     }
     if (FAILED(hr)) return endpoint_failed(endpoint, hr, "IAudioRenderClient::ReleaseBuffer");
     consecutive_errors = 0;
+    if (endpoint.clock != nullptr && begin - endpoint.clock_sampled >= std::chrono::seconds(1)) {
+        endpoint.clock_sampled = begin;
+        UINT64 position = 0, qpc_100ns = 0, frequency = 0;
+        if (SUCCEEDED(endpoint.clock->GetFrequency(&frequency)) &&
+            SUCCEEDED(endpoint.clock->GetPosition(&position, &qpc_100ns))) {
+            shadow::render::present_trace::record(shadow::render::present_trace::Ev::AudioClock, position, frequency,
+                                                  snapshot_fill(), qpc_100ns * 100u);
+        }
+    }
     const auto elapsed = std::chrono::steady_clock::now() - begin;
     raise(kMaxRenderUs, static_cast<u64>(std::chrono::duration_cast<std::chrono::microseconds>(elapsed).count()));
     return true;
@@ -1576,7 +1687,9 @@ void AudioRuntime::Impl::consumer_main() {
                     // permanent latency. When open() is still waiting the
                     // producer is inside open() and the ring is empty, so this
                     // only acts on reopens and on opens that outlived the timeout.
-                    discard_excess(prime_frames);
+                    // A lead (gekko/schedule_offset.h) is part of the queue that belongs there.
+                    discard_excess(prime_frames +
+                                   gekko::schedule_offset::applied_lead_frames(kAudioSourceRateNum, kAudioSourceRateDen));
                     if (ever_opened) add(kReopens, 1u);
                     ever_opened = true;
                 } else {

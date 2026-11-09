@@ -104,11 +104,19 @@ private:
 
 class SamplerHeap {
 public:
-    bool create(Device& device, std::uint32_t max_anisotropy, std::string* error);
+    // `anisotropy`: the level of the table's Filter::Anisotropic slots (the game's filtered textures). 1 = Off: the
+    // console's own linear filter (min / mag / mip linear); 2..16 = anisotropic with that maximum.
+    bool create(Device& device, std::uint32_t anisotropy, std::string* error);
+    // Rewrites the Filter::Anisotropic slots for `anisotropy` (the caller has the GPU idle: frames in flight read the
+    // table). Point and linear slots (screen copies, special effects, the game's point textures) never change.
+    void set_anisotropy(Device& device, std::uint32_t anisotropy);
+    std::uint32_t anisotropy() const noexcept { return anisotropy_; }
     ID3D12DescriptorHeap* heap() const noexcept { return heap_.Get(); }
 
 private:
+    void write(Device& device, std::uint32_t filter, std::uint32_t u, std::uint32_t v, std::uint32_t anisotropy);
     Com<ID3D12DescriptorHeap> heap_;
+    std::uint32_t anisotropy_ = 16;
 };
 
 }  // namespace shadow::render

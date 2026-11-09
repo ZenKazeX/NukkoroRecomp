@@ -11,6 +11,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 
 #include "render/frame.h"
 #include "render/view.h"
@@ -64,6 +65,14 @@ inline constexpr std::uint32_t kParticleColours = 1;
 // destination bit for bit (clear_fragment_keeps_target). The scene's alpha channel is ZERO x src + ONE x dst, always.
 // A measured fill saving, not a picture change: GPU_FILL.md.
 inline constexpr std::uint32_t kSkipClear = 64;
+// Diagnostics (SHADOW_R2_OPAQUE_CHECK=1): a draw on the exact opaque write outputs magenta where its alpha is not 1.
+inline constexpr std::uint32_t kOpaqueCheck = 128;
+// Every vertex and texel alpha of the draw is 255: the fragment alpha is the material constant's (shaders/mesh.hlsl).
+inline constexpr std::uint32_t kExactAlpha = 1024;
+// MatFX BUMPENVMAP (0x804A4E00): the base pass is the GameCube's four-stage bump + environment combine
+// (shaders/mesh.hlsl PSBase). The block's spare view_row .w lanes carry the bump scale and the environment map.
+inline constexpr std::uint32_t kBumpEnvironment = 2048;
+inline constexpr std::uint32_t kBumpFramebufferAlpha = 4096;  // the environment slot's useFrameBufferAlpha
 
 // cbuffer Immediate (b2) in shaders/immediate.hlsl; one 256-byte block per draw.
 struct ImmediateConstants {
@@ -297,6 +306,18 @@ inline std::uint32_t flags_of(const Material& m) {
     return (m.vertex_colours ? kPrelit : 0u) | (m.modulate ? kModulate : 0u) | (m.lit ? kLit : 0u) |
            (m.ambient ? kAmbient : 0u) | (m.combine == Combine::TwoStage ? kCombined : 0u) |
            (m.baked_light ? 0u : kUnbaked);
+}
+
+// The bump-environment base pass's extra inputs (ExtraPass::Kind::BumpEnvironment): the environment map's descriptor and
+// sampler, the bump scale and coefficient. view_row .w is otherwise 0 and unread (the view normal uses .xyz).
+inline void fill_bump_environment(const ExtraPass& extra, std::uint32_t environment_srv,
+                                  std::uint32_t environment_sampler, DrawConstants* out) {
+    out->flags |= kBumpEnvironment | (extra.framebuffer_alpha ? kBumpFramebufferAlpha : 0u);
+    out->coefficient = extra.coefficient;
+    out->cutoff = -1.0f;  // 0x804987C8(1): the alpha compare always passes
+    out->view_row[0][3] = extra.bump_shift;
+    std::memcpy(&out->view_row[1][3], &environment_srv, sizeof(float));
+    std::memcpy(&out->view_row[2][3], &environment_sampler, sizeof(float));
 }
 
 inline void fill_light_constants(const LightSet& set, LightConstants* out) {

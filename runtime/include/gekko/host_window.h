@@ -76,18 +76,34 @@ public:
     PlumePresenter::VerifyReport plume_verify_report() const;
     PlumePresenter::PresentStats plume_present_stats() const;
 
-    bool create(int width, int height, const std::string& title, bool fullscreen = false);
+    // fullscreen + exclusive: the monitor's display mode width x height (gekko/display_geometry.h); a mode the monitor
+    // does not list is refused (exclusive_note) and the window shows borderless at the desktop's size. The process is
+    // made per-monitor DPI aware before the first window, so every size is in physical pixels.
+    bool create(int width, int height, const std::string& title, bool fullscreen = false, bool exclusive = false);
     void destroy();
     bool available() const noexcept { return handle_ != nullptr; }
     // The window's native handle (HWND), for a renderer that owns its own swap chain on it.
     void* native_handle() const noexcept { return handle_; }
     void client_size(int& width, int& height) const noexcept;
+    // The full size of the monitor the window is on (what borderless fullscreen covers); false without a window.
+    bool monitor_size(int& width, int& height) const noexcept;
+    // The largest windowed client the window's monitor holds: its work area less this style's frame (false: none).
+    bool work_area_client(int& width, int& height) const noexcept;
+    // An edge or the title bar is being dragged (the client size is not final until the drag ends).
+    bool sizing() const noexcept;
+    bool minimized() const noexcept;
     bool fullscreen() const noexcept { return fullscreen_; }
-    // While the window is open (the display settings, gekko/display_settings.h; UI thread): borderless covering the
-    // monitor the window is on, or a windowed client of width x height - shaped by the content aspect and fitted
-    // into that monitor's work area like create()'s, centred in it. The swap chain follows through the caller's
+    // While the window is open (the display settings, gekko/display_settings.h; UI thread): fullscreen covering the
+    // monitor the window is on - in its display mode width x height when exclusive, else at the desktop's - or a
+    // windowed client of width x height, fitted into that monitor's work area (keeping the content aspect) and
+    // centred in it. Leaving exclusive gives the desktop its mode back. The swap chain follows through the caller's
     // client-size resize. False without a window.
-    bool set_mode(bool fullscreen, int width, int height);
+    bool set_mode(bool fullscreen, int width, int height, bool exclusive = false);
+    // Alt+Enter pressed since the last call (UI thread; the caller switches the window mode).
+    bool take_fullscreen_toggle() noexcept;
+    // Exclusive fullscreen: the monitor is in the asked mode now; the last result or refusal, for the reports.
+    bool exclusive_active() const noexcept;
+    std::string exclusive_note() const;
 
     // Processes pending window messages. Returns false once the user closes it.
     bool pump();
@@ -106,6 +122,9 @@ public:
     // Player 1's controller now: the foreground-window keyboard and, when
     // enabled, XInput user 0, combined (peripheral/keyboard_layout.h).
     shadow::peripheral::ControllerSample controller() const;
+    // The keyboard half of controller() alone (UI thread: the key table is the window's). The input thread
+    // (GEKKO_INPUT_THREAD) combines it with its own XInput poll.
+    shadow::peripheral::ControllerSample keyboard_controller() const;
 
     bool escape_pressed() const noexcept { return escape_pressed_; }
 

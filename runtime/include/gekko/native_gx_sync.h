@@ -72,30 +72,24 @@ public:
     // ---- the lowered draw-sync sites (gekko/gx_sites.h, routed by System) -----
     // GXSetDrawSync's BP 0x47 / 0x48 payload: the token, completed at once.
     void on_draw_sync_token(u16 token, bool interrupt);
+    // GXSetDrawSync(token) as a whole: the interrupting token command, then the plain one (BP 0x48, BP 0x47). The
+    // owner of GXSetDrawSync and the raster life cycle (native_rw_raster.h) both issue it.
+    void set_draw_sync(u16 token) {
+        on_draw_sync_token(token, true);
+        on_draw_sync_token(token, false);
+    }
     // GXDrawDone's BP 0x45 payload with low byte 2: draw done, completed at once.
     void on_draw_done();
 
-    // The listed platform sites (Cpu::platform_write16): the CP performance
-    // select in GXInit / GXSetGPMetric. Nothing to select: counted.
-    u16 platform_read16(Cpu& c, u32 site, u32 effective);
-    void platform_write16(Cpu& c, u32 site, u32 effective, u16 value);
-
     // Every guest address the generator must route to an owner here
-    // (extract/native-owners.txt), and every platform site it lowers
-    // (extract/platform-sites.txt).
+    // (extract/native-owners.txt). (The CP performance-select stores of GXInit / GXSetGPMetric were platform sites
+    // until GXInit became an owner: nothing here lowers a platform site any more.)
     struct Address {
         u32 address;
         const char* name;
         bool continuation;
     };
     static const Address* addresses(std::size_t& count) noexcept;
-    struct Site {
-        u32 address;      // the instruction
-        u32 instruction;  // its word in the DOL
-        const char* kind;
-    };
-    static const Site* platform_sites(std::size_t& count) noexcept;
-    static bool is_platform_site(u32 address) noexcept;
 
     // Host diagnostics.
     u16 token() const noexcept { return token_; }
@@ -118,7 +112,7 @@ public:
         u64 fifo_reads = 0;             // GXGetFifoPtrs calls
         u64 draw_sync_reads = 0;        // GXReadDrawSync calls
         u64 shutdown_calls = 0;         // __GXShutdown calls
-        u64 platform_writes = 0;        // CP performance-select stores
+        u64 inits = 0;                  // GXInit calls
     };
     const Stats& stats() const noexcept { return stats_; }
 
@@ -135,6 +129,7 @@ public:
     void reset() noexcept;
 
 private:
+    void init(Cpu& c);
     void set_cpu_fifo(Cpu& c);
     void set_gp_fifo(Cpu& c);
     void get_fifo_ptrs(Cpu& c);

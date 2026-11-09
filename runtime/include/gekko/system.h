@@ -28,6 +28,7 @@
 #include "gekko/guest_memory.h"
 #include "gekko/native_audio.h"
 #include "gekko/native_card.h"
+#include "gekko/save_store.h"
 #include "gekko/native_file_api.h"
 #include "gekko/native_frame_limiter.h"
 #include "gekko/native_attached_effects.h"
@@ -43,22 +44,59 @@
 #include "gekko/native_ipl.h"
 #include "gekko/lifted.h"
 #include "gekko/native_reset.h"
+#include "gekko/native_boot.h"
 #include "gekko/native_disc_error.h"
 #include "gekko/native_link_groups.h"
+#include "gekko/native_world_collision.h"
+#include "gekko/native_world_line.h"
 #include "gekko/prs_ahead.h"
 #include "gekko/native_directory_scan.h"
 #include "gekko/native_cri_file_device.h"
 #include "gekko/native_rtgcnfs.h"
+#include "gekko/native_jobs.h"
+#include "gekko/native_expand_jobs.h"
+#include "gekko/native_one.h"
+#include "gekko/native_cri.h"
+#include "gekko/game_errata.h"
+#include "gekko/native_adx_output.h"
+#include "gekko/native_sj.h"
+#include "gekko/native_svm.h"
 #include "gekko/game_memory.h"
 #include "gekko/native_video.h"
 #include "gekko/types.h"
 #include "native_display.h"
 #include "native_audio_mixer.h"
 #include "gekko/native_reverb_owner.h"
+#include "gekko/native_ax_registration.h"
+#include "gekko/native_ax_voice.h"
+#include "gekko/native_ax_frame.h"
+#include "gekko/native_ax_sync.h"
+#include "gekko/ax_pb_image.h"
+#include "gekko/native_gx_state.h"
+#include "gekko/native_rw_raster.h"
+#include "gekko/native_os_settings.h"
+#include "gekko/native_os_report.h"
+#include "gekko/native_os_heap.h"
+#include "gekko/native_os_panic.h"
+#include "gekko/native_os_misc.h"
+#include "gekko/native_os_machine_check.h"
+#include "gekko/native_ax_mix_alloc.h"
+#include "gekko/native_math_affine.h"
+#include "gekko/native_rw_image.h"
+#include "gekko/native_rw_image.h"
+#include "gekko/native_rw_pixel.h"
+#include "gekko/native_os_threads.h"
+#include "gekko/native_os_font.h"
+#include "gekko/native_rw_vector.h"
+#include "gekko/native_rw_matrix.h"
+#include "gekko/native_rw_view_cache.h"
+#include "gekko/native_vec_math.h"
+#include "gekko/native_mix_entries.h"
 #include "gekko/native_sound_tables.h"
 #include "gekko/native_gcax_midi.h"
 #include "gekko/native_se_manager.h"
 #include "gekko/native_options_display.h"
+#include "gekko/native_options_menu.h"
 #include "gekko/button_glyphs.h"
 
 namespace gekko {
@@ -143,13 +181,31 @@ public:
     // docs/native-time-20261005/STAGE5_EXI.md).
     NativeCard& card() noexcept { return *card_; }
     const NativeCard& card() const noexcept { return *card_; }
+    // The game's background loaders as native jobs (docs/NATIVE_THREADS.md stage A).
+    NativeJobs& native_jobs() noexcept { return *native_jobs_; }
+    const NativeExpandJobs* native_expand_jobs() const noexcept { return native_expand_jobs_.get(); }
+    NativeExpandJobs& expand_jobs() noexcept { return *native_expand_jobs_; }
+    const NativeOne* native_one() const noexcept { return native_one_.get(); }
+    const NativeRtGcnFs* native_rtgcnfs() const noexcept { return rtgcnfs_.get(); }
+    // CRI's server threads as native calls at their events (docs/NATIVE_THREADS.md stage B).
+    NativeCri& native_cri() noexcept { return *native_cri_; }
+    NativeSvm& native_svm() noexcept { return *native_svm_; }
+    NativeSj& native_sj() noexcept { return *native_sj_; }
+    NativeAdxOutput& native_adx_output() noexcept { return *native_adx_output_; }
+    const errata::Stats& errata_stats() const noexcept { return errata_stats_; }
+    bool errata_installed() const noexcept { return errata_installed_; }
     NativeIpl& ipl() noexcept { return *ipl_; }
     const NativeIpl& ipl() const noexcept { return *ipl_; }
+    // The host side of OSReport (gekko/native_os_report.h): the lines the game printed to the debug console.
+    os_report::DebugConsole& debug_console() noexcept { return debug_console_; }
+    const os_report::DebugConsole& debug_console() const noexcept { return debug_console_; }
     // The console's reset and boot controls (stage 6,
     // docs/native-time-20261005/STAGE6_PI_MI.md).
     NativeReset& reset_controls() noexcept { return *reset_controls_; }
     GameMemory& game_memory() noexcept { return *game_memory_; }
     const NativeReset& reset_controls() const noexcept { return *reset_controls_; }
+    NativeBoot& boot() noexcept { return *boot_; }
+    const NativeBoot& boot() const noexcept { return *boot_; }
     // GXBegin's primitives from the lowered GX sites (phase 4,
     // docs/native-time-20261005/GX_DATA_PLANE.md).
 #if !defined(SHADOW_RENDER_LIFTED)  // G5
@@ -178,21 +234,36 @@ public:
         cpu_.set_lift_sites(sites, count);
     }
     shadow::display::State& display() noexcept { return display_; }
+    // The aspect the game LOGIC's visibility test uses (gekko/gameplay_aspect.h): ElecCoreWall's animation start is the
+    // one frustum test whose verdict changes object state. 0 = the display's (live play). Game thread.
+    void set_logic_aspect(float aspect) noexcept { logic_aspect_ = aspect > 0.0f ? aspect : 0.0f; }
+    float logic_aspect() const noexcept { return logic_aspect_; }
 
     // Attach a host file as the memory card in slot A (NativeCard) and bind
     // the console settings to it (NativeIpl). A GCI is imported into a
     // separate writable raw card; no progression state is interpreted or
-    // patched by the host.
+    // patched by the host. The card model is the contract ORACLE of the save store (the original CARD library runs
+    // on it in the reference tests); the game itself always saves through the store (the CARD library's bodies are
+    // not compiled), so the shipped program never calls this.
     void set_memory_card_path(std::filesystem::path path,
                               std::filesystem::path gci_working_path = {});
     bool memory_card_present() const noexcept;
     const std::filesystem::path& memory_card_backing_path() const noexcept;
     const std::filesystem::path& memory_card_sram_path() const noexcept;
 
+    // The native save store instead of the memory card (gekko/save_store.h, docs/SAVE_REROUTE_PLAN.md): the game's
+    // save is the GCI `save` (created by the game when absent), the console settings persist beside it. Before
+    // install(). The game always calls it (shadow_main): the store is its save service. A System without it keeps the
+    // card model (set_memory_card_path), which is the contract oracle of the reference tests.
+    void set_save_file(std::filesystem::path save);
+    bool save_store_active() const noexcept { return save_store_active_; }
+    SaveStore& save_store() noexcept { return *save_store_; }
+    const SaveStore& save_store() const noexcept { return *save_store_; }
+
     // Mounts the game's assets from the host tree under `files_root`: the
     // native namespace, one AssetId and guest token per file, the token space
     // (gekko/asset_mount.h). No table is read and none is published.
-    bool mount_assets(const std::filesystem::path& files_root, std::vector<u8> identity,
+    bool mount_assets(std::unique_ptr<shadow::runtime::v1::Storage> storage, std::vector<u8> identity,
                       std::string& error);
     // ON (default): the mount serves the English save messages in PC words
     // (gekko/native_save_text.h). OFF: the game's own memory-card text, for
@@ -345,9 +416,7 @@ public:
         u64 service = 0;        // fn_80036e88
         u64 cri_service = 0;    // fn_8040534c  mwPlyCreateSofdec
         u64 cri_thread_prio24 = 0;  // 0x803c5330  the thread that decodes
-        u64 svm_exec_idle = 0;      // 0x803cc24c  SVM_ExecSvr(svtype 6)
         u64 idle_thrd_proc = 0;     // 0x80408c44  MWSFSVR_IdleThrdProc
-        u64 svm_exec_vsync = 0;     // 0x803cc3fc  SVM_ExecSvr(svtype 2)
         u64 vsync_thrd_proc = 0;    // 0x80408cec  MWSFSVR_VsyncThrdProc
         u64 adxgc_init = 0;         // 0x803c5150  creates the four CRI threads
         u64 os_resume_thread = 0;   // 0x80378ecc  OSResumeThread
@@ -409,8 +478,8 @@ public:
     u64 health_bar_camera_declines() const noexcept { return health_bar_camera_declines_; }
     bool native_visibility() const noexcept { return native_visibility_; }
 
-    // The Options menu's Display tile (gekko/native_options_display.h).
-    const options_display::Tile& options_display() const noexcept { return options_display_; }
+    // The PC Options menu (gekko/native_options_menu.h): six categories on the game's Options screen.
+    const options_menu::Menu& options_display() const noexcept { return options_display_; }
     // The prompts' controller buttons (gekko/button_glyphs.h): configure before mount_assets, which attaches them.
     button_glyphs::ButtonGlyphs& button_glyphs() noexcept { return button_glyphs_; }
 
@@ -629,6 +698,10 @@ public:
     const gcax_midi::Report& midi_report() const noexcept { return midi_report_; }
     const se_manager::Report& se_manager_report() const noexcept { return se_manager_report_; }
     void reset_host_audio_state() noexcept;
+    void import_ax_pb_image_from_guest();
+    void import_ax_lists_from_guest();
+    // Mixes one frame list (a command-list slot address) into the output pass: what the AX frame does after its sync; public for the tests.
+    void mix_ax_list(u32 list) { run_ax_mix(list); }
     // Checkpoint continuation at an audio-job boundary; transient source windows
     // and diagnostics are rebuilt, while decoder and mixer history must survive.
     void save_host_audio_state(std::vector<u8>& out) const;
@@ -650,6 +723,17 @@ public:
         // (--boot-flashback).
         u32 kind = 0;
         u32 id = 0;
+        // --boot-cutscene: the story cutscene (eventNNNN) PlayStory is handed as its first entry; 0 = none.
+        u32 cutscene = 0;
+        // --boot-story-stage: the stage (plain decimal id) PlayStory is handed as its first entry; 0 = none.
+        u32 story_stage = 0;
+        // The menus' own play-record reset fn_80206680(0x8057E82C) before the hand-off (2P, Last Story, Expert).
+        bool reset_play_record = false;
+        u32 story_mode = 0;           // PlayStory's start mode 0x8058578C: 0 new game, 2 Last Story
+        u32 stages[3] = {0, 0, 0};    // Play2POnce: [0]; Play2PThree: all three
+        u32 characters[2] = {14, 14}; // the 2P character words 0x8057E89C / 0x8057E8A0 (14 + cursor, 14..19)
+        u32 expert_index = 0;         // PlayHard: the save block's run position (0x80577A18 + 0x9C), stage 0..22
+        bool cutscene_handed = false;
         bool fired = false;
         u64 fired_at_ticks = 0;  // game time
         u32 hz_choice = 0;  // 0 = no PAL screen seen, 60 = PAL60 accepted
@@ -671,6 +755,53 @@ public:
         boot_stage_.requested = true;
         boot_stage_.kind = 1u;
         boot_stage_.id = 0u;
+    }
+    // --boot-cutscene: the --boot-story hand-off, and PlayStory's first story entry is the cutscene `id`
+    // (files/event/eventNNNN.scr, or the movie ENNNN.sfd when it has no script), played by the game's own event step.
+    void set_boot_cutscene(u32 id) noexcept {
+        set_boot_story();
+        boot_stage_.cutscene = id;
+    }
+    // --boot-story-stage: the --boot-story hand-off, and PlayStory's first story entry is the stage `id`: the story
+    // loop builds StageManager(id, 1) as for any story stage (the stages no Select Mode grid lists: 0700, 0710, ...).
+    void set_boot_story_stage(u32 id) noexcept {
+        set_boot_story();
+        boot_stage_.story_stage = id;
+    }
+    // --boot-2p / --boot-2p-three: the 2P battle select's hand-off (0x802C1514 / 0x802C148C): StageSequence kind 3
+    // (Play2POnce, one arena) or 4 (Play2PThree, stg0800 / 0801 / 0802), the two characters, the play-record reset.
+    // 2P itself follows from the stage record's flag 0x4 (only 0800 - 0802), which the StageManager reads.
+    void set_boot_2p(u32 stage, u32 character1, u32 character2) noexcept {
+        boot_stage_.requested = true;
+        boot_stage_.kind = 3u;
+        boot_stage_.id = stage;
+        boot_stage_.stages[0] = stage;
+        boot_stage_.characters[0] = character1;
+        boot_stage_.characters[1] = character2;
+        boot_stage_.reset_play_record = true;
+    }
+    void set_boot_2p_three(u32 character1, u32 character2) noexcept {
+        set_boot_2p(800u, character1, character2);
+        boot_stage_.kind = 4u;
+        boot_stage_.stages[1] = 801u;
+        boot_stage_.stages[2] = 802u;
+    }
+    // --boot-last-story: PlayStory in start mode 2 (the story menu's Last Story, 0x802BB878): its own queue plays the
+    // Last Story events, then StageManager(700, 0).
+    void set_boot_last_story() noexcept {
+        set_boot_story();
+        boot_stage_.story_mode = 2u;
+        boot_stage_.id = 2u;  // reported as the story mode
+        boot_stage_.reset_play_record = true;
+    }
+    // --boot-expert: PlayHard (Expert mode, kind 6) continuing a run at stage index 0..22 of its table 0x80560708
+    // (0x805857A8 = 1 continue; the save block's run position 0x80577A18 + 0x9C).
+    void set_boot_expert(u32 index) noexcept {
+        boot_stage_.requested = true;
+        boot_stage_.kind = 6u;
+        boot_stage_.id = 0u;
+        boot_stage_.expert_index = index;
+        boot_stage_.reset_play_record = true;
     }
     // --boot-flashback: the same hand-off into StageSequence::PlayFlashback.
     void set_boot_flashback() noexcept {
@@ -703,6 +834,7 @@ public:
 
 private:
     shadow::display::State display_;
+    float logic_aspect_ = 0.0f;  // set_logic_aspect
     GuestMemory memory_;
     Cpu cpu_;
     // The lifted subsystems; Cpu::lifted() points here.
@@ -721,15 +853,30 @@ private:
     std::unique_ptr<NativeImmediate> immediate_;
 #endif
     std::unique_ptr<NativeCard> card_;
+    std::unique_ptr<SaveStore> save_store_;
+    bool save_store_active_ = false;  // set_save_file: the game's save service; without it the card model (the oracle)
     std::unique_ptr<NativeIpl> ipl_;
+    os_report::DebugConsole debug_console_;
     std::unique_ptr<NativeReset> reset_controls_;
+    std::unique_ptr<NativeBoot> boot_;  // the program's start-up (native __start, OSInit)
     std::unique_ptr<NativeDiscError> disc_error_;
     std::unique_ptr<NativeLinkGroups> link_groups_;
+    std::unique_ptr<NativeWorldLine> world_line_;
+    std::unique_ptr<NativeWorldCollision> world_collision_;
     std::unique_ptr<NativeDirectoryScan> directory_scan_;
     // CRI's file device over the file API (created with it, DISC_SYSTEM_MAP.md cut 3).
     std::unique_ptr<NativeCriFileDevice> cri_file_device_;
     // RenderWare's GameCube file system over the file API (DISC_SYSTEM_MAP.md cut 4).
     std::unique_ptr<NativeRtGcnFs> rtgcnfs_;
+    std::unique_ptr<NativeJobs> native_jobs_;
+    std::unique_ptr<NativeExpandJobs> native_expand_jobs_;
+    std::unique_ptr<NativeOne> native_one_;
+    std::unique_ptr<NativeCri> native_cri_;
+    std::unique_ptr<NativeSvm> native_svm_;  // CRI's server manager (docs/CRI_SERVERS.md section 1)
+    std::unique_ptr<NativeSj> native_sj_;    // CRI's stream joints (docs/CRI_SERVERS.md section 4b)
+    std::unique_ptr<NativeAdxOutput> native_adx_output_;  // CRI's ADX output to the voices (section 4c)
+    errata::Stats errata_stats_;  // deliberate original-bug fixes (gekko/game_errata.h)
+    bool errata_installed_ = false;
     std::unique_ptr<GameMemory> game_memory_;
     // The lowered GX sites' calls (gekko/gx_sites.h), routed to the owners.
     class GxSiteRouter;
@@ -804,7 +951,8 @@ private:
     // on the plane signature and the coverage. Shared by world visibility and
     // world-anchor projection so they cannot use different cameras.
     bool canonical_camera(Cpu& cpu, camera::Camera& out);
-    bool canonical_camera(Cpu& cpu, u32 camera_ptr, camera::Camera& out);
+    // `aspect` > 0: that picture aspect instead of the display's (the logic aspect for a gameplay caller).
+    bool canonical_camera(Cpu& cpu, u32 camera_ptr, camera::Camera& out, float aspect = 0.0f);
     bool native_health_bar_draw(Cpu& cpu);
     // Replaces the guest world-to-screen projection for world-anchored UI.
     bool movie_module_vtables_logged_ = false;
@@ -851,7 +999,13 @@ private:
     std::array<u32, 64> ax_voice_pb_{};
     std::array<u32, 64> ax_pb_order_{};
     u32 ax_pb_count_ = 0;
-    bool parse_ax_list(u32 list, u32& head, u32& output, shadow::audio::FrameSettings& settings);
+    // The DSP side's lagging copy of the voice parameter blocks and update rings (ax_pb_image.h): written by the native sync, read by the mixer.
+    AxPbImage ax_pb_image_;
+    AxLists ax_lists_;  // the next frame mix's settings (native_ax_frame.h)
+    ax_frame::Engine ax_engine_;  // the AX frame sequencing (native_ax_frame.h)
+    void ax_pb_write16(u32 pb, u32 offset, u16 value);
+    u32 ax_pb_peek32(u32 pb, u32 offset) const;
+    bool parse_ax_list(u32 list, u32& head, u32& output, shadow::audio::FrameSettings& settings, bool quiet = false);
     // The guest address of the compressor table the list names, once its 21 x 160 gains have been checked equal to
     // the native copy (shadow::audio::compressor_gain_table); 0 = not yet.
     u32 ax_compressor_table_verified_ = 0;
@@ -916,7 +1070,8 @@ private:
     gcax_midi::Report midi_report_;
     se_manager::Report se_manager_report_;
     se_manager::Services se_services_{se_manager_report_, midi_report_, sound_table_report_};
-    options_display::Tile options_display_{};
+    options_menu::Menu options_display_{};
+    bool voice_archive_ready_ = false;  // the switchable dialogue-voice archive is served (gekko/voice_language.h)
     button_glyphs::ButtonGlyphs button_glyphs_{};
     static void play_menu_sound(void* system, Cpu& cpu, u32 id);
     void advance_ax_accepted_voices();

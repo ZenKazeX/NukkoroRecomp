@@ -89,6 +89,7 @@
 #include <array>
 #include <cstddef>
 #include <filesystem>
+#include <functional>
 #include <vector>
 
 #include "gekko/types.h"
@@ -109,6 +110,17 @@ public:
 
     // Installs the six owners and the completion delivery. Before the guest boots.
     void install();
+    // The entry of the CARD library's mount check (__CARDVerify) in the image being run: set only by the reference
+    // tests that run the original CARD words on this model (the game's build does not contain the library).
+    void set_verify_entry(u32 address) noexcept { verify_entry_ = address; }
+    // The same for __CARDDefaultApiCallback (a blr), the callback CARDMountAsync installs when it is given none.
+    void set_default_api_callback(u32 address) noexcept { default_api_callback_ = address; }
+    // The reference tests' oracle, which runs the original CARD words on this model without an OS around it: delivers
+    // the pending completion as NativeInterrupts' delivery does - each guest call the handler makes runs, stepping the
+    // interpreter, until it returns to `callback_return` (the delivery's continuation address) - and clears the card
+    // interrupt. False when none is pending. The frame is the handler's scratch area, with stack room below it;
+    // `step` executes one guest instruction (the reference interpreter's run_steps(1)).
+    bool deliver_pending(Cpu& c, u32 frame, u32 callback_return, const std::function<void()>& step);
 
     // ---- the host store ------------------------------------------------------
     // Detaches the current card (committing its un-persisted bytes) and
@@ -212,6 +224,8 @@ private:
     GuestMemory& memory_;
     NativeInterrupts& interrupts_;
     std::array<Pending, kChannels> pending_{};
+    u32 verify_entry_ = 0;
+    u32 default_api_callback_ = 0;
     Stats stats_;
 
     std::filesystem::path source_path_;

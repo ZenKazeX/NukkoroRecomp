@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <functional>
-#include <system_error>
 
 namespace gekko::assets {
 
@@ -24,59 +23,6 @@ bool child_before(const AssetNamespace::Node& a, const AssetNamespace::Node& b) 
     return a.name < b.name;
 }
 
-// Printable ASCII, no '/', not "." or "..": every name the game's own file
-// tree uses. A host name outside that set is refused, never transcoded.
-bool host_name_ok(const std::string& name) {
-    if (name.empty() || name == "." || name == "..") return false;
-    for (const char ch : name) {
-        const u8 b = static_cast<u8>(ch);
-        if (b < 0x20u || b > 0x7Eu || b == '/' || b == '\\') return false;
-    }
-    return true;
-}
-
-bool scan(const std::filesystem::path& directory, AssetNamespace::Node& node, std::string& error,
-          unsigned depth) {
-    if (depth > 64u) {
-        error = "asset tree nests deeper than 64 directories at " + directory.u8string();
-        return false;
-    }
-    std::error_code ec;
-    std::filesystem::directory_iterator it(directory, ec), end;
-    if (ec) {
-        error = "cannot enumerate " + directory.u8string() + ": " + ec.message();
-        return false;
-    }
-    for (; it != end; it.increment(ec)) {
-        if (ec) {
-            error = "cannot enumerate " + directory.u8string() + ": " + ec.message();
-            return false;
-        }
-        const std::filesystem::directory_entry& item = *it;
-        AssetNamespace::Node child;
-        child.name = item.path().filename().u8string();
-        if (!host_name_ok(child.name)) {
-            error = "asset name is not printable ASCII: " + item.path().u8string();
-            return false;
-        }
-        if (item.is_directory(ec)) {
-            child.directory = true;
-            if (!scan(item.path(), child, error, depth + 1u)) return false;
-        } else if (item.is_regular_file(ec)) {
-            child.size = static_cast<u64>(item.file_size(ec));
-            if (ec) {
-                error = "cannot size " + item.path().u8string() + ": " + ec.message();
-                return false;
-            }
-        } else {
-            error = "asset tree entry is neither a file nor a directory: " + item.path().u8string();
-            return false;
-        }
-        node.children.push_back(std::move(child));
-    }
-    return true;
-}
-
 }  // namespace
 
 std::size_t AssetNamespace::KeyHash::operator()(const Key& k) const noexcept {
@@ -90,21 +36,6 @@ void AssetNamespace::clear() noexcept {
     files_ = 0;
     directories_ = 0;
     total_bytes_ = 0;
-}
-
-bool AssetNamespace::from_directory(const std::filesystem::path& root, AssetNamespace& out,
-                                    std::string& error) {
-    out.clear();
-    error.clear();
-    std::error_code ec;
-    if (!std::filesystem::is_directory(root, ec)) {
-        error = "asset root is not a directory: " + root.u8string();
-        return false;
-    }
-    Node tree;
-    tree.directory = true;
-    if (!scan(root, tree, error, 0u)) return false;
-    return from_tree(tree, out, error);
 }
 
 bool AssetNamespace::from_tree(const Node& root, AssetNamespace& out, std::string& error) {

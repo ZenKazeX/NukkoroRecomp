@@ -1,0 +1,9 @@
+# Wait points the SHADOW_RENDER_LIFTED build leaves out because the function is owned only there (native-owners-r2.txt) and
+# the generator refuses a site whose function it prunes. The reference build runs the guest body, so wait-points.txt keeps them:
+# without the wait point the guest spin never advances the game clock (strict mode B hung at 0x804954CC, 2026-11-09).
+# tools/ppcrecomp/wait_points.py --retired-lifted checks that each is produced and is not also in wait-points-retired.txt;
+# CMake builds the lifted list from wait-points.txt minus these. One line per site: 0xSITE  reason.
+0x80495298  rw.gamecube-driver display swap (GcnSystem 0x80494EDC is a lifted-only native owner; its start-up progress loop and the busy wait of request 3 are native waits there)
+0x804954D4  rw.gamecube-driver display swap (GcnSystem 0x80494EDC is a lifted-only native owner; its start-up progress loop and the busy wait of request 3 are native waits there)
+0x804954E4  rw.gamecube-driver display swap (GcnSystem 0x80494EDC is a lifted-only native owner; its start-up progress loop and the busy wait of request 3 are native waits there)
+0x8037ED04  os.threads / graphics.vi VIWaitForRetrace 0x8037ECD4 is a lifted-only native owner (docs/agents/vi.md Step 17, native-owners-r2.txt); the reference build keeps the guest body and its retrace-count loop

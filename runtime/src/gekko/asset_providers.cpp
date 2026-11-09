@@ -2,6 +2,7 @@
 #include "gekko/thread_name.h"  // ES-T1
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -369,8 +370,10 @@ bool PrsProvider::read(u64 key, u64 offset, u64 length, u8* dest, u64& got) {
     // Expanded straight out of the mapped container: the compressed bytes are
     // never copied before being decoded.
     std::vector<u8> expanded;
+    // A stream that ends (truncated) before the member's declared size is a failure, not zeros.
     if (!prs_expand(compressed.data, static_cast<std::size_t>(compressed.size),
-                    static_cast<std::size_t>(m->expanded), expanded)) {
+                    static_cast<std::size_t>(m->expanded), expanded) ||
+        expanded.size() < static_cast<std::size_t>(m->expanded)) {
         std::lock_guard<std::mutex> lock(mutex_);
         ++stats_.failures;
         return false;
@@ -397,19 +400,63 @@ u64 MemoryProvider::add(std::vector<u8> bytes) {
     return files_.size() - 1u;
 }
 
+u64 MemoryProvider::add_switchable(std::vector<std::vector<u8>> variants, std::function<std::size_t()> selector,
+                                   std::string name) {
+    Group group;
+    group.selector = std::move(selector);
+    group.name = std::move(name);
+    for (std::vector<u8>& v : variants) group.files.push_back(add(std::move(v)));
+    groups_.push_back(std::move(group));
+    return kGroupBit | (groups_.size() - 1u);
+}
+
+const std::vector<u8>* MemoryProvider::file_of(u64 key) const {
+    if ((key & kGroupBit) != 0u) {
+        const u64 index = key & ~kGroupBit;
+        if (index >= groups_.size() || groups_[static_cast<std::size_t>(index)].files.empty()) return nullptr;
+        const Group& group = groups_[static_cast<std::size_t>(index)];
+        const std::size_t chosen = group.selector ? std::min(group.selector(), group.files.size() - 1u) : 0u;
+        // A read after the setting changed: say once which variant is now served (the live-switch evidence).
+        const std::size_t before = group.chosen->exchange(chosen, std::memory_order_relaxed);
+        if (before != chosen && before != ~std::size_t{0})
+            std::fprintf(stderr, "[assets] %s: now serving variant %zu (was %zu)\n", group.name.c_str(), chosen, before);
+        return &files_[static_cast<std::size_t>(group.files[chosen])];
+    }
+    return key < files_.size() ? &files_[static_cast<std::size_t>(key)] : nullptr;
+}
+
+u64 MemoryProvider::add_virtual(u64 size, VirtualReader reader, std::string name) {
+    virtuals_.push_back(Virtual{size, std::move(reader), std::move(name)});
+    return kVirtualBit | (virtuals_.size() - 1u);
+}
+
 ByteSpan MemoryProvider::map(u64 key, u64 size) {
-    if (key >= files_.size()) return ByteSpan{};
-    const std::vector<u8>& file = files_[static_cast<std::size_t>(key)];
-    return ByteSpan{file.data(), size == 0u ? file.size() : std::min<u64>(size, file.size())};
+    if ((key & kVirtualBit) != 0u) return ByteSpan{};  // produced per read, never mapped
+    const std::vector<u8>* file = file_of(key);
+    if (file == nullptr) return ByteSpan{};
+    return ByteSpan{file->data(), size == 0u ? file->size() : std::min<u64>(size, file->size())};
 }
 
 bool MemoryProvider::read(u64 key, u64 offset, u64 length, u8* dest, u64& got) {
-    if (key >= files_.size()) {
+    if ((key & kVirtualBit) != 0u) {
+        const u64 index = key & ~kVirtualBit;
+        got = 0;
+        if (index >= virtuals_.size()) return false;
+        const Virtual& v = virtuals_[static_cast<std::size_t>(index)];
+        // The same contract as a held file: exactly `size` bytes, zeros past it.
+        const u64 inside = offset >= v.size ? 0u : std::min(length, v.size - offset);
+        u64 produced = 0;
+        if (inside != 0u && (!v.reader || !v.reader(offset, inside, dest, produced))) return false;
+        if (produced < length) std::memset(dest + produced, 0, static_cast<std::size_t>(length - produced));
+        got = length;
+        return true;
+    }
+    const std::vector<u8>* file = file_of(key);
+    if (file == nullptr) {
         got = 0;
         return false;
     }
-    const std::vector<u8>& file = files_[static_cast<std::size_t>(key)];
-    return copy_with_zero_fill(file.data(), file.size(), offset, length, dest, got);
+    return copy_with_zero_fill(file->data(), file->size(), offset, length, dest, got);
 }
 
 }  // namespace gekko::assets

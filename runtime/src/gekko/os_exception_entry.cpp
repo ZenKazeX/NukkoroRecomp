@@ -1,7 +1,7 @@
 // The OS's exception entry, natively (docs/memory-architecture-20261006/README.md).
 //
 // On the console an exception switched translation off and fetched the OS's
-// vector, a copy of __OSExceptionVector (0x80371620, 38 instructions) that
+// vector, a copy of __OSExceptionVector (38 instructions, gekko/os_exception_vector.h) that
 // __OSExceptionInit installs at every vector with `li r3, <index>` patched at
 // +0x68. Running with translation off, the vector reached the current
 // OSContext through its physical address (low memory 0xC0), saved r3-r5, CR,
@@ -25,18 +25,13 @@
 
 #include "gekko/cpu.h"
 #include "gekko/cpu_diag.h"
+#include "gekko/os_exception_vector.h"
 
 namespace gekko {
 
 namespace {
 
-constexpr u32 kVectorTemplate = 0x80371620u;    // __OSExceptionVector
-constexpr u32 kVectorWords = 38u;
-constexpr u32 kVectorPatchOffset = 0x68u;        // `li r3, <index>`
-constexpr u32 kSystemCallHead = 0x8037829Cu;     // PPCSync's vector head
-constexpr u32 kSystemCallHeadWords = 7u;
-constexpr u32 kSystemCallTail = kVectorTemplate + 4u * 7u;  // __OSExceptionVector's instructions 7..37
-constexpr u32 kSystemCallTailWords = 31u;
+constexpr u32 kVectorWords = kOsVectorWords;
 constexpr u32 kExceptionTable = 0x80003000u;     // __OSExceptionTable
 constexpr u32 kCurrentContext = 0x800000D4u;     // OS_CURRENTCONTEXT (virtual)
 constexpr u32 kUnrecoverable = 0x803716BCu;      // the vector's target when SRR1[RI] is clear
@@ -64,27 +59,12 @@ bool os_exception_index(Exception vector, u32& index) noexcept {
 
 }  // namespace
 
-// True when the guest installed the OS's vector for `vector` (the bytes at the
-// vector address equal the construction above).
+// True when the guest installed the OS's vector for `vector` (the bytes at the vector address equal the construction
+// above: os_vectors::page_word, the instructions __OSExceptionInit and __OSInitSystemCall copied).
 bool Cpu::os_vector_installed(Exception vector, u32 index) {
     const u32 at = 0x80000000u | static_cast<u32>(vector);
-    if (vector == Exception::SystemCall) {
-        for (u32 word = 0; word < kSystemCallHeadWords; ++word) {
-            if (memory_.peek32(at + 4u * word) != memory_.peek32(kSystemCallHead + 4u * word)) return false;
-        }
-        for (u32 word = 0; word < kSystemCallTailWords; ++word) {
-            const u32 offset = 4u * (kSystemCallHeadWords + word);
-            const u32 expected = offset == kVectorPatchOffset ? (0x38600000u | index)
-                                                              : memory_.peek32(kSystemCallTail + 4u * word);
-            if (memory_.peek32(at + offset) != expected) return false;
-        }
-        return memory_.peek_pointer(at, 4u * (kSystemCallHeadWords + kSystemCallTailWords)) != nullptr;
-    }
     for (u32 word = 0; word < kVectorWords; ++word) {
-        const u32 offset = 4u * word;
-        const u32 expected =
-            offset == kVectorPatchOffset ? (0x38600000u | index) : memory_.peek32(kVectorTemplate + offset);
-        if (memory_.peek32(at + offset) != expected) return false;
+        if (memory_.peek32(at + 4u * word) != os_exception_page_word(word, index)) return false;
     }
     return memory_.peek_pointer(at, 4u * kVectorWords) != nullptr;
 }
@@ -99,6 +79,21 @@ void Cpu::enter_os_exception(Exception vector) {
                       "exception 0x%04X taken at pc 0x%08X, but the guest has not installed the OS's vector "
                       "for it (__OSExceptionInit), so there is no OS entry to perform",
                       static_cast<u32>(vector), pc);
+        const bool first = !stopped();
+        request_stop(StopReason::ExecutionFault, detail);
+        if (first) stop_.exception = static_cast<u32>(vector);
+        npc = pc;
+        return;
+    }
+    if (vector == Exception::Decrementer && memory_.peek32(kExceptionTable + 4u * index) == kUnrecoverable) {
+        // The program installs no decrementer handler (the native OSInit leaves exception 8 at the OS's default one and
+        // the CPU drops the power-on edge): the guest wrote DEC itself (mtdec), so it has alarm code this program
+        // does not have. Stop, saying so, instead of entering the "unhandled exception" report.
+        char detail[256];
+        std::snprintf(detail, sizeof(detail),
+                      "the decrementer exception was taken at pc 0x%08X, but this program has no decrementer handler: "
+                      "no alarm code (OSSetAlarm and its callers) is compiled, and the guest armed DEC itself with mtdec",
+                      pc);
         const bool first = !stopped();
         request_stop(StopReason::ExecutionFault, detail);
         if (first) stop_.exception = static_cast<u32>(vector);

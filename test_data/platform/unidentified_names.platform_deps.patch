@@ -1,0 +1,38 @@
+--- a/tools/dolrecon/platform_deps.py
++++ b/tools/dolrecon/platform_deps.py
+@@ -39,4 +39,35 @@
+ # SDK library by name; service by library (and OS function family)
+ LIBRARY = [
++    # sdk-identify: exact-name rules for newly identified SDK statics whose name carries no library prefix
++    # (or whose prefix the regexes below misread, e.g. SPEC2_ matches the audio SP rule)
++    (r"^DMAErrorHandler$", "os.interrupts"),  # 0x803726D8
++    (r"^GetFontCode$", "os.font"),  # 0x80374E68
++    (r"^Decode$", "os.font"),  # 0x80374FDC
++    (r"^ReadFont$", "os.font"),  # 0x803751B4
++    (r"^ParseStringS$", "os.font"),  # 0x80375618
++    (r"^OSGetFontTexel$", "os.font"),  # 0x80375754
++    (r"^ExpandFontSheet$", "os.font"),  # 0x803759F4
++    (r"^cb$", "files.dvd"),  # 0x8037E03C
++    (r"^__fstLoad$", "os.core"),  # 0x8037E114
++    (r"^getTiming$", "graphics.vi"),  # 0x8037E578
++    (r"^UpdateOrigin$", "graphics.vi"),  # 0x8038041C
++    (r"^SPEC2_MakeStatus$", "input.pad"),  # 0x803817D4
++    (r"^OnReset$", "input.pad"),  # 0x80381C44
++    (r"^SamplingHandler$", "input.pad"),  # 0x80381D00
++    (r"^__ReverbHiCreate$", "audio.ax"),  # 0x8038779C
++    (r"^__ReverbSTDCreate$", "audio.ax"),  # 0x803886A4
++    (r"^__ReverbSTDCallback$", "audio.ax"),  # 0x80388B20
++    (r"^__ReverbSTDFree$", "audio.ax"),  # 0x80388ED4
++    (r"^__ChorusInit$", "audio.ax"),  # 0x803896FC
++    (r"^UnlockedCallback$", "saves.card"),  # 0x8038D788
++    (r"^FormatCallback$", "saves.card"),  # 0x80391780
++    (r"^CreateCallbackFat$", "saves.card"),  # 0x80392550
++    (r"^ReadCallback$", "saves.card"),  # 0x80392A58
++    (r"^DeleteCallback$", "saves.card"),  # 0x80393000
++    (r"^UpdateIconOffsets$", "saves.card"),  # 0x803931B4
++    (r"^powf$", "host.c-library"),  # 0x803B2F50
++    (r"^SetExiInterruptMask$", "bus.exi"),  # 0x803B3AB4
++    (r"^InitializeUART$", "os.debug"),  # 0x803B57D8
++    (r"^WriteUARTN$", "os.debug"),  # 0x803B5848
+     (r"^(__)?OS(Thread|Mutex|Cond|Message|Sleep|Wakeup|Yield|Suspend|Resume|Join|Detach|Cancel|Exit|Create|SetThread|GetThread|InitThreadQueue|ClearStack|CheckActiveThreads|DisableScheduler|EnableScheduler|Reschedule|SetIdle|SelectThread|GetCurrentThread|IsThread)", "os.threads"),
+     (r"^(__)?OS(Alarm|SetAlarm|CancelAlarm|CreateAlarm|SetPeriodicAlarm|InsertAlarm|DecrementerHandler)|^Decrem", "os.alarms"),

@@ -96,6 +96,10 @@ bool spans_canvas_width(const HudBounds& bounds, float canvas_width = kHudCanvas
 // distinguishes one column of a screen-covering curtain from the content drawn
 // on top of it.
 bool spans_canvas_height(const HudBounds& bounds, float canvas_height = kHudCanvasHeight) noexcept;
+// True when a draw reaches past a side edge of the canvas by more than the coverage test's slack: with
+// spans_canvas_width, a sprite zoomed larger than the screen (the title logo's after-images), where a band or a
+// backdrop is authored at the frame.
+bool overflows_canvas_width(const HudBounds& bounds, float canvas_width = kHudCanvasWidth) noexcept;
 // Which side of the canvas a logical group belongs to, from the group's own
 // bounds. `previous` is the anchor the group had on the last frame, which is
 // held on to unless the group has moved decisively past the centre; without
@@ -143,6 +147,10 @@ public:
         HudAnchor anchor = HudAnchor::Center;
         // The region (set_regions) the draw is laid out in, its anchor that region's; -1: the whole canvas.
         int region = -1;
+        // A sprite zoomed past the canvas's side (overflows_canvas_width): the console's screen edge cut it, so on a
+        // wider view it is cut at the view's edge rather than the canvas box's (render::Anchor::Continued when
+        // centred).
+        bool beyond_canvas = false;
     };
     Decision layout_draw(const HudBounds& bounds, bool textured, bool shapes_anchor = true) noexcept;
 
@@ -152,7 +160,11 @@ public:
         std::uint64_t groups_open_at_frame_end = 0;
         std::uint64_t group_memory_capped = 0;
         std::uint64_t in_regions = 0;  // draws laid out in a player region
+        std::uint64_t zoomed_sprites = 0;  // full-width textured draws kept with their widget (overflows_canvas_width)
     };
+    // Diagnostics: true restores the earlier rule (a zoomed sprite across the canvas width fills the view), for a
+    // same-frame A/B (SHADOW_2D_ZOOM_FILL=1, read by the renderer).
+    void set_zoomed_sprites_fill(bool fill) noexcept { zoomed_sprites_fill_ = fill; }
     const Stats& stats() const noexcept { return stats_; }
     std::size_t group_memory_size() const noexcept { return group_memory_.size(); }
     std::size_t cast_memory_size() const noexcept { return cast_memory_.size(); }
@@ -195,6 +207,8 @@ private:
     std::vector<HudBounds> region_bounds_;
     std::vector<bool> region_bounds_valid_;
     std::map<std::tuple<std::uint32_t, std::uint32_t, std::uint32_t>, Instance> region_memory_;  // (site, instance, region)
+
+    bool zoomed_sprites_fill_ = false;
 
     Stats stats_{};
 };

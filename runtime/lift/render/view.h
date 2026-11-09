@@ -87,6 +87,8 @@ inline ViewWindow displayed_window(ViewWindow game, float canvas_aspect, float v
 // The game's whole screen: its camera raster (640 x 480) seen at 4:3.
 inline constexpr float kScreenAspect = 4.0f / 3.0f;
 
+// Not the game's path since 2026-11-05 (docs/DISPLAY_SETTINGS_AUDIT.md F2): gekko/display_geometry.h owns the render
+// size and LiftedRender takes it as asked; this fit is kept for its tests and tools only.
 // The physical render size for the asked render_width x render_height (0 = not asked) and the game-visible output
 // (docs/RESOLUTION_AUDIT.md). Both asked and the output has their aspect - the host makes the output the asked size -
 // exactly as asked. Both asked but the output has another aspect (an input tape's recorded output): the largest
@@ -103,9 +105,15 @@ inline RenderSize render_size_for(std::uint32_t asked_width, std::uint32_t asked
     if ((asked_width == 0u && asked_height == 0u) || output_width == 0u || output_height == 0u)
         return {};
     RenderSize size;
+    // The output's shape within rounding counts as its shape: a render scale's size (gekko/display_geometry.h, each
+    // side rounded to whole pixels) is exactly the size asked, never fitted a pixel smaller.
+    const auto cross_gap = [&]() {
+        const std::int64_t a = static_cast<std::int64_t>(asked_width) * output_height;
+        const std::int64_t b = static_cast<std::int64_t>(asked_height) * output_width;
+        return a > b ? a - b : b - a;
+    };
     if (asked_width != 0u && asked_height != 0u &&
-        static_cast<std::uint64_t>(asked_width) * output_height ==
-            static_cast<std::uint64_t>(asked_height) * output_width) {
+        cross_gap() * 2 <= static_cast<std::int64_t>(output_width) + output_height) {
         size = {asked_width, asked_height};
     } else if (asked_width != 0u && asked_height != 0u) {
         // Fit inside: the side that limits is kept exactly, the other is the output's aspect of it.

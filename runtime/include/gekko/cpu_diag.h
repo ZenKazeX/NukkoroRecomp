@@ -50,6 +50,7 @@ struct CpuDiagCounters {
     // latched and taken once MSR[EE] allows, so nothing is discarded any more.
     u64 dec_edge_total = 0;               // every 0 -> 1 transition observed
     u64 dec_edge_suppressed_ee_clear = 0; // ...of which arrived with EE = 0 (delayed)
+    u64 dec_edge_dropped_no_consumer = 0; // ...dropped: delivery is off (Cpu::set_decrementer_delivery)
     // Always 0 since that fix: the dispatcher no longer clears a latched
     // condition it cannot take. Kept so the census output keeps its fields.
     u64 dec_pending_dropped_ee_clear = 0;

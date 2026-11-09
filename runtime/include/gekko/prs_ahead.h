@@ -31,6 +31,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 #include <thread>
 #include <vector>
@@ -43,7 +44,7 @@ namespace gekko {
 
 class PrsAhead {
 public:
-    explicit PrsAhead(assets::ResourceManager& resources, unsigned workers = 2);
+    explicit PrsAhead(assets::ResourceManager& resources, unsigned workers = 4);
     ~PrsAhead();
     PrsAhead(const PrsAhead&) = delete;
     PrsAhead& operator=(const PrsAhead&) = delete;
@@ -56,6 +57,9 @@ public:
     // A decoded stream with this key that `accept` takes (GameMemory::serve_prs_ahead's checks), removed; null when
     // none is decoded yet or none is accepted.
     std::shared_ptr<const PrsDecoded> take(u64 key, const std::function<bool(const PrsDecoded&)>& accept);
+    // Whether a member with this key is decoded already and `check` accepts it; nothing is taken or counted (the
+    // native expand jobs' copy gate, Phase 3). Game thread only, as take.
+    bool ready(u64 key, const std::function<bool(const PrsDecoded&)>& check);
 
     struct Stats {
         u64 archives = 0;        // archives parsed (once per asset)
@@ -92,6 +96,7 @@ private:
     std::multimap<u64, Member> members_;                  // by key
     std::map<std::pair<u32, u64>, u64> pending_members_;  // (asset, stream offset) -> key, while waiting
     std::map<u32, Table> tables_;                         // by asset id
+    std::set<std::pair<u32, u64>> prefetched_;            // members queued ahead of their own read, once
     std::size_t pending_bytes_ = 0;
     u64 next_order_ = 0;
     Stats stats_;

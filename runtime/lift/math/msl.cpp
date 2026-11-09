@@ -705,6 +705,191 @@ double acos(double x) noexcept {
     return 2.0 * t;
 }
 
+// ---- __ieee754_pow 803B0444 (fdlibm e_pow.c as MSL compiled it; wrapper 803B2D0C). Constants: r2-relative doubles
+// 805FBAB8..805FBBC0, bp / dp_h / dp_l at 80515368. The fused steps are the compiled ones. Every intermediate of the
+// log / exp evaluation is finite and normal or zero for finite y and normal x, except: a denormal x (scaled by 2^53,
+// a multiply whose operand Flush reads as zero), a denormal y (its products: the same), and p_l + p_h (a sum of
+// two products that can overflow with opposite signs: the Gekko's NaN rules). The square root of y = 0.5 is the
+// software sqrt 803B2D2C (through 803B2F98), exact like std::sqrt for every x >= 0 that reaches it.
+namespace {
+const double kPowBp[2] = {1.0, 1.5};
+const double kPowDpH[2] = {0.0, value(0x3FE2B80340000000ull)};
+const double kPowDpL[2] = {0.0, value(0x3E4CFDEB43CFD006ull)};
+const double kPowInf = value(0x7FF0000000000000ull), kPowThird = value(0x3FD5555555555555ull),
+             kPowIvln2H = value(0x3FF7154760000000ull), kPowIvln2L = value(0x3E54AE0BF85DDF44ull),
+             kPowIvln2 = value(0x3FF71547652B82FEull), kPowTwo53 = 0x1p53,
+             kPowL1 = value(0x3FE3333333333303ull), kPowL2 = value(0x3FDB6DB6DB6FABFFull),
+             kPowL3 = value(0x3FD55555518F264Dull), kPowL4 = value(0x3FD17460A91D4101ull),
+             kPowL5 = value(0x3FCD864A93C9DB65ull), kPowL6 = value(0x3FCA7E284A454EEFull),
+             kPowCpH = value(0x3FEEC709E0000000ull), kPowCpL = value(0xBE3E2FE0145B01F5ull),
+             kPowCp = value(0x3FEEC709DC3A03FDull), kPowOvt = value(0x3C971547652B82FEull),
+             kPowLg2H = value(0x3FE62E4300000000ull), kPowLg2 = value(0x3FE62E42FEFA39EFull),
+             kPowLg2L = value(0xBE205C610CA86C39ull), kPowP1 = value(0x3FC555555555553Eull),
+             kPowP2 = value(0xBF66C16C16BEBD93ull), kPowP3 = value(0x3F11566AAF25DE2Cull),
+             kPowP4 = value(0xBEBBBD41C5D26BF1ull), kPowP5 = value(0x3E66376972BEA4D0ull);
+double low_zero(double d) noexcept { return words(hi(d), 0); }
+}  // namespace
+
+double pow(double x, double y, SubnormalMode mode) noexcept {
+    const s32 hx = s32(hi(x)), hy = s32(hi(y));
+    const u32 lx = lo(x), ly = lo(y);
+    s32 ix = hx & 0x7FFFFFFF;
+    const s32 iy = hy & 0x7FFFFFFF;
+    if ((u32(iy) | ly) == 0u) return kOne;
+    if (ix > 0x7FF00000 || (ix == 0x7FF00000 && lx != 0) || iy > 0x7FF00000 || (iy == 0x7FF00000 && ly != 0))
+        return nan_add(x, y);
+    s32 yisint = 0;  // 0: y not an integer, 1: odd, 2: even
+    if (hx < 0) {
+        if (iy >= 0x43400000) {
+            yisint = 2;
+        } else if (iy >= 0x3FF00000) {
+            const s32 k = (iy >> 20) - 0x3FF;
+            if (k > 20) {
+                const u32 j = ly >> (52 - k);
+                if ((j << (52 - k)) == ly) yisint = 2 - s32(j & 1u);
+            } else if (ly == 0) {
+                const s32 j = iy >> (20 - k);
+                if ((j << (20 - k)) == iy) yisint = 2 - (j & 1);
+            }
+        }
+    }
+    if (ly == 0) {
+        if (iy == 0x7FF00000) {  // y is +-inf
+            if (((u32(ix) - 0x3FF00000u) | lx) == 0u) return nan_sub(y, y);
+            if (ix >= 0x3FF00000) return hy >= 0 ? y : kZero;
+            return hy < 0 ? -y : kZero;
+        }
+        if (iy == 0x3FF00000) return hy < 0 ? math::detail::divide(kOne, x, mode) : x;
+        if (hy == 0x40000000) {
+            const double xx = math::detail::operand(x, mode) * math::detail::operand(x, mode);
+            return mode == SubnormalMode::Flush && std::fabs(xx) < 0x1p-1022 ? copysign(0.0, xx) : xx;
+        }
+        if (hy == 0x3FE00000 && hx >= 0) return std::sqrt(x);
+    }
+    double ax = std::fabs(x);
+    if (lx == 0 && (ix == 0x7FF00000 || ix == 0 || ix == 0x3FF00000)) {
+        double z = ax;
+        if (hy < 0) z = math::detail::divide(kOne, z, mode);
+        if (hx < 0) {
+            if (((u32(ix) - 0x3FF00000u) | u32(yisint)) == 0u) {
+                z = math::detail::divide(nan_sub(z, z), nan_sub(z, z), mode);
+            } else if (yisint == 1) {
+                z = -z;
+            }
+        }
+        return z;
+    }
+    const s32 xpositive = (hx >> 31) + 1;
+    if ((xpositive | yisint) == 0) return kFloatNaN;  // MSL: errno = EDOM, __float_nan
+    double t1, t2;
+    if (iy > 0x41E00000) {  // |y| > 2^31
+        if (iy > 0x43F00000) {
+            if (ix <= 0x3FEFFFFF) return hy < 0 ? kPowInf : kZero;
+            if (ix >= 0x3FF00000) return hy > 0 ? kPowInf : kZero;
+        }
+        if (ix < 0x3FEFFFFF) return hy < 0 ? kPowInf : kZero;
+        if (ix > 0x3FF00000) return hy > 0 ? kPowInf : kZero;
+        const double t = x - kOne;  // MSL: x, where fdlibm has |x|
+        const double f4 = fnmsub(0.25, t, kPowThird);
+        const double f3 = fnmsub(t, f4, kHalf);
+        const double w = (t * t) * f3;
+        const double u = kPowIvln2H * t;
+        const double v = fmsub(kPowIvln2L, t, kPowIvln2 * w);
+        t1 = low_zero(u + v);
+        t2 = v - (t1 - u);
+    } else {
+        s32 n = 0;
+        if (ix < 0x00100000) {
+            ax = math::detail::operand(ax, mode) * kPowTwo53;
+            n -= 53;
+            ix = s32(hi(ax));
+        }
+        n += (ix >> 20) - 0x3FF;
+        const s32 j = ix & 0x000FFFFF;
+        ix = j | 0x3FF00000;
+        int k;
+        if (j <= 0x3988E) {
+            k = 0;
+        } else if (j < 0xBB67A) {
+            k = 1;
+        } else {
+            k = 0;
+            n += 1;
+            ix -= 0x00100000;
+        }
+        ax = with_hi(ax, u32(ix));
+        const double bp = kPowBp[k];
+        double u = ax - bp;
+        const double v1 = kOne / (ax + bp);
+        const double ss = u * v1;
+        const double s_h = low_zero(ss);
+        const double t_h0 = words(u32(((ix >> 1) | 0x20000000) + 0x00080000 + (k << 18)), 0);
+        const double t_l0 = ax - (t_h0 - bp);
+        const double s2a = ss * ss;
+        u = fnmsub(s_h, t_h0, u);                         // u - s_h * t_h
+        const double s_l = v1 * fnmsub(s_h, t_l0, u);    // v * (that - s_h * t_l)
+        double r = fmadd(s2a, fmadd(s2a, fmadd(s2a, fmadd(s2a, fmadd(kPowL6, s2a, kPowL5), kPowL4), kPowL3), kPowL2),
+                         kPowL1);
+        r = (s2a * s2a) * r;
+        r = fmadd(s_l, s_h + ss, r);
+        const double s2 = s_h * s_h;
+        const double t_h = low_zero((3.0 + s2) + r);
+        const double t_l = r - ((t_h - 3.0) - s2);
+        const double uu = s_h * t_h;
+        const double vv = fmadd(s_l, t_h, t_l * ss);
+        const double p_h = low_zero(uu + vv);
+        const double p_l = vv - (p_h - uu);
+        const double z_h = kPowCpH * p_h;
+        const double z_l = kPowDpL[k] + fmadd(kPowCpL, p_h, kPowCp * p_l);
+        const double t = words(0x43300000u, u32(n) ^ 0x80000000u) - words(0x43300000u, 0x80000000u);
+        t1 = low_zero(t + ((z_h + z_l) + kPowDpH[k]));
+        t2 = z_l - (((t1 - t) - kPowDpH[k]) - z_h);
+    }
+    const double s = (xpositive | (yisint - 1)) == 0 ? -kOne : kOne;  // x < 0 and y odd
+    const double yo = math::detail::operand(y, mode);
+    const double y1 = math::detail::operand(low_zero(y), mode);
+    const double p_l = fmadd(t1, yo - y1, yo * t2);
+    double p_h = y1 * t1;
+    const double z = nan_add(p_l, p_h);
+    s32 j = s32(hi(z));
+    const s32 i = s32(lo(z));
+    if (j >= 0x40900000) {
+        if (((j - 0x40900000) | i) != 0) return kHuge * (kHuge * s);
+        if (kPowOvt + p_l > z - p_h) return kHuge * (kHuge * s);
+    } else if ((j & 0x7FFFFFFF) >= 0x4090CC00) {
+        if (((j - s32(0xC090CC00u)) | i) != 0) return kTiny * (kTiny * s);
+        if (p_l <= z - p_h) return kTiny * (kTiny * s);
+    }
+    const s32 ia = j & 0x7FFFFFFF;
+    s32 k = (ia >> 20) - 0x3FF;
+    s32 nn = 0;
+    if (ia > 0x3FE00000) {
+        nn = j + (0x00100000 >> (((j >> 20) & 0x7FF) - 0x3FE));
+        k = ((nn & 0x7FFFFFFF) >> 20) - 0x3FF;
+        const double t = words(u32(nn & ~(0x000FFFFF >> k)), 0);
+        nn = ((nn & 0x000FFFFF) | 0x00100000) >> (20 - k);
+        if (j < 0) nn = -nn;
+        p_h = p_h - t;
+    }
+    const double t = low_zero(p_l + p_h);
+    const double u = kPowLg2H * t;
+    const double v = fmadd(kPowLg2, p_l - (t - p_h), t * kPowLg2L);
+    double zz = u + v;
+    const double w = v - (zz - u);
+    const double tt = zz * zz;
+    const double f0 = fmadd(zz, w, w);
+    const double t1b = zz - tt * fmadd(tt, fmadd(tt, fmadd(tt, fmadd(kPowP5, tt, kPowP4), kPowP3), kPowP2), kPowP1);
+    const double r = (zz * t1b) / (t1b - 2.0) - f0;
+    zz = kOne - (r - zz);
+    j = s32(hi(zz)) + (nn << 20);
+    if ((j >> 20) <= 0) {
+        zz = detail::scalbn(zz, nn, mode);
+    } else {
+        zz = with_hi(zz, u32(j));
+    }
+    return s * zz;
+}
+
 // ---- the float wrappers: the double routine, then frsp.
 float round_to_single(double x, SubnormalMode mode) noexcept {
     if (mode == SubnormalMode::Flush && x == x && std::fabs(x) < 0x1p-126) return std::signbit(x) ? -0.0f : 0.0f;

@@ -3,6 +3,8 @@
 
 #include "gekko/game_memory.h"
 
+#include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -11,15 +13,13 @@
 
 #include "gekko/cpu.h"
 #include "gekko/guest_memory.h"
+#include "gekko/ppc_ops.h"
 
 namespace gekko {
 
 namespace {
 
 // ---- the entry points the generator routes here (extract/native-owners.txt)
-constexpr u32 kRealMode = 0x80376B48u;       // RealMode(fn): rfi into fn with translation off
-constexpr u32 kConfig24MB = 0x80376A48u;     // the BAT configurers it is ever given
-constexpr u32 kConfig48MB = 0x80376AC8u;
 
 // The C runtime's "memcpy" (its symbol), a byte-wise memmove: forward when the
 // source is not below the destination, backward from the end otherwise.
@@ -52,9 +52,18 @@ constexpr u32 kPrsTokenEdge = 0x80044110u;
 constexpr u32 kPpcSync = 0x80370B14u;       // PPCSync: sc; blr
 constexpr u32 kDcFlushRange = 0x80372534u;  // DCFlushRange(addr, n): dcbf loop; sc; blr
 constexpr u32 kDcStoreRange = 0x80372564u;  // DCStoreRange(addr, n): dcbst loop; sc; blr
+// 2026-11-04: their two siblings without the `sc` were still translated - an empty counted loop, one iteration per
+// 32-byte line with a dispatch test on each back edge, which the AX frame ran over its buffers every 5 ms
+// (DCInvalidateRange 0.07 ms/frame of the game thread). Owned the same way, and stricter than the three above: the
+// owner leaves exactly the registers the loop leaves (serve_cache_range_loop), so only the time differs.
+constexpr u32 kDcInvalidateRange = 0x80372508u;   // DCInvalidateRange(addr, n): dcbi loop; blr
+constexpr u32 kDcFlushRangeNoSync = 0x80372594u;  // DCFlushRangeNoSync(addr, n): dcbf loop; blr
+// Their loop heads, owner entries: a state saved by a build that still translated the loops (or any resumption there)
+// can stand at one, mid-loop, with the remaining line count in CTR.
+constexpr u32 kDcInvalidateLoop = 0x80372524u;
+constexpr u32 kDcFlushNoSyncLoop = 0x803725B0u;
 
 const GameMemory::Address kAddresses[] = {
-    {kRealMode, "RealMode", false},
     {kMemmove, "memcpy (memmove)", false},
     {kMemmoveForwardHead, "memcpy: forward loop resumes", true},
     {kMemmoveBackwardHead, "memcpy: backward loop resumes", true},
@@ -65,11 +74,42 @@ const GameMemory::Address kAddresses[] = {
     {kPpcSync, "PPCSync", false},
     {kDcFlushRange, "DCFlushRange", false},
     {kDcStoreRange, "DCStoreRange", false},
+    {kDcInvalidateRange, "DCInvalidateRange", false},
+    {kDcFlushRangeNoSync, "DCFlushRangeNoSync", false},
+    {kDcInvalidateLoop, "DCInvalidateRange: line loop resumes", true},
+    {kDcFlushNoSyncLoop, "DCFlushRangeNoSync: line loop resumes", true},
 };
 
 void stop(Cpu& c, const std::string& why) {
     c.request_stop(StopReason::ExecutionFault, "native game memory: " + why);
 }
+
+// DCInvalidateRange / DCFlushRangeNoSync's architected effect, from their words (0x80372508 / 0x80372594):
+//   cmplwi r4,0; blelr; clrlwi r5,r3,27; add r4,r4,r5; addi r4,r4,31; srwi r4,r4,5; mtctr r4;
+//   loop: dcbi|dcbf 0,r3; addi r3,r3,32; bdnz loop; blr
+// The per-line cache operation has nothing to act on here, so the loop's only results are its registers: CR0 from
+// the compare, r5, r4 = the line count, r3 advanced by 32 per line, CTR run down to 0. A count of 0 (only when
+// r4 + r5 + 31 wraps) is 2^32 iterations on the console, which advance r3 by 2^37 = 0 mod 2^32: the same formula.
+}  // namespace
+
+void serve_cache_range_loop(Cpu& c) {
+    ppc::cmpl(c, 0u, c.gpr[4], 0u);
+    if (c.gpr[4] == 0u) return;
+    const u32 start = c.gpr[3];
+    c.gpr[5] = start & 0x1Fu;
+    const u32 lines = (c.gpr[4] + c.gpr[5] + 0x1Fu) >> 5;
+    c.gpr[4] = lines;
+    c.ctr = 0u;
+    c.gpr[3] = start + (lines << 5);
+}
+
+// The same loop entered at its head (dcbi|dcbf 0,r3; addi r3,r3,32; bdnz): CTR more lines, CTR = 0 meaning 2^32.
+void serve_cache_range_loop_resume(Cpu& c) {
+    c.gpr[3] += c.ctr << 5;
+    c.ctr = 0u;
+}
+
+namespace {
 
 // ---- guest bytes -------------------------------------------------------------
 //
@@ -729,7 +769,8 @@ private:
 
 }  // namespace
 
-bool prs_decode_ahead(const u8* stream, std::size_t available, u32 size_hint, PrsDecoded& out) {
+bool prs_decode_ahead(const u8* stream, std::size_t available, u32 size_hint, PrsDecoded& out, bool* hint_short) {
+    if (hint_short != nullptr) *hint_short = false;
     // Arbitrary guest-shaped bases: every address register the decoder leaves is a base plus an offset.
     constexpr u32 kIn = 0x10000000u, kOut = 0x40000000u;
     if (available == 0u || available > 0x20000000u || size_hint > 0x10000000u) return false;
@@ -746,7 +787,12 @@ bool prs_decode_ahead(const u8* stream, std::size_t available, u32 size_hint, Pr
         const PrsRaw raw = prs_raw(reg, in, dst, 0u, 0x40000000u);
         if (raw == PrsRaw::Done) break;
         if (raw == PrsRaw::AtCopy) return false;            // a copy from before the output
-        if (reg.r8 == r8 && reg.r4 == r4) return false;     // a run's end within one token's reach
+        if (reg.r8 == r8 && reg.r4 == r4) {                 // a run's end within one token's reach
+            // The output's reach is 256 bytes past the cursor: a cursor that close to the buffer's end ran out of
+            // output (a larger hint helps); otherwise the input ended.
+            if (hint_short != nullptr && u64{reg.r4} + 0x100u + 2u >= u64{kOut} + out.output.size()) *hint_short = true;
+            return false;
+        }
     }
     out.stream = stream;
     out.consumed = reg.r8 - kIn;
@@ -793,27 +839,24 @@ void GameMemory::install() {
             return true;  // an owner never declines
         }, std::string("native game memory: ") + name);
     };
-    // __OSInitMemoryProtection's only real-mode call: the BAT layout for the
-    // memory size the boot reported. The window is not translated by BATs
-    // (GuestMemory), and only the debug monitor (not running) ever reads them
-    // back, so there is nothing to configure - and nothing else may be asked.
-    own(kRealMode, "RealMode", [this](Cpu& c) {
-        const u32 routine = c.gpr[3];
-        if (routine != kConfig24MB && routine != kConfig48MB) {
-            char detail[160];
-            std::snprintf(detail, sizeof(detail),
-                          "RealMode(0x%08X) from LR 0x%08X: only the BAT configurers are known callers, and "
-                          "nothing runs with translation off here",
-                          routine, c.lr);
-            stop(c, detail);
-            return;
-        }
-        ++stats_.bat_configurations;
-    });
+    // RealMode (0x80376B48) and the BAT configurers it was given are gone: __OSInitMemoryProtection, their only
+    // caller, is part of the native OSInit (gekko/native_boot.cpp), which configures nothing (the window is not
+    // translated by BATs, GuestMemory).
     // NE-OS-0: cache maintenance has nothing to do (see kPpcSync above); the call returns to LR.
     own(kPpcSync, "PPCSync", [this](Cpu&) { ++stats_.cache_syncs; });
     own(kDcFlushRange, "DCFlushRange", [this](Cpu&) { ++stats_.cache_flushes; });
     own(kDcStoreRange, "DCStoreRange", [this](Cpu&) { ++stats_.cache_stores; });
+    own(kDcInvalidateRange, "DCInvalidateRange", [this](Cpu& c) {
+        ++stats_.cache_invalidates;
+        serve_cache_range_loop(c);
+    });
+    own(kDcFlushRangeNoSync, "DCFlushRangeNoSync", [this](Cpu& c) {
+        ++stats_.cache_flushes_no_sync;
+        serve_cache_range_loop(c);
+    });
+    own(kDcInvalidateLoop, "DCInvalidateRange: line loop resumes", [](Cpu& c) { serve_cache_range_loop_resume(c); });
+    own(kDcFlushNoSyncLoop, "DCFlushRangeNoSync: line loop resumes",
+        [](Cpu& c) { serve_cache_range_loop_resume(c); });
 
     if (const char* path = std::getenv("SHADOW_GAME_MEMORY_JOURNAL"); path != nullptr && path[0] != '\0') {
         journal_ = std::fopen(path, "w");
@@ -843,6 +886,11 @@ void GameMemory::install() {
     // overlapped the written output (an in-place expansion).
     const auto expand = [this](Cpu& c, u32 entry) {
         const u32 lr = c.lr, src = c.gpr[3], dst = c.gpr[4];
+        const auto started = std::chrono::steady_clock::now();
+        const auto spent = [&started]() {
+            return static_cast<u64>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - started).count());
+        };
         if (entry == kPrsExpand) ++stats_.expansions; else ++stats_.expansion_resumes;
         // A stream decoded ahead (gekko/prs_ahead.h), when every condition of serve_prs_ahead holds.
         if (entry == kPrsExpand && prs_ahead_ && journal_ == nullptr && !c.needs_dispatch()) {
@@ -851,12 +899,38 @@ void GameMemory::install() {
                     prs_ahead_(first, [this, &c](const PrsDecoded& d) { return serve_prs_ahead(c, d); });
                 if (decoded != nullptr) {
                     stats_.expanded_bytes += static_cast<u32>(decoded->output.size());
+                    const u64 ns = spent();
+                    ++stats_.prs_ahead_served;
+                    stats_.prs_ahead_ns += ns;
+                    stats_.prs_ahead_ns_max = std::max(stats_.prs_ahead_ns_max, ns);
                     return;
                 }
             }
         }
+#if !defined(GEKKO_SHIPPING)
+        // Measurement: why an expand runs the engine here instead of taking a stream decoded ahead (stderr, the first
+        // 64 per run).
+        if (entry == kPrsExpand) {
+            static int logged = 0;
+            if (logged < 64) {
+                ++logged;
+                const char* why = !prs_ahead_                         ? "decode-ahead off"
+                                  : journal_ != nullptr                ? "journal on"
+                                  : c.needs_dispatch()                 ? "a dispatch was due"
+                                  : prs_ahead_key_bytes(c, src) == nullptr ? "no key bytes"
+                                                                       : "not decoded ahead / refused";
+                std::fprintf(stderr, "[prs-ahead miss] lr %08X src %08X dst %08X: %s\n", lr, src, dst, why);
+            }
+        }
+#endif
         PrsEngine engine(c, stats_);
         const bool finished = engine.run(entry);
+        {
+            const u64 ns = spent();
+            ++stats_.prs_engine_slices;
+            stats_.prs_engine_ns += ns;
+            stats_.prs_engine_ns_max = std::max(stats_.prs_engine_ns_max, ns);
+        }
         if (!finished || entry != kPrsExpand || engine.yielded()) return;
         const u32 written = c.gpr[3];
         stats_.expanded_bytes += written;
@@ -914,6 +988,107 @@ bool GameMemory::serve_prs_ahead(Cpu& c, const PrsDecoded& decoded) {
     c.cr = (c.cr & 0x0FFFFFFFu) | (signed_field(0u, so) << 28);
     c.xer = decoded.ca ? (c.xer | kXerCA) : (c.xer & ~kXerCA);
     ++prs_ahead_served_;
+    return true;
+}
+
+std::optional<u32> GameMemory::expand_for_native(Cpu& c, u32 src, u32 dst, const PrsDecoded* prepared,
+                                                 bool decode_here) {
+    const auto started = std::chrono::steady_clock::now();
+    const auto done = [&](std::optional<u32> result) {
+        const u64 ns = static_cast<u64>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now() - started).count());
+        native_expand_stats_.ns += ns;
+        native_expand_stats_.ns_max = std::max(native_expand_stats_.ns_max, ns);
+        if (!result && decode_here) ++native_expand_stats_.declined;
+        return result;
+    };
+    GuestBytes bytes(c);
+    if (journal_ != nullptr || !bytes.direct()) return done(std::nullopt);
+    // The output in guest memory, when it is host memory and does not overlap the consumed stream (serve_prs_ahead's
+    // conditions, without the register file: a native caller reads only the count).
+    const auto place = [&](const PrsDecoded& d) {
+        const u32 written = static_cast<u32>(d.output.size());
+        const u64 in_end = u64{src} + d.consumed, out_end = u64{dst} + written;
+        u8* const from = bytes.span(src, d.consumed);
+        u8* const to = written != 0u ? bytes.span(dst, written) : nullptr;
+        if (from == nullptr || (written != 0u && to == nullptr) || in_end > 0x100000000ull ||
+            out_end > 0x100000000ull || (written != 0u && u64{src} < out_end && u64{dst} < in_end) ||
+            std::memcmp(from, d.stream, d.consumed) != 0)
+            return false;
+        if (written != 0u) std::memcpy(to, d.output.data(), written);
+        return true;
+    };
+    // 1. Decoded ahead on the host workers.
+    if (prs_ahead_) {
+        if (const u8* first = bytes.span(src, 16u)) {
+            if (const auto decoded = prs_ahead_(first, place)) {
+                ++native_expand_stats_.served_ahead;
+                stats_.expanded_bytes += static_cast<u32>(decoded->output.size());
+                return done(static_cast<u32>(decoded->output.size()));
+            }
+        }
+    }
+    // 2. Decoded by the caller off the game thread from a copy of these bytes (Phase 3): placed when every consumed
+    // byte still equals the copy.
+    if (prepared != nullptr && place(*prepared)) {
+        ++native_expand_stats_.served_prepared;
+        stats_.expanded_bytes += static_cast<u32>(prepared->output.size());
+        return done(static_cast<u32>(prepared->output.size()));
+    }
+    // 3. Decoded here from the guest's bytes (the source's region bounds what may be read).
+    if (!decode_here) return done(std::nullopt);
+    const GuestBytes::Run run = bytes.run_at(src);
+    if (run.host == nullptr) return done(std::nullopt);
+    const u8* stream = run.host + (src - run.base);
+    const std::size_t available = static_cast<std::size_t>(run.end - src);
+    for (const u32 hint : {0x10000u, 0x100000u, 0x800000u}) {
+        // A decline is either an output past the hint (a larger hint helps) or a reason no hint changes (a copy from
+        // before the output, a stream ending at the region's end): the next hint, then the guest path.
+        PrsDecoded d;
+        bool hint_short = false;
+        if (!prs_decode_ahead(stream, available, hint, d, &hint_short)) {
+            if (!hint_short) break;  // no larger hint changes this decline: the guest path, without decoding again
+            continue;
+        }
+        if (!place(d)) return done(std::nullopt);
+        ++native_expand_stats_.decoded_here;
+        stats_.expanded_bytes += static_cast<u32>(d.output.size());
+        return done(static_cast<u32>(d.output.size()));
+    }
+    return done(std::nullopt);
+}
+
+bool GameMemory::ahead_has_stream(Cpu& c, u32 src) const {
+    if (!prs_ahead_ready_ || journal_ != nullptr) return false;
+    GuestBytes bytes(c);
+    if (!bytes.direct()) return false;
+    const u8* const first = bytes.span(src, 16u);
+    if (first == nullptr) return false;
+    return prs_ahead_ready_(first, [&](const PrsDecoded& d) {
+        const u8* const from = bytes.span(src, d.consumed);
+        return from != nullptr && std::memcmp(from, d.stream, d.consumed) == 0;
+    });
+}
+
+bool GameMemory::move_for_native(Cpu& c, u32 dst, u32 src, u32 n) const {
+    GuestBytes bytes(c);
+    if (journal_ != nullptr || !bytes.direct()) return false;
+    if (n == 0u) return true;
+    u8* const from = bytes.span(src, n);
+    u8* const to = bytes.span(dst, n);
+    if (from == nullptr || to == nullptr) return false;
+    std::memmove(to, from, n);
+    return true;
+}
+
+bool GameMemory::snapshot_stream(Cpu& c, u32 src, std::size_t max_bytes, std::vector<u8>& out) const {
+    GuestBytes bytes(c);
+    if (journal_ != nullptr || !bytes.direct()) return false;
+    const GuestBytes::Run run = bytes.run_at(src);
+    if (run.host == nullptr) return false;
+    const std::size_t length = std::min<std::size_t>(max_bytes, static_cast<std::size_t>(run.end - src));
+    const u8* const from = run.host + (src - run.base);
+    out.assign(from, from + length);
     return true;
 }
 

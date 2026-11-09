@@ -1,6 +1,7 @@
 #include "render/renderer.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <set>
@@ -9,8 +10,15 @@
 #include <cstring>
 #include <unordered_map>
 
+// shadow_render's include root is runtime/lift only; the schedule offset is shared with the game thread and the audio
+// device thread (runtime/include): header-only atomics, one object program-wide (inline function statics).
+#include "../../include/gekko/display_geometry.h"
+#include "../../include/gekko/schedule_offset.h"
 #include "render/frame_math.h"
 #include "render/gpu_timer.h"
+#include "render/particle_fill.h"
+#include "render/present_trace.h"
+#include "render/init_trace.h"
 #include "render/packet_stream.h"
 #include "render/profile.h"
 #include "render/pipelines.h"
@@ -31,6 +39,7 @@
 #include "render_ps_glare_blur.h"
 #include "render_ps_glare_box.h"
 #include "render_ps_glare_capture.h"
+#include "render_ps_depth_bits.h"
 #include "render_ps_glare_composite.h"
 #include "render_ps_resolve_glare.h"
 #include "render_ps_glare_merge.h"
@@ -129,8 +138,25 @@ bool skip_clear_enabled() {
     return on;
 #endif
 }
+// Not done, measured (Codex review 2026-11-05; docs/PERF_60FPS_2026-11-04.md): an R, G, B-only write mask on the
+// blended draws (their alpha blend ZERO x src + ONE x dst keeps the alpha anyway) gave identical pixels, audio and state,
+// and no GPU time - 5K smoke frames paired at stable clocks, +0.006 ms mean, inside run-to-run noise.
+// The full-resolution HUD under a scaled render size (record: hud_deferred). Diagnostic builds:
+// SHADOW_R2_HUD_OVERLAY=0 keeps the 2D in the scaled scene (A/B on one binary).
+bool hud_overlay_enabled() {
+#if defined(GEKKO_SHIPPING)
+    return true;
+#else
+    static const bool on = [] {
+        const char* v = std::getenv("SHADOW_R2_HUD_OVERLAY");
+        return v == nullptr || v[0] != '0';
+    }();
+    return on;
+#endif
+}
 // Diagnostics only (GPU_FILL.md): SHADOW_R2_PARTICLE_PROBE = bits, changing the picture to find what limits particle
-// fill: 1 = no texture sample, 2 = no blending (written opaque), 4 = no depth test. Never in a shipping build.
+// fill: 1 = no texture sample, 2 = no blending (written opaque), 4 = no depth test; meshes 8 = no blending, 16 = no
+// texture sample; 32 = immediates no blending; 64 = no mesh extra passes. Never in a shipping build.
 std::uint32_t particle_probe() {
 #if defined(GEKKO_SHIPPING)
     return 0u;
@@ -140,6 +166,212 @@ std::uint32_t particle_probe() {
         return v != nullptr ? static_cast<std::uint32_t>(std::strtoul(v, nullptr, 10)) : 0u;
     }();
     return probe;
+#endif
+}
+// The exact opaque write (docs/GPU_FILL.md section 19). With the blend unit enabled, this GPU coalesces two fragments
+// of one draw that cover complementary samples of one pixel and stores their mean in every sample (section 18): not
+// the specified per-sample blend, and dependent on scheduling. A base pass whose blend provably reduces to writing
+// the source colour - every fragment's alpha exactly 1 under SrcAlpha / InvSrcAlpha, or the factors One / Zero - is
+// drawn with the blend unit off and only R, G, B written (the scene's alpha is ZERO x src + ONE x dst: unchanged):
+// the specified result in every sample, independent of scheduling. SHADOW_R2_EXACT_OPAQUE=0 (non-shipping) draws
+// them through the blend unit as before; SHADOW_R2_OPAQUE_CHECK=1 makes such a draw output magenta wherever a
+// fragment's alpha is not exactly 1 (the proof's check).
+bool exact_opaque_enabled() {
+#if defined(GEKKO_SHIPPING)
+    return true;
+#else
+    static const bool on = [] {
+        const char* v = std::getenv("SHADOW_R2_EXACT_OPAQUE");
+        return v == nullptr || v[0] != '0';
+    }();
+    return on;
+#endif
+}
+// SHADOW_R2_OPAQUE_CHECK: 1 = the fragment alpha, 2 = the interpolated vertex alpha, 3 = the filtered texel alpha.
+std::uint32_t opaque_check_enabled() {
+#if defined(GEKKO_SHIPPING)
+    return 0u;
+#else
+    static const std::uint32_t bit = [] {
+        const char* v = std::getenv("SHADOW_R2_OPAQUE_CHECK");
+        return v == nullptr ? 0u : v[0] == '1' ? kOpaqueCheck : v[0] == '2' ? 256u : v[0] == '3' ? 512u : 0u;
+    }();
+    return bit;
+#endif
+}
+// The exact alpha (docs/GPU_FILL.md section 19): when every vertex alpha and every texel alpha of a base pass is 255,
+// its fragment alpha is the material constant's exactly (kExactAlpha), not the interpolated / filtered 1 - e.
+// SHADOW_R2_EXACT_ALPHA=0 (non-shipping) keeps the interpolated value.
+bool exact_alpha_enabled() {
+#if defined(GEKKO_SHIPPING)
+    return true;
+#else
+    static const bool on = [] {
+        const char* v = std::getenv("SHADOW_R2_EXACT_ALPHA");
+        return v == nullptr || v[0] != '0';
+    }();
+    return on;
+#endif
+}
+// The blend writes the source colour when the fragment alpha is 1 (to_d3d: DestAlpha is ONE, InvDestAlpha ZERO).
+bool identity_when_opaque(const Recipe& recipe) {
+    const bool src_one = recipe.src == Blend::One || recipe.src == Blend::DestAlpha || recipe.src == Blend::SrcAlpha;
+    const bool dst_zero = recipe.dst == Blend::Zero || recipe.dst == Blend::InvDestAlpha || recipe.dst == Blend::InvSrcAlpha;
+    return src_one && dst_zero;
+}
+// Without any alpha source the blend is the identity whatever the alpha.
+bool identity_always(const Recipe& recipe) {
+    return (recipe.src == Blend::One || recipe.src == Blend::DestAlpha) &&
+           (recipe.dst == Blend::Zero || recipe.dst == Blend::InvDestAlpha);
+}
+// Diagnostics (SHADOW_R2_DUMP_PARTICLES=<directory>, SHADOW_R2_DUMP_PARTICLES_TICKS=<first>,<last>; non-shipping):
+// every particle draw of the frames in the tick range appended to <directory>/particles_<tick>.bin, in draw order -
+// the real game's particle input for tools/exact/ (docs/EXACT_RENDER_SPEC.md). Record: 'PDRW', tick (u64), pass
+// (0 scene, 1 glare sources), draw index, target width / height / samples, recipe (src, dst, depth test, depth
+// write, cull, cutoff, fog, fog start, fog end, fog colour), batch (right xyz, up xyz, colour rgba, particle colours,
+// texture handle, sampler filter / u / v), the pass view-projection (row-major 4x4), count, then count 44-byte
+// records (frame.h Particle).
+void dump_particle_draw(std::uint64_t tick, bool glare_sources, std::uint32_t d, const TextureDesc& target,
+                        const Recipe& recipe, const ParticleBatch& batch, const Particle* records, const Mat4& vp) {
+#if defined(GEKKO_SHIPPING)
+    (void)tick, (void)glare_sources, (void)d, (void)target, (void)recipe, (void)batch, (void)records, (void)vp;
+#else
+    static const char* dir = std::getenv("SHADOW_R2_DUMP_PARTICLES");
+    if (dir == nullptr || dir[0] == 0)
+        return;
+    static const std::pair<std::uint64_t, std::uint64_t> range = [] {
+        unsigned long long a = 0, b = ~0ull;
+        if (const char* v = std::getenv("SHADOW_R2_DUMP_PARTICLES_TICKS"))
+            std::sscanf(v, "%llu,%llu", &a, &b);
+        return std::make_pair(static_cast<std::uint64_t>(a), static_cast<std::uint64_t>(b));
+    }();
+    if (tick < range.first || tick > range.second)
+        return;
+    char name[64];
+    std::snprintf(name, sizeof(name), "/particles_%06llu.bin", static_cast<unsigned long long>(tick));
+    std::FILE* out = std::fopen((std::string(dir) + name).c_str(), "ab");
+    if (out == nullptr)
+        return;
+    const std::uint32_t magic = 0x57524450u;  // 'PDRW'
+    std::fwrite(&magic, 4, 1, out);
+    std::fwrite(&tick, 8, 1, out);
+    const std::uint32_t head[11] = {glare_sources ? 1u : 0u, d, target.width, target.height, target.samples,
+                                    static_cast<std::uint32_t>(recipe.src), static_cast<std::uint32_t>(recipe.dst),
+                                    recipe.depth_test ? 1u : 0u, recipe.depth_write ? 1u : 0u,
+                                    static_cast<std::uint32_t>(recipe.cull), recipe.fog ? 1u : 0u};
+    std::fwrite(head, sizeof(head), 1, out);
+    const float fog[3] = {recipe.alpha_cutoff, recipe.fog_start, recipe.fog_end};
+    std::fwrite(fog, sizeof(fog), 1, out);
+    const std::uint32_t fog_colour = packed(recipe.fog_colour);
+    std::fwrite(&fog_colour, 4, 1, out);
+    const float axes[10] = {batch.right.x, batch.right.y, batch.right.z, batch.up.x, batch.up.y, batch.up.z,
+                            batch.colour.x, batch.colour.y, batch.colour.z, batch.colour.w};
+    std::fwrite(axes, sizeof(axes), 1, out);
+    const std::uint32_t tail[5] = {batch.particle_colours ? 1u : 0u, batch.texture.value,
+                                   static_cast<std::uint32_t>(batch.sampler.filter), static_cast<std::uint32_t>(batch.sampler.u),
+                                   static_cast<std::uint32_t>(batch.sampler.v)};
+    std::fwrite(tail, sizeof(tail), 1, out);
+    std::fwrite(vp.m, sizeof(vp.m), 1, out);
+    std::fwrite(&batch.count, 4, 1, out);
+    std::fwrite(records, sizeof(Particle), batch.count, out);
+    std::fclose(out);
+#endif
+}
+// Diagnostics (SHADOW_R2_IDENTITY_BLEND_OFF=1, non-shipping): a One/Zero recipe is drawn with the blend unit
+// disabled (a plain write) instead of an enabled identity blend (GPU_FILL.md section 18: on 4x MSAA edge pixels the
+// enabled blend unit is not exact and depends on the draw's scheduling).
+bool identity_blend_off() {
+#if defined(GEKKO_SHIPPING)
+    return false;
+#else
+    static const bool on = [] {
+        const char* v = std::getenv("SHADOW_R2_IDENTITY_BLEND_OFF");
+        return v != nullptr && v[0] == '1';
+    }();
+    return on;
+#endif
+}
+// Diagnostics (SHADOW_R2_DEPTH_S8=1, non-shipping): the scene depth as D32_FLOAT_S8X24_UINT - the same 32-bit float
+// depth in another storage format (GPU_FILL.md section 16: does 4x depth storage decide depth ties?).
+DXGI_FORMAT scene_depth_format() {
+#if defined(GEKKO_SHIPPING)
+    return DXGI_FORMAT_D32_FLOAT;
+#else
+    static const DXGI_FORMAT format = [] {
+        const char* v = std::getenv("SHADOW_R2_DEPTH_S8");
+        return v != nullptr && v[0] == '1' ? DXGI_FORMAT_D32_FLOAT_S8X24_UINT : DXGI_FORMAT_D32_FLOAT;
+    }();
+    return format;
+#endif
+}
+std::uint32_t depth_bits_sample() {
+#if defined(GEKKO_SHIPPING)
+    return 0u;
+#else
+    static const std::uint32_t n = [] {
+        const char* v = std::getenv("SHADOW_R2_DEPTH_BITS");
+        return v != nullptr && v[0] >= '1' && v[0] <= '4' ? static_cast<std::uint32_t>(v[0] - '0') : 0u;
+    }();
+    return n;
+#endif
+}
+// The direct resolve: the frame's one full-output view resolves straight into the 8-bit output and the compose is
+// skipped (see the resolve in Renderer::record). SHADOW_R2_DIRECT_RESOLVE: unset = when the render size is the
+// output's (measured 2026-11-04, 1080p: GPU p50 3.59 -> 2.92 ms; rendering at 2160p into a 1080p window it gained
+// nothing, so a scaled frame keeps the compose); 1 = also when scaling; 0 = never. A shader emulation of the 16-bit
+// step was not exact (2026-11-04: 88-216 pixels per 1080p frame one step high - the GPU's float -> UNORM16 store is not
+// round-to-nearest, D3D allows 0.6 ULP); the resolve now classifies each mean against the device's MEASURED
+// thresholds of the whole R16 store -> compose -> 8-bit chain (unorm_calibration.cpp), so it writes the byte the
+// compose path would. A failed calibration leaves the compose path running.
+int direct_resolve_mode() {
+    static const int mode = [] {
+        const char* v = std::getenv("SHADOW_R2_DIRECT_RESOLVE");
+        return v == nullptr || v[0] == '\0' ? -1 : v[0] == '0' ? 0 : 1;
+    }();
+    return mode;
+}
+bool direct_resolve() { return direct_resolve_mode() != 0; }
+// SHADOW_R2_FOLD_UNDER=0 (A/B): the view under an overlay is resolved into its own texture and copied into the overlay
+// ("views under") and the compose, as before the fold.
+std::atomic<int> g_fold_under_forced{-1};  // set_fold_under_override
+bool fold_under() {
+    static const bool on = [] {
+        const char* v = std::getenv("SHADOW_R2_FOLD_UNDER");
+        return !(v != nullptr && v[0] == '0');
+    }();
+    const int forced = g_fold_under_forced.load(std::memory_order_relaxed);
+    return forced < 0 ? on : forced != 0;
+}
+std::uint32_t diagnostic_draw_limit() {
+#if defined(GEKKO_SHIPPING)
+    return 0xFFFFFFFFu;
+#else
+    static const std::uint32_t limit = [] {
+        const char* v = std::getenv("SHADOW_R2_DRAW_LIMIT");
+        return v != nullptr && v[0] != 0 ? static_cast<std::uint32_t>(std::strtoul(v, nullptr, 10)) : 0xFFFFFFFFu;
+    }();
+    return limit;
+#endif
+}
+// SHADOW_R2_SCENE_TILES_PASS=<name> (diagnostics): tile only the draw passes of that name ("scene", "glare sources").
+// SHADOW_R2_SCENE_TILES_ORDINAL=k (diagnostics): tile only the k-th pass of that name in a frame (0 = the first).
+std::uint32_t scene_tiles(const char* pass_name, std::uint32_t ordinal) {
+#if defined(GEKKO_SHIPPING)
+    (void)pass_name;
+    (void)ordinal;
+    return 1u;
+#else
+    static const char* only_ordinal = std::getenv("SHADOW_R2_SCENE_TILES_ORDINAL");
+    if (only_ordinal != nullptr && only_ordinal[0] != 0 && std::strtoul(only_ordinal, nullptr, 10) != ordinal)
+        return 1u;
+    static const std::uint32_t grid = [] {
+        const char* v = std::getenv("SHADOW_R2_SCENE_TILES");
+        const unsigned long n = v != nullptr ? std::strtoul(v, nullptr, 10) : 1ul;
+        return static_cast<std::uint32_t>(n >= 1ul && n <= 8ul ? n : 1ul);
+    }();
+    static const char* only = std::getenv("SHADOW_R2_SCENE_TILES_PASS");
+    if (only != nullptr && only[0] != 0 && std::strcmp(only, pass_name) != 0) return 1u;
+    return grid;
 #endif
 }
 std::uint32_t skip_clear_flag(const Recipe& recipe) {
@@ -227,6 +459,40 @@ bool Renderer::create(const RendererOptions& options, std::string* error) {
         !skin_cache_.create(device_, heap_, options.skinned_vertices_per_frame, options.frames_in_flight, root_.Get(),
                             error))
         return false;
+    // MSAA support: a count is offered only when the GPU takes it, at quality 0, for the scene's colour format and its
+    // depth format both (CheckFeatureSupport, D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS).
+    msaa_supported_mask_ = 1u;
+    for (std::uint32_t bit = 1; bit <= 5; ++bit) {
+        const std::uint32_t count = 1u << bit;
+        bool ok = true;
+        for (const DXGI_FORMAT format : {options.scene_format, scene_depth_format()}) {
+            D3D12_FEATURE_DATA_MULTISAMPLE_QUALITY_LEVELS q{};
+            q.Format = format;
+            q.SampleCount = count;
+            ok = ok && SUCCEEDED(device_.d3d()->CheckFeatureSupport(D3D12_FEATURE_MULTISAMPLE_QUALITY_LEVELS, &q,
+                                                                    sizeof(q))) &&
+                 q.NumQualityLevels > 0;
+        }
+        if (ok)
+            msaa_supported_mask_ |= 1u << bit;
+    }
+    {
+        // The count asked at start; one the GPU lacks is refused for the largest it has below it (reported).
+        std::uint32_t samples = std::max<std::uint32_t>(options.msaa_samples, 1u);
+        if (!msaa_supported(samples)) {
+            std::uint32_t fallback = 1u;
+            for (std::uint32_t c = 1u; c < samples; c <<= 1u)
+                if (msaa_supported(c))
+                    fallback = c;
+            std::lock_guard<std::mutex> lock(msaa_note_mutex_);
+            msaa_note_ = std::to_string(samples) + "x MSAA is not supported by this GPU for the scene's formats; " +
+                         std::to_string(fallback) + "x in use";
+            samples = fallback;
+        }
+        msaa_ = samples;
+        msaa_active_.store(samples, std::memory_order_release);
+        anisotropy_active_.store(samplers_.anisotropy(), std::memory_order_release);
+    }
     // GPU trace (measurement only): created only when the environment asks for it.
     const std::string gpu_trace = GpuTimer::requested_path();
     if (!gpu_trace.empty()) {
@@ -254,6 +520,8 @@ void Renderer::destroy() {
         return;
     // The jobs still queued run now (they take the table lock to install what they make), then the worker is gone.
     worker_.stop();
+    jit_.stop();  // its watcher waits on the direct queue's fence: gone before the device
+    burst_.stop();  // the same
     std::lock_guard<std::mutex> render_lock(render_mutex_);
     std::lock_guard<std::mutex> table_lock(table_mutex_);
     if (memory_trace_ != nullptr) {  // the last row and map, everything still allocated
@@ -284,6 +552,11 @@ void Renderer::destroy() {
             retire(device_, slot.morph, heap_);
         }
     }
+    // The direct resolve's table (unorm_calibration.cpp): its D3D12MA allocation must go before the allocator does.
+    if (unorm_table_)
+        retire(device_, unorm_table_, &heap_);
+    unorm_table_format_ = DXGI_FORMAT_UNKNOWN;
+    unorm_calibration_tried_ = false;
     pending_releases_.clear();
     packets_finished_ = false;
     finished_through_ = 0;
@@ -375,6 +648,12 @@ bool Renderer::make_texture(const assets::TextureImage& image, GpuTexture* out, 
         retire(device_, texture, &heap_);
         return false;
     }
+    texture.opaque = true;
+    for (std::size_t i = 3; i < image.rgba.size(); i += 4)
+        if (image.rgba[i] != 0xFF) {
+            texture.opaque = false;
+            break;
+        }
     std::vector<SubresourceData> levels(image.mip_levels);
     for (std::uint32_t l = 0; l < image.mip_levels; ++l)
         levels[l] = {image.rgba.data() + image.level_offsets[l], std::uint64_t{image.level_width(l)} * 4};
@@ -413,6 +692,12 @@ bool Renderer::make_mesh(const assets::MeshData& mesh, MeshResources* out, bool*
         }
     }
     MeshResources created;
+    created.opaque_colours = true;
+    for (const AttributeVertex& a : attributes)
+        if ((a.colour >> 24) != 0xFFu) {
+            created.opaque_colours = false;
+            break;
+        }
     const std::uint64_t pbytes = positions.size() * sizeof(PositionVertex);
     const std::uint64_t abytes = attributes.size() * sizeof(AttributeVertex);
     const std::uint64_t ibytes = mesh.indices.size() * sizeof(std::uint32_t);
@@ -818,10 +1103,11 @@ void Renderer::release_scope(Scope scope) {
 // ---- pipelines -----------------------------------------------------------------------------------------------------
 
 ID3D12PipelineState* Renderer::mesh_pipeline(Program program, const Recipe& recipe, DXGI_FORMAT colour,
-                                             std::uint32_t samples, std::string* error, bool lines, bool tiles) {
+                                             std::uint32_t samples, std::string* error, bool lines, bool tiles,
+                                             bool plain, bool no_depth) {
     const PipelineKey key{static_cast<std::uint8_t>(program), static_cast<std::uint8_t>(recipe.src),
                           static_cast<std::uint8_t>(recipe.dst), static_cast<std::uint8_t>(recipe.cull),
-                          recipe.depth_test, recipe.depth_write, colour, samples, lines, tiles};
+                          recipe.depth_test, recipe.depth_write, colour, samples, lines, tiles, plain, no_depth};
     if (const auto found = pipelines_.find(key); found != pipelines_.end())
         return found->second.Get();
     static const D3D12_INPUT_ELEMENT_DESC mesh_inputs[] = {
@@ -881,7 +1167,7 @@ ID3D12PipelineState* Renderer::mesh_pipeline(Program program, const Recipe& reci
     }
     }
     info.color_format = colour;
-    info.depth_format = DXGI_FORMAT_D32_FLOAT;
+    info.depth_format = scene_depth_format();
     info.samples = samples;
     info.depth.DepthEnable = TRUE;
     // Depth is reversed (frame_math.h kFarDepth): nearer is greater.
@@ -897,14 +1183,24 @@ ID3D12PipelineState* Renderer::mesh_pipeline(Program program, const Recipe& reci
                            : strict_depth && program == Program::Base ? D3D12_COMPARISON_FUNC_GREATER
                                                                       : D3D12_COMPARISON_FUNC_GREATER_EQUAL;
     info.depth.DepthWriteMask = recipe.depth_write ? D3D12_DEPTH_WRITE_MASK_ALL : D3D12_DEPTH_WRITE_MASK_ZERO;
+    if (no_depth) {  // the HUD overlay: drawn onto the presented picture, after every 3D draw of its view
+        info.depth_format = DXGI_FORMAT_UNKNOWN;
+        info.depth.DepthEnable = FALSE;
+        info.depth.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+    }
     D3D12_RENDER_TARGET_BLEND_DESC& b = info.blend.RenderTarget[0];
-    b.BlendEnable = TRUE;
+    b.BlendEnable = identity_blend_off() && recipe.src == Blend::One && recipe.dst == Blend::Zero ? FALSE : TRUE;
     b.SrcBlend = to_d3d(recipe.src);
     b.DestBlend = to_d3d(recipe.dst);
     b.BlendOp = D3D12_BLEND_OP_ADD;
     b.SrcBlendAlpha = D3D12_BLEND_ZERO;  // the scene's alpha stays 1 (see to_d3d)
     b.DestBlendAlpha = D3D12_BLEND_ONE;
     b.BlendOpAlpha = D3D12_BLEND_OP_ADD;
+    if (plain) {
+        b.BlendEnable = FALSE;
+        b.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_RED | D3D12_COLOR_WRITE_ENABLE_GREEN |
+                                  D3D12_COLOR_WRITE_ENABLE_BLUE;
+    }
     // Measured on the disc's worlds (R2_DRIVER.md 2.5): the faces the game keeps are counter-clockwise on screen.
     info.raster.FrontCounterClockwise = TRUE;
     info.raster.CullMode = recipe.cull == Cull::Back    ? D3D12_CULL_MODE_BACK
@@ -933,6 +1229,7 @@ ID3D12PipelineState* Renderer::screen_pipeline(Screen screen, DXGI_FORMAT colour
     case Screen::GlareBox: info.ps = {kRenderPSGlareBox, sizeof(kRenderPSGlareBox)}; break;
     case Screen::GlareMerge: info.ps = {kRenderPSGlareMerge, sizeof(kRenderPSGlareMerge)}; break;
     case Screen::Resolve: info.ps = {kRenderPSResolve, sizeof(kRenderPSResolve)}; break;
+    case Screen::DepthBits: info.ps = {kRenderPSDepthBits, sizeof(kRenderPSDepthBits)}; break;
     case Screen::Under: info.ps = {kRenderPSTexture, sizeof(kRenderPSTexture)}; break;  // the compose's copy
     case Screen::Scale: info.ps = {kRenderPSScale, sizeof(kRenderPSScale)}; break;      // G10's present scale
     case Screen::ResolveGlare: info.ps = {kRenderPSResolveGlare, sizeof(kRenderPSResolveGlare)}; break;
@@ -994,6 +1291,9 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
                       const Output& output, D3D12_RESOURCE_STATES* output_state_after, GpuBuffer* capture,
                       D3D12_PLACED_SUBRESOURCE_FOOTPRINT* capture_layout, std::string* error, bool commit_history) {
     GEKKO_PROFILE_ZONE("gpu/record");
+    // The direct resolve needs this device's measured conversion table first (once; unorm_calibration.cpp).
+    if (direct_resolve())
+        ensure_unorm_calibration(output.format);
     const std::uint64_t frame_number = frames_.frame_number();
     FrameGraph& graph = frame_graph_;  // C4: kept across frames
     graph.reset(frame_number);
@@ -1259,6 +1559,52 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
         *w = static_cast<std::uint32_t>(std::max(1.0f, x1 - x0));
         *h = static_cast<std::uint32_t>(std::max(1.0f, y1 - y0));
     };
+    // Full-resolution HUD (docs/RESOLUTION_AUDIT.md section 12): when the render size is scaled into a picture of
+    // another size (a render scale other than 100 %), each view's trailing 2D - the canvas draws after its last 3D draw
+    // and after its last glare / snapshot / history step, sampling no screen copy - is left out of the scaled scene and
+    // drawn after the present scale at the picture's own pixels, in the same order (the "hud overlay" pass). At 100 %
+    // (and in captures) nothing moves: the picture is the one the scene path always made.
+    std::vector<std::uint8_t> hud_deferred;
+    bool hud_overlay = false;
+    gekko::PixelSize hud_place{};
+    if (scaled && output.resource != nullptr && hud_overlay_enabled()) {
+        const double picture_aspect = output.picture_aspect;
+        hud_place = gekko::fit_aspect({output.present_width, output.present_height},
+                                      picture_aspect > 0.0 ? picture_aspect
+                                                           : static_cast<double>(output.width) / output.height);
+        if (hud_place.width != output.width || hud_place.height != output.height) {
+            hud_deferred.assign(packet.draws.size(), std::uint8_t{0});
+            for (std::size_t v = 0; v < packet.views.size(); ++v) {
+                bool open = true;
+                for (std::size_t p = packet.passes.size(); open && p-- > 0;) {
+                    const PassRecord& pass = packet.passes[p];
+                    if (pass.view != v)
+                        continue;
+                    if (pass.kind != PassKind::Scene) {
+                        open = false;
+                        break;
+                    }
+                    for (std::uint32_t k = pass.draw_count; open && k-- > 0;) {
+                        const std::uint32_t d = pass.first_draw + k;
+                        if (d >= packet.draws.size()) {
+                            open = false;
+                            break;
+                        }
+                        const DrawRecord& draw = packet.draws[d];
+                        const ImmediateDraw* im =
+                            draw.immediate < packet.immediates.size() ? &packet.immediates[draw.immediate] : nullptr;
+                        if (draw.particles != kNoParticles || im == nullptr || im->space != Space::Canvas ||
+                            im->source != ImageSource::Texture) {
+                            open = false;
+                            break;
+                        }
+                        hud_deferred[d] = 1u;
+                        hud_overlay = true;
+                    }
+                }
+            }
+        }
+    }
     std::vector<TexelRect> snapshot_region(snapshot_count);
     std::vector<std::uint8_t> snapshot_whole(snapshot_count, 0);
 #if !defined(GEKKO_SHIPPING)
@@ -1344,13 +1690,49 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
     std::uint64_t snapshots = 0;
 
     struct ViewTargets {
-        ResourceId colour, depth, resolved;
+        ResourceId colour = kNoResource, depth = kNoResource, resolved = kNoResource;
         D3D12_VIEWPORT viewport;
         D3D12_RECT scissor;
         Mat4 view;
         Mat4 view_projection;
     };
     std::vector<ViewTargets> views(packet.views.size());
+    // A view whose picture reaches the screen only through the overlay drawn over it - the next view, over_views, the
+    // same rectangle, no other view under it - is resolved straight into that overlay's multisampled colour: the
+    // resolve writes into every sample the value the "views under" copy would (the resolved texel, point-sampled),
+    // and the compose leaves it out (the overlay covers it with the same opaque copy). Both copies of its picture go.
+    std::vector<std::size_t> fold_into(packet.views.size(), SIZE_MAX);
+    if (fold_under() && msaa_ > 1u && depth_bits_sample() == 0u) {
+        const auto rect_of = [&](std::size_t v) {
+            const ViewRect& r = packet.views[v].rect;
+            return std::array<float, 4>{box_x + std::round(r.x * box_w), box_y + std::round(r.y * box_h),
+                                        box_x + std::round((r.x + r.width) * box_w),
+                                        box_y + std::round((r.y + r.height) * box_h)};
+        };
+        for (std::size_t w = 1; w < packet.views.size(); ++w) {
+            if (!packet.views[w].over_views || fold_into[w - 1] != SIZE_MAX)
+                continue;
+            const std::array<float, 4> over = rect_of(w);
+            bool alone = rect_of(w - 1) == over;
+            for (std::size_t u = 0; alone && u + 1 < w; ++u) {
+                const std::array<float, 4> r = rect_of(u);
+                alone = !(r[0] < over[2] && r[2] > over[0] && r[1] < over[3] && r[3] > over[1]);
+            }
+            for (std::size_t x = w + 1; alone && x < packet.views.size(); ++x) {  // no later overlay reads it either
+                const std::array<float, 4> r = rect_of(x);
+                alone = !(packet.views[x].over_views && r[0] < over[2] && r[2] > over[0] && r[1] < over[3] &&
+                          r[3] > over[1]);
+            }
+            if (alone)
+                fold_into[w - 1] = w;
+        }
+    }
+    // Views that end in a resolved picture of their own (the rest are folded into an overlay's colour). With exactly one,
+    // covering the whole output, the compose is a plain point-sampled copy of it - so that view resolves straight into
+    // the output instead (below, "direct resolve").
+    const std::size_t unfolded_views =
+        static_cast<std::size_t>(std::count(fold_into.begin(), fold_into.end(), SIZE_MAX));
+    bool output_resolved = false;
     std::uint64_t draws = 0, skipped = 0, particles = 0, glares = 0, immediates = 0;
     // A draw left out: counted by reason; the first ones of a run are logged so a rare skip can be found.
     const auto skip = [&](SkipReason reason, std::uint32_t draw_index) {
@@ -1385,13 +1767,14 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
         colour.width = width;
         colour.height = height;
         colour.format = options_.scene_format;
-        colour.samples = options_.msaa_samples;
+        colour.samples = msaa_;
         colour.clear_color = {packet.background.x, packet.background.y, packet.background.z, 1.0f};
         TextureDesc depth = colour;
-        depth.format = DXGI_FORMAT_D32_FLOAT;
+        depth.format = scene_depth_format();
         TextureDesc resolved = colour;
         resolved.samples = 1;
-        t.colour = graph.create_texture("view colour", colour);
+        if (t.colour == kNoResource)  // an overlay's colour is made by the view folded into it
+            t.colour = graph.create_texture("view colour", colour);
         t.depth = graph.create_texture("view depth", depth);
         t.viewport = D3D12_VIEWPORT{x0, y0, x1 - x0, y1 - y0, 0.0f, 1.0f};
         t.scissor = D3D12_RECT{static_cast<LONG>(x0), static_cast<LONG>(y0), static_cast<LONG>(x1), static_cast<LONG>(y1)};
@@ -1449,7 +1832,11 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
         // those views made where it covers them - the one picture the game drew both players' viewports and then its
         // HUD and fades into - on the background elsewhere; its depth starts cleared.
         bool colour_ready = false;
-        if (view.over_views && v > 0) {
+        if (view.over_views && v > 0 && fold_into[v - 1] == v) {
+            colour_ready = true;  // the view under it resolved into its colour
+            ++render_stats_.views_over_views;
+            ++render_stats_.views_folded;
+        } else if (view.over_views && v > 0) {
             ID3D12PipelineState* under_pipeline = screen_pipeline(Screen::Under, colour.format, colour.samples, error);
             if (under_pipeline == nullptr)
                 return false;
@@ -1492,8 +1879,12 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
         // (PSResolve: the mean of the samples, the same bits in every process - the driver's resolve was seen to differ
         // in the last bit between processes, R2_DRIVER.md 4.9); a single-sampled one is copied.
         // `region` (a snapshot's, snapshot_reads.h): only those texels are made - the only ones its readers read.
+        // `into_samples`: the target's sample count (a view folded under an overlay resolves into its multisampled
+        // colour; the pixel shader's one value lands in every sample).
         auto add_resolve = [&](const char* name, ResourceId from, const TextureDesc& from_desc, ResourceId into,
-                               const TexelRect* region = nullptr) {
+                               const TexelRect* region = nullptr, std::uint32_t into_samples = 1u,
+                               DXGI_FORMAT into_format = DXGI_FORMAT_UNKNOWN, std::uint32_t store16 = 0u,
+                               std::uint32_t unorm_table = kNoDescriptor) {
             const bool part = region != nullptr;
             const TexelRect rect = part ? *region : TexelRect{};
             if (from_desc.samples <= 1) {
@@ -1516,7 +1907,9 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
                     });
                 return;
             }
-            ID3D12PipelineState* pipeline = screen_pipeline(Screen::Resolve, from_desc.format, 1, nullptr);
+            ID3D12PipelineState* pipeline = screen_pipeline(
+                Screen::Resolve, into_format != DXGI_FORMAT_UNKNOWN ? into_format : from_desc.format, into_samples,
+                nullptr);
             const std::uint32_t samples = from_desc.samples;
             const std::uint32_t low_byte = std::strcmp(name, "resolve") == 0 ? resolve_low_byte() : 0u;
             graph.add_pass(
@@ -1525,7 +1918,7 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
                     p.read(from, Access::ShaderRead);
                     p.write(into, Access::RenderTarget, Load::Discard);
                 },
-                [pipeline, from, into, samples, part, rect, low_byte](PassContext& c) {
+                [pipeline, from, into, samples, part, rect, low_byte, store16, unorm_table](PassContext& c) {
                     if (pipeline == nullptr)
                         return;
                     ID3D12GraphicsCommandList* cl = c.list();
@@ -1542,15 +1935,19 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
                     root[4] = c.srv(from);  // root1.x: the multisampled source
                     root[5] = samples;      // root1.y
                     root[12] = low_byte;    // root3.x: diagnostics only
+                    root[13] = store16;     // root3.y: straight into the 8-bit output (direct resolve)
+                    root[14] = unorm_table; // root3.z: the measured thresholds that direct resolve classifies against
                     cl->SetGraphicsRoot32BitConstants(kRootConstants, 16, root, 0);
                     cl->DrawInstanced(3, 1, 0, 0);
                 });
         };
         // A pass's draws into `target`: the scene (depth written as the draws ask), or the glare sources (the scene's
         // depth tested, never written; `glare_tiles`: the tile marks its pixel shaders set, G2).
+        std::uint32_t draw_pass_ordinal[2] = {0u, 0u};  // diagnostics: scene / glare-sources passes recorded so far
         auto add_draw_pass = [&](const PassRecord* pass, const char* name, ResourceId target,
                                  const TextureDesc& target_desc, Load target_load, bool glare_sources,
                                  ResourceId glare_tiles = kNoResource) {
+            const std::uint32_t pass_ordinal = draw_pass_ordinal[glare_sources ? 1 : 0]++;
             const Load depth_load = first ? Load::Clear : Load::Keep;
             first = false;
             // The pass's own camera, or the view's.
@@ -1621,9 +2018,11 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
                     for (const ResourceId image : images)
                         p.read(image, Access::ShaderRead);
                 },
-                [this, pass, &packet, &t, &draws, &skip, &particles, &immediates, target, target_desc, glare_sources,
+                [this, pass, &packet, &t, &draws, &skip, &particles, &immediates, &hud_deferred, target, target_desc,
+                 glare_sources,
                  glare_tiles, read_only_depth, &light_blocks, no_lights, pass_view, pass_view_projection, canvas_placement,
-                 canvas_scissor, full_scissor, pass_snapshots, history, &skin_element, &skin_origin](PassContext& c) {
+                 canvas_scissor, full_scissor, pass_snapshots, history, &skin_element, &skin_origin,
+                 pass_grid = scene_tiles(name, pass_ordinal)](PassContext& c) {
                     if (pass == nullptr)
                         return;
                     const TextureDesc& colour = target_desc;
@@ -1645,7 +2044,40 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
                     // draw leaves the loop body. Measurement only; nothing is recorded without it.
                     GpuTimer* const draw_timer =
                         gpu_timer_ != nullptr && gpu_timer_->draw_detail() ? gpu_timer_.get() : nullptr;
-                    for (std::uint32_t d = pass->first_draw; d < pass->first_draw + pass->draw_count; ++d) {
+                    // Diagnostics (SHADOW_R2_SCENE_TILES=n, non-shipping): the pass's draws recorded once per tile of an
+                    // n x n grid, every scissor intersected with the tile - a measurement of how the pass's cost
+                    // depends on its working set (GPU_FILL.md section 12).
+                    const std::uint32_t grid = pass_grid;
+                    for (std::uint32_t tile_index = 0; tile_index < grid * grid; ++tile_index) {
+                    // SHADOW_R2_SCENE_TILE_ALIGN=a (diagnostics): tile sides rounded up to a multiple of a pixels.
+                    static const LONG align = [] {
+                        const char* v = std::getenv("SHADOW_R2_SCENE_TILE_ALIGN");
+                        const long a = v != nullptr ? std::strtol(v, nullptr, 10) : 2L;
+                        return a >= 2L ? a : 2L;
+                    }();
+                    const LONG tw = ((static_cast<LONG>(target_desc.width) + static_cast<LONG>(grid) - 1) / static_cast<LONG>(grid) + align - 1) / align * align;
+                    const LONG th = ((static_cast<LONG>(target_desc.height) + static_cast<LONG>(grid) - 1) / static_cast<LONG>(grid) + align - 1) / align * align;
+                    const D3D12_RECT tile{static_cast<LONG>(tile_index % grid) * tw, static_cast<LONG>(tile_index / grid) * th,
+                                          std::min<LONG>(static_cast<LONG>(tile_index % grid + 1) * tw, static_cast<LONG>(target_desc.width)),
+                                          std::min<LONG>(static_cast<LONG>(tile_index / grid + 1) * th, static_cast<LONG>(target_desc.height))};
+                    const auto clip = [&tile](const D3D12_RECT& r) {
+                        D3D12_RECT o{std::max(r.left, tile.left), std::max(r.top, tile.top), std::min(r.right, tile.right),
+                                     std::min(r.bottom, tile.bottom)};
+                        if (o.right < o.left) o.right = o.left;
+                        if (o.bottom < o.top) o.bottom = o.top;
+                        return o;
+                    };
+                    const D3D12_RECT tile_full = clip(full_scissor);
+                    std::array<D3D12_RECT, kAnchorCount> tile_canvas;
+                    for (std::size_t a = 0; a < tile_canvas.size(); ++a) tile_canvas[a] = clip(canvas_scissor[a]);
+                    cl->RSSetScissorRects(1, &tile_full);
+                    // Diagnostics (SHADOW_R2_DRAW_LIMIT=n, non-shipping): each draw pass issues only its first n draws.
+                    const std::uint32_t draw_limit = diagnostic_draw_limit();
+                    for (std::uint32_t d = pass->first_draw;
+                         d < pass->first_draw + std::min(pass->draw_count, draw_limit); ++d) {
+                        // The view's trailing 2D under a scaled render size: drawn by the hud overlay instead.
+                        if (!hud_deferred.empty() && hud_deferred[d] != 0u)
+                            continue;
                         const DrawRecord& draw = packet.draws[d];
                         struct DrawSpanGuard {
                             GpuTimer* timer;
@@ -1662,7 +2094,8 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
                             n.c = static_cast<std::uint32_t>(draw.recipe.src) |
                                   static_cast<std::uint32_t>(draw.recipe.dst) << 4 |
                                   (draw.recipe.depth_write ? 1u : 0u) << 8 | (draw.recipe.depth_test ? 1u : 0u) << 9 |
-                                  static_cast<std::uint32_t>(draw.material.extra.kind) << 10;
+                                  static_cast<std::uint32_t>(draw.material.extra.kind) << 10 |
+                                  static_cast<std::uint32_t>(draw.layer) << 20;  // the effect layer (cost audit)
                             if (draw.particles != kNoParticles) {
                                 n.kind = 1;
                                 if (draw.particles < packet.particle_batches.size()) {
@@ -1688,6 +2121,35 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
                         Recipe base_recipe = draw.recipe;
                         if (glare_sources)
                             base_recipe.depth_write = false;
+                        // SHADOW_R2_DRAW_LIMIT's bisection: what the last issued draw of each pass is.
+                        if (draw_limit != 0xFFFFFFFFu && d + 1u == pass->first_draw + std::min(pass->draw_count, draw_limit)) {
+                            const MeshSlot* m = draw.particles == kNoParticles && draw.immediate == kNoImmediate
+                                                    ? drawable_mesh(draw.mesh) : nullptr;
+                            std::fprintf(stderr,
+                                         "[draw-limit] frame %llu pass %s draw %u: kind %s mesh %08X sub %u idx %u "
+                                         "verts %u blend %u/%u zw %d zt %d cull %u cutoff %.3f tex %08X flags %X extra %u "
+                                         "bones %u lights %u imm-src %u\n",
+                                         static_cast<unsigned long long>(packet.tick), glare_sources ? "glare" : "scene",
+                                         d - pass->first_draw,
+                                         draw.particles != kNoParticles ? "particles"
+                                         : draw.immediate != kNoImmediate ? "immediate" : "mesh",
+                                         draw.mesh.value, draw.submesh,
+                                         m != nullptr && draw.submesh < m->submeshes.size() ? m->submeshes[draw.submesh].index_count : 0u,
+                                         m != nullptr ? m->vertex_count : 0u, static_cast<unsigned>(base_recipe.src),
+                                         static_cast<unsigned>(base_recipe.dst), base_recipe.depth_write ? 1 : 0,
+                                         base_recipe.depth_test ? 1 : 0, static_cast<unsigned>(base_recipe.cull),
+                                         base_recipe.alpha_cutoff, draw.material.texture.value, flags_of(draw.material),
+                                         static_cast<unsigned>(draw.material.extra.kind), draw.bones.count,
+                                         static_cast<unsigned>(draw.lights),
+                                         draw.immediate != kNoImmediate && draw.immediate < packet.immediates.size()
+                                             ? static_cast<unsigned>(packet.immediates[draw.immediate].source) : 0u);
+                        }
+                        // Meshes (same diagnostic): 8 = no blending (written opaque), 16 = no texture sample.
+                        if (draw.particles == kNoParticles && draw.immediate == kNoImmediate &&
+                            (particle_probe() & 8u) != 0u) {
+                            base_recipe.src = Blend::One;
+                            base_recipe.dst = Blend::Zero;
+                        }
                         if (draw.particles != kNoParticles && particle_probe() != 0u) {
                             if ((particle_probe() & 2u) != 0u) {
                                 base_recipe.src = Blend::One;
@@ -1743,6 +2205,8 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
                             constants.fog_end = draw.recipe.fog_end;
                             constants.fog_colour = packed(draw.recipe.fog_colour);
                             std::memcpy(block.cpu, &constants, sizeof(constants));
+                            dump_particle_draw(packet.tick, glare_sources, d - pass->first_draw, colour, base_recipe,
+                                               *batch, &packet.particles[batch->first], pass_view_projection);
                             if (pipeline != bound) {
                                 cl->SetPipelineState(pipeline);
                                 bound = pipeline;
@@ -1755,6 +2219,10 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
                             ++draws;
                             particles += batch->count;
                             continue;
+                        }
+                        if (draw.immediate != kNoImmediate && (particle_probe() & 32u) != 0u) {
+                            base_recipe.src = Blend::One;  // diagnostics: immediates unblended
+                            base_recipe.dst = Blend::Zero;
                         }
                         if (draw.immediate != kNoImmediate) {
                             // Immediate geometry: its vertices (and indices) streamed through the frame ring.
@@ -1852,9 +2320,10 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
                             cl->IASetVertexBuffers(0, 1, &stream);
                             cl->SetGraphicsRootConstantBufferView(kRootFrameConstants, block.gpu);
                             const bool on_canvas = im->space == Space::Canvas;
+                            const D3D12_RECT tile_region = clip(region_scissor);
                             if (on_canvas)
-                                cl->RSSetScissorRects(1, in_region ? &region_scissor
-                                                                   : &canvas_scissor[static_cast<std::size_t>(im->anchor)]);
+                                cl->RSSetScissorRects(1, in_region ? &tile_region
+                                                                   : &tile_canvas[static_cast<std::size_t>(im->anchor)]);
                             if (im->index_count != 0) {
                                 const D3D12_INDEX_BUFFER_VIEW ibv{indices.gpu, static_cast<UINT>(index_bytes),
                                                                   DXGI_FORMAT_R32_UINT};
@@ -1864,7 +2333,7 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
                                 cl->DrawInstanced(im->vertex_count, 1, 0, 0);
                             }
                             if (on_canvas)
-                                cl->RSSetScissorRects(1, &full_scissor);
+                                cl->RSSetScissorRects(1, &tile_full);
                             cl->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
                             ++draws;
                             ++immediates;
@@ -1912,7 +2381,8 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
                             for (int col = 0; col < 3; ++col)
                                 constants.uv_row[row][col] = material.uv_transform[row][col];
                         const TextureSlot* texture = drawable_texture(material.texture);
-                        constants.texture = texture != nullptr ? texture->texture.srv : kNoDescriptor;
+                        constants.texture =
+                            texture != nullptr && (particle_probe() & 16u) == 0u ? texture->texture.srv : kNoDescriptor;
                         constants.sampler = sampler_index(material.sampler.filter, material.sampler.u, material.sampler.v);
                         constants.flags = flags_of(material) | skip_clear_flag(base_recipe);
                         constants.uv_set = 0;
@@ -1941,9 +2411,10 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
                         cl->IASetIndexBuffer(&ibv);
                         cl->SetGraphicsRootConstantBufferView(kRootPassConstants, lights);
 
-                        auto issue = [&](Program program, const Recipe& recipe, const DrawConstants& block_data) {
-                            ID3D12PipelineState* pipeline =
-                                mesh_pipeline(program, recipe, colour.format, colour.samples, nullptr, false, tiles);
+                        auto issue = [&](Program program, const Recipe& recipe, const DrawConstants& block_data,
+                                         bool plain = false) {
+                            ID3D12PipelineState* pipeline = mesh_pipeline(program, recipe, colour.format, colour.samples,
+                                                                          nullptr, false, tiles, plain);
                             const UploadAllocation block = frames_.ring().allocate(sizeof(DrawConstants), 256);
                             if (pipeline == nullptr || !block) {
                                 skip(pipeline == nullptr ? SkipReason::MeshPipeline : SkipReason::MeshUpload, d);
@@ -1958,12 +2429,36 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
                             cl->DrawIndexedInstanced(sub.index_count, 1, sub.first_index, 0, 0);
                             ++draws;
                         };
-                        issue(Program::Base, base_recipe, constants);
-
-                        // The second draw of the same mesh: same depth test, no depth writes, its own blend.
+                        // The exact opaque write: the base pass's alpha is exactly 1 in every fragment when the
+                        // material colour's alpha (M) is 1 or absent, every vertex alpha (P) is 255 and the texture is
+                        // absent or opaque (alpha = C0.a x v.a x texel alpha, shaders/mesh.hlsl).
+                        bool plain = false;
+                        const bool alpha_is_c0 = (!material.vertex_colours || mesh->opaque_colours) &&
+                                                 (constants.texture == kNoDescriptor || texture->texture.opaque);
+                        if (alpha_is_c0 && exact_alpha_enabled())
+                            constants.flags |= kExactAlpha;
+                        if (exact_opaque_enabled()) {
+                            const bool alpha_one = alpha_is_c0 && exact_alpha_enabled() &&
+                                                   (!material.modulate || material.colour.w == 1.0f);
+                            plain = identity_always(base_recipe) || (alpha_one && identity_when_opaque(base_recipe));
+                            if (plain && opaque_check_enabled() != 0u)
+                                constants.flags |= opaque_check_enabled();
+                        }
+                        if (plain)
+                            draw_span.note.c |= 1u << 16;  // the per-draw trace: drawn by the exact opaque write
                         const ExtraPass& extra = material.extra;
                         const TextureSlot* extra_texture = drawable_texture(extra.texture);
-                        if (extra.kind != ExtraPass::Kind::None && extra_texture != nullptr) {
+                        if (extra.kind == ExtraPass::Kind::BumpEnvironment && extra_texture != nullptr &&
+                            (particle_probe() & 64u) == 0u)
+                            fill_bump_environment(extra, extra_texture->texture.srv,
+                                                  sampler_index(extra.sampler.filter, extra.sampler.u, extra.sampler.v),
+                                                  &constants);
+                        issue(Program::Base, base_recipe, constants, plain);
+                        constants.flags &= ~(kOpaqueCheck | 256u | 512u | kExactAlpha);
+
+                        // The second draw of the same mesh: same depth test, no depth writes, its own blend.
+                        if ((extra.kind == ExtraPass::Kind::Environment || extra.kind == ExtraPass::Kind::Dual) &&
+                            extra_texture != nullptr && (particle_probe() & 64u) == 0u) {
                             Recipe recipe = base_recipe;
                             recipe.depth_write = false;
                             DrawConstants second = constants;
@@ -1988,6 +2483,8 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
                             }
                         }
                     }
+                    }
+
                 });
         };
         auto add_scene_pass = [&](const PassRecord* pass) {
@@ -2207,10 +2704,14 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
                         continue;
                     // A pixel's samples lie inside it: one pixel of margin on every side covers every sample a
                     // primitive inside these bounds can reach (and a line's width).
-                    const long left = std::max(0L, static_cast<long>(std::floor(x0)) - 1);
-                    const long top = std::max(0L, static_cast<long>(std::floor(y0)) - 1);
-                    const long right = std::min(static_cast<long>(width), static_cast<long>(std::ceil(x1)) + 1);
-                    const long bottom = std::min(static_cast<long>(height), static_cast<long>(std::ceil(y1)) + 1);
+                    // Clamped before the conversion: a far vertex (a fade quad's) is outside long's range, and the
+                    // converted bound wrapped and skipped the draw's tiles. Within the view nothing changes.
+                    const auto clamp_x = [&](double v) { return std::clamp(v, -2.0, static_cast<double>(width) + 2.0); };
+                    const auto clamp_y = [&](double v) { return std::clamp(v, -2.0, static_cast<double>(height) + 2.0); };
+                    const long left = std::max(0L, static_cast<long>(std::floor(clamp_x(x0))) - 1);
+                    const long top = std::max(0L, static_cast<long>(std::floor(clamp_y(y0))) - 1);
+                    const long right = std::min(static_cast<long>(width), static_cast<long>(std::ceil(clamp_x(x1))) + 1);
+                    const long bottom = std::min(static_cast<long>(height), static_cast<long>(std::ceil(clamp_y(y1))) + 1);
                     if (left >= right || top >= bottom)
                         continue;
                     for (long ty = top / kTile; ty <= (bottom - 1) / static_cast<long>(kTile); ++ty)
@@ -2499,11 +3000,40 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
         }
         if (first)
             add_scene_pass(nullptr);  // a view without passes still shows the background
-        t.resolved = graph.create_texture("view", resolved);
+        // Folded under an overlay: resolved into the overlay's colour (every sample), made here, ahead of its view.
+        const bool fold = fold_into[v] != SIZE_MAX;
+        const std::uint32_t into_samples = fold ? colour.samples : 1u;
+        // Direct resolve (experiment, SHADOW_R2_DIRECT_RESOLVE=1 only - not bit-exact, see direct_resolve): the frame's
+        // one unfolded view covers the whole output, so the compose only copies its 16-bit resolve, texel for texel
+        // (point sampling, same size, no blend), into the 8-bit output. The experiment writes the output from the
+        // resolve itself through an emulated 16-bit step (root3.y, PSResolve / PSResolveGlare), saving the 8 B/px
+        // texture write, its read and the output clear. Nothing else reads the view's resolve: snapshots and history
+        // resolve the scene colour themselves, captures read the output.
+        const bool direct = !fold && unfolded_views == 1u && direct_resolve() &&
+                            (direct_resolve_mode() == 1 || !scaled) && colour.samples > 1u &&
+                            depth_bits_sample() == 0u && resolve_low_byte() == 0u && width == output.width &&
+                            height == output.height && t.viewport.TopLeftX == 0.0f && t.viewport.TopLeftY == 0.0f &&
+                            (output.format == DXGI_FORMAT_R8G8B8A8_UNORM || output.format == DXGI_FORMAT_B8G8R8A8_UNORM) &&
+                            // The emulated step is the 16-bit store's; and with no compose after it, a resolve
+                            // pipeline that failed to build would leave the whole output undefined.
+                            resolved.format == DXGI_FORMAT_R16G16B16A16_UNORM &&
+                            unorm_table_format_ == output.format && unorm_table_.srv != kNoDescriptor &&
+                            screen_pipeline(Screen::Resolve, output.format, 1u, nullptr) != nullptr &&
+                            (!folded.active || screen_pipeline(Screen::ResolveGlare, output.format, 1u, nullptr) != nullptr);
+        if (fold)
+            views[fold_into[v]].colour = graph.create_texture("view colour", colour);
+        else if (!direct)
+            t.resolved = graph.create_texture("view", resolved);
+        output_resolved = output_resolved || direct;
+        const ResourceId resolve_into = fold ? views[fold_into[v]].colour : direct ? out_id : t.resolved;
+        const DXGI_FORMAT into_format = direct ? output.format : resolved.format;
+        const std::uint32_t store16 = direct ? 1u : 0u;
+        const std::uint32_t unorm_table = direct ? unorm_table_.srv : kNoDescriptor;
         if (folded.active) {
-            ID3D12PipelineState* fold_pipeline = screen_pipeline(Screen::ResolveGlare, resolved.format, 1, nullptr);
-            ID3D12PipelineState* plain_pipeline = screen_pipeline(Screen::Resolve, resolved.format, 1, nullptr);
-            const ResourceId from = t.colour, into = t.resolved;
+            ID3D12PipelineState* fold_pipeline =
+                screen_pipeline(Screen::ResolveGlare, into_format, into_samples, nullptr);
+            ID3D12PipelineState* plain_pipeline = screen_pipeline(Screen::Resolve, into_format, into_samples, nullptr);
+            const ResourceId from = t.colour, into = resolve_into;
             const FoldedGlare g = folded;
             const std::uint32_t samples = colour.samples;
             graph.add_pass(
@@ -2517,7 +3047,8 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
                         p.read(g.second, Access::ShaderRead);
                     p.write(into, Access::RenderTarget, Load::Discard);
                 },
-                [fold_pipeline, plain_pipeline, from, into, g, samples, linear_clamp, width, height](PassContext& c) {
+                [fold_pipeline, plain_pipeline, from, into, g, samples, linear_clamp, width, height,
+                 store16, unorm_table](PassContext& c) {
                     if (fold_pipeline == nullptr || plain_pipeline == nullptr)
                         return;
                     ID3D12GraphicsCommandList* cl = c.list();
@@ -2535,6 +3066,8 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
                     root[8] = width;
                     root[9] = height;
                     root[12] = resolve_low_byte();
+                    root[13] = store16;
+                    root[14] = unorm_table;
                     cl->SetGraphicsRoot32BitConstants(kRootConstants, 16, root, 0);
                     cl->SetPipelineState(fold_pipeline);
                     cl->DrawInstanced(3, 1, 0, 0);
@@ -2546,48 +3079,93 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
                     }
                 });
         } else {
-            add_resolve("resolve", t.colour, colour, t.resolved);
+            add_resolve("resolve", t.colour, colour, resolve_into, nullptr, into_samples, into_format, store16,
+                        unorm_table);
+        }
+        // Diagnostics (SHADOW_R2_DEPTH_BITS=1..4, non-shipping): the view shows the bits of stored depth sample n-1
+        // instead of its picture (GPU_FILL.md section 17).
+        if (const std::uint32_t depth_sample = depth_bits_sample(); depth_sample != 0u && colour.samples > 1u) {
+            ID3D12PipelineState* bits = screen_pipeline(Screen::DepthBits, resolved.format, 1, nullptr);
+            const ResourceId depth = t.depth, into = t.resolved;
+            graph.add_pass(
+                "depth bits",
+                [&](PassBuilder& p) {
+                    p.read(depth, Access::ShaderRead);
+                    p.write(into, Access::RenderTarget, Load::Keep);
+                },
+                [bits, depth, into, depth_sample](PassContext& c) {
+                    if (bits == nullptr)
+                        return;
+                    ID3D12GraphicsCommandList* cl = c.list();
+                    const D3D12_CPU_DESCRIPTOR_HANDLE rtv = c.rtv(into);
+                    cl->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+                    c.full_viewport(into);
+                    cl->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                    std::uint32_t root[16] = {};
+                    root[4] = c.srv(depth);
+                    root[5] = depth_sample - 1u;
+                    cl->SetGraphicsRoot32BitConstants(kRootConstants, 16, root, 0);
+                    cl->SetPipelineState(bits);
+                    cl->DrawInstanced(3, 1, 0, 0);
+                });
         }
     }
 
-    ID3D12PipelineState* compose = screen_pipeline(Screen::Under, output.format, 1, error);
-    if (compose == nullptr)
+    ID3D12PipelineState* compose = output_resolved ? nullptr : screen_pipeline(Screen::Under, output.format, 1, error);
+    if (!output_resolved && compose == nullptr)
         return false;
-    graph.add_pass(
-        "compose",
-        [&](PassBuilder& p) {
+    if (!output_resolved) {
+        graph.add_pass(
+            "compose",
+            [&](PassBuilder& p) {
+                for (const ViewTargets& t : views)
+                    if (t.resolved != kNoResource)  // a folded view is in its overlay's picture
+                        p.read(t.resolved, Access::ShaderRead);
+                // A view covering the whole output overwrites every pixel with an opaque copy (no blend), so the clear
+            // under it is never seen: the output is discarded instead of cleared (exact; bars and split screens
+            // still clear).
+            bool covered = false;
             for (const ViewTargets& t : views)
-                p.read(t.resolved, Access::ShaderRead);
-            p.write(out_id, Access::RenderTarget, Load::Clear);
-        },
-        [&views, compose, out_id](PassContext& c) {
-            ID3D12GraphicsCommandList* cl = c.list();
-            const D3D12_CPU_DESCRIPTOR_HANDLE rtv = c.rtv(out_id);
-            cl->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
-            cl->SetPipelineState(compose);
-            cl->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            for (const ViewTargets& t : views) {
-                c.set_viewport(t.viewport, t.scissor);
-                const std::uint32_t constants[2] = {c.srv(t.resolved),
-                    sampler_index(Filter::Point, Address::Clamp, Address::Clamp)};
-                cl->SetGraphicsRoot32BitConstants(kRootConstants, 2, constants, 4);
-                cl->DrawInstanced(3, 1, 0, 0);
-            }
-        });
+                covered = covered || (t.resolved != kNoResource && t.scissor.left <= 0 && t.scissor.top <= 0 &&
+                                      t.scissor.right >= static_cast<LONG>(output.width) &&
+                                      t.scissor.bottom >= static_cast<LONG>(output.height));
+            p.write(out_id, Access::RenderTarget, covered ? Load::Discard : Load::Clear);
+            },
+            [&views, compose, out_id](PassContext& c) {
+                ID3D12GraphicsCommandList* cl = c.list();
+                const D3D12_CPU_DESCRIPTOR_HANDLE rtv = c.rtv(out_id);
+                cl->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+                cl->SetPipelineState(compose);
+                cl->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                for (const ViewTargets& t : views) {
+                    if (t.resolved == kNoResource)
+                        continue;
+                    c.set_viewport(t.viewport, t.scissor);
+                    const std::uint32_t constants[2] = {c.srv(t.resolved),
+                        sampler_index(Filter::Point, Address::Clamp, Address::Clamp)};
+                    cl->SetGraphicsRoot32BitConstants(kRootConstants, 2, constants, 4);
+                    cl->DrawInstanced(3, 1, 0, 0);
+                }
+            });
+    }
     if (scaled) {
         ID3D12PipelineState* scale = screen_pipeline(Screen::Scale, output.format, 1, error);
         if (scale == nullptr)
             return false;
-        // The picture fitted into the back buffer at its own aspect (the caller keeps the two equal; black bars
-        // otherwise); exactly 2:1 in both directions is the box reduction.
-        const float sw = static_cast<float>(output.width), sh = static_cast<float>(output.height);
-        const float pw = static_cast<float>(output.present_width), ph = static_cast<float>(output.present_height);
-        const float fit = std::min(pw / sw, ph / sh);
-        const float vw = std::round(sw * fit), vh = std::round(sh * fit);
-        const D3D12_VIEWPORT viewport{std::round((pw - vw) * 0.5f), std::round((ph - vh) * 0.5f), vw, vh, 0.0f, 1.0f};
+        // The picture placed in the back buffer (gekko/display_geometry.h): the largest rectangle of the picture's
+        // aspect - the game's viewport, exact; else the render size's own - centred, black bars outside. The render
+        // size is mapped onto it whole (the only resampling: 1:1, a 2x2 box at exactly 2:1, a bicubic otherwise).
+        const double picture_aspect = output.picture_aspect;
+        const gekko::PixelSize place = gekko::fit_aspect(
+            {output.present_width, output.present_height},
+            picture_aspect > 0.0 ? picture_aspect : static_cast<double>(output.width) / output.height);
+        const float vw = static_cast<float>(place.width), vh = static_cast<float>(place.height);
+        const D3D12_VIEWPORT viewport{static_cast<float>((output.present_width - place.width) / 2u),
+                                      static_cast<float>((output.present_height - place.height) / 2u), vw, vh, 0.0f,
+                                      1.0f};
         const D3D12_RECT scissor{static_cast<LONG>(viewport.TopLeftX), static_cast<LONG>(viewport.TopLeftY),
                                  static_cast<LONG>(viewport.TopLeftX + vw), static_cast<LONG>(viewport.TopLeftY + vh)};
-        const bool box = output.width == 2u * output.present_width && output.height == 2u * output.present_height;
+        const bool box = output.width == 2u * place.width && output.height == 2u * place.height;
         const std::uint32_t source_w = output.width, source_h = output.height;
         graph.add_pass(
             "present scale",
@@ -2607,6 +3185,153 @@ bool Renderer::record(ID3D12GraphicsCommandList* list, std::uint32_t slot, const
                 cl->SetGraphicsRoot32BitConstants(kRootConstants, 2, source, 4);
                 cl->SetGraphicsRoot32BitConstants(kRootConstants, 2, size, 8);
                 cl->DrawInstanced(3, 1, 0, 0);
+            });
+    }
+    if (hud_overlay && scaled) {
+        // The views' trailing 2D at the picture's own pixels (see hud_deferred): each view's rectangle in the back
+        // buffer is its rectangle of the render size mapped onto the placed picture, and its canvas is laid out there
+        // exactly as the scene lays it out on the view's target - the same anchors, scissors and draw order, without
+        // the render scale.
+        struct HudView {
+            std::size_t view;
+            D3D12_VIEWPORT viewport;
+            D3D12_RECT rect;
+        };
+        std::vector<HudView> hud_views;
+        const double sx = static_cast<double>(hud_place.width) / output.width;
+        const double sy = static_cast<double>(hud_place.height) / output.height;
+        const double ox = static_cast<double>((output.present_width - hud_place.width) / 2u);
+        const double oy = static_cast<double>((output.present_height - hud_place.height) / 2u);
+        for (std::size_t v = 0; v < packet.views.size(); ++v) {
+            bool any = false;
+            for (const PassRecord& pass : packet.passes)
+                for (std::uint32_t d = pass.first_draw; pass.view == v && !any && d < pass.first_draw + pass.draw_count &&
+                                                        d < hud_deferred.size();
+                     ++d)
+                    any = hud_deferred[d] != 0u;
+            if (!any)
+                continue;
+            const ViewRecord& view = packet.views[v];
+            const double x0 = box_x + std::round(view.rect.x * box_w), y0 = box_y + std::round(view.rect.y * box_h);
+            const double x1 = box_x + std::round((view.rect.x + view.rect.width) * box_w);
+            const double y1 = box_y + std::round((view.rect.y + view.rect.height) * box_h);
+            const LONG l = static_cast<LONG>(std::lround(ox + x0 * sx)), t = static_cast<LONG>(std::lround(oy + y0 * sy));
+            const LONG r = static_cast<LONG>(std::lround(ox + x1 * sx)), b = static_cast<LONG>(std::lround(oy + y1 * sy));
+            if (r <= l || b <= t)
+                continue;
+            hud_views.push_back({v,
+                                 D3D12_VIEWPORT{static_cast<float>(l), static_cast<float>(t), static_cast<float>(r - l),
+                                                static_cast<float>(b - t), 0.0f, 1.0f},
+                                 D3D12_RECT{l, t, r, b}});
+        }
+        const DXGI_FORMAT present_format = output.format;
+        graph.add_pass(
+            "hud overlay", [&](PassBuilder& p) { p.write(present_id, Access::RenderTarget, Load::Keep); },
+            [this, &packet, &hud_deferred, hud_views, present_id, present_format](PassContext& c) {
+                ID3D12GraphicsCommandList* cl = c.list();
+                const D3D12_CPU_DESCRIPTOR_HANDLE rtv = c.rtv(present_id);
+                cl->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+                ID3D12PipelineState* bound = nullptr;
+                for (const HudView& hv : hud_views) {
+                    const ViewRecord& view = packet.views[hv.view];
+                    const float w = hv.viewport.Width, h = hv.viewport.Height;
+                    std::array<Mat4, kAnchorCount> placement;
+                    std::array<D3D12_RECT, kAnchorCount> scissor;
+                    for (std::size_t a = 0; a < placement.size(); ++a) {
+                        placement[a] = canvas_projection(view.canvas, static_cast<Anchor>(a), w, h);
+                        const D3D12_RECT local = to_rect(
+                            shadow::render::canvas_scissor(view.canvas, static_cast<Anchor>(a), placement[a], w, h));
+                        scissor[a] = D3D12_RECT{std::max(hv.rect.left, hv.rect.left + local.left),
+                                                std::max(hv.rect.top, hv.rect.top + local.top),
+                                                std::min(hv.rect.right, hv.rect.left + local.right),
+                                                std::min(hv.rect.bottom, hv.rect.top + local.bottom)};
+                        if (scissor[a].right < scissor[a].left) scissor[a].right = scissor[a].left;
+                        if (scissor[a].bottom < scissor[a].top) scissor[a].bottom = scissor[a].top;
+                    }
+                    c.set_viewport(hv.viewport, hv.rect);
+                    for (const PassRecord& pass : packet.passes) {
+                        if (pass.view != hv.view)
+                            continue;
+                        for (std::uint32_t d = pass.first_draw;
+                             d < pass.first_draw + pass.draw_count && d < hud_deferred.size(); ++d) {
+                            if (hud_deferred[d] == 0u)
+                                continue;
+                            const DrawRecord& draw = packet.draws[d];
+                            const ImmediateDraw& im = packet.immediates[draw.immediate];
+                            const bool lines = im.topology == Topology::Lines || im.topology == Topology::LineStrip;
+                            ID3D12PipelineState* pipeline = mesh_pipeline(Program::Immediate, draw.recipe, present_format,
+                                                                          1u, nullptr, lines, false, false, true);
+                            if (pipeline == nullptr || im.vertex_count == 0 ||
+                                std::size_t{im.first_vertex} + im.vertex_count > packet.immediate_vertices.size() ||
+                                std::size_t{im.first_index} + im.index_count > packet.immediate_indices.size())
+                                continue;
+                            const TextureSlot* texture = drawable_texture(im.texture);
+                            const std::uint32_t image = texture != nullptr ? texture->texture.srv : kNoDescriptor;
+                            const std::uint64_t vertex_bytes = std::uint64_t{im.vertex_count} * sizeof(ImmediateVertex);
+                            const std::uint64_t index_bytes = std::uint64_t{im.index_count} * sizeof(std::uint32_t);
+                            const UploadAllocation vertices = frames_.ring().allocate(vertex_bytes, 16);
+                            const UploadAllocation indices =
+                                im.index_count != 0 ? frames_.ring().allocate(index_bytes, 16) : UploadAllocation{};
+                            const UploadAllocation block = frames_.ring().allocate(sizeof(ImmediateConstants), 256);
+                            if (!vertices || !block || (im.index_count != 0 && !indices))
+                                continue;
+                            std::memcpy(vertices.cpu, &packet.immediate_vertices[im.first_vertex], vertex_bytes);
+                            if (im.index_count != 0)
+                                std::memcpy(indices.cpu, &packet.immediate_indices[im.first_index], index_bytes);
+                            // A draw laid out in a region of the canvas (split screen) is placed and clipped there.
+                            Mat4 region_placement;
+                            PixelBox region_box;
+                            const bool in_region = im.region != kNoRegion && im.region < packet.canvas_regions.size();
+                            if (in_region)
+                                region_projection(view.canvas, packet.canvas_regions[im.region], im.anchor, w, h,
+                                                  &region_placement, &region_box);
+                            const Mat4& place =
+                                in_region ? region_placement : placement[static_cast<std::size_t>(im.anchor)];
+                            ImmediateConstants constants{};
+                            store_column_major(multiply(place, from3x4(draw.world)), constants.world_view_projection);
+                            constants.uv_row[0][0] = 1.0f;
+                            constants.uv_row[1][1] = 1.0f;
+                            constants.texture = image;
+                            constants.sampler = sampler_index(im.sampler.filter, im.sampler.u, im.sampler.v);
+                            constants.cutoff = draw.recipe.alpha_cutoff > 0.0f ? draw.recipe.alpha_cutoff : -1.0f;
+                            constants.flags = skip_clear_flag(draw.recipe);
+                            constants.fog_enabled = draw.recipe.fog ? 1u : 0u;
+                            constants.fog_start = draw.recipe.fog_start;
+                            constants.fog_end = draw.recipe.fog_end;
+                            constants.fog_colour = packed(draw.recipe.fog_colour);
+                            std::memcpy(block.cpu, &constants, sizeof(constants));
+                            if (pipeline != bound) {
+                                cl->SetPipelineState(pipeline);
+                                bound = pipeline;
+                            }
+                            cl->IASetPrimitiveTopology(to_d3d(im.topology));
+                            const D3D12_VERTEX_BUFFER_VIEW stream{vertices.gpu, static_cast<UINT>(vertex_bytes),
+                                                                  static_cast<UINT>(sizeof(ImmediateVertex))};
+                            cl->IASetVertexBuffers(0, 1, &stream);
+                            cl->SetGraphicsRootConstantBufferView(kRootFrameConstants, block.gpu);
+                            D3D12_RECT clip = scissor[static_cast<std::size_t>(im.anchor)];
+                            if (in_region) {
+                                const D3D12_RECT local = to_rect(region_box);
+                                clip = D3D12_RECT{std::max(hv.rect.left, hv.rect.left + local.left),
+                                                  std::max(hv.rect.top, hv.rect.top + local.top),
+                                                  std::min(hv.rect.right, hv.rect.left + local.right),
+                                                  std::min(hv.rect.bottom, hv.rect.top + local.bottom)};
+                                if (clip.right < clip.left) clip.right = clip.left;
+                                if (clip.bottom < clip.top) clip.bottom = clip.top;
+                            }
+                            cl->RSSetScissorRects(1, &clip);
+                            if (im.index_count != 0) {
+                                const D3D12_INDEX_BUFFER_VIEW ibv{indices.gpu, static_cast<UINT>(index_bytes),
+                                                                  DXGI_FORMAT_R32_UINT};
+                                cl->IASetIndexBuffer(&ibv);
+                                cl->DrawIndexedInstanced(im.index_count, 1, 0, 0, 0);
+                            } else {
+                                cl->DrawInstanced(im.vertex_count, 1, 0, 0);
+                            }
+                        }
+                    }
+                }
+                cl->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             });
     }
     if (capture != nullptr) {
@@ -2801,6 +3526,7 @@ void Renderer::publish_render_stats() {
     stats_.folded_glare_spans = r.folded_glare_spans;
     stats_.image_misses = r.image_misses;
     stats_.views_over_views = r.views_over_views;
+    stats_.views_folded = r.views_folded;
     stats_.skin_overflows = r.skin_overflows;
     stats_.pipelines = r.pipelines;
     stats_.resolve_waits = r.resolve_waits;
@@ -2814,14 +3540,181 @@ bool Renderer::attach_window(HWND window, std::uint32_t width, std::uint32_t hei
     for (D3D12_RESOURCE_STATES& state : back_buffer_states_)
         state = D3D12_RESOURCE_STATE_PRESENT;
     has_window_ = true;
+    frame_acquired_ = false;  // a new swap chain, a new waitable
+    credit_debt_ = 0;         // nothing owed to it
+    leave_burst_mode_unmeasured();  // created with one frame in flight
     return true;
+}
+
+void Renderer::apply_burst_mode() {
+    if (!burst_.running())
+        return;
+    const bool want = burst_.want_ahead();
+    if (want == burst_ahead_)
+        return;
+    const bool ahead_mode = BurstAhead::mode() == BurstAhead::Mode::Ahead;
+    const std::int64_t lead = BurstAhead::burst_lead_ns();
+    if (!want) {
+        // Leaving gives the lead's audio back (gekko/schedule_offset.h): only once the device queue holds it plus 12 ms
+        // (the device period is 10 ms; a 5 ms margin left 5 ms and one underrun while the phase lock was still moving
+        // the game later, 2026-11-05), else stay (the trim refills the queue against its neutral target).
+        const std::int64_t queued = gekko::schedule_offset::audio_queued_ns().load(std::memory_order_relaxed);
+        if (queued >= 0 && queued < lead + 12'000'000)
+            return;
+    }
+    if (want) {
+        // Render-ahead: two frames in flight, DXGI hands the extra credit back at once. Both: the game runs `lead` early.
+        if (ahead_mode)
+            swap_chain_.set_max_latency(2);
+        gekko::schedule_offset::desired_lead_ns().store(lead, std::memory_order_release);
+    } else {
+        // Render-ahead: one frame in flight again; DXGI takes no credit back, so this frame takes one more while the
+        // game skips one frame of wall time and the second queued frame is shown.
+        if (ahead_mode) {
+            swap_chain_.set_max_latency(1);
+            ++burst_repay_;
+        }
+        gekko::schedule_offset::desired_lead_ns().store(0, std::memory_order_release);
+    }
+    burst_ahead_ = want;
+    burst_settle_ = 8;
+    present_trace::record(present_trace::Ev::BurstAhead, want ? 1u : 0u,
+                          static_cast<std::uint64_t>(burst_.deciding_span_ns()));
+}
+
+std::int64_t Renderer::hold_bias_ns() const noexcept {
+    // Burst lead: packets come `lead` earlier than the phase lock's schedule while it lasts; render-ahead's frame is
+    // absorbed by the swap chain's queue instead (the credit comes at the flip), so it biases nothing.
+    return (burst_ahead_ && BurstAhead::mode() == BurstAhead::Mode::Lead) ? BurstAhead::burst_lead_ns() : 0;
+}
+
+bool Renderer::take_credit() {
+    // Every present must be matched by one credit taken. A wait that took none (timed out or failed) is still followed
+    // by the present, as before - the frame is not dropped - but that present returns a credit later which no wait
+    // takes, and the pipeline would stay one frame deeper from then on (more input latency, the same picture). It is
+    // owed instead, and taken back without waiting once it is there (Codex review 2026-11-05: the result was ignored).
+    const auto take_one = [this] {
+        if (swap_chain_.wait_for_frame(1000))
+            return true;
+        credit_debt_ = std::min<std::uint32_t>(credit_debt_ + 1u, 3u);  // at most the swap chain's buffers
+        if (static std::atomic<bool> reported{false}; !reported.exchange(true))
+            std::fprintf(stderr, "[render] swap chain credit wait ended without a credit (timeout or failure); owed\n");
+        return false;
+    };
+    const bool took = take_one();
+    for (; burst_repay_ > 0u; --burst_repay_)
+        take_one();
+    while (took && credit_debt_ > 0u && swap_chain_.try_take_credit())
+        --credit_debt_;
+    return took;
+}
+
+bool Renderer::msaa_supported(std::uint32_t samples) const noexcept {
+    if (samples == 0u || (samples & (samples - 1u)) != 0u || samples > 32u)
+        return false;
+    std::uint32_t bit = 0;
+    while ((1u << bit) < samples) ++bit;
+    return (msaa_supported_mask_ & (1u << bit)) != 0u;
+}
+
+std::string Renderer::msaa_note() const {
+    std::lock_guard<std::mutex> lock(msaa_note_mutex_);
+    return msaa_note_;
+}
+
+void Renderer::apply_quality() {
+    // MSAA: the next frame's targets and pipelines take the count (the target pool and the pipeline cache are keyed by
+    // it; targets of the old count age out of the pool). The swap chain is untouched.
+    if (const std::uint32_t asked = msaa_request_.exchange(0u, std::memory_order_acq_rel); asked != 0u && asked != msaa_) {
+        std::lock_guard<std::mutex> lock(msaa_note_mutex_);
+        if (msaa_supported(asked)) {
+            msaa_ = asked;
+            msaa_active_.store(asked, std::memory_order_release);
+            msaa_note_.clear();
+            std::fprintf(stderr, "[render] MSAA %ux\n", asked);
+        } else {
+            msaa_note_ = std::to_string(asked) + "x MSAA is not supported by this GPU for the scene's formats; " +
+                         std::to_string(msaa_) + "x stays in use";
+            std::fprintf(stderr, "[render] %s\n", msaa_note_.c_str());
+        }
+    }
+    // Anisotropic filtering: the sampler table is shared by every frame in flight, so it is rewritten with the GPU idle
+    // (a settings change, not a per-frame cost).
+    if (const std::uint32_t asked = anisotropy_request_.exchange(0u, std::memory_order_acq_rel);
+        asked != 0u && asked != samplers_.anisotropy()) {
+        device_.direct().wait_idle();
+        samplers_.set_anisotropy(device_, asked);
+        anisotropy_active_.store(samplers_.anisotropy(), std::memory_order_release);
+        std::fprintf(stderr, "[render] anisotropic filtering %s\n",
+                     asked <= 1u ? "off (the original linear filter)" : (std::to_string(asked) + "x").c_str());
+    }
+}
+
+void Renderer::leave_burst_mode_unmeasured() {
+    // A new swap chain starts at latency 1; a resized one keeps its latency, and whether ResizeBuffers refills the
+    // credits is not documented - either way no credit is repaid here (at worst one refresh of extra latency until the
+    // next switch, never a stall).
+    if (burst_ahead_) {
+        swap_chain_.set_max_latency(1);
+        gekko::schedule_offset::desired_lead_ns().store(0, std::memory_order_release);
+        present_trace::record(present_trace::Ev::BurstAhead, 2u, 0u);
+    }
+    burst_ahead_ = false;
+    burst_repay_ = 0;
+    burst_settle_ = 8;
+    burst_.force_calm();
+}
+
+bool Renderer::acquire_frame() {
+    std::lock_guard<std::mutex> lock(render_mutex_);
+    if (!has_window_ || frame_acquired_)
+        return true;
+    GEKKO_PROFILE_ZONE("gpu/swap-wait");
+    apply_burst_mode();
+    const bool took = take_credit();
+    frame_acquired_ = true;  // render() does not wait again either way (as before); a missing credit is owed
+    return took;
+}
+
+std::int64_t Renderer::jit_wait(bool vsync, double fill_mpx) {
+    // The rendering thread's own state; no lock held while sleeping (resize takes the render lock on this thread
+    // only, so nothing can change the swap chain meanwhile).
+    jit_start_ns_ = 0;
+    jit_fill_mpx_ = fill_mpx;
+    if (!vsync || !has_window_ || !JitPacer::requested())
+        return 0;
+    if (!jit_.running())
+        jit_.start(device_.direct().fence());
+    const JitPacer::Start start = jit_.wait_for_start(fill_mpx);
+    jit_start_ns_ = start.start;
+    return start.target;
+}
+
+double Renderer::particle_fill_mpx(const FramePacket& packet) const {
+    // The render size the frame will be recorded at (G10), else the window's.
+    const std::uint64_t size = render_size_.load(std::memory_order_acquire);
+    std::uint32_t w = static_cast<std::uint32_t>(size >> 32), h = static_cast<std::uint32_t>(size);
+    if (w == 0u || h == 0u) {
+        w = swap_chain_.width();
+        h = swap_chain_.height();
+    }
+    return estimate_particle_fill(packet, w, h).pixels / 1e6;
 }
 
 bool Renderer::resize_window(std::uint32_t width, std::uint32_t height, std::string* error) {
     std::lock_guard<std::mutex> lock(render_mutex_);
     if (!has_window_)
         return fail(error, "no window attached");
+    // A repeated size (WM_SIZE on restore / maximise without a change) keeps everything: clearing the pool here
+    // discarded every placed target - hundreds of MiB at 5K - only for the swap chain to return unchanged.
+    if (std::max<std::uint32_t>(width, 1) == swap_chain_.width() && std::max<std::uint32_t>(height, 1) == swap_chain_.height())
+        return true;
+    jit_.reset_grid();  // a new swap chain size: its statistics start again
+    leave_burst_mode_unmeasured();
     pool_.clear();
+    // Whether ResizeBuffers refills the latency semaphore is not documented: wait for a fresh credit after it (at
+    // worst one refresh at a resize).
+    frame_acquired_ = false;
     return swap_chain_.resize(width, height, error);
 }
 
@@ -2838,8 +3731,15 @@ void Renderer::make_uploads_visible() {
 // The swap chain belongs to the render thread alone. Nothing here holds the table lock across a wait: the back
 // buffer wait, the frame slot's fence wait (frames_.begin) and the recording hold only the render lock, which the
 // game thread never takes (D11).
-bool Renderer::render(const FramePacket& packet, PresentMode mode, std::string* error) {
+bool Renderer::render(const FramePacket& packet, PresentMode mode, std::string* error, std::int64_t* credit_ns) {
     GEKKO_PROFILE_ZONE("gpu/render");
+    // Eager start (render/burst_ahead.h): credit_ns given - record and submit now, take the credit only before the
+    // present (credit_ns: when it came, steady ns). The back buffer recorded into is the one neither shown nor queued.
+    const bool eager = credit_ns != nullptr;
+    // SHADOW_R2_JIT: a frame jit_wait did not start (no wait asked) spans from here.
+    const std::int64_t frame_start_ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch())
+            .count();
     SHADOW_RECORD_PACKETS(frame(packet, 0, 0, false, true));
     // C3: the packet this call reads (reading()), until it returns.
     struct ReadEnd {
@@ -2850,11 +3750,20 @@ bool Renderer::render(const FramePacket& packet, PresentMode mode, std::string* 
     std::lock_guard<std::mutex> render_lock(render_mutex_);
     if (!has_window_)
         return fail(error, "no window attached");
-    {
+    apply_quality();  // MSAA / anisotropic filtering changes, from this frame
+    if (!frame_acquired_ && !eager) {
         GEKKO_PROFILE_ZONE("gpu/swap-wait");
-        swap_chain_.wait_for_frame(1000);
+        apply_burst_mode();
+        take_credit();
     }
+    frame_acquired_ = false;
+    if (burst_settle_ > 0u)
+        --burst_settle_;
     const std::uint32_t index = swap_chain_.current();
+    // No back buffer: the last resize failed after releasing them (SwapChain::resize). Recording into a null output
+    // would silently draw nothing (a null resource is the off-screen capture path) and present a frozen window.
+    if (swap_chain_.back_buffer(index) == nullptr)
+        return fail(error, "no back buffer: the last swap chain resize failed");
     D3D12_RESOURCE_STATES after = D3D12_RESOURCE_STATE_PRESENT;
     {
         const FrameLoop::Frame frame = [this] {
@@ -2873,20 +3782,82 @@ bool Renderer::render(const FramePacket& packet, PresentMode mode, std::string* 
         // G10: a render size other than the window's renders there and scales into the back buffer.
         const std::uint64_t size = render_size_.load(std::memory_order_acquire);
         const auto render_w = static_cast<std::uint32_t>(size >> 32), render_h = static_cast<std::uint32_t>(size);
+        // The picture keeps one shape on every frame (gekko/display_geometry.h): a frame's own 4:3 content (an in-engine
+        // cutscene) is boxed inside it, never given another shape of its own.
+        output.picture_aspect = present_aspect_.load(std::memory_order_acquire);
         if (render_w != 0u && render_h != 0u && (render_w != output.width || render_h != output.height)) {
             output.present_width = output.width;
             output.present_height = output.height;
             output.width = render_w;
             output.height = render_h;
         }
-        const bool ok = record(frame.list, frame.slot, packet, output, &after, nullptr, nullptr, error);
+        // Diagnostics (particle-trim study, docs/PERF_60FPS_2026-11-04.md): SHADOW_R2_PARTICLE_AUDIT=<csv> writes one row
+        // per particle draw - the state that decides whether a texel outside a crop could still change the picture.
+        if (static std::FILE* audit = [] {
+                const char* path = std::getenv("SHADOW_R2_PARTICLE_AUDIT");
+                std::FILE* f = (path != nullptr && path[0] != 0) ? std::fopen(path, "w") : nullptr;
+                if (f != nullptr)
+                    std::fputs("tick,texture,src,dst,depth_test,depth_write,fog,cutoff,filter,address_u,address_v,"
+                               "particle_colours,count,u0min,u0max,v0min,v0max,u1min,u1max,v1min,v1max,size_min,size_max,"
+                               "rotated\n",
+                               f);
+                return f;
+            }();
+            audit != nullptr) {
+            for (const DrawRecord& draw : packet.draws) {
+                if (draw.particles == kNoParticles || draw.particles >= packet.particle_batches.size()) continue;
+                const ParticleBatch& b = packet.particle_batches[draw.particles];
+                float u0[2] = {1e9f, -1e9f}, v0[2] = {1e9f, -1e9f}, u1[2] = {1e9f, -1e9f}, v1[2] = {1e9f, -1e9f};
+                float smin = 1e9f, smax = 0.0f;
+                std::uint32_t rotated = 0;
+                const std::uint32_t last = std::min<std::uint32_t>(b.first + b.count, static_cast<std::uint32_t>(packet.particles.size()));
+                for (std::uint32_t i = b.first; i < last; ++i) {
+                    const Particle& p = packet.particles[i];
+                    u0[0] = std::min(u0[0], p.uv0[0]); u0[1] = std::max(u0[1], p.uv0[0]);
+                    v0[0] = std::min(v0[0], p.uv0[1]); v0[1] = std::max(v0[1], p.uv0[1]);
+                    u1[0] = std::min(u1[0], p.uv1[0]); u1[1] = std::max(u1[1], p.uv1[0]);
+                    v1[0] = std::min(v1[0], p.uv1[1]); v1[1] = std::max(v1[1], p.uv1[1]);
+                    smin = std::min({smin, p.size[0], p.size[1]});
+                    smax = std::max({smax, p.size[0], p.size[1]});
+                    rotated += p.rotation != 0.0f ? 1u : 0u;
+                }
+                const Recipe& r = draw.recipe;
+                std::fprintf(audit, "%llu,%u,%d,%d,%d,%d,%d,%g,%d,%d,%d,%d,%u,%g,%g,%g,%g,%g,%g,%g,%g,%g,%g,%u\n",
+                             static_cast<unsigned long long>(packet.tick), b.texture.value, static_cast<int>(r.src),
+                             static_cast<int>(r.dst), r.depth_test ? 1 : 0, r.depth_write ? 1 : 0, r.fog ? 1 : 0,
+                             r.alpha_cutoff, static_cast<int>(b.sampler.filter), static_cast<int>(b.sampler.u),
+                             static_cast<int>(b.sampler.v), b.particle_colours ? 1 : 0, b.count, u0[0], u0[1], v0[0],
+                             v0[1], u1[0], u1[1], v1[0], v1[1], smin, smax, rotated);
+            }
+        }
+        if (present_trace::enabled()) {
+            // Burst-prediction study (render/particle_fill.h): what the CPU knows about this packet before it is
+            // recorded. Measurement only; a few thousand multiply-adds.
+            const ParticleFill fill = estimate_particle_fill(packet, output.width, output.height);
+            present_trace::record(present_trace::Ev::FrameFeatures, packet.tick, fill.particles,
+                                  static_cast<std::uint64_t>(fill.pixels), packet.draws.size());
+        }
+        bool ok = false;
+        {
+            init_trace::Scope trace("record", L"frame", packet.tick);
+            ok = record(frame.list, frame.slot, packet, output, &after, nullptr, nullptr, error);
+        }
         GEKKO_PROFILE_PLOT("gpu/upload-bytes", static_cast<std::int64_t>(frames_.ring().used()));
         if (gpu_timer_ != nullptr)
             end_gpu_frame(frame.list);
         make_uploads_visible();  // after recording: it may have waited for resources still being made
         {
             GEKKO_PROFILE_ZONE("gpu/submit");
-            frames_.submit();
+            init_trace::Scope trace("submit", L"frame", packet.tick);
+            const std::uint64_t ends_at = frames_.submit();
+            if (jit_.running())
+                jit_.note_submitted(ends_at, jit_start_ns_ != 0 ? jit_start_ns_ : frame_start_ns, jit_fill_mpx_);
+            // Render-ahead in bursts: VSync presents only, and not with the JIT pacer (which owns the frame's start).
+            if (mode == PresentMode::VSync && BurstAhead::requested() && !JitPacer::requested()) {
+                if (!burst_.running())
+                    burst_.start(device_.direct().fence());
+                burst_.note_submitted(ends_at, frame_start_ns);
+            }
         }
         if (gpu_timer_ != nullptr)
             gpu_timer_->on_submitted();
@@ -2898,11 +3869,30 @@ bool Renderer::render(const FramePacket& packet, PresentMode mode, std::string* 
             return false;
     }
     back_buffer_states_[index] = after;
+    if (eager) {
+        GEKKO_PROFILE_ZONE("gpu/swap-wait");
+        apply_burst_mode();
+        // Only a credit actually taken has a time: 0 tells the caller not to publish it (last credit, hold sample).
+        *credit_ns = take_credit() ? std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                         std::chrono::steady_clock::now().time_since_epoch())
+                                         .count()
+                                   : 0;
+    }
     bool presented = false;
     {
         GEKKO_PROFILE_ZONE("gpu/present");
         presented = swap_chain_.present(mode, error);
     }
+    if (jit_.running()) {
+        // The vblank grid the next jit_wait aims at: DXGI's last shown vblank. None (composed, occluded): no wait.
+        std::uint64_t refresh = 0;
+        std::int64_t vblank_ns = 0;
+        if (mode == PresentMode::VSync && swap_chain_.last_vblank(refresh, vblank_ns))
+            jit_.note_vblank(refresh, vblank_ns);
+        else
+            jit_.reset_grid();
+    }
+    jit_start_ns_ = 0;
     if (gpu_timer_ != nullptr)
         gpu_timer_->on_presented();
     return presented;
@@ -2931,6 +3921,7 @@ bool Renderer::render_to_image(const FramePacket& packet, std::uint32_t width, s
     UINT64 row_bytes = 0, total = 0;
     device_.d3d()->GetCopyableFootprints(&desc, 0, 1, 0, &layout, &rows, &row_bytes, &total);
     std::lock_guard<std::mutex> render_lock(render_mutex_);
+    apply_quality();  // MSAA / anisotropic filtering changes, from this frame
     GpuBuffer capture;
     if (rgba != nullptr && !create_buffer(device_, total, D3D12_HEAP_TYPE_READBACK, D3D12_RESOURCE_FLAG_NONE,
                                           D3D12_RESOURCE_STATE_COPY_DEST, L"shadow.capture", &capture, error))
@@ -2941,6 +3932,7 @@ bool Renderer::render_to_image(const FramePacket& packet, std::uint32_t width, s
     Output output;
     output.width = width;
     output.height = height;
+    output.picture_aspect = present_aspect_.load(std::memory_order_acquire);
     // G10's proof hook (SHADOW_R2_CAPTURE_AT_RENDER_SIZE, set_capture_at_render_size): the capture is rendered at the
     // render size and scaled into width x height by the presented path's own pass.
     if (capture_at_render_size_.load(std::memory_order_acquire)) {
@@ -2996,6 +3988,10 @@ void Renderer::invalidate_histories() {
     SHADOW_RECORD_PACKETS(invalidate_histories());
     for (History& history : histories_)
         history.valid = false;
+}
+
+void set_fold_under_override(int forced) {
+    g_fold_under_forced.store(forced, std::memory_order_relaxed);
 }
 
 }  // namespace shadow::render

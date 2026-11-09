@@ -1,5 +1,7 @@
 #include "gekko/display_settings.h"
 
+#include "gekko/display_geometry.h"
+
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -10,6 +12,7 @@
 #include <vector>
 
 namespace gekko {
+
 namespace {
 
 // The display.cfg keys this service owns (gekko/display.cpp parse_display_file reads them). A key's aliases are
@@ -18,13 +21,20 @@ enum DisplaySettingsKey : unsigned {
     kKeyFullscreen = 1u << 0,
     kKeyWidth = 1u << 1,
     kKeyHeight = 1u << 2,
-    kKeyRenderWidth = 1u << 3,
-    kKeyRenderHeight = 1u << 4,
+
     kKeyRenderRate = 1u << 5,
     kKeyVsync = 1u << 6,
     kKeyFrameInterpolation = 1u << 7,
     kKeyDrawDistance = 1u << 8,
     kKeyFpsCounter = 1u << 9,
+    kKeyExclusive = 1u << 10,
+    kKeyAspect = 1u << 11,
+    kKeyRenderScale = 1u << 12,
+    kKeyMsaa = 1u << 13,
+    kKeyAnisotropy = 1u << 14,
+    kKeyGameplayAspect = 1u << 15,
+    kKeyFullscreenWidth = 1u << 18,
+    kKeyFullscreenHeight = 1u << 19,
 };
 
 struct KeyName {
@@ -35,12 +45,18 @@ struct KeyName {
 // First spelling of each key = the one appended.
 constexpr KeyName kKeyNames[] = {
     {kKeyFullscreen, "fullscreen"},
+    {kKeyExclusive, "exclusive"},
     {kKeyWidth, "width"},
     {kKeyWidth, "window_width"},
     {kKeyHeight, "height"},
     {kKeyHeight, "window_height"},
-    {kKeyRenderWidth, "render_width"},
-    {kKeyRenderHeight, "render_height"},
+    {kKeyFullscreenWidth, "fullscreen_width"},
+    {kKeyFullscreenHeight, "fullscreen_height"},
+    {kKeyAspect, "aspect"},
+    {kKeyRenderScale, "render_scale"},
+    {kKeyMsaa, "msaa"},
+    {kKeyAnisotropy, "anisotropy"},
+    {kKeyGameplayAspect, "gameplay_aspect"},
     {kKeyRenderRate, "render_rate"},
     {kKeyVsync, "vsync"},
     {kKeyFrameInterpolation, "frame_interpolation"},
@@ -66,6 +82,9 @@ unsigned key_for_name(const std::string& lowered) {
 
 // The shortest spelling that reads back as the same value (60, 59.94, 2.5).
 std::string format_number(double value) {
+    // Whole numbers as integers: the shortest default spelling of 100 is "1e+02" (it reads back, but no person writes
+    // the file like that).
+    if (std::fabs(value) < 1e15 && value == std::floor(value)) return std::to_string(static_cast<long long>(value));
     std::string spelled;
     for (int digits = 1; digits <= 17; ++digits) {
         std::ostringstream out;
@@ -80,10 +99,25 @@ std::string format_number(double value) {
 std::string key_value(unsigned key, const DisplaySettings& s) {
     switch (key) {
         case kKeyFullscreen: return s.fullscreen ? "true" : "false";
+        case kKeyExclusive: return s.exclusive ? "true" : "false";
+        case kKeyAspect: {
+            if (!(s.aspect > 0.0)) return "auto";
+            const char* name = aspect_name(s.aspect);
+            return name != nullptr ? name : format_number(s.aspect);
+        }
+        case kKeyRenderScale: return format_number(s.render_scale);
+        case kKeyMsaa: return std::to_string(s.msaa);
+        case kKeyAnisotropy: return std::to_string(s.anisotropy);
+        case kKeyGameplayAspect: {
+            if (!(s.gameplay_aspect > 0.0)) return "follow";
+            if (std::fabs(s.gameplay_aspect - 4.0 / 3.0) < 1e-9) return "original";
+            const char* name = aspect_name(s.gameplay_aspect);
+            return name != nullptr ? name : format_number(s.gameplay_aspect);
+        }
         case kKeyWidth: return std::to_string(s.window_width);
         case kKeyHeight: return std::to_string(s.window_height);
-        case kKeyRenderWidth: return std::to_string(s.render_width);
-        case kKeyRenderHeight: return std::to_string(s.render_height);
+        case kKeyFullscreenWidth: return std::to_string(s.fullscreen_width);
+        case kKeyFullscreenHeight: return std::to_string(s.fullscreen_height);
         case kKeyRenderRate: return s.render_rate <= 0.0 ? "unlocked" : format_number(s.render_rate);
         case kKeyVsync: return s.vsync ? "true" : "false";
         case kKeyFrameInterpolation: return s.frame_interpolation ? "true" : "false";
@@ -97,10 +131,16 @@ std::string key_value(unsigned key, const DisplaySettings& s) {
 unsigned changed_keys(const DisplaySettings& a, const DisplaySettings& b) {
     unsigned keys = 0u;
     if (a.fullscreen != b.fullscreen) keys |= kKeyFullscreen;
+    if (a.exclusive != b.exclusive) keys |= kKeyExclusive;
+    if (a.aspect != b.aspect) keys |= kKeyAspect;
+    if (a.render_scale != b.render_scale) keys |= kKeyRenderScale;
+    if (a.msaa != b.msaa) keys |= kKeyMsaa;
+    if (a.anisotropy != b.anisotropy) keys |= kKeyAnisotropy;
+    if (a.gameplay_aspect != b.gameplay_aspect) keys |= kKeyGameplayAspect;
     if (a.window_width != b.window_width) keys |= kKeyWidth;
     if (a.window_height != b.window_height) keys |= kKeyHeight;
-    if (a.render_width != b.render_width) keys |= kKeyRenderWidth;
-    if (a.render_height != b.render_height) keys |= kKeyRenderHeight;
+    if (a.fullscreen_width != b.fullscreen_width) keys |= kKeyFullscreenWidth;
+    if (a.fullscreen_height != b.fullscreen_height) keys |= kKeyFullscreenHeight;
     if (a.render_rate != b.render_rate) keys |= kKeyRenderRate;
     if (a.vsync != b.vsync) keys |= kKeyVsync;
     if (a.frame_interpolation != b.frame_interpolation) keys |= kKeyFrameInterpolation;
@@ -112,27 +152,40 @@ unsigned changed_keys(const DisplaySettings& a, const DisplaySettings& b) {
 // Which owners' groups the changed keys reach (gekko/display_settings.h).
 unsigned groups_for_keys(unsigned keys) {
     unsigned groups = 0u;
-    if (keys & (kKeyFullscreen | kKeyWidth | kKeyHeight | kKeyRenderWidth | kKeyRenderHeight))
-        groups |= kDisplayWindowChange;  // the render size's shape is the window's content aspect
-    if (keys & (kKeyRenderRate | kKeyVsync | kKeyFrameInterpolation)) groups |= kDisplayPresentChange;
+    // Only the display mode and the window size touch the window; the ratio and the scale never do (a ratio picked
+    // in the menu reshapes a window once by setting its size - gekko/settings_display.cpp).
+    if (keys & (kKeyFullscreen | kKeyExclusive | kKeyWidth | kKeyHeight | kKeyFullscreenWidth | kKeyFullscreenHeight))
+        groups |= kDisplayWindowChange;
+    if (keys & (kKeyRenderRate | kKeyVsync | kKeyFrameInterpolation | kKeyMsaa | kKeyAnisotropy))
+        groups |= kDisplayPresentChange;  // the renderer takes MSAA / filtering at its next frame
     if (keys & kKeyFpsCounter) groups |= kDisplayOverlayChange;
-    if (keys & (kKeyRenderWidth | kKeyRenderHeight | kKeyDrawDistance)) groups |= kDisplayGameChange;
+    if (keys & (kKeyAspect | kKeyRenderScale | kKeyDrawDistance | kKeyGameplayAspect))
+        groups |= kDisplayGameChange;
     return groups;
 }
 
 }  // namespace
 
+unsigned display_settings_key(const char* name) noexcept {
+    if (name == nullptr) return 0u;
+    return key_for_name(lower_trimmed(name));
+}
+
 bool operator==(const DisplaySettings& a, const DisplaySettings& b) noexcept {
     return changed_keys(a, b) == 0u;
 }
 
-void DisplaySettingsService::initialize(const DisplaySettings& settings, std::filesystem::path cfg_path) {
+void DisplaySettingsService::initialize(const DisplaySettings& settings, std::filesystem::path cfg_path,
+                                        unsigned override_keys) {
     std::lock_guard<std::mutex> lock(mutex_);
-    current_ = settings;
+    current_ = confirmed_ = initial_ = settings;
     cfg_path_ = std::move(cfg_path);
     initialized_ = true;
+    provisional_ = false;
+    ++generation_;
     pending_ = 0u;
-    changed_keys_ = 0u;
+    touched_keys_ = 0u;
+    override_keys_ = override_keys;
 }
 
 bool DisplaySettingsService::initialized() const {
@@ -150,28 +203,114 @@ DisplaySettings DisplaySettingsService::current() const {
     return current_;
 }
 
+DisplaySettings DisplaySettingsService::confirmed() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return confirmed_;
+}
+
+bool DisplaySettingsService::provisional() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return provisional_;
+}
+
+std::uint64_t DisplaySettingsService::generation() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return generation_;
+}
+
 bool DisplaySettingsService::validate(const DisplaySettings& s, std::string* error) {
     const auto fail = [&](const char* message) {
         if (error != nullptr) *error = std::string("display settings: ") + message;
         return false;
     };
-    if (s.window_width < 160 || s.window_height < 120) return fail("the window must be at least 160x120");
-    if (s.render_width < 0 || s.render_height < 0 || s.render_width > 16384 || s.render_height > 16384)
-        return fail("the render size must be 0..16384 per side (Direct3D 12's texture limit)");
+    const int min_w = static_cast<int>(kMinPictureWidth), min_h = static_cast<int>(kMinPictureHeight);
+    const int max_side = static_cast<int>(kMaxRenderSide);
+    if (s.window_width < min_w || s.window_height < min_h || s.window_width > max_side || s.window_height > max_side)
+        return fail("the window must be 320x240 .. 16384x16384");
+    if ((s.fullscreen_width == 0) != (s.fullscreen_height == 0) ||
+        (s.fullscreen_width != 0 && (s.fullscreen_width < min_w || s.fullscreen_height < min_h)))
+        return fail("the exclusive mode must be 0x0 (the desktop's) or at least 320x240");
+    if (!std::isfinite(s.render_scale) || s.render_scale < kMinRenderScale || s.render_scale > kMaxRenderScale)
+        return fail("the resolution scale must be 25..200 %");
+    if (!std::isfinite(s.aspect) || (s.aspect != 0.0 && (s.aspect < 0.25 || s.aspect > 8.0)))
+        return fail("the aspect must be auto (0) or 0.25..8");
+    if (s.msaa != 1 && s.msaa != 2 && s.msaa != 4 && s.msaa != 8 && s.msaa != 16 && s.msaa != 32)
+        return fail("msaa must be 1 (off), 2, 4, 8, 16 or 32 samples");
+    if (s.anisotropy != 1 && s.anisotropy != 2 && s.anisotropy != 4 && s.anisotropy != 8 && s.anisotropy != 16)
+        return fail("anisotropy must be 1 (off), 2, 4, 8 or 16");
     if (!std::isfinite(s.render_rate) || s.render_rate < 0.0 || s.render_rate > 1000.0)
         return fail("the render rate must be unlocked (0) or in (0,1000]");
     if (!(s.draw_distance >= 1.0f && s.draw_distance <= 8.0f)) return fail("the draw distance must be 1..8");
     return true;
 }
 
-bool DisplaySettingsService::apply(const DisplaySettings& settings, std::string* error) {
+bool DisplaySettingsService::apply(const DisplaySettings& settings, std::string* error, bool provisional) {
     if (!validate(settings, error)) return false;
     std::lock_guard<std::mutex> lock(mutex_);
     const unsigned keys = changed_keys(current_, settings);
     current_ = settings;
-    changed_keys_ |= keys;
     pending_ |= groups_for_keys(keys);
+    ++generation_;
+    if (provisional) {
+        provisional_ = true;
+    } else {
+        const unsigned committed = changed_keys(confirmed_, current_);
+        touched_keys_ |= committed;
+        override_keys_ &= ~committed;
+        confirmed_ = current_;
+        provisional_ = false;
+    }
     return true;
+}
+
+void DisplaySettingsService::commit() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const unsigned committed = changed_keys(confirmed_, current_);
+    touched_keys_ |= committed;
+    override_keys_ &= ~committed;
+    confirmed_ = current_;
+    provisional_ = false;
+    ++generation_;
+}
+
+void DisplaySettingsService::rollback() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    pending_ |= groups_for_keys(changed_keys(current_, confirmed_));
+    current_ = confirmed_;
+    provisional_ = false;
+    ++generation_;
+}
+
+std::string DisplaySettingsService::session_overrides() const {
+    unsigned keys = 0u;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        keys = override_keys_;
+    }
+    std::string out;
+    for (const KeyName& entry : kKeyNames) {
+        if ((keys & entry.key) == 0u) continue;
+        if (!out.empty()) out += ",";
+        out += entry.name;
+        keys &= ~entry.key;  // an alias is named once
+    }
+    return out;
+}
+
+bool DisplaySettingsService::overridden(const char* key_name) const {
+    const unsigned key = display_settings_key(key_name);
+    std::lock_guard<std::mutex> lock(mutex_);
+    return key != 0u && (override_keys_ & key) != 0u;
+}
+
+void DisplaySettingsService::report_window(const DisplayWindowState& state) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    window_ = state;
+}
+
+DisplayWindowState DisplaySettingsService::window_state() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return window_;
 }
 
 unsigned DisplaySettingsService::take_changes(unsigned groups, DisplaySettings* settings) {
@@ -188,9 +327,9 @@ bool DisplaySettingsService::save(std::string* error) const {
     unsigned keys = 0u;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        settings = current_;
+        settings = confirmed_;  // never a provisional value
         path = cfg_path_;
-        keys = changed_keys_;
+        keys = touched_keys_;
     }
     const auto fail = [&](const std::string& message) {
         if (error != nullptr) *error = path.string() + ": " + message;

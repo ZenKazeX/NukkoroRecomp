@@ -369,6 +369,28 @@ bool GuestMemory::load_state(const u8*& cursor, const u8* end, std::string& why)
         why = "region count";
         return false;
     }
+    // Regions the file does not name are not part of the restored machine: they go first, so a saved region at
+    // another base can never collide with one of them half-way through the load (earlier regions already written).
+    {
+        std::vector<u32> bases;
+        const u8* scan = cursor;
+        for (u32 index = 0; index < count; ++index) {
+            u32 base = 0, size = 0, committed = 0, name_length = 0;
+            u8 kind = 0;
+            if (!get_pod(scan, end, base) || !get_pod(scan, end, size) || !get_pod(scan, end, committed) ||
+                !get_pod(scan, end, kind) || !get_pod(scan, end, name_length) ||
+                static_cast<std::size_t>(end - scan) < u64{name_length} + committed) {
+                why = "region header";
+                return false;
+            }
+            scan += u64{name_length} + committed;
+            bases.push_back(base);
+        }
+        for (std::size_t index = regions_.size(); index-- > 0;) {
+            const u32 base = regions_[index].base;
+            if (std::find(bases.begin(), bases.end(), base) == bases.end()) unmap(base);
+        }
+    }
     std::vector<u32> named;
     for (u32 index = 0; index < count; ++index) {
         u32 base = 0, size = 0, committed = 0, name_length = 0;
@@ -389,7 +411,10 @@ bool GuestMemory::load_state(const u8*& cursor, const u8* end, std::string& why)
         for (const Region& region : regions_) {
             if (region.base == base) existing = &region;
         }
-        if (existing != nullptr && (existing->size != size || existing->kind != static_cast<RegionKind>(kind))) {
+        // A region committed past the saved size is mapped again at the saved size: zeroing the tail alone would
+        // leave addresses resolving that faulted in the saved machine (and a save after the load would differ).
+        if (existing != nullptr && (existing->size != size || existing->kind != static_cast<RegionKind>(kind) ||
+                                    existing->committed > committed)) {
             unmap(base);
             existing = nullptr;
         }

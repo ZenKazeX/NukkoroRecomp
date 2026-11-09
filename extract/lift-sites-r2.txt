@@ -415,22 +415,6 @@ site 0x80479A88 0x4E800421 call rw_render_state_set 2    # 0x80479750 DESTBLEND
 site 0x80479AA0 0x4E800421 call rw_render_state_set 2    # 0x80479750 TEXTURERASTER
 site 0x80479AB8 0x4E800421 call rw_render_state_set 2    # 0x80479750 TEXTUREFILTER
 site 0x80479AD0 0x4E800421 call rw_render_state_set 2    # 0x80479750 CULLMODE
-site 0x804A426C 0x4E800421 call rw_render_state_set 2    # 0x804A3F74 SRCBLEND  [driver module: drop if the module is lifted in the same step]
-site 0x804A4284 0x4E800421 call rw_render_state_set 2    # 0x804A3F74 DESTBLEND  [driver module: drop if the module is lifted in the same step]
-site 0x804A4324 0x4E800421 call rw_render_state_set 2    # 0x804A3F74 SRCBLEND  [driver module: drop if the module is lifted in the same step]
-site 0x804A433C 0x4E800421 call rw_render_state_set 2    # 0x804A3F74 DESTBLEND  [driver module: drop if the module is lifted in the same step]
-site 0x804A4820 0x4E800421 call rw_render_state_set 2    # 0x804A4358 SRCBLEND  [driver module: drop if the module is lifted in the same step]
-site 0x804A4838 0x4E800421 call rw_render_state_set 2    # 0x804A4358 DESTBLEND  [driver module: drop if the module is lifted in the same step]
-site 0x804A48A8 0x4E800421 call rw_render_state_set 2    # 0x804A4358 SRCBLEND  [driver module: drop if the module is lifted in the same step]
-site 0x804A48C0 0x4E800421 call rw_render_state_set 2    # 0x804A4358 DESTBLEND  [driver module: drop if the module is lifted in the same step]
-site 0x804A4BB8 0x4E800421 call rw_render_state_set 2    # 0x804A48DC SRCBLEND  [driver module: drop if the module is lifted in the same step]
-site 0x804A4BD0 0x4E800421 call rw_render_state_set 2    # 0x804A48DC DESTBLEND ONE [driver module: drop if the module is lifted in the same step]
-site 0x804A4DCC 0x4E800421 call rw_render_state_set 2    # 0x804A48DC SRCBLEND  [driver module: drop if the module is lifted in the same step]
-site 0x804A4DE4 0x4E800421 call rw_render_state_set 2    # 0x804A48DC DESTBLEND  [driver module: drop if the module is lifted in the same step]
-site 0x804A7A20 0x4E800421 call rw_render_state_set 2    # 0x804A7334 SRCBLEND  [driver module: drop if the module is lifted in the same step]
-site 0x804A7A38 0x4E800421 call rw_render_state_set 2    # 0x804A7334 DESTBLEND  [driver module: drop if the module is lifted in the same step]
-site 0x804A7C4C 0x4E800421 call rw_render_state_set 2    # 0x804A7A58 SRCBLEND  [driver module: drop if the module is lifted in the same step]
-site 0x804A7C64 0x4E800421 call rw_render_state_set 2    # 0x804A7A58 DESTBLEND  [driver module: drop if the module is lifted in the same step]
 
 # ---- render states: RwRenderStateGet dispatches (RwGlobals+0x24; r2/SITES_DEVICE.md 1.3): 133 site(s)
 site 0x80039728 0x4E800421 call rw_render_state_get 2    # 0x800396F8 VERTEXALPHAENABLE read@0x80039924
@@ -553,14 +537,6 @@ site 0x80479914 0x4E800421 call rw_render_state_get 2    # 0x80479750 DESTBLEND 
 site 0x8047992C 0x4E800421 call rw_render_state_get 2    # 0x80479750 TEXTURERASTER read@0x80479A94
 site 0x80479944 0x4E800421 call rw_render_state_get 2    # 0x80479750 TEXTUREFILTER read@0x80479AAC
 site 0x8047995C 0x4E800421 call rw_render_state_get 2    # 0x80479750 CULLMODE read@0x80479AC4
-site 0x804A423C 0x4E800421 call rw_render_state_get 2    # 0x804A3F74 SRCBLEND read@0x804A4318 [driver module: drop if the module is lifted in the same step]
-site 0x804A4254 0x4E800421 call rw_render_state_get 2    # 0x804A3F74 DESTBLEND read@0x804A4330 [driver module: drop if the module is lifted in the same step]
-site 0x804A47F0 0x4E800421 call rw_render_state_get 2    # 0x804A4358 SRCBLEND read@0x804A489C [driver module: drop if the module is lifted in the same step]
-site 0x804A4808 0x4E800421 call rw_render_state_get 2    # 0x804A4358 DESTBLEND read@0x804A48B4 [driver module: drop if the module is lifted in the same step]
-site 0x804A4B78 0x4E800421 call rw_render_state_get 2    # 0x804A48DC SRCBLEND read@0x804A4DC0 [driver module: drop if the module is lifted in the same step]
-site 0x804A4B90 0x4E800421 call rw_render_state_get 2    # 0x804A48DC DESTBLEND read@0x804A4DD8 [driver module: drop if the module is lifted in the same step]
-site 0x804A7AA8 0x4E800421 call rw_render_state_get 2    # 0x804A7A58 SRCBLEND read@0x804A7C40 [driver module: drop if the module is lifted in the same step]
-site 0x804A7AC0 0x4E800421 call rw_render_state_get 2    # 0x804A7A58 DESTBLEND read@0x804A7C58 [driver module: drop if the module is lifted in the same step]
 
 # ---- Im2D: RwIm2DRenderPrimitive dispatches (RwGlobals+0x30; r2/SITES_DEVICE.md 2): 50 site(s)
 site 0x80036764 0x4E800421 call rw_movie_frame 3 # 0x80036570 the movie player's frame blit: the picture refreshed, kept whole (R2_DRIVER 4.10)
@@ -662,9 +638,6 @@ site 0x80439124 0x4805D0E5 call rw_camera_texture_copy 2 void # 0x80438C90 effec
 # ---- pipelines (r2/SITES_PIPELINES.md 1.1): RxPipelineExecute(pipeline, object, heapReset) at its six entry sites; the result is the pipeline (success)
 site 0x80456F3C 0x48045789 call rw_pipeline_execute_atomic 3     # S-A AtomicDefaultRenderCallBack 0x80456F04: every model and particle system
 site 0x80460BC8 0x4803BAFD call rw_pipeline_execute_sector 3     # S-B world-sector render callback 0x80460B60
-site 0x8049B930 0x48000D95 call rw_pipeline_execute_im3d_transform 3 # S-C RwIm3DTransform 0x8049B87C
-site 0x8049BC90 0x48000A35 call rw_pipeline_execute_im3d_render 3 # S-D RwIm3DRenderPrimitive 0x8049BB48
-site 0x8049BAFC 0x48000BC9 call rw_pipeline_execute_im3d_render 3 # S-E RwIm3DRenderIndexedPrimitive 0x8049B9AC
 
 # ---- texture LOD (r2/SITES_DEVICE.md 6.3): TextureSetLOD(texture, biasClamp, edgeLOD, maxAniso, f1 lodBias)
 site 0x80038C24 0x48462945 call rw_texture_set_lod 4 fpr 1 void  # 0x80038BB0 one-level, filter by mode
@@ -672,7 +645,6 @@ site 0x80038C48 0x48462921 call rw_texture_set_lod 4 fpr 1 void  # 0x80038BB0 mi
 site 0x80038C90 0x484628D9 call rw_texture_set_lod 4 fpr 1 void  # 0x80038BB0 mipmapped, palettised
 site 0x800395C0 0x48461FA9 call rw_texture_set_lod 4 fpr 1 void  # 0x80039550 mipmapped, palettised
 site 0x800395F0 0x48461F79 call rw_texture_set_lod 4 fpr 1 void  # 0x80039550 mipmapped, 4x anisotropy
-site 0x8049AB50 0x48000A19 call rw_native_texture_loaded 4 fpr 1 void # the native texture read 0x8049A8DC, after the texels are in the raster: the native texture is made here
 
 # ---- geometry instances (r2/SITES_PIPELINES.md 2.10): RpGeometryDestroy 0x8045A8AC and its 12 inlined copies free geometry->repEntry (lwz r3,0x58(r31); cmplwi; beq; bl) - in the lifted build the native mesh handle
 site 0x8045A8DC 0x48026E91 call rw_geometry_instance_release 1   # RwResourcesFreeResEntry(geometry->repEntry)
@@ -690,10 +662,8 @@ site 0x8045B60C 0x48026161 call rw_geometry_instance_release 1   # RwResourcesFr
 site 0x8045B6E4 0x48026089 call rw_geometry_instance_release 1   # RwResourcesFreeResEntry(geometry->repEntry)
 
 # ---- the present (r2/SITES_PRESENT_EFFECTS.md 1.6): the display copy closes the frame
-site 0x80495DFC 0x4BF01649 call render_submit_frame 2 void       # GXCopyDisp(xfb, clear) in 0x80495CBC
 
 # ---- the render-state reset of FINALIZESTART 0x804981E8: its first GX call, after the cache defaults are stored
-site 0x80498280 0x4BF01B71 call rw_render_state_reset 3 void     # GXSetZMode(1, LEQUAL, 1)
 
 # ---- the 2D <-> 3D boundary (docs/boundary-20261007/DESIGN.md): the game's world-to-screen projection fn_8000F654
 # for the 2D it attaches to world points, placed by render/view.h canvas_point() from the authored picture the renderer
@@ -733,3 +703,10 @@ site 0x802720E8 0x4BD9D779 call camera_picture_window 2           # fn_80271F9C:
 # cameras' framing rules (0x801C2578, 0x801C28B0, 0x801C4AF8, 0x801B3584: authored composition, kept).
 site 0x8019DB0C 0x4BE71A71 call displayed_screen_point 4         # 0x8019DA1C: the first point
 site 0x8019DB74 0x4BE71A09 call displayed_screen_point 4         # 0x8019DA1C: the second point
+
+# The watch camera's noise sheet (docs/ASPECT_INVENTORY.md E3; GUN Fortress's security cameras): WatchCamera::Monitor
+# fn_80268660 puts BS0600CAMERANOISE.DFF (a unit quad) 1.1 in front of the eye and scales it by 2 x 1.1 x the RwCamera's
+# window - the authored picture's (camera_picture_window above), so a wider or narrower view showed the noise on its
+# authored 4:3 part only. The scale is the displayed picture's (runtime/game/game_owners.cpp
+# GameOwners::watch_camera_sheet_scale, runtime/lift/effects/watch_camera_sheet.h); at the authored aspect, the game's.
+site 0x8026872C 0x481A4045 call watch_camera_sheet_scale 1 fpr 3 void  # fn_80268660: fn_8040C770(matrix, sx, sy, sz)

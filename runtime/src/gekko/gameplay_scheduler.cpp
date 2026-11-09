@@ -22,6 +22,7 @@
 #include "gekko/guest_memory.h"
 #include "gekko/profiling.h"
 #include "gekko/recomp.h"
+#include "gekko/uv_anim_time.h"
 
 namespace gekko {
 namespace {
@@ -112,7 +113,7 @@ constexpr u32 kOsFpuContext = 0x800000D8u;
 constexpr u32 kOsActiveThreadHead = 0x800000DCu;
 constexpr u32 kOsCurrentThread = 0x800000E4u;
 constexpr u32 kOsFpHandlerSlot = 0x8000301Cu;
-constexpr u32 kOsSwitchFpuContext = 0x80373100u;
+constexpr u32 kOsSwitchFpuContext = 0x80373100u;  // liveness-roots: value-only
 constexpr u32 kCtxF1 = 0x98u;
 constexpr u32 kCtxF31 = 0x188u;
 constexpr u32 kCtxStateLo = 0x1A3u;  // bit 0 = OS_CONTEXT_STATE_FPSAVED
@@ -1000,7 +1001,7 @@ std::string FpProbe::json() const {
            "with no recognition point, so its FP state is theirs. ED80 path is dead (0x805EF274 "
            "has no writer). ps1 (fpr bits[1]) is not measured. wrong_f1/finish_f31 are "
            "PREDICTIONS of OSSwitchFPUContext (handler slot 7 = fp_handler_word, expected "
-           "0x80373100): owner!=current and FPSAVED set reloads f1 from ctx+0x98 and f31 from "
+           "its address in kOsSwitchFpuContext): owner!=current and FPSAVED set reloads f1 from ctx+0x98 and f31 from "
            "ctx+0x188; the intended execute f1 is ctx+0x188 (the thread's saved f31), not live "
            "f31 (audit_formula_differs keeps the audit's literal test). Invalid if fpr_shadow is "
            "true. Episode = legacy-trap estimate: closes on FP=1, on any FP-unavailable "
@@ -1391,6 +1392,12 @@ struct GameplayScheduler::Impl {
         if (task_times.on())
             task_times.note(0u, node, vtable, active.size());
         ++stats.executes;
+        // TextureUVAnimManagerTask: the delta it advances the registered UV animations by (gekko/uv_anim_time.h).
+        if ((entry & ~3u) == gekko::kUvAnimManagerExecute) {
+            double dt = 0.0;
+            std::memcpy(&dt, &cpu.fpr[31].bits[0], sizeof dt);
+            gekko::note_uv_anim_manager_step(static_cast<float>(dt));
+        }
         dispatch(entry & ~3u, 0x8004EDA4u);
     }
 

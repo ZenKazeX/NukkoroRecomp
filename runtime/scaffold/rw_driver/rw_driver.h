@@ -155,6 +155,14 @@ constexpr u32 kSdaEventHoldsInterval = 0x3E5Du;
 // events are drawn split for both players and keep the output's shape; only story events are shown 4:3 (user, 2026-10-26).
 constexpr u32 kSystemObject = 0x8057E760u;
 constexpr u32 kSystemTwoPlayers = 0xB2u;
+// The stage's StageAction manager (cached at r13 + 0x2EDC by its getter 0x80074598; docs/tools/STAGE_CONTROL.md): +0x8
+// is the action running. A stage's goal (action 6, GoalAction) plays its goal scene and the result screen under an
+// EventManager too - the byte above is set from about 4 s after the goal until the save (measured on Westopolis,
+// 2026-10-30) - but they are the stage's own screens, not a story cutscene, and keep the output's shape (user,
+// 2026-10-30: the result screen was boxed 4:3 at every wider ratio). A played story event runs under action 12.
+constexpr u32 kSdaStageActionManager = 0x2EDCu;
+constexpr u32 kStageActionCurrent = 0x8u;
+constexpr u32 kStageActionGoal = 6u;
 constexpr u32 kEffectGlare = 0x3C;
 constexpr u32 kGlareSourceRaster = 0x08;  // copy #2's destination (the glare-source image)
 constexpr u32 kGlareSceneRaster = 0x0C;   // copy #1's destination (the scene saved before the sources)
@@ -289,6 +297,9 @@ public:
     void set_frame_observer(std::function<void(const shadow::render::FramePacket&)> observer) {
         frame_observer_ = std::move(observer);
     }
+    // VISetBlack: true while the game wants the display black (NativeVideo::black_requested). Read on the game thread
+    // when a frame is finished; that frame is then shown as one black frame. Set before the game runs.
+    void set_display_blank(std::function<bool()> source) { display_blank_ = std::move(source); }
     // The fade-in of models that appear inside the view (gekko/appear_fade.h): length in game ticks, 0 = off.
     void set_fade_in_ticks(u64 ticks) noexcept { appear_.set_duration(ticks); }
     u64 fade_ins() const noexcept { return appear_.stats().fades; }
@@ -315,9 +326,14 @@ public:
     u32 camera_begin(Cpu& c, u32 camera);
     u32 camera_end(Cpu& c, u32 camera);
     u32 camera_clear(Cpu& c, u32 camera, u32 colour, u32 mode);
+    // ClearQuad 0x80499E58 (a raster-level clear of the current camera's raster): a quad over the rectangle (raster
+    // pixels) drawn into the open bracket's view that replaces the colour (`colour`: rgba, R in the low byte) and / or
+    // writes the farthest depth (`depth`), whatever is there. Returns 1.
+    u32 raster_clear(Cpu& c, std::int32_t x, std::int32_t y, std::int32_t w, std::int32_t h, u32 rgba, bool colour, bool depth);
     void submit_frame(Cpu& c);
-    // Samples whether an in-engine event is playing (kSdaEventHoldsInterval): while one is, the output the game sees is
-    // 4:3 (output_aspect) and the frame is shown in a centred 4:3 box (FramePacket::content_aspect).
+    // Samples whether an in-engine event is playing (kSdaEventHoldsInterval) outside a stage's goal (kStageActionGoal):
+    // while one is, the output the game sees is 4:3 (output_aspect) and the frame is shown in a centred 4:3 box
+    // (FramePacket::content_aspect).
     void sample_event_framing(Cpu& c) noexcept;
 
     // ---- immediate geometry and copies (immediate.cpp) ----
@@ -326,6 +342,9 @@ public:
     // The movie player's frame blit (0x80036570): the raster the decoder rewrites every picture, refreshed when its
     // texels changed, drawn keeping the movie's 4:3 picture whole on any output.
     u32 movie_frame(Cpu& c, u32 type, u32 vertices, u32 count);
+    // RwRasterRender's draw (raster_render_install.cpp, os-other): `raster` as a textured quad at `rect` {x, y, w, h} of the
+    // current target; the render states it sets are restored as the original does.
+    void raster_quad(Cpu& c, u32 raster, const u32 rect[4], bool scaled, bool fast);
     // System's 2D identity announcements (game thread, draw order): the anchors of the Im2D draws that follow.
     void on_hud_group(HudGroupKind kind, u32 group_id, float canvas_x, u32 instance) override;
     void on_hud_scene(u32 node, u32 cast) override;
@@ -351,7 +370,7 @@ public:
     // ---- the 2D <-> 3D boundary (projection.cpp; docs/boundary-20261007/DESIGN.md) ----
     // The framing of every view's picture (render/view.h): square pixels unless set otherwise. Before the game runs.
     void set_framing(shadow::render::Framing framing) noexcept { framing_ = framing; }
-    shadow::render::Framing framing() const noexcept { return framing_; }
+    shadow::render::Framing framing() const noexcept override { return framing_; }
     // The game's world-to-screen projection for the 2D it attaches to world points (fn_8000F654's call sites: the
     // lock-on mark, the enemy gauge, Sprite3D, the 3D-anchored CSD scenes): the point at `world` (three big-endian
     // floats) on player `player`'s view, written to `out` as the game's screen coordinates - x, y in its 640 x 480
@@ -362,6 +381,11 @@ public:
     // The output's width / height (the window's client area, else the captures'): what the output shows of the
     // game's screen. Any thread; 4:3 until set.
     void set_output_aspect(float aspect) noexcept;
+    // The aspect the game LOGIC's on-screen test uses (the enemy AI, displayed_screen_point; gekko/gameplay_aspect.h):
+    // 0 = the output's own (live play, the default); a replay passes the recording's so the AI decides as it did,
+    // whatever the picture is. Any thread.
+    void set_logic_aspect(float aspect) noexcept;
+    float logic_aspect() const noexcept;
     // C3: a rendered packet back to the frame builder (any thread).
     void recycle_packet(shadow::render::FramePacket&& used) { builder_.recycle(std::move(used)); }
     float output_aspect() const noexcept override;
@@ -413,7 +437,7 @@ public:
         u64 frames = 0;
         u64 frames_dropped = 0;       // the render thread had not taken the previous ones
         u64 state_sets = 0, state_gets = 0;
-        u64 cameras = 0, clears = 0, clears_ignored = 0;
+        u64 cameras = 0, clears = 0, clears_ignored = 0, raster_clears = 0, raster_clears_ignored = 0;
         u64 im2d_primitives = 0, im3d_primitives = 0, copies = 0;
         u64 atomics = 0, sectors = 0, sector_draws = 0, sector_meshes_built = 0, sectors_skipped = 0;
         u64 dissolving_draws = 0;  // atomics drawn mid fade-in
@@ -471,6 +495,7 @@ public:
         // Movies: frame blits drawn, pictures (the raster's texels changed: its texture rebuilt), and the frames.
         u64 movie_draws = 0, movie_pictures = 0;
         u64 mode_switch_blanks = 0;  // frames shown black at a video-mode switch (the raster changed size)
+        u64 display_blanks = 0;      // frames shown black because the game had VISetBlack(TRUE) in force
         u64 event_framed = 0;        // frames of an in-engine event, shown in a 4:3 box
         u64 movie_frames[2] = {~u64{0}, 0};
         // Why skins were not drawn: no RpSkin, no hierarchy, a hierarchy without matrices or node frames, bones out
@@ -556,7 +581,14 @@ private:
     };
     // The deforming-mesh audit's first reports, one per (issue, geometry).
     std::set<u64> deform_reported_;
+    std::set<u32> bump_reported_;  // MatFX bump-environment data already logged (one line each)
     void deform_report(u32 issue, u32 geometry, const char* text);
+    // True when deform_report(issue, geometry, ...) would print: callers build the text only then. The skin and
+    // morph sites run per draw, and formatting every draw's text only for the set to discard it was the game
+    // thread's one per-frame printf (2026-11-04: ~0.013 ms/frame).
+    bool deform_unreported(u32 issue, u32 geometry) const {
+        return deform_reported_.size() < 256u && !deform_reported_.contains((u64{issue} << 32) | geometry);
+    }
 
     // FOGCOLOR / FOGTYPE: GX fog armed with the current camera's planes.
     void rearm_fog(Cpu& c);
@@ -681,10 +713,16 @@ private:
     bool uv_shared_geometry(Cpu& c, u32 geometry);
     // The geometries of the clumps registered right now (the map walk).
     void uv_registered_now(Cpu& c, std::set<u32>* geometries);
-    // Once a frame: every clock moves by the game's own step while its model is registered (its speed, also when the
-    // game advances it more than once a frame; nothing while the game stands), and by the frame's game time while not
-    // (only proxies show it then) - unless registered animations stood this frame (the game paused them).
+    // Once a frame: a registered clock moves by its interpolator's own step (the game's speed, and any time the game
+    // sets itself); an unregistered one (only proxies show it) by the time TextureUVAnimManagerTask was given since
+    // its last step (gekko/uv_anim_time.h) - as it would run if registered, standing whenever the game stops that task,
+    // also over frames that drew none of it. Under --legacy-scheduler (no manager time): the frame's game time, unless
+    // registered animations stood this frame (paused).
     void advance_uv_clocks(Cpu& c);
+    // Once a frame (submit_frame): the stage's archive at 0x805F03C0 changed (a stage loaded, or left) - every clock and
+    // kept geometry is dropped, so a reload at the same addresses never revives the last stage's clocks. A pause-menu
+    // restart keeps the archive and the libraries with it (measured 2026-11-05), so their clocks carry on.
+    void uv_stage_check(Cpu& c);
     // The shared clock for a material whose geometry is shared: overrides the uv matrices `m` from matfx_layers.
     void shared_uv(Cpu& c, u32 material, u32 geometry, u32 fx_kind, shadow::render::Material* m, bool proxy);
     struct UvClock {
@@ -693,12 +731,16 @@ private:
         double time = 0.0;        // the shared time, in [0, duration)
         float last_game = 0.0f;   // the interpolator's time at the last step, and the ticks then
         u64 last_ticks = 0;
+        double last_manager = 0.0;  // TextureUVAnimManagerTask's time at the last step
         double offset = 0.0;      // measuring: shared time - the game's while registered
         bool offset_known = false;
     };
     std::unordered_map<u64, UvClock> uv_clocks_;  // by animation << 32 | interpolator
     std::set<u32> uv_shared_geometries_, uv_registered_;
     u64 uv_epoch_ = ~0ull, uv_advanced_frame_ = ~0ull;
+    u32 uv_stage_archive_ = 0;  // the stage archive last seen (uv_stage_check)
+    u64 uv_stage_resets_ = 0;
+    double uv_manager_seen_ = 0.0;  // TextureUVAnimManagerTask's time at the last advance_uv_clocks
     bool uv_shared_enabled_ = std::getenv("SHADOW_UV_SHARED_CLOCK") == nullptr ||
                               std::getenv("SHADOW_UV_SHARED_CLOCK")[0] != '0';
     // Measuring: evaluation against the game's matrix at the game's time; while registered, the shared time's offset
@@ -785,6 +827,7 @@ private:
     std::uint64_t trace_frame_ = ~std::uint64_t{0};
     // The previous frame's top-level raster (0: none yet): a change is a video-mode switch (submit_frame).
     float last_screen_width_ = 0.0f, last_screen_height_ = 0.0f;
+    std::function<bool()> display_blank_;
     bool no_distortion_ = false;  // diagnostics: SHADOW_R2_NO_DISTORTION
     bool tag_layers_ = false;     // this frame's draws carry their effect layer (an effect layer switch is set)
     u32 land_flags_ = 0;          // the render-class flags the level recipe last applied (note_land_class)
@@ -795,7 +838,17 @@ private:
     // Diagnostics: SHADOW_BOUNDARY_TRACE=<n> prints the first n projections' values (stderr).
     std::uint64_t trace_projections_ = 0;
     std::atomic<u32> output_aspect_bits_{0x3FAAAAABu};  // binary32 width / height
+    std::atomic<u32> logic_aspect_bits_{0u};            // binary32; 0: the output's (set_logic_aspect)
     std::atomic<bool> event_framed_{false};             // sample_event_framing
 };
+
+// The device surface's native owners (rwR1; extract/native-owners-r2.txt): the lowered scaffold functions, entered by address.
+void install_device_surface_owners(Cpu& cpu);
+// The display swap (ShowRaster, the retrace callbacks, GcnSystem; docs/agents/vi.md "Step 12") with the scaffold's lowered frame submit / state reset.
+void install_display_owners(Cpu& cpu);
+
+// The raster-level clear as a function the native raster owners call (rw_raster::set_raster_clear): rw_driver.cpp.
+u32 rw_raster_clear(Cpu& c, std::int32_t x, std::int32_t y, std::int32_t w, std::int32_t h, std::uint32_t rgba, bool colour,
+                    bool depth);
 
 }  // namespace gekko::scaffold

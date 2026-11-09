@@ -16,6 +16,11 @@ Rules (see the comment above ppc::fp_arith_slow in runtime/include/gekko/ppc_ops
      below 2^-126 / 2^-1022; that value is exact for fused forms and double
      mul/div, the double result otherwise.
   6. fnmadd/fnmsub negate the rounded result.
+  fres/frsqrte (and ps_res/ps_rsqrte) follow only rule 1; otherwise they are
+  the hardware table estimates, transcribed below from hwtests
+  Common/FloatUtils.h (fres_expected / frsqrte_expected, hardware-verified),
+  with ps_rsqrte rounding the double estimate to single and flushing a
+  denormal under NI.
 
     python -B tools/ppcrecomp/fp_semantics_oracle.py > vectors.txt
 """
@@ -104,6 +109,78 @@ def single_of_double_bits(b):
     return round_single(exact(b), bool(b & SIGN))
 
 
+# hwtests Common/FloatUtils.h, transcribed (tests/tools only).
+_RSQ_BASE = [
+    0x3ffa000, 0x3c29000, 0x38aa000, 0x3572000, 0x3279000, 0x2fb7000, 0x2d26000, 0x2ac0000,
+    0x2881000, 0x2665000, 0x2468000, 0x2287000, 0x20c1000, 0x1f12000, 0x1d79000, 0x1bf4000,
+    0x1a7e800, 0x17cb800, 0x1552800, 0x130c000, 0x10f2000, 0x0eff000, 0x0d2e000, 0x0b7c000,
+    0x09e5000, 0x0867000, 0x06ff000, 0x05ab800, 0x046a000, 0x0339800, 0x0218800, 0x0105800]
+_RSQ_DEC = [
+    0x7a4, 0x700, 0x670, 0x5f2, 0x584, 0x524, 0x4cc, 0x47e, 0x43a, 0x3fa, 0x3c2,
+    0x38e, 0x35e, 0x332, 0x30a, 0x2e6, 0x568, 0x4f3, 0x48d, 0x435, 0x3e7, 0x3a2,
+    0x365, 0x32e, 0x2fc, 0x2d0, 0x2a8, 0x283, 0x261, 0x243, 0x226, 0x20b]
+_RES_BASE = [
+    0xfff000, 0xf07000, 0xe1d400, 0xd41000, 0xc71000, 0xbac400, 0xaf2000, 0xa41000,
+    0x999000, 0x8f9400, 0x861000, 0x7d0000, 0x745800, 0x6c1000, 0x642800, 0x5c9400,
+    0x555000, 0x4e5800, 0x47ac00, 0x413c00, 0x3b1000, 0x352000, 0x2f5c00, 0x29f000,
+    0x248800, 0x1f7c00, 0x1a7000, 0x15bc00, 0x110800, 0x0ca000, 0x083800, 0x041800]
+_RES_DEC = [
+    -0x3e1, -0x3a7, -0x371, -0x340, -0x313, -0x2ea, -0x2c4, -0x2a0, -0x27f, -0x261, -0x245,
+    -0x22a, -0x212, -0x1fb, -0x1e5, -0x1d1, -0x1be, -0x1ac, -0x19b, -0x18b, -0x17c, -0x16e,
+    -0x15b, -0x15b, -0x143, -0x143, -0x12d, -0x12d, -0x11a, -0x11a, -0x108, -0x106]
+
+
+def frsqrte_expected(bits):
+    mantissa = bits & ((1 << 52) - 1)
+    sign = bits & SIGN
+    exponent = bits & (0x7FF << 52)
+    if mantissa == 0 and exponent == 0:
+        return sign | 0x7FF0000000000000
+    if exponent == 0x7FF << 52:
+        if mantissa == 0:
+            return DEFAULT_QNAN if sign else 0
+        return bits | QUIET
+    if sign:
+        return DEFAULT_QNAN
+    if not exponent:
+        while True:
+            exponent -= 1 << 52
+            mantissa <<= 1
+            if mantissa & (1 << 52):
+                break
+        mantissa &= (1 << 52) - 1
+        exponent += 1 << 52
+    odd_exponent = not (exponent & (1 << 52))
+    diff = exponent - (0x3FE << 52)
+    half = abs(diff) // 2 * (1 if diff >= 0 else -1)  # C division truncates
+    exponent = ((0x3FF << 52) - half) & (0x7FF << 52)
+    i = mantissa >> 37
+    index = i // 2048 + (16 if odd_exponent else 0)
+    return exponent | ((_RSQ_BASE[index] - _RSQ_DEC[index] * (i % 2048)) << 26)
+
+
+def fres_expected(bits, ni):
+    sign32 = (bits >> 32) & 0x80000000
+    exp_field = bits & (0x7FF << 52)
+    if exp_field <= 0x37E0000000000000:
+        if (bits & ~SIGN) == 0:
+            return (bits & SIGN) | 0x7FF0000000000000
+        return (bits & SIGN) | 0x47EFFFFFE0000000
+    if exp_field >= (0x47D0000000000000 if ni else 0x4940000000000000):
+        if is_nan(bits):
+            return bits | QUIET
+        return bits & SIGN
+    mantissa = (bits & ((1 << 52) - 1)) >> 29
+    exponent = 253 - ((exp_field >> 52) - 0x380)
+    key = mantissa >> 18
+    new_mantissa = (_RES_BASE[key] + _RES_DEC[key] * ((mantissa >> 8) & 0x3FF)) >> 1
+    if exponent <= 0:
+        word = sign32 if ni else sign32 | (((1 << 23) | new_mantissa) >> (1 + (-exponent)))
+    else:
+        word = sign32 | (exponent << 23) | new_mantissa
+    return d2b(struct.unpack('<f', struct.pack('<I', word))[0])
+
+
 OPS = ['add', 'sub', 'mul', 'div', 'sqrt', 'res', 'rsqrte', 'round', 'madd', 'msub', 'nmadd', 'nmsub']
 
 
@@ -119,6 +196,16 @@ def oracle(op, single, ni, A, B, C):
                 # keep sign, exponent and frX[12-34]; drop the low 29 payload bits
                 q &= ~((1 << 29) - 1)
             return q
+    if op == 'res':
+        return fres_expected(B, ni)
+    if op == 'rsqrte':
+        r = frsqrte_expected(B)
+        if not single or is_nan(r):
+            return r
+        out = single_of_double_bits(r)
+        if ni and out & ~SIGN and abs(exact(out)) < Fraction(2) ** -126:
+            return out & SIGN
+        return out
     if ni:
         def zero_tiny(bits):
             if is_nan(bits) or is_inf(bits):
@@ -144,11 +231,6 @@ def oracle(op, single, ni, A, B, C):
             r = a / b
     elif op == 'sqrt':
         r = math.sqrt(b) if b >= 0 else math.nan
-    elif op == 'res':
-        r = 1.0 / b if b != 0 else math.copysign(math.inf, b)
-    elif op == 'rsqrte':
-        s = math.sqrt(b) if b >= 0 else math.nan
-        r = math.nan if math.isnan(s) else (1.0 / s if s != 0 else math.copysign(math.inf, s))
     elif op == 'round':
         r = b
     else:

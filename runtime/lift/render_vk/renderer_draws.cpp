@@ -407,12 +407,17 @@ void Renderer::record_draws(PassContext& ctx, const FramePacket& packet, const r
             vkCmdDrawIndexed(cmd, sub.index_count, 1, sub.first_index, 0, 0);
             ++frame.draws;
         };
+        const render::ExtraPass& extra = material.extra;
+        const std::uint32_t extra_texture = texture_srv(extra.texture);
+        if (extra.kind == render::ExtraPass::Kind::BumpEnvironment && extra_texture != kNoDescriptor)
+            render::fill_bump_environment(
+                extra, extra_texture, render::sampler_index(extra.sampler.filter, extra.sampler.u, extra.sampler.v),
+                &constants);
         issue(Program::Base, base_recipe, constants);
 
         // The second draw of the same mesh: same depth test, no depth writes, its own blend.
-        const render::ExtraPass& extra = material.extra;
-        const std::uint32_t extra_texture = texture_srv(extra.texture);
-        if (extra.kind != render::ExtraPass::Kind::None && extra_texture != kNoDescriptor) {
+        if ((extra.kind == render::ExtraPass::Kind::Environment || extra.kind == render::ExtraPass::Kind::Dual) &&
+            extra_texture != kNoDescriptor) {
             render::Recipe recipe = base_recipe;
             recipe.depth_write = false;
             render::DrawConstants second = constants;

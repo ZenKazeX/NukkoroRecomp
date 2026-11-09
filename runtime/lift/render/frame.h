@@ -78,7 +78,9 @@ enum class Combine : std::uint8_t { OneStage, TwoStage };
 
 // A second draw of the same mesh (census 6.2): the environment reflection, or a second texture over the first.
 struct ExtraPass {
-    enum class Kind : std::uint8_t { None, Environment, Dual } kind = Kind::None;
+    // BumpEnvironment (MatFX BUMPENVMAP, 0x804A4E00) is not a second draw: the GameCube combines it in the base
+    // pass's own TEV (mesh.hlsl PSBase, kBumpEnvironment); `texture` is then the environment map.
+    enum class Kind : std::uint8_t { None, Environment, Dual, BumpEnvironment } kind = Kind::None;
     TextureHandle texture;
     Sampler sampler;
     float coefficient = 0.0f;       // environment strength (drawn as min(coefficient, 1))
@@ -89,6 +91,10 @@ struct ExtraPass {
     // dual: the second layer's own UV transform - MatFX DUALUVTRANSFORM's dual matrix, identity when it has none (or
     // for DUALTEXTURE); never the base layer's (docs/renderer-re-20261007/04_GC_DRIVER.md 3.18).
     float uv_transform[2][3] = {{1, 0, 0}, {0, 1, 0}};
+    // bump-environment: the bump texgen's scale, -(coefficient x invBumpWidth) of the bump slot (0x804A4FEC-0x804A5000;
+    // the height lookup's offset is this x the view normal), and the environment slot's useFrameBufferAlpha.
+    float bump_shift = 0.0f;
+    bool framebuffer_alpha = false;
 };
 
 // What a mesh's surface looks like. The switches are the material program's inputs (SITES_PIPELINES.md 4.3):
@@ -324,6 +330,8 @@ struct ViewRecord {
 struct FramePacket {
     std::uint64_t tick = 0;
     std::uint64_t game_ticks = 0;  // the game clock when the game finished the frame (0: not known)
+    std::int64_t pushed_ns = 0;    // steady_clock ns when PacketQueue::push took it (gekko/phase_lock.h)
+    std::int64_t anchor_shift_ns = 0;  // the phase lock's applied anchor shift when it was pushed (phase_anchor_shift_ns)
     Float4 background{0, 0, 0, 1};
     // The aspect of the box the views are shown in, centred in the output with black outside it; 0: the whole output.
     // An in-engine cutscene keeps the 4:3 it was composed for.

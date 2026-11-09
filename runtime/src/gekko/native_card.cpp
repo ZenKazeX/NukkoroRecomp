@@ -34,8 +34,6 @@ constexpr u32 kCardMountAsync = 0x80391498u;   // CARDMountAsync(chan, workArea,
 constexpr u32 kCardUnmount = 0x803916D4u;      // CARDUnmount(chan)
 
 // ---- guest code the deliveries call
-constexpr u32 kCardVerify = 0x80390680u;          // __CARDVerify(card): the file system's mount check
-constexpr u32 kDefaultApiCallback = 0x8038CDD8u;  // __CARDDefaultApiCallback (a blr)
 
 const NativeCard::Address kAddresses[] = {
     {kCardEraseSector, "__CARDEraseSector", false},
@@ -963,7 +961,7 @@ void NativeCard::mount(Cpu& c) {
     c.mem_write32(card + kResult, static_cast<u32>(kBusy));
     c.mem_write32(card + kWorkArea, work);
     c.mem_write32(card + kExtCallback, detach);
-    c.mem_write32(card + kApiCallback, attach != 0u ? attach : kDefaultApiCallback);
+    c.mem_write32(card + kApiCallback, attach != 0u ? attach : default_api_callback_);
     c.mem_write32(card + kExiCallback, 0u);
     if (c.mem_read32(card + kAttached) == 0u && !slot_present(static_cast<u32>(chan))) {
         // EXIAttach failed: nothing in the slot.
@@ -1074,7 +1072,14 @@ bool NativeCard::completion_handler(Cpu& c, u32 frame, u32 step) {
             if (step == 0u) {
                 // The fifth system block's __CARDMountCallback: step 7, verify.
                 c.mem_write32(card + kMountStep, kMountSteps);
-                return call(kCardVerify, card, 0u);
+                // The file system's mount check (__CARDVerify) is guest code of the CARD library, which the game no
+                // longer compiles: only the reference tests, which run the original words on this model, name its
+                // entry (set_verify_entry); without one the mount stops the machine rather than answer for it.
+                if (verify_entry_ == 0u) {
+                    stop(c, "the card model's mount check (__CARDVerify) has no entry: the CARD library is retired");
+                    return false;
+                }
+                return call(verify_entry_, card, 0u);
             }
             if (step == 1u) {
                 const s32 verified = static_cast<s32>(c.gpr[3]);
@@ -1111,6 +1116,18 @@ void NativeCard::install() {
     own(kCardProbeEx, "CARDProbeEx", [this](Cpu& c) { probe(c); });
     own(kCardMountAsync, "CARDMountAsync", [this](Cpu& c) { mount(c); });
     own(kCardUnmount, "CARDUnmount", [this](Cpu& c) { unmount(c); });
+}
+
+bool NativeCard::deliver_pending(Cpu& c, u32 frame, u32 callback_return, const std::function<void()>& step_one) {
+    if (!interrupts_.status(NativeInterrupts::Source::Card)) return false;
+    interrupts_.clear(NativeInterrupts::Source::Card);
+    for (u32 step = 0;; ++step) {
+        if (!completion_handler(c, frame, step)) return true;
+        // The handler called a guest function (call_guest left pc at it and LR at the delivery's continuation).
+        u64 guard = 0;
+        while (c.pc != callback_return && !c.stopped() && guard++ < 50000000ull) step_one();
+        if (c.pc != callback_return) return true;  // stopped: the caller sees it
+    }
 }
 
 void NativeCard::save_state(std::vector<u8>& out) const {

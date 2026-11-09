@@ -13,6 +13,7 @@
 #include "assets/light_slots.h"
 #include "gekko/cpu.h"
 #include "gekko/gc_addr.h"
+#include "gekko/uv_anim_time.h"
 #include "rw_driver.h"
 
 // r2/SITES_PIPELINES.md: the node bodies (0x80464AAC atomic, 0x80464FF4 sector), their instance / lighting / render
@@ -39,6 +40,7 @@ constexpr u32 kMeshHeaderTriStrip = 0x01;
 
 // MatFX effect kinds (rpMatFXMaterialData flags) and the slot fields the passes read (r2/SITES_PIPELINES.md 2.4).
 constexpr u32 kEffectEnvironment = 2;
+constexpr u32 kEffectBumpEnvironment = 3;
 constexpr u32 kEffectDual = 4;
 constexpr u32 kEffectUvTransform = 5;
 constexpr u32 kEffectDualUvTransform = 6;
@@ -382,10 +384,12 @@ render::MeshHandle RwDriver::geometry_mesh(Cpu& c, u32 geometry, u32 flags, u32 
         if (off != 0u) {
             ++stats_.skins_unnormalised;
             stats_.skin_vertices_unnormalised += off;
-            char text[160];
-            std::snprintf(text, sizeof(text), "skin weights not summing to 1: %u of %u vertices, sums %.3f..%.3f, "
-                          "max weights %u", off, vertices, min_sum, max_sum, max_weights);
-            deform_report(2u, geometry, text);
+            if (deform_unreported(2u, geometry)) {
+                char text[160];
+                std::snprintf(text, sizeof(text), "skin weights not summing to 1: %u of %u vertices, sums %.3f..%.3f, "
+                              "max weights %u", off, vertices, min_sum, max_sum, max_weights);
+                deform_report(2u, geometry, text);
+            }
         }
     }
     const bool strips = (c.mem_read32(mesh_header) & kMeshHeaderTriStrip) != 0u || (flags & kGeometryTriStrip) != 0u;
@@ -588,10 +592,12 @@ bool RwDriver::skin_palette(Cpu& c, u32 atomic, u32 skin, render::BoneRange* out
     }
     if (!node_frames) {
         ++stats_.skins_from_matrices;
-        char text[96];
-        std::snprintf(text, sizeof(text), "skin posed from hierarchy matrices (flags %X, hierarchy %08X)", flags,
-                      hierarchy);
-        deform_report(4u, c.mem_read32(atomic + layout::kAtomicGeometry), text);
+        if (const u32 geometry = c.mem_read32(atomic + layout::kAtomicGeometry); deform_unreported(4u, geometry)) {
+            char text[96];
+            std::snprintf(text, sizeof(text), "skin posed from hierarchy matrices (flags %X, hierarchy %08X)", flags,
+                          hierarchy);
+            deform_report(4u, geometry, text);
+        }
     }
     render::Float3x4 base;  // identity: global matrices and node frames are world space
     if (!node_frames && (flags & layout::kHierarchyLocalSpace) != 0u) {
@@ -690,6 +696,36 @@ void RwDriver::matfx_layers(Cpu& c, u32 fx, u32 fx_kind, u32 geometry_flags, flo
         m.extra.sampler = env_texture != 0u ? sampler_of(c.mem_read32(env_texture + layout::kTextureFilterAddressing))
                                             : render::Sampler{};
         m.extra.coefficient = std::min(read_f32(c, fx + 0x08u), 1.0f);
+    } else if (fx_kind == kEffectBumpEnvironment) {
+        // BUMPENVMAP (0x804A4E00, r7 = 1; docs/effects/lighting_materials.md 2): one pass, four TEV stages (mesh.hlsl
+        // bump_environment). Slot 0 is the bump {frame +0, bumped texture +4, bump texture +8, coefficient +0xC,
+        // invBumpWidth +0x10}; slot 1 (+0x18) the environment {frame, texture, coefficient, useFrameBufferAlpha}.
+        // Map 0 is the bumped texture (0x804A4FDC), not the material's; the bump texgen's scale is
+        // -(invBumpWidth x coefficient) (0x804A4FEC-0x804A5000). The frames are not read: the env frame is ignored as
+        // for ENVMAP (Q3), and both texgens then use the camera's view matrix.
+        const auto base_texture = m.texture.value;
+        if (const u32 bumped = c.mem_read32(fx + 0x04u)) {
+            bool bumped_alpha = false;
+            m.texture = texture_of(c, bumped, &bumped_alpha);
+            m.sampler = sampler_of(c.mem_read32(bumped + layout::kTextureFilterAddressing));
+        }
+        const u32 env_texture = c.mem_read32(fx + 0x1Cu);
+        bool env_alpha = false;
+        m.extra.kind = render::ExtraPass::Kind::BumpEnvironment;
+        m.extra.texture = texture_of(c, env_texture, &env_alpha);
+        m.extra.sampler = env_texture != 0u ? sampler_of(c.mem_read32(env_texture + layout::kTextureFilterAddressing))
+                                            : render::Sampler{};
+        m.extra.coefficient = std::min(read_f32(c, fx + 0x20u), 1.0f);
+        m.extra.framebuffer_alpha = c.mem_read32(fx + 0x24u) != 0u;
+        m.extra.bump_shift = -read_f32(c, fx + 0x10u) * read_f32(c, fx + 0x0Cu);
+        if (bump_reported_.insert(fx).second)
+            std::fprintf(stderr,
+                         "[matfx] bump-env fx %08X bumped %08X bump %08X coef %g invWidth %g env %08X coef %g fbAlpha %u"
+                         " frames %08X/%08X material texture handle %u -> %u\n",
+                         fx, c.mem_read32(fx + 0x04u), c.mem_read32(fx + 0x08u), read_f32(c, fx + 0x0Cu),
+                         read_f32(c, fx + 0x10u), env_texture, read_f32(c, fx + 0x20u), c.mem_read32(fx + 0x24u),
+                         c.mem_read32(fx), c.mem_read32(fx + 0x18u), static_cast<unsigned>(base_texture),
+                         static_cast<unsigned>(m.texture.value));
     } else if (fx_kind == kEffectDual || fx_kind == kEffectDualUvTransform) {
         const u32 slot = fx_kind == kEffectDual ? fx : fx + 0x18u;
         const u32 dual_texture = c.mem_read32(slot);
@@ -733,13 +769,15 @@ u32 RwDriver::pipeline_atomic(Cpu& c, u32 pipeline, u32 atomic) {
     const bool locked = c.mem_read16(geometry + layout::kGeometryLocked) != 0u;
     if (const u32 targets = c.mem_read32(geometry + layout::kGeometryMorphTargets); targets > 1u) {
         ++stats_.morph_target_draws;
-        const u32 interp = atomic + layout::kAtomicInterpolatorFlags;
-        char text[160];
-        std::snprintf(text, sizeof(text), "%u morph targets drawn as target 0 (interpolator start %d end %d time %.3f "
-                      "position %.3f, atomic %08X)", targets, static_cast<s16>(c.mem_read16(interp + 4u)),
-                      static_cast<s16>(c.mem_read16(interp + 6u)), read_f32(c, interp + 8u), read_f32(c, interp + 16u),
-                      atomic);
-        deform_report(3u, geometry, text);
+        if (deform_unreported(3u, geometry)) {
+            const u32 interp = atomic + layout::kAtomicInterpolatorFlags;
+            char text[160];
+            std::snprintf(text, sizeof(text), "%u morph targets drawn as target 0 (interpolator start %d end %d "
+                          "time %.3f position %.3f, atomic %08X)", targets, static_cast<s16>(c.mem_read16(interp + 4u)),
+                          static_cast<s16>(c.mem_read16(interp + 6u)), read_f32(c, interp + 8u),
+                          read_f32(c, interp + 16u), atomic);
+            deform_report(3u, geometry, text);
+        }
     }
     if (stats_.frames == trace_frame_) {
         const u32 targets = c.mem_read32(geometry + layout::kGeometryMorphTargets);
@@ -932,8 +970,8 @@ u32 RwDriver::pipeline_atomic(Cpu& c, u32 pipeline, u32 atomic) {
             bind_side_effects(c, im, texture_ext_offset, white, rw_texture, has_alpha, &states_.alpha_test_off);
         else
             states_.alpha_test_off = 1u;
-        if (fx_kind == kEffectEnvironment)
-            states_.alpha_test_off = 1u;  // the environment base pass forces the test off
+        if (fx_kind == kEffectEnvironment || fx_kind == kEffectBumpEnvironment)
+            states_.alpha_test_off = 1u;  // the environment / bump base pass forces the test off (0x804987C8)
         if (ptank) {
             if (j == 0u && ensure_pass()) {
                 render::Recipe r = level;
@@ -961,7 +999,7 @@ u32 RwDriver::pipeline_atomic(Cpu& c, u32 pipeline, u32 atomic) {
                     : (!textured || (m.vertex_colours && m.ambient)) ? render::Combine::TwoStage
                                                                     : render::Combine::OneStage;
         render::Recipe r = level;
-        r.alpha_cutoff = has_alpha && fx_kind != kEffectEnvironment ? cutoff : 0.0f;
+        r.alpha_cutoff = has_alpha && fx_kind != kEffectEnvironment && fx_kind != kEffectBumpEnvironment ? cutoff : 0.0f;
         matfx_layers(c, fx, fx_kind, flags, cutoff, &m);
         // A registered (shared) UV animation: drawn at the shared native clock, as its far proxies are.
         if (uv_shared_enabled_ && far_.enabled() && material != 0u && (fx_kind == kEffectUvTransform || fx_kind == kEffectDualUvTransform) &&
@@ -1157,14 +1195,17 @@ void RwDriver::draw_far_proxies(Cpu& c) {
                      "[far-uv] frame %llu: %llu shared-clock evaluations (%.0f ns each); %llu evaluations at the game's "
                      "time compared with the game's matrix, %llu differ; %llu registered steps, the offset to the game's "
                      "time broke %llu times; %llu paused frames; %llu repeat draws of an animation in one frame, %llu at "
-                     "another time; %zu clocks, %zu geometries\n",
+                     "another time; %zu clocks, %zu geometries; %llu stage archives; manager time %.3f s (%llu steps)\n",
                      static_cast<unsigned long long>(stats_.frames), static_cast<unsigned long long>(uv_evaluations_),
                      uv_evaluations_ != 0u ? static_cast<double>(uv_eval_ns_) / static_cast<double>(uv_evaluations_) : 0.0,
                      static_cast<unsigned long long>(uv_checks_), static_cast<unsigned long long>(uv_mismatches_),
                      static_cast<unsigned long long>(uv_registered_steps_),
                      static_cast<unsigned long long>(uv_offset_breaks_), static_cast<unsigned long long>(uv_paused_frames_),
                      static_cast<unsigned long long>(uv_both_frames_), static_cast<unsigned long long>(uv_split_frames_),
-                     uv_clocks_.size(), uv_shared_geometries_.size());
+                     uv_clocks_.size(), uv_shared_geometries_.size(),
+                     static_cast<unsigned long long>(uv_stage_resets_),
+                     gekko::uv_anim_manager_time.seconds.load(std::memory_order_relaxed),
+                     static_cast<unsigned long long>(gekko::uv_anim_manager_time.steps.load(std::memory_order_relaxed)));
     }
 }
 
@@ -1235,6 +1276,7 @@ bool RwDriver::uv_animation(Cpu& c, u32 material, u32 geometry, UvTime when, flo
                 clock.time = game_time;
                 clock.last_game = game_time;
                 clock.last_ticks = now;
+                clock.last_manager = gekko::uv_anim_manager_time.seconds.load(std::memory_order_relaxed);
             }
             t = static_cast<float>(clock.time);
             if (far_.validating()) {
@@ -1359,6 +1401,21 @@ void RwDriver::uv_registered_now(Cpu& c, std::set<u32>* geometries) {
     }
 }
 
+void RwDriver::uv_stage_check(Cpu& c) {
+    // The stage's archive (stgNNNN_dat.one, the one ONE the game keeps open, at 0x805F03C0 until the StageManager's
+    // teardown): a new one - or none - is another stage's libraries.
+    const u32 archive = c.mem_read32(0x805F03C0u);
+    if (archive == uv_stage_archive_)
+        return;
+    if (far_.validating())
+        std::fprintf(stderr, "[far-uv] frame %llu: stage archive 0x%08X -> 0x%08X, %zu clocks dropped\n",
+                     static_cast<unsigned long long>(stats_.frames), uv_stage_archive_, archive, uv_clocks_.size());
+    uv_stage_archive_ = archive;
+    uv_shared_geometries_.clear();
+    uv_clocks_.clear();
+    ++uv_stage_resets_;
+}
+
 bool RwDriver::uv_shared_geometry(Cpu& c, u32 geometry) {
     if (uv_epoch_ != far_.stage_epoch()) {
         uv_epoch_ = far_.stage_epoch();
@@ -1379,6 +1436,9 @@ void RwDriver::advance_uv_clocks(Cpu& c) {
     uv_registered_now(c, &uv_registered_);
     uv_shared_geometries_.insert(uv_registered_.begin(), uv_registered_.end());
     const u64 now = c.game_clock().now();
+    // The game's own UV animation time: what TextureUVAnimManagerTask was given (gekko/uv_anim_time.h).
+    const bool manager_fed = gekko::uv_anim_manager_time.steps.load(std::memory_order_relaxed) != 0u;
+    const double manager = gekko::uv_anim_manager_time.seconds.load(std::memory_order_relaxed);
     // Did the manager step this frame? Any registered animation whose time moved says so; registered ones that all
     // stood mean the game paused them (unregistered clocks stand too then).
     bool any_registered = false, any_moved = false;
@@ -1388,19 +1448,27 @@ void RwDriver::advance_uv_clocks(Cpu& c) {
         any_registered = true;
         any_moved = any_moved || read_f32(c, clock.interpolator + 4u) != clock.last_game;
     }
-    const bool paused = any_registered && !any_moved;
+    const bool paused = manager_fed ? manager == uv_manager_seen_ : any_registered && !any_moved;
+    uv_manager_seen_ = manager;
     if (paused)
         ++uv_paused_frames_;
     for (auto& [key, clock] : uv_clocks_) {
         const float game_time = read_f32(c, clock.interpolator + 4u);
         double step = 0.0;
         if (uv_registered_.count(clock.geometry) != 0u) {
-            // The game's own step (RtAnimInterpolatorAddAnimTime 0x80478F24 loops by the duration): its speed.
+            // The game's own step (RtAnimInterpolatorAddAnimTime 0x80478F24 loops by the duration): its speed, and a
+            // time the game sets itself (a re-created object's animation starting over) carried over too. Only the
+            // phase is drawn, so whole periods a long gap wrapped away change nothing.
             if (game_time != clock.last_game) {
                 step = static_cast<double>(game_time) - static_cast<double>(clock.last_game);
                 if (step < 0.0)
                     step += static_cast<double>(clock.duration);
             }
+        } else if (manager_fed) {
+            // Not registered (only proxies show it): the time TextureUVAnimManagerTask was given since this clock's
+            // last step - the game's speed, standing whenever the game stops that task, however many frames went
+            // undrawn.
+            step = manager - clock.last_manager;
         } else if (!paused) {
             step = static_cast<double>(now - clock.last_ticks) / static_cast<double>(gekko::kGameTicksPerSecond);
         }
@@ -1426,6 +1494,7 @@ void RwDriver::advance_uv_clocks(Cpu& c) {
         }
         clock.last_game = game_time;
         clock.last_ticks = now;
+        clock.last_manager = manager;
     }
 }
 
@@ -1531,7 +1600,7 @@ void RwDriver::draw_proxy_atomic(Cpu& c, u32 atomic, const render::Float3x4& wor
                     : (!textured || (m.vertex_colours && m.ambient)) ? render::Combine::TwoStage
                                                                     : render::Combine::OneStage;
         render::Recipe r = recipe;
-        r.alpha_cutoff = has_alpha && fx_kind != kEffectEnvironment ? cutoff : 0.0f;
+        r.alpha_cutoff = has_alpha && fx_kind != kEffectEnvironment && fx_kind != kEffectBumpEnvironment ? cutoff : 0.0f;
         matfx_layers(c, fx, fx_kind, flags, cutoff, &m);
         // A registered (shared) UV animation runs on the shared native clock, the same one the game's own draws get.
         if (uv_shared_enabled_ && far_.enabled() && material != 0u && (fx_kind == kEffectUvTransform || fx_kind == kEffectDualUvTransform) &&
@@ -1833,14 +1902,14 @@ u32 RwDriver::pipeline_sector(Cpu& c, u32 pipeline, u32 sector) {
             bind_side_effects(c, im, texture_ext_offset, white, rw_texture, has_alpha, &states_.alpha_test_off);
         else
             states_.alpha_test_off = 1u;
-        if (fx_kind == kEffectEnvironment)
-            states_.alpha_test_off = 1u;  // the environment base pass forces the test off
+        if (fx_kind == kEffectEnvironment || fx_kind == kEffectBumpEnvironment)
+            states_.alpha_test_off = 1u;  // the environment / bump base pass forces the test off (0x804987C8)
         if (!ensure_pass()) {
             ++stats_.draws_without_view;
             continue;
         }
         render::Recipe r = level;
-        r.alpha_cutoff = has_alpha && fx_kind != kEffectEnvironment ? cutoff : 0.0f;
+        r.alpha_cutoff = has_alpha && fx_kind != kEffectEnvironment && fx_kind != kEffectBumpEnvironment ? cutoff : 0.0f;
         if (fx != 0u) {
             matfx_layers(c, fx, fx_kind, world_flags, cutoff, &m);
             if (m.extra.kind != render::ExtraPass::Kind::None)

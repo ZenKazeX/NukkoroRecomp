@@ -1,0 +1,178 @@
+{
+ "inputs": {
+  "functions.csv": "c9322fa1c1429531620b2fd3f1dd1d038cd084c5fd70b2f84bcf861a4805d20b",
+  "owners.json": "4c6845c60581f0d1b2d40922156b7089ffa321c7bbf3e0ff28ec3f27a08dd116",
+  "callgraph": {
+   "path": "../.build/stage_loading/callgraph_fixed.json",
+   "sha256": "a4e00aa31c9cbcc7bef7825d1895861f387a9c48bd40a28bf899eb2a7479f3f1",
+   "kinds": {
+    "call": 93819,
+    "tail": 1056,
+    "addr": 2406,
+    "vtable": 35854,
+    "data": 10548
+   }
+  },
+  "seeds": {
+   "path": "../test_data/stage_loading/loader_seeds.csv",
+   "sha256": "dc6eae051e152707b5baa34e1f0b55aa6fad1ed8fbf51ea7dd6148699c4ae74f",
+   "rows": 550
+  },
+  "main.dol": "fde4fa6f81a60313b710161c196dc51c2260be62251ee02775d5eee06f9d55af",
+  "pruned": {
+   "path": "../.build/watch/generated/recomp_pruned.csv",
+   "sha256": "290ce06090e6fd699af4a728841d3eb1df332b7b1d9b70c284028f41a7012df2"
+  },
+  "dynamic": {
+   "../.build/stage_loading/trace-westopolis/counts.csv": "6f7b6c64453f87ed1bb92945ac1d40700a2b38ff9c6d4c7bf651fe79cd1e12a6",
+   "../.build/stage_loading/trace-westopolis-tape/counts.csv": "dc9e21b10746d614ae21efe4cfc3c68323f1f2588ac2720df982e807c758b3e7",
+   "../.build/stage_loading/trace-final-haunt-tape/counts.csv": "e3b1e72c6f58a1c48e9ae3e40b7f68138279e32135b7b560cad53eb2b61fa58d",
+   "../.build/stage_loading/trace-westopolis-death/counts.csv": "b8990cc22aa3b61f8b627f32c153a94c95e7c6a2db94b3b553687a11762a56d8",
+   "../.build/stage_loading/trace-stg0402/counts.csv": "5a9e2c5f967a0ca2296983c4a566720df97bed303ddd33d5616e6abf764a26b9"
+  },
+  "window": [
+   51300000,
+   91125000
+  ]
+ },
+ "members": {
+  "functions": 737,
+  "bytes": 64396
+ },
+ "by_category": {
+  "ASYNC_IO": {
+   "functions": 64,
+   "bytes": 18140
+  },
+  "AUDIO_TEXT": {
+   "functions": 4,
+   "bytes": 832
+  },
+  "ENVIRONMENT": {
+   "functions": 13,
+   "bytes": 3180
+  },
+  "LOADING_SCREEN": {
+   "functions": 13,
+   "bytes": 2452
+  },
+  "OBJECT_RESOURCES": {
+   "functions": 521,
+   "bytes": 21684
+  },
+  "SET_OBJECTS": {
+   "functions": 11,
+   "bytes": 2644
+  },
+  "SHARED_LOADER": {
+   "functions": 66,
+   "bytes": 4308
+  },
+  "STAGE_FLOW": {
+   "functions": 16,
+   "bytes": 4332
+  },
+  "WORLD_BLOCKS": {
+   "functions": 22,
+   "bytes": 4864
+  },
+  "WORLD_DATA": {
+   "functions": 7,
+   "bytes": 1960
+  }
+ },
+ "by_native_status": {
+  "RUNTIME_REFERENCED": {
+   "functions": 11,
+   "bytes": 2488
+  },
+  "TRANSLATED": {
+   "functions": 726,
+   "bytes": 61908
+  }
+ },
+ "by_evidence": {
+  "callers": {
+   "functions": 191,
+   "bytes": 17808
+  },
+  "callers (data / address / virtual)": {
+   "functions": 13,
+   "bytes": 1524
+  },
+  "class": {
+   "functions": 43,
+   "bytes": 9784
+  },
+  "unit": {
+   "functions": 402,
+   "bytes": 28640
+  },
+  "unknown": {
+   "functions": 88,
+   "bytes": 6640
+  }
+ },
+ "interface": {
+  "functions": 424,
+  "bytes": 58400,
+  "by_layer": {
+   "game-unit": 80,
+   "rw": 49,
+   "game": 246,
+   "boost": 22,
+   "runtime": 3,
+   "msl": 18,
+   "unresolved": 4,
+   "sdk": 2
+  }
+ },
+ "seeds_missing_from_function_table": [],
+ "dynamic": {
+  "members_executed": {
+   "functions": 341,
+   "bytes": 49332
+  },
+  "members_not_executed": {
+   "functions": 396,
+   "bytes": 15064
+  },
+  "window": {
+   "game_functions_first_run_in_window": {
+    "functions": 3608,
+    "bytes": 524444
+   },
+   "members_first_run_in_window": {
+    "functions": 233,
+    "bytes": 32620
+   },
+   "outside_membership": {
+    "functions": 3247,
+    "bytes": 474620,
+    "by_subsystem": {
+     "unknown (game)": 528,
+     "player: Shadow (behaviours, control, motion, weapons in hand)": 500,
+     "shared game code (called from several subsystems)": 454,
+     "stage objects (gadgets: rings, springs, doors, traps, switches)": 228,
+     "camera": 197,
+     "unknown (game-unit)": 191,
+     "menus, HUD, 2D (CSD), text": 188,
+     "missions, stage flow, results": 175,
+     "collision, ranges, physics": 157,
+     "effects": 141,
+     "game framework (tasks, commands, character info, input)": 130,
+     "partners / NPCs (Npc, Chao)": 123,
+     "weapons (guns, bombs, special weapons, pickups)": 75,
+     "sound": 55,
+     "other in-game tasks (Task-derived, no subsystem rule yet)": 44,
+     "front end: logo, title, mode select, story library, options, 2P battle select, synopsis, credits": 34,
+     "vehicles": 11,
+     "enemies (AI states, common components, enemy types)": 8,
+     "save data / memory card": 5,
+     "Boost (shared_ptr and other templates)": 2,
+     "in-game events (scripted scenes, fades, triggers)": 1
+    }
+   }
+  }
+ }
+}

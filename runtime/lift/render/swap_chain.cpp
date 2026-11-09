@@ -1,6 +1,7 @@
 #include "render/swap_chain.h"
 
 #include <algorithm>
+#include <cstdio>
 
 #include "render/present_trace.h"
 
@@ -97,9 +98,40 @@ bool SwapChain::wait_for_frame(std::uint32_t timeout_ms) {
     if (waitable_ == nullptr)
         return true;
     present_trace::record(present_trace::Ev::WaitBegin);
-    const bool signalled = WaitForSingleObjectEx(waitable_, timeout_ms, TRUE) == WAIT_OBJECT_0;
+    // An APC delivered to this thread ends an alertable wait with WAIT_IO_COMPLETION and no credit; it used to count as
+    // one (the result was ignored, Codex review 2026-11-05). Wait again for the time left.
+    const ULONGLONG deadline = GetTickCount64() + timeout_ms;
+    DWORD result = WaitForSingleObjectEx(waitable_, timeout_ms, TRUE);
+    while (result == WAIT_IO_COMPLETION) {
+        const ULONGLONG now = GetTickCount64();
+        if (now >= deadline) {
+            result = WAIT_TIMEOUT;
+            break;
+        }
+        result = WaitForSingleObjectEx(waitable_, static_cast<DWORD>(deadline - now), TRUE);
+    }
+    const bool signalled = result == WAIT_OBJECT_0;
     present_trace::record(present_trace::Ev::WaitEnd, signalled ? 1u : 0u);
     return signalled;
+}
+
+bool SwapChain::try_take_credit() {
+    return waitable_ != nullptr && WaitForSingleObjectEx(waitable_, 0, FALSE) == WAIT_OBJECT_0;
+}
+
+bool SwapChain::last_vblank(std::uint64_t& refresh_count, std::int64_t& vblank_ns) const {
+    if (!swap_chain_)
+        return false;
+    DXGI_FRAME_STATISTICS stats{};
+    if (FAILED(swap_chain_->GetFrameStatistics(&stats)) || stats.SyncRefreshCount == 0 || stats.SyncQPCTime.QuadPart <= 0)
+        return false;
+    LARGE_INTEGER frequency;
+    QueryPerformanceFrequency(&frequency);
+    const std::uint64_t f = static_cast<std::uint64_t>(frequency.QuadPart);
+    const std::uint64_t q = static_cast<std::uint64_t>(stats.SyncQPCTime.QuadPart);
+    refresh_count = stats.SyncRefreshCount;
+    vblank_ns = static_cast<std::int64_t>((q / f) * 1000000000ull + (q % f) * 1000000000ull / f);  // steady_clock's scale
+    return true;
 }
 
 std::uint32_t SwapChain::current() const {
@@ -130,11 +162,38 @@ bool SwapChain::present(PresentMode mode, std::string* error) {
         } else {
             present_trace::record(present_trace::Ev::Stats, ~std::uint64_t{0}, static_cast<std::uint32_t>(shr));
         }
+        // How DXGI says the last displayed frame reached the screen: composed by the desktop compositor, as a
+        // hardware overlay / independent flip, or neither (DXGI_FRAME_PRESENTATION_MODE).
+        IDXGISwapChainMedia* media = nullptr;
+        HRESULT mhr = swap_chain_->QueryInterface(IID_PPV_ARGS(&media));
+        if (SUCCEEDED(mhr)) {
+            DXGI_FRAME_STATISTICS_MEDIA media_stats{};
+            mhr = media->GetFrameStatisticsMedia(&media_stats);
+            media->Release();
+            if (SUCCEEDED(mhr))
+                present_trace::record(present_trace::Ev::PresentMode, static_cast<std::uint32_t>(media_stats.CompositionMode),
+                                      media_stats.ApprovedPresentDuration, media_stats.PresentCount);
+        }
+        if (FAILED(mhr))
+            present_trace::record(present_trace::Ev::PresentMode, ~std::uint64_t{0}, static_cast<std::uint32_t>(mhr));
     }
     if (hr == DXGI_STATUS_OCCLUDED)
         return true;
-    if (FAILED(hr))
+    if (FAILED(hr)) {
+        if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
+            // A lost device (TDR, driver reset or update) is not recreated: every later frame fails the same way.
+            // Name the cause once, where the user sees it, instead of a silently frozen window.
+            static bool reported = false;
+            const HRESULT reason = device_->d3d()->GetDeviceRemovedReason();
+            if (!reported) {
+                reported = true;
+                std::fprintf(stderr, "[render] GPU device lost (Present 0x%08X, reason 0x%08X); frames stop here\n",
+                             static_cast<unsigned>(hr), static_cast<unsigned>(reason));
+            }
+            return fail(error, "Present: device lost", reason);
+        }
         return fail(error, "Present", hr);
+    }
     return true;
 }
 
@@ -148,8 +207,11 @@ bool SwapChain::resize(std::uint32_t width, std::uint32_t height, std::string* e
     const HRESULT hr = swap_chain_->ResizeBuffers(
         0, width, height, DXGI_FORMAT_UNKNOWN,
         DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT | (tearing_ ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0u));
-    if (FAILED(hr))
+    if (FAILED(hr)) {
+        // The buffers are released: forget the size, so the next resize to any size (this one again) retries.
+        width_ = height_ = 0;
         return fail(error, "ResizeBuffers", hr);
+    }
     width_ = width;
     height_ = height;
     return acquire_buffers(error);

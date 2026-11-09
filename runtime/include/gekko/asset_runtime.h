@@ -133,6 +133,7 @@ enum class ProviderKind : u16 {
     Archive,   // a member of a ONE container
     Decoded,   // a PRS-compressed member, expanded once and cached
     Memory,    // bytes the runtime owns: a native replacement of a game file
+    Storage,   // a file of the runtime contract's storage backend (shadow/runtime/v1/runtime.h)
 };
 
 // A borrowed, read-only span. Not an owner: lifetime belongs to whatever the
@@ -363,7 +364,8 @@ private:
     };
 
     AssetRegistry& registry_;
-    std::vector<AssetProvider*> providers_{5, nullptr};
+    // one slot per ProviderKind (the last kind is Storage): a kind past the end would be dropped by set_provider
+    std::vector<AssetProvider*> providers_{static_cast<std::size_t>(ProviderKind::Storage) + 1u, nullptr};
     std::unordered_map<u32, Entry> entries_;
     mutable std::mutex mutex_;
     mutable Stats stats_{};

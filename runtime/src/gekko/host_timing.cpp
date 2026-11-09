@@ -60,7 +60,10 @@ void FixedSimulationClock::reset(u64 game_ticks, TimePoint now) noexcept {
     guest_origin_ = game_ticks - into;
     serviced_tick_ = 0;
     wall_origin_ = now - std::chrono::nanoseconds(into * 1000000000ull / config_.ticks_per_second);
-    last_release_ = now;
+    // The catch-up ladder starts at the grid point too: seeded at `now`, the first boundary after a re-anchor waited a
+    // whole limiter step from the anchor (3.27 ms at 300 Hz) instead of its grid distance, and the next few followed
+    // it off the grid until the 2 % catch-up absorbed it (host_timing_tests: the absolute-grid anchor, 2026-11-06).
+    last_release_ = wall_origin_;
     debt_incident_open_ = false;
     healthy_rearm_ticks_ = 0;
     previous_debt_ = std::chrono::nanoseconds::zero();

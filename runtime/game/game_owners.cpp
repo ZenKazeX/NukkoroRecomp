@@ -9,6 +9,7 @@
 #include <cstring>
 #include <string>
 
+#include "effects/watch_camera_sheet.h"
 #include "gekko/cpu.h"
 
 namespace gekko::game {
@@ -28,6 +29,7 @@ constexpr u32 kCameraFrameBuffer = 0x60;      // RwCamera: its raster
 constexpr u32 kCameraNear = 0x80;
 constexpr u32 kCameraFar = 0x84;
 constexpr u32 kCameraViewMatrix = 0x20;       // RwMatrix: right, up, at, pos rows 0x10 apart
+constexpr u32 kCameraViewWindow = 0x68;       // RwCamera: the window's half extents x, y at unit distance
 constexpr u32 kRasterParent = 0x00;           // RwRaster: its top-level raster (0: itself)
 constexpr u32 kRasterWidth = 0x0C;            // RwRaster
 constexpr u32 kRasterHeight = 0x10;
@@ -111,6 +113,12 @@ GameOwners::GameOwners(RwApi& rw) : rw_(rw) {
         trace_flare_ = std::strtoull(trace, nullptr, 10);
     if (const char* console = std::getenv("SHADOW_FLARE_CONSOLE_SCREEN"))
         flare_console_screen_ = console[0] == '1';
+    // SHADOW_WATCH_SHEET_TRACE=<n>: the first n watch camera sheet scales. SHADOW_WATCH_SHEET_GAME=1: the sheet takes
+    // the camera's authored window, as the console's code did (comparison baseline).
+    if (const char* trace = std::getenv("SHADOW_WATCH_SHEET_TRACE"))
+        trace_watch_sheet_ = std::strtoull(trace, nullptr, 10);
+    if (const char* game = std::getenv("SHADOW_WATCH_SHEET_GAME"))
+        watch_sheet_game_ = game[0] == '1';
 #endif
 }
 
@@ -352,6 +360,65 @@ bool GameOwners::lens_flare_build(Cpu& c) {
     return true;
 }
 
+// The watch camera's noise sheet (WatchCamera::Monitor fn_80268660, docs/ASPECT_INVENTORY.md E3). The game places the
+// sheet 1.1 in front of the eye on the camera's axes and scales its matrix by fn_8040C770(matrix, 2 x 1.1 x window.x,
+// 2 x 1.1 x window.y, 1) with the RwCamera's window - which is the authored picture's. The window here is the one the
+// view displays, by the rules the world is drawn and culled with (render/view.h raster_view + displayed_window, as
+// the camera sync and the lens flare take them); the sheet then covers the whole picture at any aspect.
+void GameOwners::watch_camera_sheet_scale(Cpu& c, u32 matrix, double game_x, double game_y, double sz) {
+    ++stats_.watch_sheets;
+    // The camera fn_80268660 read its window from (fn_8000DCC0: the holder's camera), one instruction before this call:
+    // never null there.
+    const u32 camera = c.mem_read32(kCameraHolder);
+    const effects::SheetScale passed{static_cast<float>(game_x), static_cast<float>(game_y)};
+    effects::SheetScale sheet = passed;
+    render::ViewWindow window{}, shown{};
+    render::RasterView view{};
+    if (camera != 0u) {
+        window = render::ViewWindow{read_f32(c, camera + kCameraViewWindow), read_f32(c, camera + kCameraViewWindow + 4u)};
+        const effects::SheetScale game = effects::watch_camera_sheet_scale(window);
+        if (as_bits(game.x) != as_bits(passed.x) || as_bits(game.y) != as_bits(passed.y))
+            ++stats_.watch_sheet_game_mismatches;
+        // The view: the camera's raster and its share of the top-level raster (a split-screen view has its own),
+        // seen at the output's aspect.
+        float w = 0.0f, h = 0.0f, top_w = 0.0f, top_h = 0.0f;
+        const u32 raster = c.mem_read32(camera + kCameraFrameBuffer);
+        if (raster != 0u) {
+            u32 top = c.mem_read32(raster + kRasterParent);
+            if (top == 0u)
+                top = raster;
+            w = static_cast<float>(static_cast<s32>(c.mem_read32(raster + kRasterWidth)));
+            h = static_cast<float>(static_cast<s32>(c.mem_read32(raster + kRasterHeight)));
+            top_w = static_cast<float>(static_cast<s32>(c.mem_read32(top + kRasterWidth)));
+            top_h = static_cast<float>(static_cast<s32>(c.mem_read32(top + kRasterHeight)));
+        }
+        view = render::raster_view(w, h, top_w, top_h, rw_.presented_aspect());
+        shown = render::displayed_window(window, view.canvas_aspect, view.view_aspect, rw_.framing());
+        sheet = watch_sheet_game_ ? game : effects::watch_camera_sheet_scale(shown);
+    }
+    if (as_bits(sheet.x) != as_bits(passed.x) || as_bits(sheet.y) != as_bits(passed.y))
+        ++stats_.watch_sheets_resized;
+    // fn_8040C770: the matrix's three axis rows (0x10 apart), each row's x by sx, y by sy and z by sz, in memory
+    // order, one single-precision multiply each.
+    const float scale[3] = {sheet.x, sheet.y, static_cast<float>(sz)};
+    for (u32 row = 0; row < 3; ++row) {
+        for (u32 column = 0; column < 3; ++column) {
+            const u32 element = matrix + 0x10u * row + 4u * column;
+            c.mem_write32(element, as_bits(read_f32(c, element) * scale[column]));
+        }
+    }
+    if (trace_watch_sheet_ > 0) {
+        --trace_watch_sheet_;
+        std::fprintf(stderr,
+                     "[watch-sheet] frame %llu tick %llu window (%.7f %.7f) shown (%.7f %.7f) canvas %.6f view %.6f "
+                     "game scale (%.7f %.7f) sheet (%.7f %.7f)%s\n",
+                     static_cast<unsigned long long>(rw_.frame_number()),
+                     static_cast<unsigned long long>(c.time_base()), window.x, window.y, shown.x, shown.y,
+                     view.canvas_aspect, view.view_aspect, passed.x, passed.y, sheet.x, sheet.y,
+                     watch_sheet_game_ ? " (SHADOW_WATCH_SHEET_GAME)" : "");
+    }
+}
+
 bool lockon_mark_draw(Cpu& c) {
     GameOwners* o = owners(c, "lockon_mark_draw");
     return o == nullptr || o->lockon_mark_draw(c);
@@ -363,3 +430,16 @@ bool lens_flare_build(Cpu& c) {
 }
 
 }  // namespace gekko::game
+
+// ---- the lowered call site (extract/lift-sites-r2.txt; declared by the generator in recomp_table.cpp) ---------------
+
+namespace gekko::scaffold {
+
+// 0x8026872C, fn_80268660's fn_8040C770(matrix, sx, sy, sz): the watch camera's noise sheet.
+u32 watch_camera_sheet_scale(Cpu& c, u32 matrix, double sx, double sy, double sz) {
+    if (game::GameOwners* o = game::owners(c, "watch_camera_sheet_scale"))
+        o->watch_camera_sheet_scale(c, matrix, sx, sy, sz);
+    return 0u;
+}
+
+}  // namespace gekko::scaffold

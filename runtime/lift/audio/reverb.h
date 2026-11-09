@@ -56,6 +56,8 @@ public:
 private:
     void coefficients() noexcept;
     float exchange(std::size_t line, float input) noexcept;
+    template <math::SubnormalMode M>
+    void run(const std::array<std::int32_t*, 3>& channels, std::size_t frames) noexcept;
     History history_{};
     std::array<float, 3> comb_{};
     float damping_ = 0, wet_ = 0, dry_ = 0, cross_ = 0, direct_ = 0;

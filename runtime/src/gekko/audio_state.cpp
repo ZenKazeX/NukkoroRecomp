@@ -70,10 +70,26 @@ void System::save_host_audio_state(std::vector<u8>& out) const {
     state::put(out, mixer.spatial_right);
     state::put(out, mixer.next);
     state::put<u8>(out, mixer.awaiting ? 1u : 0u);
+    // Version 31: the DSP side's lagging copy of the voice parameter blocks and update rings (ax_pb_image.h).
+    state::put(out, ax_pb_image_.pb);
+    state::put(out, ax_pb_image_.ring);
+    // Version 32: the frame builder's two next-frame lists (native_ax_frame.h).
+    for (const AxLists::List& list : ax_lists_.slot) {
+        state::put<u8>(out, list.valid ? 1u : 0u);
+        state::put<u8>(out, static_cast<u8>(list.settings.mode));
+        state::put<u8>(out, list.settings.aux_a ? 1u : 0u);
+        state::put<u8>(out, list.settings.aux_b ? 1u : 0u);
+        state::put<u8>(out, list.settings.compressor ? 1u : 0u);
+        state::put<u16>(out, list.settings.compressor_threshold);
+        state::put<u16>(out, list.settings.compressor_release_frames);
+        state::put<u32>(out, list.output);
+    }
 }
 
 bool System::load_host_audio_state(const u8*& cursor, const u8* end, u32 version) {
-    if (version < 20u || version > 24u) return false;  // 24 (no ARAM image) keeps version 23's history block
+    // The block's layout is version 23's in every later version (24: no ARAM image; 25-27: blocks elsewhere). The
+    // upper bound follows the runtime's own version: a fixed 24 here refused every state saved since 25.
+    if (version < 20u || version > save_state_version()) return false;
     u8 modes = 0;
     const u8 expected = u8(ax_sample_resampling_) | (u8(ax_adpcm_cursor_) << 1);
     // Diagnostic decoder modes change arithmetic. Refuse incompatible files
@@ -149,8 +165,44 @@ bool System::load_host_audio_state(const u8*& cursor, const u8* end, u32 version
         mixer.awaiting = awaiting != 0;
     }
     // Older files have no effect history: the callback binds the effect from the game's parameters (an empty tail).
+    if (version >= 31u) {
+        if (!state::get(cursor, end, ax_pb_image_.pb) || !state::get(cursor, end, ax_pb_image_.ring)) return false;
+    } else {
+        import_ax_pb_image_from_guest();  // the guest memory the file restored holds the SDK's PB array
+    }
+    if (version >= 32u) {
+        for (AxLists::List& list : ax_lists_.slot) {
+            u8 valid = 0, mode = 0, aux_a = 0, aux_b = 0, compressor = 0;
+            u16 threshold = 0, release = 0;
+            u32 output = 0;
+            if (!state::get(cursor, end, valid) || !state::get(cursor, end, mode) || !state::get(cursor, end, aux_a) ||
+                !state::get(cursor, end, aux_b) || !state::get(cursor, end, compressor) || !state::get(cursor, end, threshold) ||
+                !state::get(cursor, end, release) || !state::get(cursor, end, output) || mode > 3u)
+                return false;
+            list.valid = valid != 0u;
+            list.settings.mode = static_cast<shadow::audio::OutputMode>(mode);
+            list.settings.aux_a = aux_a != 0u;
+            list.settings.aux_b = aux_b != 0u;
+            list.settings.compressor = compressor != 0u;
+            list.settings.compressor_threshold = threshold;
+            list.settings.compressor_release_frames = release;
+            list.output = output;
+        }
+    } else {
+        import_ax_lists_from_guest();  // the lists the file restored sit in the SDK's command-list slots
+    }
     if (!audio_mixer_->restore_history(mixer)) return false;
     reverb_binding_ = binding;
+    if (version < 33u) {
+        // A state of a build whose AX engine still ran as guest code (frame, AI / DSP callbacks, DSP task): the engine's state is all in the
+        // SDK's words and the lists / image taken over above, so it continues natively once the AI DMA callback names the native frame and
+        // the DSP's resume callback's effect (the state word at 1) is applied. A state saved while the CPU was inside the guest engine is
+        // refused by the loader (savestate.cpp); nothing of the DSP task / mailbox model is kept.
+        const u32 sda = cpu_.gpr[13];
+        if (memory_.peek32(sda + ax_frame::kSdaAiCallback) == 0x80385950u) memory_.write32(sda + ax_frame::kSdaAiCallback, ax_frame::kAiCallback);  // liveness-roots: value-only (an old state's callback word; never a call target)
+        if (memory_.peek32(sda + ax_frame::kSdaState) == 0u) memory_.write32(sda + ax_frame::kSdaState, 1u);
+        interrupts_->clear(NativeInterrupts::Source::Dsp);
+    }
     return true;
 }
 }  // namespace gekko

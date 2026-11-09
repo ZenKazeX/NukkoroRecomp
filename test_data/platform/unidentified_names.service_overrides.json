@@ -1,0 +1,332 @@
+{
+ "service_by_address": {
+  "0x80003458": "debug.trk",
+  "0x80003488": "debug.trk",
+  "0x803726D8": "os.interrupts",
+  "0x803741D8": "os.debug",
+  "0x803745B4": "os.debug",
+  "0x803746B0": "os.debug",
+  "0x80374888": "os.debug",
+  "0x80374E68": "os.font",
+  "0x80374FDC": "os.font",
+  "0x80375150": "os.font",
+  "0x803751B4": "os.font",
+  "0x803754D8": "os.font",
+  "0x80375618": "os.font",
+  "0x80375754": "os.font",
+  "0x803759F4": "os.font",
+  "0x80375DA0": "os.font",
+  "0x80375FAC": "os.font",
+  "0x8037E00C": "files.dvd",
+  "0x8037E03C": "files.dvd",
+  "0x8037E114": "os.core",
+  "0x8037E4F0": "graphics.vi",
+  "0x8037E534": "graphics.vi",
+  "0x8037E578": "graphics.vi",
+  "0x803801A0": "graphics.vi",
+  "0x803803BC": "graphics.vi",
+  "0x8038041C": "graphics.vi",
+  "0x80380C94": "input.pad",
+  "0x80380DA4": "input.pad",
+  "0x80380EB8": "input.pad",
+  "0x80381008": "input.pad",
+  "0x803813D4": "input.pad",
+  "0x8038148C": "input.pad",
+  "0x803817D4": "input.pad",
+  "0x80381C44": "input.pad",
+  "0x80381D00": "input.pad",
+  "0x80381D60": "input.pad",
+  "0x80381E30": "audio.ai",
+  "0x80382530": "audio.ai",
+  "0x80382714": "memory.aram",
+  "0x80382758": "memory.aram",
+  "0x80382794": "memory.aram",
+  "0x80382884": "memory.aram",
+  "0x803828EC": "memory.aram",
+  "0x80382960": "memory.aram",
+  "0x80382A9C": "memory.aram",
+  "0x80382ABC": "memory.aram",
+  "0x80382ACC": "memory.aram",
+  "0x803842C0": "memory.aram-queue",
+  "0x80384490": "memory.aram-queue",
+  "0x80384500": "memory.aram-queue",
+  "0x8038465C": "audio.ax",
+  "0x80384680": "audio.ax",
+  "0x803846CC": "audio.ax",
+  "0x80384700": "audio.ax",
+  "0x80384718": "audio.ax",
+  "0x8038478C": "audio.ax",
+  "0x80384840": "audio.ax",
+  "0x803848F4": "audio.ax",
+  "0x80384914": "audio.ax",
+  "0x80384924": "audio.ax",
+  "0x80384940": "audio.ax",
+  "0x803849D4": "audio.ax",
+  "0x80384A54": "audio.ax",
+  "0x80384BC8": "audio.ax",
+  "0x80384CAC": "audio.ax",
+  "0x80384CBC": "audio.ax",
+  "0x80384CF0": "audio.ax",
+  "0x80384D10": "audio.ax",
+  "0x80384D2C": "audio.ax",
+  "0x80384D4C": "audio.ax",
+  "0x80384D6C": "audio.ax",
+  "0x80384D8C": "audio.ax",
+  "0x80384DC0": "audio.ax",
+  "0x80384DDC": "audio.ax",
+  "0x80384DF8": "audio.ax",
+  "0x80384E14": "audio.ax",
+  "0x80385050": "audio.ax",
+  "0x8038505C": "audio.ax",
+  "0x80385068": "audio.ax",
+  "0x80385070": "audio.ax",
+  "0x803850AC": "audio.ax",
+  "0x8038575C": "audio.ax",
+  "0x80385780": "audio.ax",
+  "0x80385784": "audio.ax",
+  "0x80385798": "audio.ax",
+  "0x80385950": "audio.ax",
+  "0x80385A18": "audio.ax",
+  "0x80385A9C": "audio.ax",
+  "0x80385B68": "audio.ax",
+  "0x80385F08": "audio.ax",
+  "0x80385F60": "audio.ax",
+  "0x80385FA4": "audio.ax",
+  "0x80385FB0": "audio.ax",
+  "0x803863A8": "audio.ax",
+  "0x803863D4": "audio.ax",
+  "0x803863D8": "audio.ax",
+  "0x8038646C": "audio.ax",
+  "0x80386474": "audio.ax",
+  "0x80386BC0": "audio.ax",
+  "0x80386E38": "audio.ax",
+  "0x80386E44": "audio.ax",
+  "0x80386E88": "audio.ax",
+  "0x8038708C": "audio.ax",
+  "0x80387090": "audio.ax",
+  "0x80387154": "audio.ax",
+  "0x803871B0": "audio.ax",
+  "0x80387404": "audio.ax",
+  "0x80387514": "audio.ax",
+  "0x803875B8": "audio.ax",
+  "0x80387650": "audio.ax",
+  "0x803876E8": "audio.ax",
+  "0x80387754": "audio.ax",
+  "0x8038779C": "audio.ax",
+  "0x803886A4": "audio.ax",
+  "0x80388B20": "audio.ax",
+  "0x80388ED4": "audio.ax",
+  "0x80388FF8": "audio.ax",
+  "0x80389064": "audio.ax",
+  "0x803890B0": "audio.ax",
+  "0x803890E0": "audio.ax",
+  "0x80389278": "audio.ax",
+  "0x80389464": "audio.ax",
+  "0x803896AC": "audio.ax",
+  "0x803896FC": "audio.ax",
+  "0x8038980C": "audio.ax",
+  "0x80389B5C": "audio.ax",
+  "0x80389D2C": "audio.ax",
+  "0x80389FF4": "audio.ax",
+  "0x8038A03C": "audio.ax",
+  "0x8038A0DC": "audio.ax",
+  "0x8038A104": "audio.ax",
+  "0x8038A12C": "audio.ax",
+  "0x8038A138": "audio.ax",
+  "0x8038A1F4": "audio.ax",
+  "0x8038A2BC": "audio.ax",
+  "0x8038A2C0": "audio.ax",
+  "0x8038A2C8": "audio.ax",
+  "0x8038B144": "audio.ax",
+  "0x8038B164": "audio.ax",
+  "0x8038B18C": "audio.ax",
+  "0x8038B1F8": "audio.ax",
+  "0x8038CD44": "audio.dsp",
+  "0x8038CDD8": "saves.card",
+  "0x8038D0F8": "saves.card",
+  "0x8038D1B8": "saves.card",
+  "0x8038D398": "saves.card",
+  "0x8038D788": "saves.card",
+  "0x8038DABC": "saves.card",
+  "0x80391780": "saves.card",
+  "0x803918C4": "saves.card",
+  "0x80391F1C": "saves.card",
+  "0x80391F64": "saves.card",
+  "0x80391FCC": "saves.card",
+  "0x80392060": "saves.card",
+  "0x80392194": "saves.card",
+  "0x80392288": "saves.card",
+  "0x803923D8": "saves.card",
+  "0x803924F4": "saves.card",
+  "0x80392550": "saves.card",
+  "0x80392680": "saves.card",
+  "0x803928A0": "saves.card",
+  "0x80392A58": "saves.card",
+  "0x80392B88": "saves.card",
+  "0x80392EEC": "saves.card",
+  "0x80393000": "saves.card",
+  "0x803930A4": "saves.card",
+  "0x803931B4": "saves.card",
+  "0x803933AC": "saves.card",
+  "0x803934C0": "saves.card",
+  "0x803B2F50": "host.c-library",
+  "0x803B3AB4": "bus.exi",
+  "0x803B4414": "bus.exi",
+  "0x803B4548": "bus.exi",
+  "0x803B4654": "bus.exi",
+  "0x803B57D8": "os.debug",
+  "0x803B5848": "os.debug",
+  "0x803B5A48": "input.si",
+  "0x803B5A68": "input.si",
+  "0x803B721C": "input.si"
+ },
+ "regex_would_not_derive": {
+  "0x803726D8": {
+   "wanted": "os.interrupts",
+   "name": "DMAErrorHandler",
+   "regex_gives": null
+  },
+  "0x80374E68": {
+   "wanted": "os.font",
+   "name": "GetFontCode",
+   "regex_gives": null
+  },
+  "0x80374FDC": {
+   "wanted": "os.font",
+   "name": "Decode",
+   "regex_gives": null
+  },
+  "0x803751B4": {
+   "wanted": "os.font",
+   "name": "ReadFont",
+   "regex_gives": null
+  },
+  "0x80375618": {
+   "wanted": "os.font",
+   "name": "ParseStringS",
+   "regex_gives": null
+  },
+  "0x80375754": {
+   "wanted": "os.font",
+   "name": "OSGetFontTexel",
+   "regex_gives": "os.other"
+  },
+  "0x803759F4": {
+   "wanted": "os.font",
+   "name": "ExpandFontSheet",
+   "regex_gives": null
+  },
+  "0x8037E03C": {
+   "wanted": "files.dvd",
+   "name": "cb",
+   "regex_gives": null
+  },
+  "0x8037E114": {
+   "wanted": "os.core",
+   "name": "__fstLoad",
+   "regex_gives": null
+  },
+  "0x8037E578": {
+   "wanted": "graphics.vi",
+   "name": "getTiming",
+   "regex_gives": null
+  },
+  "0x8038041C": {
+   "wanted": "graphics.vi",
+   "name": "UpdateOrigin",
+   "regex_gives": null
+  },
+  "0x803817D4": {
+   "wanted": "input.pad",
+   "name": "SPEC2_MakeStatus",
+   "regex_gives": "audio.ax"
+  },
+  "0x80381C44": {
+   "wanted": "input.pad",
+   "name": "OnReset",
+   "regex_gives": null
+  },
+  "0x80381D00": {
+   "wanted": "input.pad",
+   "name": "SamplingHandler",
+   "regex_gives": null
+  },
+  "0x8038779C": {
+   "wanted": "audio.ax",
+   "name": "__ReverbHiCreate",
+   "regex_gives": null
+  },
+  "0x803886A4": {
+   "wanted": "audio.ax",
+   "name": "__ReverbSTDCreate",
+   "regex_gives": null
+  },
+  "0x80388B20": {
+   "wanted": "audio.ax",
+   "name": "__ReverbSTDCallback",
+   "regex_gives": null
+  },
+  "0x80388ED4": {
+   "wanted": "audio.ax",
+   "name": "__ReverbSTDFree",
+   "regex_gives": null
+  },
+  "0x803896FC": {
+   "wanted": "audio.ax",
+   "name": "__ChorusInit",
+   "regex_gives": null
+  },
+  "0x8038D788": {
+   "wanted": "saves.card",
+   "name": "UnlockedCallback",
+   "regex_gives": null
+  },
+  "0x80391780": {
+   "wanted": "saves.card",
+   "name": "FormatCallback",
+   "regex_gives": null
+  },
+  "0x80392550": {
+   "wanted": "saves.card",
+   "name": "CreateCallbackFat",
+   "regex_gives": null
+  },
+  "0x80392A58": {
+   "wanted": "saves.card",
+   "name": "ReadCallback",
+   "regex_gives": null
+  },
+  "0x80393000": {
+   "wanted": "saves.card",
+   "name": "DeleteCallback",
+   "regex_gives": null
+  },
+  "0x803931B4": {
+   "wanted": "saves.card",
+   "name": "UpdateIconOffsets",
+   "regex_gives": null
+  },
+  "0x803B2F50": {
+   "wanted": "host.c-library",
+   "name": "powf",
+   "regex_gives": null
+  },
+  "0x803B3AB4": {
+   "wanted": "bus.exi",
+   "name": "SetExiInterruptMask",
+   "regex_gives": null
+  },
+  "0x803B57D8": {
+   "wanted": "os.debug",
+   "name": "InitializeUART",
+   "regex_gives": null
+  },
+  "0x803B5848": {
+   "wanted": "os.debug",
+   "name": "WriteUARTN",
+   "regex_gives": null
+  }
+ },
+ "renamed": 162,
+ "rename_targets_not_in_symbols": []
+}

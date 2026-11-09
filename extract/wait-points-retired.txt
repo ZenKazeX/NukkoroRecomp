@@ -1,0 +1,41 @@
+# Wait points removed from extract/wait-points.txt on purpose by native-owner steps: the back edge's function
+# is owned or no longer reached, and the generator refuses a site whose function it prunes.
+# tools/ppcrecomp/wait_points.py --retired leaves these out of --out / --check and fails if the DOL no longer
+# produces one (a stale retirement). One line per site: 0xSITE  reason.
+0x8029A7B8  saves.card owner step 6d33c09 (card job runner owned; these game save-job loops are no longer reached)
+0x8029A884  saves.card owner step 6d33c09 (card job runner owned; these game save-job loops are no longer reached)
+0x8029A994  saves.card owner step 6d33c09 (card job runner owned; these game save-job loops are no longer reached)
+0x8029AB44  saves.card owner step 6d33c09 (card job runner owned; these game save-job loops are no longer reached)
+0x8029AC40  saves.card owner step 6d33c09 (card job runner owned; these game save-job loops are no longer reached)
+0x8029AD3C  saves.card owner step 6d33c09 (card job runner owned; these game save-job loops are no longer reached)
+0x8029AE8C  saves.card owner step 6d33c09 (card job runner owned; these game save-job loops are no longer reached)
+0x8029AF88  saves.card owner step 6d33c09 (card job runner owned; these game save-job loops are no longer reached)
+0x8029B11C  saves.card owner step 6d33c09 (card job runner owned; these game save-job loops are no longer reached)
+0x8029B298  saves.card owner step 6d33c09 (card job runner owned; these game save-job loops are no longer reached)
+0x8029B454  saves.card owner step 6d33c09 (card job runner owned; these game save-job loops are no longer reached)
+0x8029B590  saves.card owner step 6d33c09 (card job runner owned; these game save-job loops are no longer reached)
+0x8029B604  saves.card owner step 6d33c09 (card job runner owned; these game save-job loops are no longer reached)
+0x8029B6AC  saves.card owner step 6d33c09 (card job runner owned; these game save-job loops are no longer reached)
+0x8029B754  saves.card owner step 6d33c09 (card job runner owned; these game save-job loops are no longer reached)
+0x8029B814  saves.card owner step 6d33c09 (card job runner owned; these game save-job loops are no longer reached)
+0x80379638  os.time owner step 9e425d4 (OSGetTick 0x80379628 is a native owner)
+0x80387944  audio effects init loops (0x803878E4, 0x80387A24, 0x80387B18), removed before the 2026-11-07 snapshot f5ec9b3
+0x803879A0  audio effects init loops (0x803878E4, 0x80387A24, 0x80387B18), removed before the 2026-11-07 snapshot f5ec9b3
+0x80387A80  audio effects init loops (0x803878E4, 0x80387A24, 0x80387B18), removed before the 2026-11-07 snapshot f5ec9b3
+0x80387ADC  audio effects init loops (0x803878E4, 0x80387A24, 0x80387B18), removed before the 2026-11-07 snapshot f5ec9b3
+0x80387B70  audio effects init loops (0x803878E4, 0x80387A24, 0x80387B18), removed before the 2026-11-07 snapshot f5ec9b3
+0x80387BCC  audio effects init loops (0x803878E4, 0x80387A24, 0x80387B18), removed before the 2026-11-07 snapshot f5ec9b3
+0x80388828  axfx-effects owner step 4cbf51f (ReverbStd / Chorus / Delay init owned; their create loops 0x803887C8, 0x80388908 unreached)
+0x80388884  axfx-effects owner step 4cbf51f (ReverbStd / Chorus / Delay init owned; their create loops 0x803887C8, 0x80388908 unreached)
+0x80388964  axfx-effects owner step 4cbf51f (ReverbStd / Chorus / Delay init owned; their create loops 0x803887C8, 0x80388908 unreached)
+0x803889C0  axfx-effects owner step 4cbf51f (ReverbStd / Chorus / Delay init owned; their create loops 0x803887C8, 0x80388908 unreached)
+0x803CF070  CRI ADX output loops (0x803CEFB8, 0x803CF174 unreached; 0x803CF408 is a native owner), removed before snapshot f5ec9b3
+0x803CF0DC  CRI ADX output loops (0x803CEFB8, 0x803CF174 unreached; 0x803CF408 is a native owner), removed before snapshot f5ec9b3
+0x803CF228  CRI ADX output loops (0x803CEFB8, 0x803CF174 unreached; 0x803CF408 is a native owner), removed before snapshot f5ec9b3
+0x803CF494  CRI ADX output loops (0x803CEFB8, 0x803CF174 unreached; 0x803CF408 is a native owner), removed before snapshot f5ec9b3
+0x80372684  native-boot OSInit owner step c372985 (loop in an OSInit-only routine, no longer reached)
+0x80376540  native-boot OSInit owner step c372985 (interrupt-init loop, no longer reached)
+0x803765C8  native-boot OSInit owner step c372985 (interrupt-init loop, no longer reached)
+0x803857EC  audio.ax step 3b (__AXOutNewFrame's DSP mailbox spin, DSPCheckMailToDSP; the frame is native, no DSP, no mailbox)
+0x80385800  audio.ax step 3b (__AXOutNewFrame's DSP mailbox spin, DSPCheckMailToDSP; the frame is native, no DSP, no mailbox)
+0x80385B50  audio.ax step 3b (AXInit's wait for the DSP task's INIT callback, sda 0x5D5C; AXInit is native, there is no DSP task)

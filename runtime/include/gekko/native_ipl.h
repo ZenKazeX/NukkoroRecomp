@@ -79,6 +79,13 @@ public:
     // described above.
     void bind_card(const std::filesystem::path& card_source, const std::filesystem::path& card_backing,
                    const std::vector<u8>& card_image);
+    // The native save store (gekko/save_store.h) instead of a card: the settings the game writes persist in
+    // <folder>/SRAM.pc.raw (read when present), with no card identity (nothing mounts a card).
+    void bind_save_folder(const std::filesystem::path& folder);
+    // The PC settings' language and sound mode over the image the game reads at boot (OSGetLanguage /
+    // OSGetSoundMode), checksum kept: `language` in the OS's numbering (0 English, 1 German, 2 French, 3 Spanish,
+    // 4 Italian; negative = keep), `stereo` 1 / 0 (negative = keep). Not persisted by itself.
+    void override_console_settings(int language, int stereo);
     // The companion SRAM.raw in use, or empty (flash ID derived from the card).
     const std::filesystem::path& companion_path() const noexcept { return companion_path_; }
     // Where commits persist (SRAM.pc.raw), or empty.

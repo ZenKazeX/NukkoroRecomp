@@ -113,10 +113,15 @@ void PrsAhead::announce(assets::AssetId id, const std::string& path, u64 offset,
     if (t == nullptr || t->streams.empty()) return;
     const assets::ByteSpan span = t->bytes->bytes();
     const std::shared_ptr<assets::AssetHandle> bytes = t->bytes;
+    // Every member from the delivered part to the archive's end: the ones whose stream starts in this part (again,
+    // if one was taken before - a second load of the archive), and the later ones once, ahead of their own reads
+    // (the game reads a member and expands it in the same frame, too late for a worker that starts at the read).
     auto stream = std::lower_bound(t->streams.begin(), t->streams.end(), std::pair<u64, u32>{offset, 0u});
-    for (; stream != t->streams.end() && stream->first < offset + length; ++stream) {
+    for (; stream != t->streams.end(); ++stream) {
         if (stream->first + kKeyBytes > span.size) continue;
         if (pending_members_.count({id.value, stream->first}) != 0u) continue;  // queued, not taken yet
+        const bool delivered = stream->first < offset + length;
+        if (!delivered && !prefetched_.insert({id.value, stream->first}).second) continue;  // ahead once
         const u32 size = stream->second;
         if (size > kMaxPendingBytes) continue;
         while (!members_.empty() && pending_bytes_ + size > kMaxPendingBytes) evict_oldest();
@@ -156,7 +161,14 @@ std::shared_ptr<const PrsDecoded> PrsAhead::take(u64 key, const std::function<bo
             continue;
         }
         const std::shared_ptr<const PrsDecoded> decoded = m->second.result.get();
-        if (decoded == nullptr) continue;
+        if (decoded == nullptr) {
+            // The decode failed: the entry can never serve; it leaves the table (and the budget), so a later
+            // announce can queue the stream again.
+            pending_bytes_ -= m->second.size;
+            pending_members_.erase({m->second.asset, m->second.stream_at});
+            members_.erase(m);
+            break;  // the range is invalidated; a sibling (another stream of the key) waits for the next take
+        }
         matched = true;
         if (!accept(*decoded)) continue;
         pending_bytes_ -= m->second.size;
@@ -170,6 +182,16 @@ std::shared_ptr<const PrsDecoded> PrsAhead::take(u64 key, const std::function<bo
     if (waiting) ++stats_.not_ready;
     else if (matched) ++stats_.refused;
     return nullptr;
+}
+
+bool PrsAhead::ready(u64 key, const std::function<bool(const PrsDecoded&)>& check) {
+    const auto range = members_.equal_range(key);
+    for (auto m = range.first; m != range.second; ++m) {
+        if (m->second.result.wait_for(std::chrono::seconds(0)) != std::future_status::ready) continue;
+        const std::shared_ptr<const PrsDecoded> decoded = m->second.result.get();
+        if (decoded != nullptr && check(*decoded)) return true;
+    }
+    return false;
 }
 
 PrsAhead::Stats PrsAhead::stats() const {

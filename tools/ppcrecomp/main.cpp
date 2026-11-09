@@ -883,6 +883,14 @@ std::string emit_branch_condition(EmitContext& e, u32 instruction, bool decremen
     return expression;
 }
 
+// A function's entry thunk: try_hle's filter inline, then the body as a tail call; a hooked slot (or the verify /
+// fault fill) takes Cpu::enter_slow, also a tail call - the same order and checks as
+// `if (c.try_hle(A)) return; body(c, A);`, with no stack frame in the thunk (Cpu::hle_clear).
+std::string entry_thunk(const std::string& name, const std::string& body_symbol, u32 address) {
+    return "void " + name + "(Cpu& c) { if (c.hle_clear(" + hexu(address) + ")) return " + body_symbol + "(c, " +
+           hexu(address) + "); c.enter_slow(" + hexu(address) + ", &" + body_symbol + "); }\n";
+}
+
 // Name of the native function that enters translated code at exactly `target`.
 // The target is either a function's own entry point or one of its entry thunks.
 std::string transfer_symbol(const EmitContext& e, u32 target) {
@@ -3036,6 +3044,11 @@ struct Options {
     // each row holding one is live (the first reach events back to a seed), or
     // that it was pruned. Changes nothing that is emitted.
     std::string why_live;
+    // Diagnostics: write the reach events of the pruning pass (all of them, not
+    // only the first) as a graph: "seed KIND VIA ROW" lines (every seed address)
+    // and "edge FROM VIA ROW" lines (one per row pair, its lowest address),
+    // rows by start address. Changes nothing that is emitted.
+    std::string live_graph;
     // R13 hot set: "ppcrecomp-hotset-v1", then one "0xADDR,weight" per line
     // ('#' comments): rows whose hot body inlines the accessor fast half.
     std::string hot_set;
@@ -3073,6 +3086,7 @@ bool parse_options(int argc, char** argv, Options& options) {
         else if (argument == "--gx-sites") options.gx_sites = value();
         else if (argument == "--lift-sites") options.lift_sites.push_back(value());
         else if (argument == "--why-live") options.why_live = value();
+        else if (argument == "--live-graph") options.live_graph = value();
         else if (argument == "--hot-set") options.hot_set = value();
         else if (argument == "--psq-sites") options.psq_sites = value();
         else if (argument == "--gx-fail-sites") options.gx_fail_sites = value();
@@ -3299,8 +3313,7 @@ std::string emit_function(const DolImage& image, const Candidate& candidate,
                                          ? fn_symbol(candidate.record.address)
                                          : entry_symbol(candidate.record.address, address);
             if (address == candidate.record.address) {
-                text += "void " + name + "(Cpu& c) { if (c.try_hle(" + hexu(address) +
-                        ")) return; " + body_symbol + "(c, " + hexu(address) + "); }\n";
+                text += entry_thunk(name, body_symbol, address);
             } else {
                 text += "void " + name + "(Cpu& c) { " + body_symbol + "(c, " +
                         hexu(address) + "); }\n";
@@ -3585,8 +3598,7 @@ std::string emit_function(const DolImage& image, const Candidate& candidate,
                                      : entry_symbol(candidate.record.address, address);
         text += annotate(address == candidate.record.address ? 'x' : 'n', address);
         if (address == candidate.record.address) {
-            text += "void " + name + "(Cpu& c) { if (c.try_hle(" + hexu(address) +
-                    ")) return; " + body_symbol + "(c, " + hexu(address) + "); }\n";
+            text += entry_thunk(name, body_symbol, address);
         } else {
             text += "void " + name + "(Cpu& c) { " + body_symbol + "(c, " + hexu(address) +
                     "); }\n";
@@ -4965,11 +4977,16 @@ int main(int argc, char** argv) {
         std::vector<std::pair<long long, u32>> why(accepted.size(), {kWhyNone, 0u});
         long long why_source = kWhyEntry;
         u32 why_data_word = 0u;
+        // --live-graph: (source, via, row) for every reach event, reduced on write.
+        std::vector<std::tuple<long long, u32, u32>> graph;
+        const bool want_graph = !options.live_graph.empty();
         const auto reach = [&](u32 address) {
             auto it = std::lower_bound(owned.begin(), owned.end(), std::make_pair(address, 0u));
             bool any = false;
             for (; it != owned.end() && it->first == address; ++it) {
                 any = true;
+                if (want_graph)
+                    graph.emplace_back(why_source, why_source == kWhyData ? why_data_word : address, it->second);
                 if (!live[it->second]) {
                     live[it->second] = 1;
                     why[it->second] = {why_source, why_source == kWhyData ? why_data_word : address};
@@ -4986,6 +5003,8 @@ int main(int argc, char** argv) {
                 --j;
                 if (prefix_end[j] <= address) break;
                 const Candidate& c = accepted[j];
+                if (want_graph && address < c.record.address + c.record.size)
+                    graph.emplace_back(why_source, why_source == kWhyData ? why_data_word : address, static_cast<u32>(j));
                 if (address < c.record.address + c.record.size && !live[j]) {
                     live[j] = 1;
                     why[j] = {why_source, why_source == kWhyData ? why_data_word : address};
@@ -5055,6 +5074,40 @@ int main(int argc, char** argv) {
             }
             if (tail) reach(end);
             for (const u32 value : formed[row]) reach(value);
+        }
+        if (want_graph) {
+            // One edge per (from row, to row), with its lowest instruction address; every seed address is kept
+            // (dropping one root must not hide another root of the same row).
+            using Event = std::tuple<long long, u32, u32>;
+            std::sort(graph.begin(), graph.end(), [](const Event& a, const Event& b) {
+                return std::tie(std::get<0>(a), std::get<2>(a), std::get<1>(a)) <
+                       std::tie(std::get<0>(b), std::get<2>(b), std::get<1>(b));
+            });
+            graph.erase(std::unique(graph.begin(), graph.end(),
+                                    [](const Event& a, const Event& b) {
+                                        return std::get<0>(a) == std::get<0>(b) && std::get<2>(a) == std::get<2>(b) &&
+                                               (std::get<0>(a) >= 0 || std::get<1>(a) == std::get<1>(b));
+                                    }),
+                        graph.end());
+            std::ofstream out(options.live_graph);
+            out << "ppcrecomp-live-graph-v1\n";
+            for (std::size_t j = 0; j < accepted.size(); ++j)
+                out << "row " << hex32(accepted[j].record.address) << ' ' << accepted[j].record.size << ' '
+                    << (accepted[j].native_owner ? "owner" : "body") << ' ' << (live[j] ? "live" : "pruned") << ' '
+                    << accepted[j].record.name << '\n';
+            for (const auto& [source, via, row] : graph) {
+                const std::string target = hex32(accepted[row].record.address);
+                if (source >= 0)
+                    out << "edge " << hex32(accepted[static_cast<std::size_t>(source)].record.address) << ' '
+                        << hex32(via) << ' ' << target << '\n';
+                else
+                    out << "seed " << (source == kWhyEntry ? "entry" : source == kWhyRoot ? "root" : "data") << ' '
+                        << hex32(via) << ' ' << target << '\n';
+            }
+            if (!out) {
+                std::fprintf(stderr, "cannot write %s\n", options.live_graph.c_str());
+                return 1;
+            }
         }
         if (!options.why_live.empty()) {
             std::stringstream list(options.why_live);

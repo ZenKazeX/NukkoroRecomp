@@ -37,6 +37,10 @@ constexpr u32 kGxPokeDither = 0x80396678u;
 constexpr u32 kGxPokeZMode = 0x80396690u;
 constexpr u32 kGxPeInit = 0x80396840u;          // __GXPEInit
 constexpr u32 kGxClearGpMetric = 0x8039AE90u;   // GXClearGPMetric
+constexpr u32 kGxSetDrawSync = 0x80396428u;     // GXSetDrawSync(token)
+constexpr u32 kGxInit = 0x80393A88u;            // GXInit(base, size) -> the library's FIFO object
+constexpr u32 kGxDrawDone = 0x803964E8u;        // GXDrawDone: no caller in this image
+constexpr u32 kGxFifoObject = 0x805A2EE0u;      // the library's static FIFO object GXInit returns (lis / addi at 0x80393B0C)
 
 // ---- guest functions a delivery calls
 constexpr u32 kOsWakeupThread = 0x803793B0u;
@@ -93,7 +97,6 @@ constexpr u32 kFifoWritePtr = 0x18u;
 constexpr u32 kFifoCount = 0x1Cu;
 
 // ---- the CP performance-select register the listed platform sites name
-constexpr u32 kCpPerformanceSelect = 0xCC000006u;
 
 const NativeGxSync::Address kAddresses[] = {
     {kGxShutdown, "__GXShutdown", false},
@@ -114,18 +117,9 @@ const NativeGxSync::Address kAddresses[] = {
     {kGxPokeZMode, "GXPokeZMode", false},
     {kGxPeInit, "__GXPEInit", false},
     {kGxClearGpMetric, "GXClearGPMetric", false},
-};
-
-// D6: the CP performance-select stores of the two init functions that stay
-// game code (GXSetGPMetric's only call, from __GXInitGX with both metrics
-// NONE, reaches none of its five; they are emitted all the same).
-const NativeGxSync::Site kSites[] = {
-    {0x80393FF4u, 0xB1830006u, "gx_performance_select"},  // GXInit: sth r12,6(r3), select 0
-    {0x8039A754u, 0xB0050006u, "gx_performance_select"},  // GXSetGPMetric: sth r0,6(r5), the old metric off
-    {0x8039AE4Cu, 0xB0030006u, "gx_performance_select"},  // GXSetGPMetric: sth r0,6(r3), select 2
-    {0x8039AE5Cu, 0xB0030006u, "gx_performance_select"},  // GXSetGPMetric: sth r0,6(r3), select 3
-    {0x8039AE6Cu, 0xB0030006u, "gx_performance_select"},  // GXSetGPMetric: sth r0,6(r3), select 4
-    {0x8039AE7Cu, 0xB0030006u, "gx_performance_select"},  // GXSetGPMetric: sth r0,6(r3), select 5
+    {kGxSetDrawSync, "GXSetDrawSync", false},
+    {kGxInit, "GXInit", false},
+    {kGxDrawDone, "GXDrawDone (refused)", false},
 };
 
 std::string hex(u32 value) {
@@ -171,18 +165,6 @@ NativeGxSync::NativeGxSync(Cpu& cpu, NativeInterrupts& interrupts) noexcept
 const NativeGxSync::Address* NativeGxSync::addresses(std::size_t& count) noexcept {
     count = sizeof(kAddresses) / sizeof(kAddresses[0]);
     return kAddresses;
-}
-
-const NativeGxSync::Site* NativeGxSync::platform_sites(std::size_t& count) noexcept {
-    count = sizeof(kSites) / sizeof(kSites[0]);
-    return kSites;
-}
-
-bool NativeGxSync::is_platform_site(u32 address) noexcept {
-    for (const Site& site : kSites) {
-        if (site.address == address) return true;
-    }
-    return false;
 }
 
 void NativeGxSync::reset() noexcept {
@@ -342,6 +324,93 @@ void NativeGxSync::fifo_init(Cpu& c) {
     c.mem_write32(sda + kSdaGpFifo, 0u);
 }
 
+// The __GXData image the original GXInit leaves (its tail, __GXInitGX 0x80394088: the default texture / TLUT cache regions
+// at +0x208..+0x388, the two region callbacks at +0x4C8 / +0x4CC, the BP register shadows and the transform / pipe
+// defaults). Guest GX code that still runs - GXLoadTexObj and GXLoadTlut under the RenderWare driver's texture bind, the
+// interpreter's boot - reads these words (the callbacks are called through; a null one jumps to address 0). They are
+// constants of the library: offset in __GXData, value. The contract test compares the whole structure with the original's.
+constexpr u32 kGxDataImage[][2] = {
+    {0x000, 0x00010000}, {0x014, 0x00000200}, {0x01C, 0x41377009}, {0x020, 0x41377009}, {0x024, 0x41377009},
+    {0x028, 0x41377009}, {0x02C, 0x41377009}, {0x030, 0x41377009}, {0x034, 0x41377009}, {0x038, 0x41377009},
+    {0x03C, 0xC8241209}, {0x040, 0xC8241209}, {0x044, 0xC8241209}, {0x048, 0xC8241209}, {0x04C, 0xC8241209},
+    {0x050, 0xC8241209}, {0x054, 0xC8241209}, {0x058, 0xC8241209}, {0x05C, 0x04824120}, {0x060, 0x04824120},
+    {0x064, 0x04824120}, {0x068, 0x04824120}, {0x06C, 0x04824120}, {0x070, 0x04824120}, {0x074, 0x04824120},
+    {0x078, 0x04824120}, {0x07C, 0x22000606}, {0x080, 0x3CF3CF00}, {0x084, 0x00F3CF3C}, {0x0B0, 0xFFFFFFFF},
+    {0x0B4, 0xFFFFFFFF}, {0x0B8, 0x30000000}, {0x0BC, 0x32000000}, {0x0C0, 0x34000000}, {0x0C4, 0x36000000},
+    {0x0C8, 0x38000000}, {0x0CC, 0x3A000000}, {0x0D0, 0x3C000000}, {0x0D4, 0x3E000000}, {0x0D8, 0x31000000},
+    {0x0DC, 0x33000000}, {0x0E0, 0x35000000}, {0x0E4, 0x37000000}, {0x0E8, 0x39000000}, {0x0EC, 0x3B000000},
+    {0x0F0, 0x3D000000}, {0x0F4, 0x3F000000}, {0x0F8, 0x20156156}, {0x0FC, 0x213D5335}, {0x100, 0x28049040},
+    {0x104, 0x2905B052}, {0x108, 0x2A06D064}, {0x10C, 0x2B07F076}, {0x110, 0x2C380380}, {0x114, 0x2D380380},
+    {0x118, 0x2E380380}, {0x11C, 0x2F380380}, {0x120, 0x27000000}, {0x124, 0x0F000000}, {0x128, 0x25000000},
+    {0x12C, 0x26000000}, {0x130, 0xC008FFF8}, {0x134, 0xC2000000}, {0x138, 0xC4000000}, {0x13C, 0xC6000000},
+    {0x140, 0xC8000000}, {0x144, 0xCA000000}, {0x148, 0xCC000000}, {0x14C, 0xCE000000}, {0x150, 0xD0000000},
+    {0x154, 0xD2000000}, {0x158, 0xD4000000}, {0x15C, 0xD6000000}, {0x160, 0xD8000000}, {0x164, 0xDA000000},
+    {0x168, 0xDC000000}, {0x16C, 0xDE000000}, {0x170, 0xC108FFC0}, {0x174, 0xC3000000}, {0x178, 0xC5000000},
+    {0x17C, 0xC7000000}, {0x180, 0xC9000000}, {0x184, 0xCB000000}, {0x188, 0xCD000000}, {0x18C, 0xCF000000},
+    {0x190, 0xD1000000}, {0x194, 0xD3000000}, {0x198, 0xD5000000}, {0x19C, 0xD7000000}, {0x1A0, 0xD9000000},
+    {0x1A4, 0xDB000000}, {0x1A8, 0xDD000000}, {0x1AC, 0xDF000000}, {0x1B0, 0xF6018064}, {0x1B4, 0xF701806E},
+    {0x1B8, 0xF8018060}, {0x1BC, 0xF901806C}, {0x1C0, 0xFA018065}, {0x1C4, 0xFB01806D}, {0x1C8, 0xFC01806A},
+    {0x1CC, 0xFD01806E}, {0x1D0, 0x410004BC}, {0x1D4, 0x42000000}, {0x1D8, 0x40000017}, {0x1DC, 0x43000040},
+    {0x1E0, 0x49000000}, {0x1E4, 0x4A077E7F}, {0x1E8, 0x4D000028}, {0x1EC, 0x00000003}, {0x1FC, 0x00000003},
+    {0x204, 0x00004001}, {0x208, 0x8C0D8000}, {0x20C, 0x900D8400}, {0x214, 0x00010000}, {0x218, 0x8D0D8800},
+    {0x21C, 0x910D8C00}, {0x224, 0x00010000}, {0x228, 0x8E0D9000}, {0x22C, 0x920D9400}, {0x234, 0x00010000},
+    {0x238, 0x8F0D9800}, {0x23C, 0x930D9C00}, {0x244, 0x00010000}, {0x248, 0xAC0DA000}, {0x24C, 0xB00DA400},
+    {0x254, 0x00010000}, {0x258, 0xAD0DA800}, {0x25C, 0xB10DAC00}, {0x264, 0x00010000}, {0x268, 0xAE0DB000},
+    {0x26C, 0xB20DB400}, {0x274, 0x00010000}, {0x278, 0xAF0DB800}, {0x27C, 0xB30DBC00}, {0x284, 0x00010000},
+    {0x288, 0x000D8000}, {0x28C, 0x000DC000}, {0x294, 0x00010000}, {0x298, 0x000DC800}, {0x29C, 0x000D8800},
+    {0x2A4, 0x00010000}, {0x2A8, 0x000D9000}, {0x2AC, 0x000DD000}, {0x2B4, 0x00010000}, {0x2B8, 0x000DD800},
+    {0x2BC, 0x000D9800}, {0x2C4, 0x00010000}, {0x2C8, 0x000DA000}, {0x2CC, 0x000DC400}, {0x2D4, 0x00010000},
+    {0x2D8, 0x000DCC00}, {0x2DC, 0x000DA800}, {0x2E4, 0x00010000}, {0x2E8, 0x000DB000}, {0x2EC, 0x000DD400},
+    {0x2F4, 0x00010000}, {0x2F8, 0x000DDC00}, {0x2FC, 0x000DB800}, {0x304, 0x00010000}, {0x308, 0x000D8000},
+    {0x30C, 0x000DC000}, {0x314, 0x01010000}, {0x318, 0x000DC800}, {0x31C, 0x000D8800}, {0x324, 0x01010000},
+    {0x328, 0x000D9000}, {0x32C, 0x000DD000}, {0x334, 0x01010000}, {0x338, 0x000DD800}, {0x33C, 0x000D9800},
+    {0x344, 0x01010000}, {0x348, 0x000DA000}, {0x34C, 0x000DC000}, {0x354, 0x01010000}, {0x358, 0x000DC800},
+    {0x35C, 0x000DA800}, {0x364, 0x01010000}, {0x368, 0x000DB000}, {0x36C, 0x000DD000}, {0x374, 0x01010000},
+    {0x378, 0x000DD800}, {0x37C, 0x000DB800}, {0x384, 0x01010000}, {0x388, 0x65004200}, {0x398, 0x65004210},
+    {0x3A8, 0x65004220}, {0x3B8, 0x65004230}, {0x3C8, 0x65004240}, {0x3D8, 0x65004250}, {0x3E8, 0x65004260},
+    {0x3F8, 0x65004270}, {0x408, 0x65004280}, {0x418, 0x65004290}, {0x428, 0x650042A0}, {0x438, 0x650042B0},
+    {0x448, 0x650042C0}, {0x458, 0x650042D0}, {0x468, 0x650042E0}, {0x478, 0x650042F0}, {0x488, 0x65010300},
+    {0x498, 0x65010340}, {0x4A8, 0x65010380}, {0x4B8, 0x650103C0}, {0x4C8, 0x80393634}, {0x4CC, 0x80393730},
+    {0x4D8, 0x00000001}, {0x4E0, 0x3F800000}, {0x4E8, 0xBF800000}, {0x4EC, 0xC0000000}, {0x4FC, 0x44200000},
+    {0x500, 0x43F00000}, {0x508, 0x3F800000}, {0x510, 0x4B800000}, {0x514, 0x88300C03}, {0x518, 0x89300C03},
+    {0x51C, 0x8A300C03}, {0x520, 0x8B300C03}, {0x524, 0xA8300C03}, {0x528, 0xA9300C03}, {0x52C, 0xAA300C03},
+    {0x530, 0xAB300C03}, {0x534, 0x80000090}, {0x538, 0x81000090}, {0x53C, 0x82000090}, {0x540, 0x83000090},
+    {0x544, 0xA0000090}, {0x548, 0xA1000090}, {0x54C, 0xA2000090}, {0x550, 0xA3000090}, {0x558, 0x00000001},
+    {0x55C, 0x00000002}, {0x560, 0x00000003}, {0x564, 0x00000004}, {0x568, 0x00000005}, {0x56C, 0x00000006},
+    {0x570, 0x00000007}, {0x574, 0x000000FF}, {0x578, 0x000000FF}, {0x57C, 0x000000FF}, {0x580, 0x000000FF},
+    {0x584, 0x000000FF}, {0x588, 0x000000FF}, {0x58C, 0x000000FF}, {0x590, 0x000000FF}, {0x598, 0x000000FF},
+    {0x59C, 0x00000023}, {0x5A0, 0x00000016}, {0x5A8, 0x000101FF}, {0x5AC, 0x0000001F},
+};
+
+// GXInit(base, size). The calls the original made of the owners this layer already has, with their arguments, and the
+// FIFO object GXInitFifoBase (0x80394AF4) filled: base, end = base + size - 4, size, high watermark = size - 0x4000, low
+// watermark = size / 2, read pointer = write pointer = base, count 0.
+void NativeGxSync::init(Cpu& c) {
+    ++stats_.inits;
+    const u32 base = c.gpr[3], size = c.gpr[4];
+    const u32 saved_lr = c.lr;
+    const auto call = [&c](u32 address, u32 r3) {
+        c.gpr[3] = r3;
+        c.try_hle(address);
+    };
+    call(kGxFifoInit, 0u);
+    const u32 gx = gx_data(c);
+    for (const auto& word : kGxDataImage) c.mem_write32(gx + word[0], word[1]);
+    c.mem_write32(kGxFifoObject + 0x00u, base);
+    c.mem_write32(kGxFifoObject + 0x04u, base + size - 4u);
+    c.mem_write32(kGxFifoObject + 0x08u, size);
+    c.mem_write32(kGxFifoObject + 0x0Cu, size - 0x4000u);
+    c.mem_write32(kGxFifoObject + 0x10u, size >> 1);
+    c.mem_write32(kGxFifoObject + 0x14u, base);
+    c.mem_write32(kGxFifoObject + 0x18u, base);
+    c.mem_write32(kGxFifoObject + 0x1Cu, 0u);
+    call(kGxSetCpuFifo, kGxFifoObject);
+    call(kGxSetGpFifo, kGxFifoObject);
+    call(kGxPeInit, 0u);
+    c.lr = saved_lr;
+    c.gpr[3] = kGxFifoObject;
+}
+
 // __GXPEInit() 0x80396840. The token and finish handlers are not registered
 // (NativeInterrupts delivers the finish; the token needs no delivery); the OS
 // mask still unmasks both interrupts, as the original. Its PE control write
@@ -480,25 +549,24 @@ void NativeGxSync::install() {
     own(kGxPeInit, "__GXPEInit", [this](Cpu& c) { pe_init(c); });
     // The performance counters it cleared have no reader in this image.
     own(kGxClearGpMetric, "GXClearGPMetric", [](Cpu&) {});
-}
-
-u16 NativeGxSync::platform_read16(Cpu& c, u32 site, u32 effective) {
-    stop(c, "platform site " + hex(site) + " read " + hex(effective) + ": the GX sites are stores");
-    return 0u;
-}
-
-void NativeGxSync::platform_write16(Cpu& c, u32 site, u32 effective, u16 value) {
-    for (const Site& listed : kSites) {
-        if (listed.address != site) continue;
-        if (effective == kCpPerformanceSelect) {
-            // Which GP event the performance counters count: nothing counts.
-            ++stats_.platform_writes;
-            return;
-        }
-        stop(c, "platform site " + hex(site) + " (" + listed.kind + ") wrote " + hex(value) + " to " + hex(effective));
-        return;
-    }
-    stop(c, "unlisted platform site " + hex(site) + " wrote " + hex(value) + " to " + hex(effective));
+    // GXSetDrawSync(token): the original wrote BP 0x48 (token with the interrupt request) and BP 0x47 (token) through the
+    // pipe - the two lowered token sites, in that order - behind a dirty-state flush and an interrupt mask / restore
+    // pair that have no effect here. The same two completions, now without the sites.
+    // GXDrawDone: its only listed entry is a test's name for its draw-done site; no guest code calls it, and its original
+    // sleeps on the finish queue until the finish interrupt handler wakes it - nothing here serves that wait.
+    own(kGxDrawDone, "GXDrawDone", [](Cpu& c) {
+        stop(c, "GXDrawDone was entered from " + hex(c.lr) + ": no guest code calls it in this image, and nothing here "
+                "serves its wait on the finish queue");
+    });
+    // GXInit(base, size) -> the library's FIFO object. Its work, in the original's order: GXSetMisc(1, 0), __GXFifoInit
+    // (the CP interrupt unmask, the SDA words), GXInitFifoBase (the object's eight words), GXSetCPUFifo and GXSetGPFifo
+    // (this layer's owners), __GXPEInit (the PE interrupts), then the library's default state - __GXData's shadow, the
+    // texture regions, the hardware register pointers, the version string, the reset record - which has no reader
+    // here (docs/agents/card-saves.md, gxD).
+    own(kGxInit, "GXInit", [this](Cpu& c) { init(c); });
+    own(kGxSetDrawSync, "GXSetDrawSync", [this](Cpu& c) {
+        set_draw_sync(static_cast<u16>(c.gpr[3]));
+    });
 }
 
 void NativeGxSync::save_state(std::vector<u8>& out) const {

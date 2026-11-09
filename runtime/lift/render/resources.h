@@ -42,6 +42,9 @@ struct GpuTexture {
     Com<D3D12MA::Allocation> allocation;
     D3D12_RESOURCE_DESC desc{};
     std::uint32_t srv = kNoDescriptor;  // bindless index, when one was created
+    // Every texel of every level has alpha 255 (an asset texture's image): a filtered sample's alpha is exactly 1
+    // (docs/GPU_FILL.md section 19, the exact opaque write).
+    bool opaque = false;
 
     explicit operator bool() const noexcept { return resource != nullptr; }
 };

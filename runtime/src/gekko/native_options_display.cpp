@@ -3,6 +3,7 @@
 #include "gekko/native_options_display.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -12,6 +13,7 @@
 #include "assets/texture_dictionary.h"
 #include "assets/texture_import.h"
 #include "gekko/cpu.h"
+#include "gekko/display_geometry.h"
 #include "gekko/game_clock.h"
 #include "gekko/native_save_text.h"
 
@@ -19,7 +21,7 @@ namespace gekko::options_display {
 
 namespace {
 
-#include "options_display_tile.inc"
+#include "options_menu_tiles.inc"
 
 // r13 / r2 of main.dol and the input globals the button queries read.
 constexpr u32 kR13 = 0x805EC500u;
@@ -91,40 +93,27 @@ bool queries_open(Cpu& cpu, u32& input, u32& table) {
     return input != 0u && table != 0u;
 }
 
-struct Presets {
-    std::vector<Preset> list;
-    FamilyOf family_of = nullptr;
-};
-Presets& presets() {
-    static Presets p;
-    return p;
-}
-
 std::u16string ascii16(std::string_view s) { return std::u16string(s.begin(), s.end()); }
 
-constexpr const char* kRatios[] = {nullptr, "4:3", "5:4", "16:9", "16:10", "21:9", "32:10", "32:9"};
-constexpr u32 kRatioCount = 8u;
-constexpr u32 kPercents[] = {50u, 67u, 75u, 100u, 125u, 150u, 200u, 250u, 300u, 400u};
 constexpr double kRates[] = {30.0, 60.0, 120.0, 144.0, 165.0, 240.0};
-constexpr u32 kMaxRenderSide = 16384u;
 
 const Texts kTexts[6] = {
     {"Change the screen and picture settings.",
      {"Display mode", "Screen ratio", "Resolution", "Render resolution", "Frame rate", "V-Sync", "Frame blending",
-      "Draw distance", "FPS counter"},
-     "Windowed", "Fullscreen", "Auto", "Unlocked", "Original", "Maximum"},
+      "Draw distance", "FPS counter", "Anti-aliasing (MSAA)", "Anisotropic filtering"},
+     "Windowed", "Fullscreen", "Auto", "Unlocked", "Original", "Maximum", "Exclusive"},
     {"Modifier les param\xC3\xA8tres de l'\xC3\xA9" "cran et de l'image.",
      {"Mode d'affichage", "Format d'\xC3\xA9" "cran", "R\xC3\xA9solution", "R\xC3\xA9solution de rendu",
-      "Fr\xC3\xA9quence d'images", "V-Sync", "Fusion d'images", "Distance d'affichage", "Compteur FPS"},
-     "Fen\xC3\xAAtr\xC3\xA9", "Plein \xC3\xA9" "cran", "Auto", "Illimit\xC3\xA9", "Original", "Maximum"},
+      "Fr\xC3\xA9quence d'images", "V-Sync", "Fusion d'images", "Distance d'affichage", "Compteur FPS", "Anticr\xC3\xA9nelage (MSAA)", "Filtrage anisotrope"},
+     "Fen\xC3\xAAtr\xC3\xA9", "Plein \xC3\xA9" "cran", "Auto", "Illimit\xC3\xA9", "Original", "Maximum", "Exclusif"},
     {"\xC3\x84ndere die Bildschirm- und Bildeinstellungen.",
      {"Anzeigemodus", "Bildformat", "Aufl\xC3\xB6sung", "Renderaufl\xC3\xB6sung", "Bildrate", "V-Sync",
-      "Bildmischung", "Sichtweite", "FPS-Anzeige"},
-     "Fenster", "Vollbild", "Auto", "Unbegrenzt", "Original", "Maximum"},
+      "Bildmischung", "Sichtweite", "FPS-Anzeige", "Kantengl\xC3\xA4ttung (MSAA)", "Anisotrope Filterung"},
+     "Fenster", "Vollbild", "Auto", "Unbegrenzt", "Original", "Maximum", "Exklusiv"},
     {"Cambia i parametri dello schermo e dell'immagine.",
      {"Modalit\xC3\xA0 schermo", "Formato schermo", "Risoluzione", "Risoluzione render", "Frequenza fotogrammi",
-      "V-Sync", "Fusione fotogrammi", "Distanza visiva", "Contatore FPS"},
-     "Finestra", "Schermo intero", "Auto", "Sbloccato", "Originale", "Massimo"},
+      "V-Sync", "Fusione fotogrammi", "Distanza visiva", "Contatore FPS", "Antialiasing (MSAA)", "Filtro anisotropico"},
+     "Finestra", "Schermo intero", "Auto", "Sbloccato", "Originale", "Massimo", "Esclusivo"},
     {"\xE7\x94\xBB\xE9\x9D\xA2\xE3\x81\xA8\xE6\x98\xA0\xE5\x83\x8F\xE3\x81\xAE\xE8\xA8\xAD\xE5\xAE\x9A\xE3\x82\x92"
      "\xE5\xA4\x89\xE6\x9B\xB4\xE3\x81\x97\xE3\x81\xBE\xE3\x81\x99\xE3\x80\x82",
      {"\xE7\x94\xBB\xE9\x9D\xA2\xE3\x83\xA2\xE3\x83\xBC\xE3\x83\x89",
@@ -135,15 +124,15 @@ const Texts kTexts[6] = {
       "V-Sync",
       "\xE3\x83\x95\xE3\x83\xAC\xE3\x83\xBC\xE3\x83\xA0\xE3\x83\x96\xE3\x83\xAC\xE3\x83\xB3\xE3\x83\x89",
       "\xE9\x81\xA0\xE6\x99\xAF\xE8\xA1\xA8\xE7\xA4\xBA",
-      "FPS\xE8\xA1\xA8\xE7\xA4\xBA"},
+      "FPS\xE8\xA1\xA8\xE7\xA4\xBA", "MSAA", "AF"},
      "\xE3\x82\xA6\xE3\x82\xA3\xE3\x83\xB3\xE3\x83\x89\xE3\x82\xA6",
      "\xE3\x83\x95\xE3\x83\xAB\xE3\x82\xB9\xE3\x82\xAF\xE3\x83\xAA\xE3\x83\xBC\xE3\x83\xB3",
      "\xE8\x87\xAA\xE5\x8B\x95", "\xE7\x84\xA1\xE5\x88\xB6\xE9\x99\x90",
-     "\xE3\x82\xAA\xE3\x83\xAA\xE3\x82\xB8\xE3\x83\x8A\xE3\x83\xAB", "\xE6\x9C\x80\xE5\xA4\xA7"},
+     "\xE3\x82\xAA\xE3\x83\xAA\xE3\x82\xB8\xE3\x83\x8A\xE3\x83\xAB", "\xE6\x9C\x80\xE5\xA4\xA7", "\xE3\x82\xA8\xE3\x82\xAF\xE3\x82\xB9\xE3\x82\xAF\xE3\x83\xAB\xE3\x83\xBC\xE3\x82\xB7\xE3\x83\x96"},
     {"Cambiar la configuraci\xC3\xB3n de la pantalla y la imagen.",
      {"Modo de pantalla", "Proporci\xC3\xB3n", "Resoluci\xC3\xB3n", "Resoluci\xC3\xB3n de render", "Tasa de cuadros",
-      "V-Sync", "Mezcla de cuadros", "Distancia de visi\xC3\xB3n", "Contador FPS"},
-     "Ventana", "Pantalla completa", "Auto", "Desbloqueado", "Original", "M\xC3\xA1ximo"},
+      "V-Sync", "Mezcla de cuadros", "Distancia de visi\xC3\xB3n", "Contador FPS", "Antialiasing (MSAA)", "Filtrado anisotr\xC3\xB3pico"},
+     "Ventana", "Pantalla completa", "Auto", "Desbloqueado", "Original", "M\xC3\xA1ximo", "Exclusivo"},
 };
 
 // "code x0 y0 x1 y1 #" lines of a .met after "METRICS1", its sheet's name and a small number.
@@ -217,9 +206,56 @@ std::u16string utf16(std::string_view s) {
     return out;
 }
 
-void set_resolution_presets(std::vector<Preset> list, FamilyOf family_of) {
-    presets().list = std::move(list);
-    presets().family_of = family_of;
+
+namespace {
+std::atomic<u64>& screen_size() {
+    static std::atomic<u64> size{0};
+    return size;
+}
+std::atomic<u64>& work_area_size() {
+    static std::atomic<u64> size{0};
+    return size;
+}
+
+// The resolution scales offered (percent per side of the picture, gekko/display_geometry.h, 25..200). A scale in
+// effect that is not one of them is listed as itself.
+constexpr double kScales[] = {25.0, 33.0, 50.0, 67.0, 75.0, 100.0, 125.0, 150.0, 175.0, 200.0};
+}  // namespace
+
+void set_screen_size(u32 width, u32 height) noexcept {
+    screen_size().store(static_cast<u64>(width) << 32 | height, std::memory_order_relaxed);
+}
+void set_work_area(u32 width, u32 height) noexcept {
+    work_area_size().store(static_cast<u64>(width) << 32 | height, std::memory_order_relaxed);
+}
+Model::Size work_area() noexcept {
+    const u64 work = work_area_size().load(std::memory_order_relaxed);
+    const Model::Size s{static_cast<u32>(work >> 32), static_cast<u32>(work)};
+    return s.width != 0u && s.height != 0u ? s : Model::Size{0u, 0u};
+}
+
+namespace {
+std::atomic<u32>& msaa_mask() {
+    static std::atomic<u32> mask{0x0Fu};  // 1, 2, 4, 8 until the renderer says
+    return mask;
+}
+constexpr u32 kAnisotropyLevels[] = {1u, 2u, 4u, 8u, 16u};
+}  // namespace
+
+void set_msaa_supported(u32 mask) noexcept { msaa_mask().store(mask | 1u, std::memory_order_relaxed); }
+
+std::vector<u32> Model::msaa_values() const {
+    std::vector<u32> out;
+    const u32 mask = msaa_mask().load(std::memory_order_relaxed);
+    for (u32 bit = 0; bit <= 5u; ++bit)
+        if ((mask & (1u << bit)) != 0u) out.push_back(1u << bit);
+    if (std::find(out.begin(), out.end(), msaa_setting) == out.end()) out.push_back(msaa_setting);
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+std::vector<u32> Model::anisotropy_values() const {
+    return std::vector<u32>(std::begin(kAnisotropyLevels), std::end(kAnisotropyLevels));
 }
 
 const Texts& texts(Language language) noexcept { return kTexts[static_cast<u32>(language) % 6u]; }
@@ -252,73 +288,79 @@ const Glyph* Font::find(char16_t code) const noexcept {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// The model
+// The model (gekko/display_geometry.h): every setting held as its value; a list only says where a step goes. No row
+// changes another row's value.
 
-std::vector<Model::Size> Model::resolutions() const {
-    const char* family = kRatios[value[kScreenRatio] % kRatioCount];
-    std::vector<Size> out;
-    for (const Preset& p : presets().list)
-        if (family == nullptr || std::strcmp(p.family, family) == 0) out.push_back({p.width, p.height});
-    if (custom.width != 0u) {
-        const char* own = presets().family_of != nullptr ? presets().family_of(custom.width, custom.height) : "other";
-        if (family == nullptr || std::strcmp(own, family) == 0) out.push_back(custom);
-    }
-    std::sort(out.begin(), out.end(), [](const Size& a, const Size& b) {
-        const u64 aa = static_cast<u64>(a.width) * a.height, bb = static_cast<u64>(b.width) * b.height;
-        return aa != bb ? aa < bb : a.width < b.width;
-    });
-    out.erase(std::unique(out.begin(), out.end(),
-                          [](const Size& a, const Size& b) { return a.width == b.width && a.height == b.height; }),
-              out.end());
+std::vector<double> Model::aspects() const {
+    std::vector<double> out{0.0};  // Auto
+    for (const NamedAspect& a : kNamedAspects) out.push_back(static_cast<double>(a.w) / a.h);
+    if (aspect > 0.0 && std::find(out.begin(), out.end(), aspect) == out.end()) out.push_back(aspect);
+    return out;  // Auto, then the named ratios in their order, then a custom one in effect (display.cfg aspect=2.37)
+}
+
+std::vector<double> Model::scales() const {
+    std::vector<double> out(std::begin(kScales), std::end(kScales));
+    if (std::find(out.begin(), out.end(), scale) == out.end()) out.push_back(scale);
+    std::sort(out.begin(), out.end());
     return out;
 }
 
-std::vector<u32> Model::render_percents() const {
-    const std::vector<Size> sizes = resolutions();
-    const Size s = sizes.empty() ? Size{1280u, 720u} : sizes[std::min<std::size_t>(value[kResolution], sizes.size() - 1)];
-    std::vector<u32> out;
-    for (const u32 p : kPercents) {
-        const u32 w = static_cast<u32>(std::lround(s.width * p / 100.0)), h = static_cast<u32>(std::lround(s.height * p / 100.0));
-        if (w <= kMaxRenderSide && h <= kMaxRenderSide) out.push_back(p);
+PixelSize Model::output() const {
+    if (value[kDisplayMode] != 0u && screen.width != 0u) return {screen.width, screen.height};
+    Size s = window;
+    if (work.width != 0u && (s.width > work.width || s.height > work.height)) {
+        // The window owner shrinks a client the desktop cannot hold to the largest of its shape inside it.
+        const PixelSize fit = fit_aspect({work.width, work.height}, static_cast<double>(s.width) / s.height);
+        s = {fit.width, fit.height};
     }
-    return out;
+    return {s.width, s.height};
+}
+
+DisplayGeometry Model::geometry() const { return display_geometry(output(), aspect, scale); }
+
+Model::Size Model::viewport() const {
+    const DisplayGeometry g = geometry();
+    return {g.picture.width, g.picture.height};
 }
 
 u32 Model::count(u32 row) const {
     switch (row) {
-    case kDisplayMode: return 2u;
-    case kScreenRatio: return kRatioCount;
-    case kResolution: return static_cast<u32>(resolutions().size());
-    case kRenderResolution: return static_cast<u32>(render_percents().size());
+    case kDisplayMode: return 2u;  // windowed, fullscreen
+    case kScreenRatio: return static_cast<u32>(aspects().size());
+    case kRenderResolution: return static_cast<u32>(scales().size());
     case kFrameRate: return static_cast<u32>(rates.size());
     case kVsync: case kFrameBlending: case kFpsCounter: return 2u;
     case kDrawDistance: return 8u;
+    case kMsaa: return static_cast<u32>(msaa_values().size());
+    case kAnisotropy: return static_cast<u32>(anisotropy_values().size());
     default: return 0u;
+    }
+}
+
+u32 Model::index(u32 row) const {
+    switch (row) {
+    case kScreenRatio: {
+        const std::vector<double> list = aspects();
+        return static_cast<u32>(std::find(list.begin(), list.end(), aspect) - list.begin());
+    }
+    case kRenderResolution: {
+        const std::vector<double> list = scales();
+        return static_cast<u32>(std::find(list.begin(), list.end(), scale) - list.begin());
+    }
+    default: return row < kRowCount ? value[row] : 0u;
     }
 }
 
 Model Model::from(const DisplaySettings& s) {
     Model m;
     m.value[kDisplayMode] = s.fullscreen ? 1u : 0u;
-    m.value[kScreenRatio] = 0u;
-    const u32 w = static_cast<u32>(std::max(1, s.window_width)), h = static_cast<u32>(std::max(1, s.window_height));
-    bool preset = false;
-    for (const Preset& p : presets().list) preset = preset || (p.width == w && p.height == h);
-    if (!preset) m.custom = {w, h};
-    const std::vector<Size> sizes = m.resolutions();
-    for (u32 i = 0; i < sizes.size(); ++i)
-        if (sizes[i].width == w && sizes[i].height == h) m.value[kResolution] = i;
-    // The render size as a percentage of the window (100 % when it follows the window or is no listed percentage).
-    const std::vector<u32> percents = m.render_percents();
-    u32 percent = 100u;
-    if (s.render_width > 0 && s.render_height > 0) {
-        for (const u32 p : percents)
-            if (static_cast<int>(std::lround(w * p / 100.0)) == s.render_width &&
-                static_cast<int>(std::lround(h * p / 100.0)) == s.render_height)
-                percent = p;
-    }
-    for (u32 i = 0; i < percents.size(); ++i)
-        if (percents[i] == percent) m.value[kRenderResolution] = i;
+    m.window = {static_cast<u32>(std::max(1, s.window_width)), static_cast<u32>(std::max(1, s.window_height))};
+    const u64 screen = screen_size().load(std::memory_order_relaxed);
+    m.screen = {static_cast<u32>(screen >> 32), static_cast<u32>(screen)};
+    if (m.screen.width == 0u || m.screen.height == 0u) m.screen = {0u, 0u};
+    m.work = work_area();
+    m.aspect = s.aspect > 0.0 ? s.aspect : 0.0;
+    m.scale = s.render_scale;
     m.rates.assign(std::begin(kRates), std::end(kRates));
     if (s.render_rate > 0.0 && std::find(m.rates.begin(), m.rates.end(), s.render_rate) == m.rates.end())
         m.rates.push_back(s.render_rate);
@@ -330,62 +372,60 @@ Model Model::from(const DisplaySettings& s) {
     m.value[kFrameBlending] = s.frame_interpolation ? 1u : 0u;  // OFF, ON
     m.value[kDrawDistance] = static_cast<u32>(std::clamp(std::lround(s.draw_distance), 1L, 8L) - 1);
     m.value[kFpsCounter] = s.fps_counter ? 1u : 0u;  // OFF, ON
+    m.msaa_setting = static_cast<u32>(std::max(1, s.msaa));
+    {
+        const std::vector<u32> counts = m.msaa_values();
+        for (u32 i = 0; i < counts.size(); ++i)
+            if (counts[i] == m.msaa_setting) m.value[kMsaa] = i;
+        const std::vector<u32> levels = m.anisotropy_values();
+        for (u32 i = 0; i < levels.size(); ++i)
+            if (static_cast<int>(levels[i]) == s.anisotropy) m.value[kAnisotropy] = i;
+    }
     return m;
 }
 
 void Model::step(u32 row, int delta) {
-    if (row >= kRowCount) return;
-    // The resolution and render percentage are kept by size and percentage across a ratio / resolution change.
-    const std::vector<Size> before = resolutions();
-    const Size size = before.empty() ? Size{0, 0} : before[std::min<std::size_t>(value[kResolution], before.size() - 1)];
-    const std::vector<u32> percents_before = render_percents();
-    const u32 percent = percents_before.empty() ? 100u
-                                                : percents_before[std::min<std::size_t>(value[kRenderResolution],
-                                                                                        percents_before.size() - 1)];
-    const u32 n = count(row);
-    if (n == 0u) return;
-    const s64 next = std::clamp<s64>(static_cast<s64>(value[row]) + delta, 0, static_cast<s64>(n) - 1);
-    value[row] = static_cast<u32>(next);
-    if (row == kScreenRatio) {
-        const std::vector<Size> sizes = resolutions();
-        u32 best = 0;
-        u64 best_gap = ~0ull;
-        for (u32 i = 0; i < sizes.size(); ++i) {
-            if (sizes[i].width == size.width && sizes[i].height == size.height) {
-                best = i;
-                best_gap = 0;
-                break;
-            }
-            const u64 a = static_cast<u64>(sizes[i].width) * sizes[i].height, b = static_cast<u64>(size.width) * size.height;
-            const u64 gap = a > b ? a - b : b - a;
-            if (gap < best_gap) best = i, best_gap = gap;
-        }
-        value[kResolution] = best;
+    if (row >= kRowCount || delta == 0) return;
+    switch (row) {
+    case kScreenRatio: {
+        // By place in the list (it is in the named order, not sorted); the ratio in effect is always in it.
+        const std::vector<double> list = aspects();
+        const int at = static_cast<int>(index(kScreenRatio)) + delta;
+        aspect = list[static_cast<std::size_t>(std::clamp(at, 0, static_cast<int>(list.size()) - 1))];
+        return;
     }
-    if (row == kScreenRatio || row == kResolution) {
-        const std::vector<u32> percents = render_percents();
-        u32 index = 0;
-        for (u32 i = 0; i < percents.size(); ++i)
-            if (percents[i] <= percent) index = i;
-        value[kRenderResolution] = index;
+    case kRenderResolution: {
+        const std::vector<double> list = scales();
+        const int at = static_cast<int>(index(kRenderResolution)) + delta;
+        scale = list[static_cast<std::size_t>(std::clamp(at, 0, static_cast<int>(list.size()) - 1))];
+        return;
+    }
+    default: {
+        const u32 n = count(row);
+        if (n == 0u) return;
+        value[row] = static_cast<u32>(std::clamp<s64>(static_cast<s64>(value[row]) + delta, 0, static_cast<s64>(n) - 1));
+        return;
+    }
     }
 }
 
 std::u16string Model::value_text(u32 row, const Texts& t, const std::u16string& on,
                                  const std::u16string& off) const {
     switch (row) {
-    case kDisplayMode: return utf16(value[row] != 0u ? t.fullscreen : t.windowed);
-    case kScreenRatio: return value[row] == 0u ? utf16(t.automatic) : ascii16(kRatios[value[row] % kRatioCount]);
-    case kResolution: {
-        const std::vector<Size> sizes = resolutions();
-        if (sizes.empty()) return {};
-        const Size s = sizes[std::min<std::size_t>(value[row], sizes.size() - 1)];
-        return ascii16(std::to_string(s.width) + " x " + std::to_string(s.height));
-    }
+    case kDisplayMode: return utf16(value[row] == 0u ? t.windowed : t.fullscreen);
+    case kScreenRatio:
+        if (!(aspect > 0.0)) return utf16(t.automatic);
+        return ascii16(aspect_label(aspect));
     case kRenderResolution: {
-        const std::vector<u32> percents = render_percents();
-        if (percents.empty()) return {};
-        return ascii16(std::to_string(percents[std::min<std::size_t>(value[row], percents.size() - 1)]) + "%");
+        char text[48];
+        std::snprintf(text, sizeof(text), scale == std::floor(scale) ? "%.0f%%" : "%.1f%%", scale);
+        const DisplayGeometry g = geometry();
+        if (g.scale_capped) {
+            char capped[48];
+            std::snprintf(capped, sizeof(capped), " (%.0f%% in use)", g.effective_scale);
+            return ascii16(std::string(text) + capped);
+        }
+        return ascii16(text);
     }
     case kFrameRate: {
         if (rates.empty()) return {};
@@ -397,6 +437,18 @@ std::u16string Model::value_text(u32 row, const Texts& t, const std::u16string& 
     }
     case kVsync: return value[row] == 0u ? on : off;
     case kFrameBlending: case kFpsCounter: return value[row] != 0u ? on : off;
+    case kMsaa: {
+        const std::vector<u32> counts = msaa_values();
+        const u32 n = counts[std::min<std::size_t>(value[row], counts.size() - 1)];
+        if (n <= 1u) return off;
+        const bool supported = (msaa_mask().load(std::memory_order_relaxed) & n) != 0u;
+        return ascii16(std::to_string(n) + "x" + (supported ? "" : " (n/a)"));
+    }
+    case kAnisotropy: {
+        const std::vector<u32> levels = anisotropy_values();
+        const u32 n = levels[std::min<std::size_t>(value[row], levels.size() - 1)];
+        return n <= 1u ? off : ascii16(std::to_string(n) + "x");
+    }
     case kDrawDistance: {
         std::u16string v = ascii16("x" + std::to_string(value[row] + 1u));
         if (value[row] == 0u) v += u' ' + utf16(t.original);
@@ -408,28 +460,21 @@ std::u16string Model::value_text(u32 row, const Texts& t, const std::u16string& 
 }
 
 DisplaySettings Model::settings(const DisplaySettings& base) const {
-    DisplaySettings s = base;
+    DisplaySettings s = base;  // the window size, the exclusive keys and the gameplay aspect are not the page's
     s.fullscreen = value[kDisplayMode] != 0u;
-    const std::vector<Size> sizes = resolutions();
-    if (!sizes.empty()) {
-        const Size size = sizes[std::min<std::size_t>(value[kResolution], sizes.size() - 1)];
-        s.window_width = static_cast<int>(size.width);
-        s.window_height = static_cast<int>(size.height);
-        const std::vector<u32> percents = render_percents();
-        const u32 percent = percents.empty() ? 100u
-                                             : percents[std::min<std::size_t>(value[kRenderResolution], percents.size() - 1)];
-        if (percent == 100u) {
-            s.render_width = s.render_height = 0;  // follows the window
-        } else {
-            s.render_width = static_cast<int>(std::lround(size.width * percent / 100.0));
-            s.render_height = static_cast<int>(std::lround(size.height * percent / 100.0));
-        }
-    }
+    s.aspect = aspect;
+    s.render_scale = scale;
     if (!rates.empty()) s.render_rate = rates[std::min<std::size_t>(value[kFrameRate], rates.size() - 1)];
     s.vsync = value[kVsync] == 0u;
     s.frame_interpolation = value[kFrameBlending] != 0u;
     s.draw_distance = static_cast<float>(value[kDrawDistance] + 1u);
     s.fps_counter = value[kFpsCounter] != 0u;
+    {
+        const std::vector<u32> counts = msaa_values();
+        s.msaa = static_cast<int>(counts[std::min<std::size_t>(value[kMsaa], counts.size() - 1)]);
+        const std::vector<u32> levels = anisotropy_values();
+        s.anisotropy = static_cast<int>(levels[std::min<std::size_t>(value[kAnisotropy], levels.size() - 1)]);
+    }
     return s;
 }
 
@@ -473,153 +518,25 @@ bool button_pressed(Cpu& cpu, u32 button) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// The tile
+// The font
 
-void Tile::set_font_files(Language language, std::vector<u8> txd, std::vector<std::vector<u8>> glyph_lists,
-                          std::u16string on, std::u16string off) {
-    FontFiles& f = files_[static_cast<u32>(language) % 6u];
-    f.txd = std::move(txd);
-    f.glyph_lists = std::move(glyph_lists);
-    f.on = std::move(on);
-    f.off = std::move(off);
-}
-
-u32 Tile::current_item(Cpu& cpu) const {
-    const u32 row = cpu.mem_read32(kCursor), column = cpu.mem_read32(kCursor + 4u);
-    if (row >= 3u || column >= 2u) return ~0u;
-    return cpu.mem_read32(kGrid + row * 8u + column * 4u);
-}
-
-bool Tile::setup(Cpu& cpu) {
-    cpu.mem_write8(cpu.gpr[3] + kHiddenFlag, 0u);
-    ++report_.setups;
-    open_ = false;
-    return false;
-}
-
-bool Tile::page(Cpu&) {
-    page_ran_ = true;
-    return false;
-}
-
-bool Tile::draw_rows(Cpu& cpu) {
-    if (cpu.gpr[4] != kItem) {
-        hide(cpu);  // the panel shows another tile's rows from this frame on
-        return false;
-    }
-    const u32 impl = cpu.gpr[3];
-    ++report_.row_draws;
-    const bool focused = page_ran_;
-    page_ran_ = false;
-    if (cpu.mem_read8(impl + kTextOn) == 0u) {  // the game draws no text now either
-        hide(cpu);
-        return true;
-    }
-    if (!focused) {
-        open_ = false;
-        const DisplaySettings now = display_settings().current();
-        model_ = applied_ = Model::from(now);
-        cursor_ = scroll_ = 0u;
-    } else if (!open_) {
-        open_ = true;
-        model_ = applied_ = Model::from(display_settings().current());
-        cursor_ = scroll_ = 0u;
-    }
-    publish(cpu, focused);
-    return true;
-}
-
-bool Tile::repeat_press(Cpu& cpu) {
-    if (cpu.lr != kPageUpQuery && cpu.lr != kPageDownQuery) return false;
-    if (current_item(cpu) != kItem) return false;
-    if (cpu.lr == kPageUpQuery) page_input(cpu, cpu.gpr[31]);
-    cpu.gpr[3] = 0u;  // the game's own rows (the voice language) never move
-    return true;
-}
-
-bool Tile::edge_press(Cpu& cpu) {
-    if (cpu.lr != kPageAQuery || current_item(cpu) != kItem) return false;
-    if (open_ && button_pressed(cpu, kButtonA)) apply(cpu);
-    cpu.gpr[3] = 0u;  // the voice language's save path never runs for this tile
-    return true;
-}
-
-// Called where the page handler asks for "up" (r31 = impl): the game's countdown has run out.
-void Tile::page_input(Cpu& cpu, u32 impl) {
-    if (!open_) return;
-    int move = 0, change = 0;
-    if (button_repeats(cpu, kButtonUp)) move = -1;
-    else if (button_repeats(cpu, kButtonDown)) move = 1;
-    else if (button_repeats(cpu, kButtonLeft)) change = -1;
-    else if (button_repeats(cpu, kButtonRight)) change = 1;
-    if (move != 0) {
-        const s32 next = static_cast<s32>(cursor_) + move;
-        if (next < 0 || next >= static_cast<s32>(kShownCount)) return;  // the game's lists stop at their ends
-        cursor_ = static_cast<u32>(next);
-        if (cursor_ < scroll_) scroll_ = cursor_;
-        if (cursor_ >= scroll_ + kVisibleRows) scroll_ = cursor_ - kVisibleRows + 1u;
-        ++report_.moves;
-    } else if (change != 0) {
-        const u32 row = kShownRows[cursor_];
-        const u32 before = model_.value[row];
-        model_.step(row, change);
-        if (model_.value[row] == before) return;
-        ++report_.changes;
-    } else {
-        return;
-    }
-    cpu.mem_write32(impl + kRepeatCountdown, 2u);  // as the game's own moves
-    sound(cpu, kSoundCursor);
-    publish(cpu, true);
-}
-
-void Tile::apply(Cpu& cpu) {
-    const DisplaySettings before = display_settings().current();
-    const DisplaySettings next = model_.settings(before);
-    std::string error;
-    if (next != before) {
-        if (!display_settings().apply(next, &error)) {
-            ++report_.apply_failures;
-            last_error_ = error;
-            return;
-        }
-        ++report_.applies;
-        if (display_settings().save(&error)) {
-            ++report_.saves;
-        } else {
-            ++report_.save_failures;
-            last_error_ = error;
-        }
-    }
-    model_ = applied_ = Model::from(display_settings().current());
-    sound(cpu, kSoundDecide);
-    publish(cpu, true);
-}
-
-void Tile::sound(Cpu& cpu, u32 id) {
-    if (sound_ != nullptr) sound_(sound_context_, cpu, id);
-}
-
-bool Tile::ensure_font() {
-    if (font_ready_ || font_failed_) return font_ready_;
-    Font font;
-    font.language = language_;
-    // The language's sheets first, then English's for anything they lack (digits and Latin in the JP sheets).
-    std::vector<Language> order{language_};
-    if (language_ != Language::EN) order.push_back(Language::EN);
+bool build_font(Language language,
+                const std::vector<std::pair<const std::vector<u8>*, const std::vector<std::vector<u8>>*>>& files,
+                Font& font) {
+    font = Font{};
+    font.language = language;
     std::set<char16_t> seen;
-    for (const Language l : order) {
-        const FontFiles& f = files_[static_cast<u32>(l)];
-        if (f.txd.empty()) continue;
+    for (const auto& [txd, lists] : files) {
+        if (txd == nullptr || lists == nullptr || txd->empty()) continue;
         namespace assets = shadow::assets;
-        const assets::ByteView bytes{f.txd.data(), f.txd.size()};
+        const assets::ByteView bytes{txd->data(), txd->size()};
         std::vector<assets::Chunk> top;
         if (!assets::read_stream(bytes, &top)) continue;
         const assets::Chunk* dict = assets::find(top, assets::chunk::kTextureDictionary);
         assets::TextureDictionary dictionary;
         std::string error;
         if (dict == nullptr || !assets::parse_texture_dictionary(bytes, *dict, &dictionary, &error)) continue;
-        for (const std::vector<u8>& met : f.glyph_lists) {
+        for (const std::vector<u8>& met : *lists) {
             GlyphList list;
             if (!parse_glyph_list(met, list)) continue;
             const auto record = std::find_if(dictionary.textures.begin(), dictionary.textures.end(),
@@ -633,8 +550,8 @@ bool Tile::ensure_font() {
             sheet.width = image.width;
             sheet.height = image.height;
             sheet.rgba.resize(static_cast<std::size_t>(image.width) * image.height * 4u);
-            // The sheet as stored: grey glyphs on black, opaque. The game blends it by its colour (the overlay's
-            // two passes), never by alpha.
+            // The sheet as stored: grey glyphs on black, opaque. The game blends it by its colour (the overlay's two
+            // passes), never by alpha.
             for (std::size_t i = 0; i < sheet.rgba.size(); i += 4u) {
                 sheet.rgba[i] = image.rgba[i];
                 sheet.rgba[i + 1] = image.rgba[i + 1];
@@ -669,50 +586,10 @@ bool Tile::ensure_font() {
             font.sheets.push_back(std::move(sheet));
         }
     }
-    const FontFiles& own = files_[static_cast<u32>(language_)];
-    on_off_[0] = own.on.empty() ? files_[0].on : own.on;
-    on_off_[1] = own.off.empty() ? files_[0].off : own.off;
-    if (font.glyphs.empty()) {
-        font_failed_ = true;
-        ++report_.font_failures;
-        last_error_ = "the front-end glyph sheets could not be read";
-        return false;
-    }
+    if (font.glyphs.empty()) return false;
     std::sort(font.glyphs.begin(), font.glyphs.end(),
               [](const std::pair<char16_t, Glyph>& a, const std::pair<char16_t, Glyph>& b) { return a.first < b.first; });
-    std::lock_guard<std::mutex> lock(shared().mutex);
-    font.serial = shared().font.serial + 1u;
-    shared().font = std::move(font);
-    font_ready_ = true;
     return true;
-}
-
-void Tile::hide(Cpu& cpu) {
-    Page page;
-    page.game_ticks = cpu.game_clock().now();
-    std::lock_guard<std::mutex> lock(shared().mutex);
-    const Page& last = shared().pages[(shared().next + Shared::kHistory - 1u) % Shared::kHistory];
-    if (!last.visible) return;  // already hidden
-    shared().push(std::move(page));
-}
-
-void Tile::publish(Cpu& cpu, bool focused) {
-    if (!ensure_font()) return;
-    const Texts& t = texts(language_);
-    Page page;
-    page.visible = true;
-    page.focused = focused;
-    page.cursor = cursor_;
-    page.scroll = scroll_;
-    page.game_ticks = cpu.game_clock().now();
-    for (const u32 row : kShownRows) {
-        Page::Line line;
-        line.label = utf16(t.labels[row]);
-        line.value = model_.value_text(row, t, on_off_[0], on_off_[1]);
-        page.lines.push_back(std::move(line));
-    }
-    std::lock_guard<std::mutex> lock(shared().mutex);
-    shared().push(std::move(page));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -758,44 +635,50 @@ bool place_tile_art(const std::vector<u8>& txd, std::vector<u8>& out, std::strin
     out = txd;
     u8* texels = out.data() + (record.texels.data - txd.data());
     const u32 tiles_x = record.width / 4u;
-    // Cells 46 (icn_audio, normal) and 52 (selected): u 0.162109375 / 0.486328125, v 0.3203125, 82 x 82.
-    const struct {
-        u32 x, y;
-        const unsigned char* art;
-    } cells[] = {{83u, 164u, kTileNormal}, {249u, 164u, kTileSelected}};
-    for (const auto& cell : cells) {
-        for (u32 y = 0; y < kTileSide; ++y) {
-            for (u32 x = 0; x < kTileSide; ++x) {
-                const u32 tx = cell.x + x, ty = cell.y + y;
-                const std::size_t at = (static_cast<std::size_t>(ty / 4u) * tiles_x + tx / 4u) * 32u +
-                                       ((ty % 4u) * 4u + tx % 4u) * 2u;
-                const u16 v = rgb5a3(cell.art + (static_cast<std::size_t>(y) * kTileSide + x) * 4u);
-                texels[at] = static_cast<u8>(v >> 8);
-                texels[at + 1] = static_cast<u8>(v & 0xFFu);
+    // Cells 41..46 (items 0..5, normal) and 47..52 (selected): 82 x 82 at x 0 / 83 (+ 166 selected), y 0 / 82 / 164.
+    for (u32 item = 0; item < 6u; ++item) {
+        for (u32 state = 0; state < 2u; ++state) {
+            const u32 cx = (item % 2u) * 83u + state * 166u, cy = (item / 2u) * 82u;
+            const unsigned char* art = kTileArt[item][state];
+            for (u32 y = 0; y < kTileSide; ++y) {
+                for (u32 x = 0; x < kTileSide; ++x) {
+                    const u32 tx = cx + x, ty = cy + y;
+                    const std::size_t at = (static_cast<std::size_t>(ty / 4u) * tiles_x + tx / 4u) * 32u +
+                                           ((ty % 4u) * 4u + tx % 4u) * 2u;
+                    const u16 v = rgb5a3(art + (static_cast<std::size_t>(y) * kTileSide + x) * 4u);
+                    texels[at] = static_cast<u8>(v >> 8);
+                    texels[at + 1] = static_cast<u8>(v & 0xFFu);
+                }
             }
         }
     }
     return true;
 }
 
-bool reword_help(const std::vector<u8>& table, const std::vector<std::vector<u8>>& glyph_lists, Language language,
-                 std::vector<u8>& out, std::string& error) {
-    const std::u16string help = utf16(texts(language).help);
+bool insert_messages(const std::vector<u8>& table, const std::vector<std::vector<u8>>& glyph_lists,
+                     const std::vector<std::pair<u32, std::u16string>>& messages, u32 template_id,
+                     std::vector<u8>& out, u32& missing, std::string& error) {
     std::set<u32> codes;
     for (const std::vector<u8>& met : glyph_lists) {
         GlyphList list;
         if (!parse_glyph_list(met, list)) continue;
         for (const GlyphList::Entry& e : list.entries) codes.insert(e.code);
     }
-    for (const char16_t unit : help) {
-        if (unit != u' ' && codes.count(unit) == 0u) {
-            error = std::string("the Display help line uses a glyph the ") +
-                    std::string(kLanguageSuffix[static_cast<u32>(language)]) + " sheets lack: U+" +
-                    std::to_string(static_cast<u32>(unit));
-            return false;
+    missing = 0;
+    std::vector<std::pair<u32, std::u16string>> checked;
+    for (const auto& [id, text] : messages) {
+        std::u16string t;
+        for (const char16_t unit : text) {
+            if (unit == u' ' || unit == u'\n' || codes.count(unit) != 0u) t.push_back(unit);
+            else ++missing;  // the game would draw nothing there; dropped and reported
         }
+        checked.emplace_back(id, std::move(t));
     }
-    return save_text::replace_texts(table, {{0u, help}}, out, error);
+    return save_text::insert_texts(table, checked, template_id, out, error);
+}
+
+bool message_by_id(const std::vector<u8>& table, u32 id, std::u16string& text) {
+    return save_text::text_by_id(table, id, text);
 }
 
 }  // namespace gekko::options_display

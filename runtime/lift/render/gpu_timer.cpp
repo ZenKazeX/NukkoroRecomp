@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <cstdlib>
 
+#include "render/present_trace.h"
+
 namespace shadow::render {
 
 namespace {
@@ -81,6 +83,10 @@ void GpuTimer::calibrate() {
     if (SUCCEEDED(queue_->GetClockCalibration(&gpu, &cpu))) {
         calib_gpu_ = gpu;
         calib_ns_ = qpc_to_ns(static_cast<std::int64_t>(cpu), qpc_frequency_);
+        // Every calibration pair, so the GPU-to-CPU clock mapping can be checked from the raw records (drift between
+        // calibrations; docs/FRAME_TELEMETRY.md).
+        present_trace::record(present_trace::Ev::GpuCalibration, gpu, gpu_frequency_,
+                              static_cast<std::uint64_t>(calib_ns_));
     }
     last_calibration_ns_ = now_ns();
 }

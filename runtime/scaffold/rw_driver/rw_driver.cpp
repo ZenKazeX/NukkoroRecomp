@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include "gekko/cpu.h"
+#include "gekko/native_rw_raster.h"
 
 namespace gekko::scaffold {
 
@@ -35,6 +36,10 @@ RwDriver::RwDriver(shadow::render::Renderer& renderer, shadow::render::PacketQue
         trace_frame_ = std::strtoull(trace, nullptr, 10);
     if (const char* off = std::getenv("SHADOW_R2_NO_DISTORTION"))
         no_distortion_ = off[0] == '1';
+    // SHADOW_2D_ZOOM_FILL=1: a sprite zoomed past both canvas sides fills the view as before (the title logo's
+    // after-images stretched) - a same-frame A/B of shadow::ui::overflows_canvas_width.
+    if (const char* fill = std::getenv("SHADOW_2D_ZOOM_FILL"))
+        hud_.set_zoomed_sprites_fill(fill[0] == '1');
     // SHADOW_BOUNDARY_TRACE=<n>: the first n world-to-screen projections with every intermediate value
     // (docs/boundary-20261007/DIVERGENCE.md); SHADOW_R2_TRACE_FRAME prints the traced frame's too.
     if (const char* trace = std::getenv("SHADOW_BOUNDARY_TRACE"))
@@ -147,6 +152,12 @@ u32 rw_camera_end_update(Cpu& c, u32, u32 camera, u32) {
     return d != nullptr ? d->camera_end(c, camera) : 0u;
 }
 
+u32 rw_raster_clear(Cpu& c, std::int32_t x, std::int32_t y, std::int32_t w, std::int32_t h, std::uint32_t rgba, bool colour,
+                    bool depth) {
+    RwDriver* d = driver(c, "rw_raster_clear");
+    return d != nullptr ? d->raster_clear(c, x, y, w, h, rgba, colour, depth) : 0u;
+}
+
 u32 rw_camera_clear(Cpu& c, u32 camera, u32 colour, u32 mode) {
     RwDriver* d = driver(c, "rw_camera_clear");
     return d != nullptr ? d->camera_clear(c, camera, colour, mode) : 0u;
@@ -252,6 +263,54 @@ u32 render_submit_frame(Cpu& c, u32, u32) {
     if (RwDriver* d = driver(c, "render_submit_frame"))
         d->submit_frame(c);
     return 0u;
+}
+
+// ---- the device surface as native owners (extract/native-owners-r2.txt) --------------------------------------------
+// The RwDevice standard-function table of the GameCube driver (GcnSystem's static table at 0x8056F4xx / 0x8051D4xx)
+// names these bodies. Every dispatch site of them is lowered into the functions above, so no call reaches them in the
+// lifted build; the table words still name them. Each owner is the SAME scaffold function the lowered sites call, with
+// the sites' argument list (r3..), so an entry through the table does exactly what a lowered dispatch does.
+void install_display_owners(Cpu& cpu) {
+    rw_raster::install_display_owners(cpu, rw_raster::DisplayHooks{render_submit_frame, rw_render_state_reset});
+}
+
+void install_device_surface_owners(Cpu& cpu) {
+    cpu.install_hle(0x80498954u, [](Cpu& c) {  // GcnSetRenderState(state, value)
+        c.gpr[3] = rw_render_state_set(c, c.gpr[3], c.gpr[4]);
+        return true;
+    }, "GcnSetRenderState (device surface owner)");
+    cpu.install_hle(0x804984C4u, [](Cpu& c) {  // GcnGetRenderState(state, out)
+        c.gpr[3] = rw_render_state_get(c, c.gpr[3], c.gpr[4]);
+        return true;
+    }, "GcnGetRenderState (device surface owner)");
+    cpu.install_hle(0x804956F4u, [](Cpu& c) {  // GcnCameraBeginUpdate(out, camera, n)
+        c.gpr[3] = rw_camera_begin_update(c, c.gpr[3], c.gpr[4], c.gpr[5]);
+        return true;
+    }, "GcnCameraBeginUpdate (device surface owner)");
+    cpu.install_hle(0x80495CACu, [](Cpu& c) {  // GcnCameraEndUpdate(out, camera, n)
+        c.gpr[3] = rw_camera_end_update(c, c.gpr[3], c.gpr[4], c.gpr[5]);
+        return true;
+    }, "GcnCameraEndUpdate (device surface owner)");
+    cpu.install_hle(0x80495638u, [](Cpu& c) {  // GcnCameraClear(camera, colour, mode)
+        c.gpr[3] = rw_camera_clear(c, c.gpr[3], c.gpr[4], c.gpr[5]);
+        return true;
+    }, "GcnCameraClear (device surface owner)");
+    cpu.install_hle(0x80491E80u, [](Cpu& c) {  // GcnIm2DRenderPrimitive(type, vertices, count)
+        c.gpr[3] = rw_im2d_render_primitive(c, c.gpr[3], c.gpr[4], c.gpr[5]);
+        return true;
+    }, "GcnIm2DRenderPrimitive (device surface owner)");
+    cpu.install_hle(0x8049245Cu, [](Cpu& c) {  // GcnIm2DRenderIndexedPrimitive(type, vertices, count, indices, n)
+        c.gpr[3] = rw_im2d_render_indexed_primitive(c, c.gpr[3], c.gpr[4], c.gpr[5], c.gpr[6], c.gpr[7]);
+        return true;
+    }, "GcnIm2DRenderIndexedPrimitive (device surface owner)");
+    cpu.install_hle(0x80496208u, [](Cpu& c) {  // the camera-texture copy (raster, half resolution): void, as its sites
+        (void)rw_camera_texture_copy(c, c.gpr[3], c.gpr[4]);
+        return true;
+    }, "GcnCameraTextureCopy (device surface owner)");
+    cpu.install_hle(0x804960F0u, [](Cpu& c) {  // the device record's address: lis/addi 0x8056F50C; blr
+        c.gpr[3] = 0x8056F50Cu;
+        return true;
+    }, "device record accessor (device surface owner)");
 }
 
 }  // namespace gekko::scaffold

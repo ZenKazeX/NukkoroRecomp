@@ -101,9 +101,24 @@ void NativeMotionStore::pool_destroy(Cpu& c) {
     call_guest(c, kPoolNodeFree, head, 1u);
 }
 
+// A guest-visible copy: straight into the span, except under the verifier's journal or an access trace, where the
+// write goes through GuestMemory::write so it is journalled (rolled back) and traced as a write like a CPU store.
+void NativeMotionStore::copy(u8* destination, u32 to, const u8* source, u32 bytes) {
+    if (memory_.journaling() || memory_.access_traced()) {
+        memory_.write(GcAddr(to), source, bytes);
+        return;
+    }
+    std::memcpy(destination, source, bytes);
+}
+
 // 0x804222C0 (r3 pool address, r4 the game's buffer, r5 bytes): the clip span into the pool.
 void NativeMotionStore::upload(Cpu& c) {
     const u32 to = pool_address(c.gpr[3]), from = c.gpr[4], bytes = c.gpr[5];
+    if (bytes == 0u) {  // nothing to copy (a zero-sized span resolves to no host memory: not a fault)
+        take_interrupts(c);
+        ++stats_.uploads;
+        return;
+    }
     if (!ensure_committed(c, to + bytes))
         return;
     u8* destination = memory_.span(GcAddr(to), bytes);
@@ -112,7 +127,7 @@ void NativeMotionStore::upload(Cpu& c) {
         stop(c, "an upload outside mapped memory");
         return;
     }
-    std::memcpy(destination, source, bytes);
+    copy(destination, to, source, bytes);
     take_interrupts(c);
     ++stats_.uploads;
     stats_.upload_bytes += bytes;
@@ -127,13 +142,18 @@ void NativeMotionStore::upload(Cpu& c) {
 // 0x80422234 (r3 the node's buffer, r4 pool address, r5 bytes): a clip part out of the pool.
 void NativeMotionStore::fetch(Cpu& c) {
     const u32 to = c.gpr[3], from = pool_address(c.gpr[4]), bytes = c.gpr[5];
+    if (bytes == 0u) {  // an empty clip part
+        ++stats_.fetches;
+        take_interrupts(c);
+        return;
+    }
     u8* destination = memory_.span(GcAddr(to), bytes);
     const u8* source = memory_.span(GcAddr(from), bytes);
     if (destination == nullptr || source == nullptr) {
         stop(c, "a fetch outside mapped memory");
         return;
     }
-    std::memcpy(destination, source, bytes);
+    copy(destination, to, source, bytes);
     ++stats_.fetches;
     stats_.fetch_bytes += bytes;
     take_interrupts(c);

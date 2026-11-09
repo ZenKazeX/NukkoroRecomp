@@ -1,0 +1,153 @@
+{
+ "inputs": {
+  "functions.csv": "c9322fa1c1429531620b2fd3f1dd1d038cd084c5fd70b2f84bcf861a4805d20b",
+  "owners.json": "4c6845c60581f0d1b2d40922156b7089ffa321c7bbf3e0ff28ec3f27a08dd116",
+  "callgraph": {
+   "path": "callgraph_fixed.json",
+   "sha256": "18587988f680f1da116e0998721904f4754bf06fa7302b48852a4a01e9322dbf",
+   "kinds": {
+    "call": 93819,
+    "tail": 1056,
+    "addr": 2406,
+    "vtable": 35854,
+    "data": 10548,
+    "virtual": 458
+   }
+  },
+  "main.dol": "fde4fa6f81a60313b710161c196dc51c2260be62251ee02775d5eee06f9d55af",
+  "dynamic": {
+   "../.build/player/census-westopolis/counts.csv": "28f4f7f08fcc48e3368fa3cc0fb51b837be573c5783d8944cf539788dabb3cde",
+   "../.build/player/census-final-haunt/counts.csv": "4f64e139f3f92814f144d89d1836d68ee2494678d130089072cf9c86c230532a"
+  }
+ },
+ "members": {
+  "functions": 2541,
+  "bytes": 328180
+ },
+ "by_evidence": {
+  "callers": {
+   "functions": 572,
+   "bytes": 77020
+  },
+  "callers (data / address / virtual)": {
+   "functions": 89,
+   "bytes": 12456
+  },
+  "class": {
+   "functions": 745,
+   "bytes": 119144
+  },
+  "unit": {
+   "functions": 1135,
+   "bytes": 119560
+  }
+ },
+ "by_category": {
+  "PLAYER_ABILITIES": {
+   "functions": 126,
+   "bytes": 17756
+  },
+  "PLAYER_ACTION": {
+   "functions": 377,
+   "bytes": 33796
+  },
+  "PLAYER_ANIMATION": {
+   "functions": 175,
+   "bytes": 24348
+  },
+  "PLAYER_COLLISION": {
+   "functions": 8,
+   "bytes": 872
+  },
+  "PLAYER_COMBAT": {
+   "functions": 378,
+   "bytes": 44416
+  },
+  "PLAYER_CORE": {
+   "functions": 141,
+   "bytes": 17992
+  },
+  "PLAYER_INTERACTION": {
+   "functions": 232,
+   "bytes": 26292
+  },
+  "PLAYER_MOVEMENT": {
+   "functions": 373,
+   "bytes": 60092
+  },
+  "PLAYER_STATE": {
+   "functions": 138,
+   "bytes": 18244
+  },
+  "PLAYER_SUPPORT": {
+   "functions": 115,
+   "bytes": 22756
+  },
+  "UNRESOLVED": {
+   "functions": 478,
+   "bytes": 61616
+  }
+ },
+ "classes": 174,
+ "vtable_roots": 586,
+ "members_not_reached_from_player_vtables": {
+  "functions": 150,
+  "bytes": 15700
+ },
+ "outside_interface": {
+  "functions": 258,
+  "bytes": 24136
+ },
+ "shared_engine_dependencies": {
+  "functions": 822,
+  "bytes": 84344,
+  "by_subsystem": {
+   "shared game code (called from several subsystems)": 435,
+   "Boost (shared_ptr and other templates)": 124,
+   "weapons (guns, bombs, special weapons, pickups)": 66,
+   "game framework (tasks, commands, character info, input)": 45,
+   "partners / NPCs (Npc, Chao)": 35,
+   "camera": 20,
+   "unknown (game)": 14,
+   "RenderWare 3.7 (core, world, toolkits, GameCube driver)": 13,
+   "MSL (C / C++ library)": 13,
+   "resources, loading, stage data": 11,
+   "vehicles": 9,
+   "sound": 9,
+   "other in-game tasks (Task-derived, no subsystem rule yet)": 7,
+   "collision, ranges, physics": 5,
+   "stage objects (gadgets: rings, springs, doors, traps, switches)": 4,
+   "unknown (game-unit)": 3,
+   "enemies (AI states, common components, enemy types)": 2,
+   "SDK: debugger (TRK)": 2,
+   "save data / memory card": 2,
+   "missions, stage flow, results": 1,
+   "CodeWarrior runtime": 1,
+   "effects": 1
+  }
+ },
+ "indirect_call_sites": 455,
+ "indirect_jump_sites": 6,
+ "functions_with_indirect_calls": 235,
+ "functions_with_estimate_ops": {
+  "functions": 0,
+  "bytes": 0
+ },
+ "estimate_op_sites": 0,
+ "shared_with_estimate_ops": {
+  "functions": 0,
+  "bytes": 0
+ },
+ "dynamic": {
+  "members_executed": {
+   "functions": 1442,
+   "bytes": 193420
+  },
+  "members_not_executed": {
+   "functions": 1099,
+   "bytes": 134760
+  },
+  "outside_functions_executed_from_member_sites": 579,
+  "member_callees_with_callers_static_graph_lacks": 349
+ }
+}

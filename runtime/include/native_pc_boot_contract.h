@@ -28,11 +28,14 @@ class ContractObserver {
     struct Boundary { gekko::u32 address; const char* name; bool attempted = false; };
     // 80003170 is a resume label, not an HLE entry in the production generator.
     // Do not install a silent, never-firing observer there.
-    std::array<Boundary, 7> boundaries_{{
+    std::array<Boundary, 9> boundaries_{{
         {0x80003154u, "start"}, {0x80003340u, "crt-entry"},
-        {0x80370BF0u, "dbinit-entry"}, {0x803796CCu, "constructor-entry"},
+        {0x80370BF0u, "dbinit-entry"},
+        {0x803796CCu, "constructor-entry"},  // liveness-roots: value-only (the opt-in observer; the native boot serves it)
         {0x800510C0u, "main-entry"}, {0x801E258Cu, "game-init-entry"},
-        {0x801E2210u, "game-runtime-entry"}}};
+        {0x801E2210u, "game-runtime-entry"},
+        // OSInit's entry and its return into __start (the native boot's continuation owner has the same address).
+        {0x80370E68u, "osinit-entry"}, {0x80003268u, "osinit-return"}}};
     std::filesystem::path directory_;
     bool crt_route_eligible_ = false;
     ConstructorAudit constructor_audit_;
@@ -114,7 +117,7 @@ class ContractObserver {
                 if (word(dol, address + gekko::u32(i * 4u), executable) != words[i])
                     throw std::runtime_error("boot contract: unknown constructor/main/runtime original words");
         };
-        guard(0x803796ACu, original::kConstructorCode);
+        guard(0x803796ACu, original::kConstructorCode);  // liveness-roots: value-only (original words read as data)
         guard(0x800510C0u, original::kMainCode);
         guard(0x801E258Cu, original::kGameInitCode);
         guard(0x801E2210u, original::kRuntimeEntryCode);

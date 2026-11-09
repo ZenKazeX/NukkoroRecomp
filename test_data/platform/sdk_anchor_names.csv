@@ -1,0 +1,42 @@
+address,old_name,new_name,confidence,evidence
+0x80370C18,ref_DBExceptionDestination,__DBExceptionDestinationAux,PROVEN,"loads the string 'DBExceptionDestination\n' (0x805610E0) for OSReport, then OSDumpContext(*(0xC0) + 0x80000000) and PPCHalt (0x80370B1C); the plain DBExceptionDestination (mfmsr, ori 0x30, mtmsr, b 0x80370C18) follows at 0x80370C60; the body continues at 0x80370C2C (a split piece with no symbol)"
+0x80372BE8,SelectThread__sub1,OSSaveContext,PROVEN,"stmw r13 at +0x34, mfspr GQR1-7 (SPR 913-919) at +0x1A8..+0x1C0, CR +0x80, LR +0x84 and +0x198, MSR +0x19C, CTR +0x88, XER +0x8C, r1 +4, r2 +8, r3 slot (+0xC) = 1, returns 0: the SDK sequence"
+0x80395578,fn_80395578,__GXSetVCD,PROVEN,"CP register 0x50 then 0x60 written from the GX state words +0x14 / +0x18, then XF 0x1008 (vertex specs) inlined; the SDK static __GXSetVCD"
+0x80395FC8,fn_80395FC8,GXSetNumTexGens,PROVEN,"genMode field (state +0x204 bits 0-3) = r3, XF 0x103F = r3, dirty bit 4 set"
+0x803964E8,fn_803964E8,GXDrawDone,PROVEN,"interrupts off, BP 0x45000002 (SETDRAWDONE), clears the flag at r13+0x5E48, restores, sleeps on the queue r13+0x5E4C until the flag is set"
+0x80397738,__GXInitGX__sub62,GXClearBoundingBox,PROVEN,"BP 0x550003FF and 0x560003FF (CLEARBBOX1 / 2), bpSentNot = 0"
+0x80397C80,fn_80397C80,GXSetNumChans,PROVEN,"genMode field (state +0x204 bits 4-6) = r3, XF 0x1009 = r3, dirty bit set"
+0x803987B8,fn_803987B8,GXInvalidateTexAll,PROVEN,BP 0x66001000 and 0x66001100 (TEXINVALIDATE) between two calls of the texture-state flush 0x803992C8
+0x8039A0B4,fn_8039A0B4,GXSetProjection,PROVEN,"(mtx, type): stores r4 as the projection type (state +0x4D8) and the matrix elements [0], [5], [10], [11] and [3]/[7] or [1]/[6] by type; then XF 0x1020"
+0x8039A158,fn_8039A158,GXSetProjectionv,PROVEN,"(ptr): ptr[0] compared with 1.0 gives the type word (state +0x4D8), ptr[1..6] copied with paired-single moves; then XF 0x1020. Settles which is which"
+0x8039A3B4,fn_8039A3B4,__GXSetViewport,PROVEN,XF 0x101A block of six words computed from the viewport state (+0x4F4..+0x500); called by the two public viewport setters 0x8039A444 / 0x8039A49C
+0x8039A59C,__GXInitGX__sub19,GXSetClipMode,PROVEN,"XF 0x1005 = r3, bpSentNot = 1; one caller"
+0x8039A5C4,fn_8039A5C4,__GXSetMatrixIndex,PROVEN,index < 5: CP 0x30 and XF 0x1018 from state +0x80; else CP 0x40 and XF 0x1019 from +0x84
+0x8039A648,__GXInitGX__sub71,GXSetGPMetric,INFERRED,"switches on the old perf0 / perf1 (state +0x59C / +0x5A0, NONE = 0x22 / 0x15), writes XF 0x1006 (SETGPMETRIC) and BP 0x23xxxxxx; the many split pieces to 0x8039AE8C are its switch cases. Role certain, only the head was read in full"
+0x803970E4,fn_803970E4,GXSetDispCopyYScale,PROVEN,"256 / vscale converted to an integer, 9 bits kept, enable = (scale != 0x100), BP register write"
+0x803971B0,fn_803971B0,GXSetCopyClear,PROVEN,"BP 0x4F (clear AR), 0x50 (clear GB) from the colour bytes, 0x51 (clear Z) from r4"
+0x80397444,fn_80397444,GXCopyDisp,PROVEN,"BP 0x4B destination = r3 >> 5, 0x52 copy control with the to-XFB bit (14) = 1, optional clear (r4) via state +0x1D8 / +0x1D0"
+0x803975AC,fn_803975AC,GXCopyTex,PROVEN,the same sequence with the to-XFB bit = 0 and its own register shadow set (+0x1F0..+0x1FC)
+0x803997BC,__GXInitGX__sub35,GXSetZTexture,PROVEN,BP 0xF4 (ZTEX params); switch on the format 0x11 / 0x13 / 0x16 (Z8 / Z16 / Z24X8)
+0x80399C20,__GXInitGX__sub44,GXSetFogRangeAdj,INFERRED,"enable flag in r3, a loop over a table of ten u16 entries taken two at a time into BP writes; only the head was read"
+0x80399F94,__GXInitGX__sub53,GXSetFieldMask,PROVEN,BP 0x44 with bit 0 = r4 (even) and bit 1 = r3 (odd)
+0x8037848C,fn_8037848C,OSGetCurrentThread,PROVEN,returns the word at 0x800000E4
+0x80378498,SonicteamUSA__System__Thread__dtor__sub0,OSIsThreadTerminated,PROVEN,state (u16 at +0x2C8) == 8 (moribund) or 0 (dead)
+0x80379574,fn_80379574,OSGetThreadPriority,PROVEN,returns the word at +0x2D4 (base priority)
+0x80378A08,fn_80378A08,OSYieldThread,PROVEN,"interrupts off, SelectThread(1) (0x803787B0), restore"
+0x80378A44,fn_80378A44,OSCreateThread,PROVEN,"priority <= 31 check, base / priority (+0x2D4 / +0x2D0), suspend count (+0x2CC) = 1, val = -1, mutex and join queues cleared, OSInitContext(0x80372D9C), stack bounds (+0x304 / +0x308)"
+0x80378C2C,fn_80378C2C,OSExitThread,PROVEN,"interrupts off, state = 8 (moribund), __OSUnlockAllMutex, OSWakeupThread on the join queue, reschedule flag r13+0x5AE4 = 1, SelectThread(0)"
+0x80378D10,fn_80378D10,OSCancelThread,INFERRED,"switch on the target thread's state, UnsetRun for a ready thread, the reschedule flag; role certain, the state cases were not all traced"
+0x80378ECC,fn_80378ECC,OSResumeThread,PROVEN,"suspend count (+0x2CC) decremented, clamped at 0, then the effective priority recomputed from the held mutexes"
+0x80379154,fn_80379154,OSSuspendThread,PROVEN,suspend count (+0x2CC) incremented; when it was 0 the thread leaves the run queue by state
+0x803792C4,fn_803792C4,OSSleepThread,PROVEN,"state = 4 (waiting), queue (+0x2DC) = r3, priority-ordered insertion by +0x2D0 into the queue (+0x2E0 / +0x2E4 links)"
+0x803793B0,fn_803793B0,OSWakeupThread,PROVEN,"empties the queue, each thread state = 1 (ready), re-inserted into the run queue by priority when its suspend count is 0"
+0x803794B4,fn_803794B4,OSSetThreadPriority,PROVEN,"priority <= 31 check, base (+0x2D4) = r4, __OSGetEffectivePriority, SetEffectivePriority, reschedule flag, SelectThread"
+0x80376C78,fn_80376C78,__OSUnlockAllMutex,PROVEN,loop over the thread's mutex queue (+0x2F4 / +0x10 links); called by OSExitThread before it wakes the joiners
+0x8037854C,fn_8037854C,UnsetRun,PROVEN,"unlinks the thread (+0x2E0 / +0x2E4) from its run queue (+0x2DC), clears the queue pointer"
+0x803785B4,fn_803785B4,__OSGetEffectivePriority,PROVEN,min of the base priority (+0x2D4) and the priorities (+0x2D0) of the first waiter of each held mutex (+0x2F4)
+0x803785F0,fn_803785F0,SetEffectivePriority,PROVEN,"(thread, priority) switch on the state, called by OSSetThreadPriority right after __OSGetEffectivePriority"
+0x80372D9C,fn_80372D9C,OSInitContext,PROVEN,"(context, pc, sp): SRR0 (+0x198) = r4, sp (+4) = r5, SRR1 (+0x19C) = 0x9032, r2 (+8), r13 (+0x34), the rest zeroed"
+0x80372D40,fn_80372D40,OSGetStackPointer,PROVEN,"mr r3, r1; blr"
+0x80370E04,fn_80370E04,OSGetConsoleType,PROVEN,"r13+0x5A20 (boot info) NULL or its console type (+0x2C) 0 gives 0x10000002, else the console type"
+0x80378320,fn_80378320,DefaultSwitchThreadCallback,PROVEN,"a single blr (from, to) -> nothing"

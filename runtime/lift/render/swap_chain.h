@@ -35,8 +35,19 @@ public:
                 const SwapChainOptions& options, std::string* error);
     void destroy();
 
-    // Blocks until the swap chain can take another frame (bounded by `timeout_ms`).
+    // Blocks until the swap chain can take another frame (bounded by `timeout_ms`). True: a credit was taken (or the
+    // swap chain has no waitable). False: none - timed out (an occluded / minimised window, a hung device) or the wait
+    // failed. The wait is alertable: an APC run on this thread resumes it for the time left instead of returning.
     bool wait_for_frame(std::uint32_t timeout_ms);
+    // Takes a credit only if one is there now (no wait, not traced): settles a credit owed by a frame presented
+    // without one (Renderer::take_credit).
+    bool try_take_credit();
+    // render/burst_ahead.h. Measured (2026-11-05, a probe of this flip-model waitable swap chain): raising the latency
+    // releases the difference as credits at once; lowering it takes none back - each later shown frame returns one.
+    void set_max_latency(std::uint32_t frames) {
+        if (swap_chain_)
+            swap_chain_->SetMaximumFrameLatency(frames < 1u ? 1u : frames);
+    }
     std::uint32_t current() const;
     ID3D12Resource* back_buffer(std::uint32_t index) const { return buffers_[index].Get(); }
     D3D12_CPU_DESCRIPTOR_HANDLE rtv(std::uint32_t index) const { return rtvs_[index]; }
@@ -48,6 +59,9 @@ public:
     bool present(PresentMode mode, std::string* error);
     // Waits for the GPU, then resizes the back buffers.
     bool resize(std::uint32_t width, std::uint32_t height, std::string* error);
+    // DXGI's frame statistics: the refresh count of the last vblank a present of this swap chain was shown at, and
+    // that vblank's time in steady_clock ns. False when DXGI has none (composed windowed, occluded, not shown yet).
+    bool last_vblank(std::uint64_t& refresh_count, std::int64_t& vblank_ns) const;
 
 private:
     bool acquire_buffers(std::string* error);

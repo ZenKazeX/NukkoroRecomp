@@ -1,12 +1,23 @@
+#include "shadow/backends/storage_backends.h"
 #include "gekko/cpu_diag.h"
 #include "gekko/thread_name.h"  // ES-T1
+#include "gekko/thread_sampler.h"
 #include "gekko/self_sampler.h"
 #include "gekko/display.h"
+#include "gekko/display_geometry.h"
 #include "gekko/display_settings.h"
+#include "gekko/pc_settings.h"
+#include "gekko/voice_language.h"
+#include "gekko/save_import.h"
+#include "gekko/settings_display.h"
+#include "gekko/settings_registry.h"
 #include "gekko/native_options_display.h"
 #include "gekko/render_geometry.h"
 #include "gekko/ui_test.h"
 #include "gekko/host_window.h"
+#include "peripheral/keyboard_layout.h"  // combine(): the input thread merges keyboard + XInput
+#include "gekko/raw_keyboard.h"           // the input thread's keyboard
+#include "gekko/heap_census.h"            // GEKKO_HEAP_TRACE
 #include "gekko/audio_runtime.h"
 #if !defined(SHADOW_RENDER_LIFTED)  // G5 (HW_REPORT T.1): the legacy renderer is not in the lifted build
 #include "gekko/native_renderer.h"
@@ -28,7 +39,10 @@
 #include "gekko/savestate.h"
 #include "gekko/dev_link.h"
 #include "gekko/guest_memory.h"
+#include "gekko/guest_watch.h"
+#include "gekko/native_os_threads.h"
 #include "gekko/input_tape.h"
+#include "gekko/replay_check.h"
 #include "gekko/asset_trace.h"
 #include "gekko/measure_probes.h"
 #include "gekko/system.h"
@@ -39,6 +53,11 @@
 #include "render/display_modes.h"
 #endif
 #endif
+// Header-only and used by the pacer in every configuration (the lifted renderer only feeds them).
+#include "render/present_trace.h"
+#include "render/packet_queue.h"  // phase_anchor_shift_ns: the shared phase controller's applied shift
+#include "gekko/phase_lock.h"
+#include "gekko/schedule_offset.h"
 #include "embedded_game_data.h"
 #include "native_bootstrap.h"
 
@@ -504,8 +523,24 @@ struct RecoveredClockSleeper {
 #endif
         std::this_thread::sleep_until(deadline);
     }
+    // The frame-boundary wake with V-Sync off (gekko/host_timing.h WakeGuard): the timer is armed guard() early and the
+    // rest is a yield spin, so the frame is released at its deadline instead of 0.3-1.3 ms after it. With V-Sync on the
+    // swap chain's credit times the frame and the plain sleep above is used (no spin).
+    void sleep_until_precise(std::chrono::steady_clock::time_point deadline) {
+        const auto armed = deadline - guard_.guard();
+        if (std::chrono::steady_clock::now() < armed) {
+            sleep_until(armed);
+            guard_.note_lateness(std::chrono::steady_clock::now() - armed);
+        }
+        while (std::chrono::steady_clock::now() < deadline) {
+#ifdef _WIN32
+            YieldProcessor();
+#endif
+        }
+    }
 
 private:
+    gekko::WakeGuard guard_;
 #ifdef _WIN32
     HANDLE timer_ = nullptr;
 #endif
@@ -514,6 +549,12 @@ private:
 struct Options {
     std::optional<std::filesystem::path> game_data;
     std::optional<std::filesystem::path> memory_card;
+    std::optional<std::filesystem::path> save_file;  // --save-file (gekko/save_import.h)
+    bool legacy_memory_card = false;                 // --legacy-memory-card: the emulated card, as before
+    // The runtime contract's storage backend (shadow/backends/storage_backends.h): host-directory reads
+    // <game data>/files, gamecube-disc reads a GameCube disc image (--disc-image).
+    std::string storage_backend = "host-directory";
+    std::optional<std::filesystem::path> disc_image;
     bool boot = true;
     bool trace = false;
     bool profile = false;
@@ -533,6 +574,14 @@ struct Options {
     bool chara_colli_loops = true;  // the two query loops too (false: the tests only)
     bool chara_colli_manage = true;  // the manager pass's vf 0x7C updates too
     bool trace_stale_contacts = false;  // diagnostic: reads of stale contact bytes
+    // Gate 2's dynamic half (include/gekko/guest_watch.h): every access to these guest ranges, attributed to the
+    // translated row (or native code) that made it; report written at exit. Diagnostic builds only.
+    std::optional<std::filesystem::path> watch_guest;
+    std::filesystem::path watch_report = "guest-watch.csv";
+    // --watch-guest-from-tick: arm the watch at the traversal boundary after this game tick instead of before the
+    // first instruction, so a cold-boot replay reports only the accesses after a point (e.g. after an SDK init whose
+    // own writes are the retired state). Headless only, like --save-state-at-tick, whose boundary it uses.
+    gekko::u64 watch_guest_from_tick = 0;
     bool chara_colli_pass = false;  // the manager's pair pass itself too (opt-in: not exact yet)
     bool chara_colli_bone_memo = true;  // GeneralBone runs reused (false: every update computed)
     bool chara_colli_bone_native = true;  // GeneralBone updates computed natively (false: by the guest)
@@ -570,6 +619,29 @@ struct Options {
     // docs/tools/BOOT_STAGE.md) and list every stage the guest table knows.
     std::optional<gekko::u32> boot_stage;
     std::optional<gekko::u32> boot_event;
+    std::optional<gekko::u32> boot_cutscene;  // --boot-cutscene: a story cutscene through PlayStory
+    std::optional<gekko::u32> boot_story_stage;  // --boot-story-stage: any stage as PlayStory's first entry
+    std::optional<gekko::u32> boot_2p;           // --boot-2p: a 2P arena through Play2POnce
+    bool boot_2p_three = false;                  // --boot-2p-three: the three arenas through Play2PThree
+    gekko::u32 boot_2p_characters[2] = {14, 14}; // --boot-2p-chars a,b (14..19)
+    bool boot_last_story = false;                // --boot-last-story: PlayStory in Last Story mode
+    std::optional<gekko::u32> boot_expert;       // --boot-expert: PlayHard continuing at a run position
+    // --tape-output-free (development): a playing input tape's inputs, but not its output records - the game's output
+    // follows the requested render size, as in a live session at that size (GPU_FILL.md "32:10").
+    bool tape_output_free = false;
+    // The recorder (docs/tools/RECORDER.md): --record <dir> makes a recording folder (initial/ copies, input.tape,
+    // manifest.json); --replay <dir> plays one from a fresh copy of its initial/. A replay draws with this run's own
+    // display settings unless --replay-as-recorded; its game logic takes the recorded aspect unless --gameplay-aspect
+    // says otherwise (follow | original | W:H | number; recorded = the default). --replay-strict stops at the first
+    // checkpoint that differs. --tape-check-seconds: the recorder's checkpoint interval (0 = none; default 1).
+    std::optional<std::filesystem::path> record_dir;
+    std::optional<std::filesystem::path> replay_dir;
+    bool replay_as_recorded = false;
+    bool replay_strict = false;
+    std::optional<std::string> gameplay_aspect_arg;
+    double gameplay_aspect_ratio = 0.0;  // --gameplay-aspect as a ratio (0: follow the picture)
+    double tape_check_seconds = 1.0;
+    std::vector<std::string> command_line;  // the run's arguments (the tape's meta)
     bool boot_story = false;
     bool boot_flashback = false;
     bool list_stages = false;
@@ -672,8 +744,22 @@ struct Options {
     std::optional<std::filesystem::path> performance_log;
     std::optional<std::filesystem::path> telemetry_log;
     bool recompiled = true;
+    bool original_boot = false;  // reference runner only: run the original __start / OSInit (--original-boot)
     bool debug_history = false;
     bool verify_recompiled = false;
+    // --verify-player <scope file>: --verify-recomp scoped to the listed entries (hex, one per line), native owners
+    // there included; --verify-player-report <csv>: per entry results (+ "<csv>.coverage": interpreted runs);
+    // --verify-player-fixture exact:<hex>|corrupt:<hex>: the test owner (docs/SHADOW_PLAYER_NATIVE_RECONSTRUCTION.md).
+    std::optional<std::filesystem::path> verify_player;
+    std::optional<std::filesystem::path> verify_player_report;
+    std::string verify_player_fixture;
+    bool verify_player_all_segments = false;  // --verify-player-all-segments
+    // The default is the fast diagnostic (gekko::Cpu::VerifySampling: some arrivals checked, a CPU budget);
+    // --verify-player-strict checks every segment (the batch 00 oracle). --verify-player-first/-period/-known-period
+    // <n>, --verify-player-cpu <percent>, --verify-player-known <verify.csv> (repeatable: entries it verified clean).
+    bool verify_player_strict = false;
+    gekko::Cpu::VerifySampling verify_player_sampling{};
+    std::vector<std::filesystem::path> verify_player_known;
     bool fallback_audit = false;
     // STEP-0 measurement batch (2026-09-23, findings-2026-09-23/step0-measurement).
     // All default off and observational: --measure <r3,r4,r5probes|all>
@@ -699,7 +785,7 @@ struct Options {
     // far-object proxies, render only - the game's range stays the original's.
     // 1 = none (the original); above 1, to that many times each entry's
     // authored range; 8 = wherever the object still covers a pixel.
-    float draw_distance = 8.0f;
+    float draw_distance = 1.0f;  // the original until the far-object proxies leave alpha (user 2026-10-30)
     bool draw_distance_explicit = false;  // given on the command line: display.cfg's draw_distance does not apply
     // The effect layer switches (docs/EFFECTS_INVENTORY.md "Layer switches"): layers off, a soloed layer, a solo
     // without the world. A viewing tool: the game runs the same, only what is drawn changes. F6 in the window too.
@@ -728,6 +814,10 @@ struct Options {
     std::optional<int> window_width;
     std::optional<int> window_height;
     std::optional<bool> fullscreen;
+    std::optional<bool> exclusive;        // --exclusive / --borderless
+    std::optional<double> render_scale;   // --render-scale, percent per side of the picture
+    std::optional<int> msaa;              // --msaa <1|2|4|8|16|32>
+    std::optional<int> anisotropy;        // --anisotropy <1|2|4|8|16> (1 = off)
     std::optional<int> render_width;
     std::optional<int> render_height;
     // Integer supersampling of the native EFB. This is deliberately separate
@@ -739,6 +829,7 @@ struct Options {
     bool logical_pixel_snap = true;
     std::optional<gekko::AspectMode> aspect;
     std::optional<float> custom_aspect;
+    std::optional<double> aspect_ratio;      // --aspect / --aspect-ratio exactly (0 = Auto): display_geometry.h's parser
     std::optional<float> hud_scale;
     std::optional<float> hud_inset;
     std::optional<std::filesystem::path> display_cfg;
@@ -1012,11 +1103,12 @@ void print_usage() {
     std::cout << "Usage: ShadowTheHedgehog.exe [options]\n"
                  "\n"
                  "  --game-data <directory>   Root holding sys/ and files/ from the original disc\n"
-                 "  --memory-card <file>      Attach a real .gci or writable .raw as card A\n"
-                 "                            (.gci writes persist in a separate .pc.raw card;\n"
-                 "                            a missing .raw is created empty. Default: the\n"
-                 "                            GCI under GC/EUR/Card A, else\n"
-                 "                            save-data/ShadowTheHedgehog.pc.raw)\n"
+                 "  --save-file <file.gci>    The game's save (docs/SAVE_REROUTE_PLAN.md). Default:\n"
+                 "                            save-data/<card stem>.gci for the card below, made\n"
+                 "                            once from its working image or GCI (read only)\n"
+                 "  --memory-card <file>      The card the save is imported from (.gci or .raw;\n"
+                 "                            default: the GCI under GC/EUR/Card A). Never written\n"
+                 "  --legacy-memory-card      Retired: the CARD library is no longer compiled\n"
                  "  --no-boot                 Mount and load only; do not execute game code\n"
                  "  --budget-ms <ms>          Game milliseconds this run may cover\n"
                  "  --wait-watchdog-ms <ms>   Stop with the guest location when the guest runs\n"
@@ -1032,12 +1124,13 @@ void print_usage() {
                  "                            (default 30). The blur burst on a --load-state\n"
                  "                            route is over well before that\n"
 
-                 "  --width <pixels>          Window / presentation width (default 1280)\n"
-                 "  --height <pixels>         Window / presentation height (default 720)\n"
-                 "  --fullscreen              Borderless fullscreen on the primary monitor\n"
-                 "  --windowed                Force a window (overrides display.cfg)\n"
-                 "  --render-width <pixels>   Internal layout width (0 = follow window)\n"
-                 "  --render-height <pixels>  Internal layout height (0 = follow window)\n"
+                 "  Display (docs/DISPLAY_SETTINGS_AUDIT.md). Every flag here is a session override: display.cfg\n"
+                 "  (the Options menu's store) is not changed by it.\n"
+                 "  --width <pixels>          Window client width (default 1280); with --exclusive the mode's\n"
+                 "  --height <pixels>         Window client height (default 720); with --exclusive the mode's\n"
+                 "  --fullscreen / --borderless  Fullscreen at the desktop's size; --exclusive: a monitor mode\n"
+                 "  --windowed                A window\n"
+                 "  --render-scale <percent>  Resolution scale: the 3D pixels per side of the picture, 25..200\n"
                  "  --renderer native         The native Direct3D 12 renderer, the only one\n"
                  "                            (--native-renderer is the same)\n"
                  "  --internal-scale <1..6|auto>  Internal render scale for WHICHEVER backend\n"
@@ -1047,8 +1140,8 @@ void print_usage() {
                  "                            aspect is applied at present time, not here.\n"
                  "                            auto (default) = the smallest scale that does not\n"
                  "                            magnify the guest raster in the fitted output\n"
-                 "  --aspect <mode>           Auto / 4:3 / 16:9 / 16:10 / 21:9 / 32:9 / custom\n"
-                 "  --draw-distance <scale>   Object draw distance: 1 (the original) to 8 (default: to a pixel)\n"
+                 "  --aspect <ratio>          Screen ratio: auto, W:H (4:3, 16:9, 32:10, 64:27, ...) or a number\n"
+                 "  --draw-distance <scale>   Object draw distance: 1 (the original) to 8 (to a pixel); default 1\n"
                  "  --effects-off <a,b,...>   Effect layers not drawn (glare, lens-flare, motion-blur, fog, ...;\n"
                  "                            --list-effect-layers); Num / (or F6) in the window: the layer list\n"
                  "  --effects-solo <layer>    Draw only this effect layer (the other effects off)\n"
@@ -1142,6 +1235,13 @@ void print_usage() {
                  "  --resource-lineage <sub>  Restrict --asset-trace to paths containing\n"
                  "                            <sub> (e.g. stg0202)\n"
                  "  --no-xinput               Disable the host XInput bridge\n"
+                 "  --no-input-thread         Sample controllers on the UI thread once per frame, as before\n"
+                 "                            2026-11-04 (env GEKKO_INPUT_THREAD=0)\n"
+                 "  --no-phase-lock           Do not phase-lock the game clock to the display\n"
+                 "                            (env SHADOW_PHASE_LOCK=0)\n"
+                 "  --no-audio-rate-trim      Fixed device resampling ratio (env SHADOW_AUDIO_RATE_TRIM=0)\n"
+                 "  --jit-present             Experimental: start each frame shortly before its vblank\n"
+                 "                            (env SHADOW_R2_JIT=1; off by default)\n"
                  "  --original-save-text      Show the game's own memory-card messages instead\n"
                  "                            of the PC wording of the save screen\n"
                  "  --perf-log <file.csv>     Log every visible presentation interval and CPU phase\n"
@@ -1189,6 +1289,28 @@ void print_usage() {
                  "  --boot-event <eventNNNN>  DEVELOPER NAVIGATION: the same hand-off into\n"
                  "                            StageSequence::PlayEvent - one in-engine event\n"
                  "                            (files/event/eventNNNN*) played by recovered code\n"
+                 "  --boot-cutscene <eventNNNN> DEVELOPER NAVIGATION: any story cutscene. The\n"
+                 "                            --boot-story hand-off, with the cutscene as the\n"
+                 "                            story's first entry: its event script\n"
+                 "                            (files/event/eventNNNN.scr) or, without one, its\n"
+                 "                            movie (ENNNN.sfd). --boot-event is the 2P intros'\n"
+                 "                            event stages (0800-0826) only\n"
+                 "  --boot-story-stage <stgNNNN> DEVELOPER NAVIGATION: any stage of the guest\n"
+                 "                            table (also 0700 / 0710 and the others no Select\n"
+                 "                            Mode grid lists) as the --boot-story hand-off's\n"
+                 "                            first story entry: the game's story loop builds\n"
+                 "                            the stage as a story stage\n"
+                 "  --boot-2p <stgNNNN>       DEVELOPER NAVIGATION: the 2P battle select's\n"
+                 "                            hand-off into StageSequence::Play2POnce on one\n"
+                 "                            arena (stg0800 / 0801 / 0802)\n"
+                 "  --boot-2p-three           ... into Play2PThree (all three arenas)\n"
+                 "  --boot-2p-chars <a,b>     the two players' character words (14..19, default\n"
+                 "                            14,14)\n"
+                 "  --boot-last-story         DEVELOPER NAVIGATION: PlayStory in Last Story mode\n"
+                 "                            (its events, then stg0700 The Last Way)\n"
+                 "  --boot-expert <0..22>     DEVELOPER NAVIGATION: Expert mode (PlayHard)\n"
+                 "                            continuing at that run position (experimental:\n"
+                 "                            the save block's run word is written, not loaded)\n"
                  "  --boot-flashback          DEVELOPER NAVIGATION: the same hand-off into\n"
                  "                            StageSequence::PlayFlashback\n"
                  "  --boot-story              DEVELOPER NAVIGATION: the same hand-off into\n"
@@ -1229,6 +1351,8 @@ void print_usage() {
                  "  --trace                   Unsupported; rejected without starting execution\n"
                  "  --profile                 Report the hottest guest code at exit\n"
                  "  --no-recomp               Reference runner only: interpret original PPC\n"
+                 "  --original-boot           Reference runner only: run the original __start and OSInit (the\n"
+                 "                            native boot's owners decline), for the boot contract comparison\n"
                  "  --debug-history           Enable the postmortem instruction ring\n"
                  "  --no-debug-history        Explicitly disable postmortem history\n"
                  "  --verify-recomp           Reference runner only: compare native and PPC\n"
@@ -1294,6 +1418,21 @@ std::filesystem::path display_cfg_path(const Options& options) {
     return options.display_cfg ? *options.display_cfg : executable_directory() / "display.cfg";
 }
 
+// The picture's aspect as the display settings hold it (gekko/display_geometry.h): 0 = Auto, else the ratio - a ratio
+// within float precision of a named one is that one exactly (display.cfg's 32:10 parses as a float).
+double settings_aspect(const gekko::DisplayConfig& config) {
+    if (config.aspect_ratio) return *config.aspect_ratio;  // display_geometry.h parse_aspect_value: exact already
+    if (config.aspect == gekko::AspectMode::Auto) return 0.0;
+    const double ratio = config.aspect == gekko::AspectMode::Custom
+                             ? static_cast<double>(config.custom_aspect)
+                             : static_cast<double>(gekko::aspect_ratio_for_mode(config.aspect, config.custom_aspect, 0, 0));
+    for (const gekko::NamedAspect& named : gekko::kNamedAspects) {
+        const double exact = static_cast<double>(named.w) / named.h;
+        if (std::fabs(ratio - exact) < 1e-5) return exact;
+    }
+    return ratio;
+}
+
 gekko::DisplayConfig resolve_display_config(const Options& options) {
     gekko::DisplayConfig config;
     config.window_width = 1280;
@@ -1355,6 +1494,23 @@ gekko::DisplayConfig resolve_display_config(const Options& options) {
     if (options.fullscreen) {
         config.fullscreen = *options.fullscreen;
     }
+    if (options.exclusive) {
+        config.exclusive = *options.exclusive;
+        // --exclusive --width W --height H: the monitor's mode W x H (before 2026-11-05 the one size was both).
+        if (*options.exclusive && options.window_width && options.window_height) {
+            config.fullscreen_width = *options.window_width;
+            config.fullscreen_height = *options.window_height;
+        }
+    }
+    if (options.render_width || options.render_height) {
+        // Not a setting any more (docs/DISPLAY_SETTINGS_AUDIT.md section 6): the picture follows the window or the
+        // screen and the resolution scale. The legacy renderer still reads them.
+        std::cerr << "WARNING: --render-width / --render-height are ignored by this build: the picture follows the "
+                  << "window or screen; use --render-scale for its pixel count\n";
+    }
+    if (options.render_scale) {
+        config.render_scale = *options.render_scale;
+    }
     if (options.render_width) {
         config.render_width = *options.render_width;
     }
@@ -1367,24 +1523,28 @@ gekko::DisplayConfig resolve_display_config(const Options& options) {
     if (options.custom_aspect) {
         config.custom_aspect = *options.custom_aspect;
     }
+    if (options.aspect_ratio) {
+        config.aspect_ratio = *options.aspect_ratio;
+    }
     if (options.hud_scale) {
         config.hud_scale = *options.hud_scale;
     }
     if (options.hud_inset) {
         config.hud_inset = *options.hud_inset;
     }
-    if (config.window_width < 160) {
-        config.window_width = 160;
+    if (config.window_width < 320) {
+        config.window_width = 320;
     }
-    if (config.window_height < 120) {
-        config.window_height = 120;
+    if (config.window_height < 240) {
+        config.window_height = 240;
     }
     return config;
 }
 
 int run(Options options) {
     if (options.native_boot_contract_directory &&
-        (!options.boot || options.load_state_at_start || !options.recompiled)) {
+        (!options.boot || options.load_state_at_start ||
+         (!options.recompiled && !gekko::reference_execution_available()))) {
         std::cerr << "ERROR: --native-boot-contract-dir requires a translated cold boot"
                      " without --load-state.\n";
         return 2;
@@ -1506,7 +1666,7 @@ int run(Options options) {
         // booting: proves the files/ tree is a mountable asset tree.
         gekko::assets::AssetNamespace names;
         std::string error;
-        if (!gekko::assets::AssetNamespace::from_directory(mount.root / "files", names, error)) {
+        if (!shadow::backends::namespace_from_host_directory(mount.root / "files", names, error)) {
             std::cerr << "ERROR: could not build the asset namespace: " << error << "\n";
             return 4;
         }
@@ -1517,14 +1677,23 @@ int run(Options options) {
     }
 
     gekko::System system;
+    if (options.original_boot) {
+        if (!reference_execution) {
+            std::cerr << "ERROR: --original-boot is a reference-runner option (the native executable has no "
+                         "original boot code).\n";
+            return 2;
+        }
+        system.boot().use_original_boot();
+    }
     const gekko::DisplayConfig display = resolve_display_config(options);
     // A render size Direct3D 12 cannot hold as one texture (D3D12_REQ_TEXTURE2D_U_OR_V_DIMENSION) is refused here
     // instead of failing at target creation.
     if (display.render_width > 16384u || display.render_height > 16384u) {
-        std::cerr << "ERROR: render size " << display.render_width << "x" << display.render_height
+        std::cerr << "ERROR: game resolution " << display.render_width << "x" << display.render_height
                   << " exceeds Direct3D 12's 16384-pixel texture limit.\n";
         return 2;
     }
+    for (const std::string& warning : display.warnings) std::cerr << "WARNING: " << warning << "\n";
     // display.cfg's presentation keys, under the command line's flags (the command line > display.cfg > the default).
     if (display.render_rate && !options.render_rate_explicit) options.render_rate = *display.render_rate;
     if (display.vsync && !options.vsync_explicit) options.vsync = *display.vsync;
@@ -1537,24 +1706,50 @@ int run(Options options) {
     {
         gekko::DisplaySettings settings;
         settings.fullscreen = display.fullscreen;
+        settings.exclusive = display.exclusive;
         settings.window_width = display.window_width;
         settings.window_height = display.window_height;
-        settings.render_width = display.render_width;
-        settings.render_height = display.render_height;
+        settings.fullscreen_width = display.fullscreen_width;
+        settings.fullscreen_height = display.fullscreen_height;
+        settings.aspect = settings_aspect(display);
+        settings.render_scale = display.render_scale.value_or(100.0);
+        settings.msaa = options.msaa.value_or(display.msaa.value_or(4));
+        settings.anisotropy = options.anisotropy.value_or(display.anisotropy.value_or(16));
+        settings.gameplay_aspect = display.gameplay_aspect.value_or(0.0);
         settings.render_rate = options.render_rate;
         settings.vsync = options.vsync;
         settings.frame_interpolation = options.frame_interpolation;
         settings.draw_distance = options.draw_distance;
         settings.fps_counter = options.fps_counter;
-        gekko::display_settings().initialize(settings, display_cfg_path(options));
-#if defined(SHADOW_RENDER_LIFTED)
-        // The Options menu's Display page offers the launcher's resolution presets (render/display_modes.h).
-        std::vector<gekko::options_display::Preset> presets;
-        for (const shadow::render::ResolutionPreset& p : shadow::render::resolution_presets())
-            presets.push_back({p.width, p.height, p.family});
-        gekko::options_display::set_resolution_presets(
-            std::move(presets), [](std::uint32_t w, std::uint32_t h) { return shadow::render::aspect_family(w, h).name; });
-#endif
+        // The command line's keys are session overrides (gekko/display_settings.h): in effect, never saved unless the
+        // player changes that setting in the menu.
+        unsigned overrides = 0u;
+        const auto mark = [&](bool given, const char* key) {
+            if (given) overrides |= gekko::display_settings_key(key);
+        };
+        mark(options.fullscreen.has_value(), "fullscreen");
+        mark(options.exclusive.has_value(), "exclusive");
+        mark(options.window_width.has_value(), "width");
+        mark(options.window_height.has_value(), "height");
+        mark(options.exclusive.value_or(false) && options.window_width.has_value(), "fullscreen_width");
+        mark(options.exclusive.value_or(false) && options.window_height.has_value(), "fullscreen_height");
+        mark(options.aspect.has_value() || options.aspect_ratio.has_value(), "aspect");
+        mark(options.render_scale.has_value(), "render_scale");
+        mark(options.msaa.has_value(), "msaa");
+        mark(options.anisotropy.has_value(), "anisotropy");
+        mark(options.render_rate_explicit, "render_rate");
+        mark(options.vsync_explicit, "vsync");
+        mark(options.frame_interpolation_explicit, "frame_interpolation");
+        mark(options.draw_distance_explicit, "draw_distance");
+        mark(options.fps_counter_explicit, "fps_counter");
+        gekko::display_settings().initialize(settings, display_cfg_path(options), overrides);
+        if (const std::string o = gekko::display_settings().session_overrides(); !o.empty())
+            std::cout << "Display: the command line overrides display.cfg for this session: " << o
+                      << " (not saved unless changed in the Options menu)\n";
+        // The Options menu's settings registry (gekko/settings_registry.h): the Display and Graphics categories over
+        // the display settings just initialised.
+        gekko::settings::registry().add(gekko::settings::make_display_provider());
+        gekko::settings::registry().add(gekko::settings::make_graphics_provider());
     }
     system.display().configure(display);
     // Internal scale. ONE control, and it means the same thing to both
@@ -1610,12 +1805,14 @@ int run(Options options) {
     // The lifted build's renderer (R2) has no EFB scale: it renders at --render-width / --render-height (display.cfg
     // render_width / render_height), else at the window's size (G10, HW_REPORT N.2); the size it really uses is
     // printed by the renderer ("[lifted-render] render size").
-    std::cout << "Render size (R2): "
-              << (display.render_width > 0 && display.render_height > 0
-                      ? std::to_string(display.render_width) + "x" + std::to_string(display.render_height) +
-                            " asked: the 3D scene is rasterized at exactly this size (docs/RESOLUTION_AUDIT.md)"
-                      : std::string("the window's size"))
-              << "; --internal-scale and the internal EFB apply to the legacy renderer only\n";
+    {
+        const gekko::DisplaySettings s = gekko::display_settings().current();
+        std::cout << "Display (R2): " << (s.fullscreen ? "fullscreen" : "windowed") << ", screen ratio "
+                  << (s.aspect > 0.0 ? gekko::aspect_label(s.aspect) : std::string("auto")) << ", resolution scale "
+                  << s.render_scale
+                  << " %; the size in use is printed by the renderer ([lifted-render] render size); --internal-scale "
+                  << "and the internal EFB apply to the legacy renderer only\n";
+    }
 #else
     {
         const gekko::EfbGeometry efb_geometry{gekko::RenderScale{internal_scale}};
@@ -1627,6 +1824,14 @@ int run(Options options) {
                   << ")\n";
     }
 #endif
+#if defined(SHADOW_RENDER_LIFTED)
+    if (display.hud_scale != 1.0f || display.hud_inset != 0.0f) {
+        // The lifted renderer lays the 2D out per cast (lift/ui/hud_layout.h); these two keys reached only the legacy
+        // renderer's HUD affine.
+        std::cout << "WARNING: hud_scale / hud_inset are ignored by this build (the legacy renderer's keys); the HUD "
+                  << "is laid out per element at its original proportions\n";
+    }
+#else
     if (display.hud_scale != 1.0f || display.hud_inset != 0.0f) {
         // These two are exposed in display.cfg but are NOT validated, and they
         // are not inert: either of them makes layout_is_native() false even at
@@ -1639,40 +1844,23 @@ int run(Options options) {
                   << " byte-identical 4:3 path and enable untested vertical anchoring."
                   << "\n";
     }
-    std::optional<std::filesystem::path> memory_card = options.memory_card;
-    if (!memory_card) {
-        const std::filesystem::path completed_save =
-            mount.root / "GC" / "EUR" / "Card A" /
-            "8P-GUPP-SHADOWTHEHEDGEHOG.gci";
-        if (std::filesystem::exists(completed_save)) {
-            memory_card = completed_save;
-        } else {
-            // A first run without an imported save: the game's own card,
-            // created empty on first use, so it can create and keep its save.
-            memory_card = executable_directory() / "save-data" / "ShadowTheHedgehog.pc.raw";
-        }
+#endif
+    if (options.legacy_memory_card) {
+        // The emulated memory card (NativeCard under the CARD library) is retired from the game: the save store owns
+        // the card job runner and the CARD library's bodies are no longer compiled (docs/agents/card-saves.md).
+        std::cerr << "ERROR: --legacy-memory-card is retired: the game saves through the save store. Use "
+                     "--memory-card <card or GCI> to import an old card once, --save-file <gci> to choose the save.\n";
+        return 2;
     }
-    if (memory_card) {
-        std::filesystem::path working_card;
-        std::string extension = memory_card->extension().string();
-        std::transform(extension.begin(), extension.end(), extension.begin(),
-                       [](unsigned char byte) {
-                           return static_cast<char>(std::tolower(byte));
-        });
-        if (extension == ".gci") {
-            working_card = executable_directory() / "save-data" /
-                           (memory_card->stem().string() + ".pc.raw");
-        }
-        system.set_memory_card_path(*memory_card, working_card);
-        std::cout << "Memory card A source: " << memory_card->string() << "\n"
-                  << "Memory card A working image: "
-                  << system.memory_card_backing_path().string() << "\n";
-        if (!system.memory_card_sram_path().empty()) {
-            std::cout << "Memory card A SRAM identity: "
-                      << system.memory_card_sram_path().string() << "\n";
-        } else {
-            std::cout << "Memory card A SRAM identity: derived from card header\n";
-        }
+    {
+        // The native save store (gekko/save_store.h, docs/SAVE_REROUTE_PLAN.md): one GCI the game reads and writes;
+        // the card it used to play on is read once, the first time, to carry the progress over (gekko/save_import.h).
+        const gekko::save_import::Paths paths = gekko::save_import::resolve(
+            options.save_file, options.memory_card, mount.root, executable_directory() / "save-data");
+        const gekko::save_import::Result imported = gekko::save_import::import_if_missing(paths);
+        system.set_save_file(paths.save);
+        std::cout << "Save: " << imported.message << "\n"
+                  << "Console settings (SRAM): " << system.ipl().settings_path().string() << "\n";
     }
     if (options.symbols) {
         const std::size_t count = load_symbols(system, *options.symbols);
@@ -1723,9 +1911,38 @@ int run(Options options) {
                 return true;
             });
         }
-        if (!system.mount_assets(*root / "files", std::move(identity), error)) {
+        shadow::backends::StorageOptions storage_options;
+        storage_options.files_root = *root / "files";
+        // The Japanese voices (gekko/voice_language.h): the player's Japanese disc files served beside the PAL tree.
+        storage_options.extra_files = gekko::find_japanese_voice_files(*root);
+        gekko::set_japanese_voices_available(!storage_options.extra_files.empty());
+        if (!storage_options.extra_files.empty())
+            std::cout << "Japanese voices: " << storage_options.extra_files.size() << " files from "
+                      << storage_options.extra_files.front().parent_path().string() << "\n";
+        if (options.disc_image) storage_options.disc_image = *options.disc_image;
+        auto storage = shadow::backends::create_storage(options.storage_backend, storage_options, error);
+        if (storage == nullptr) {
+            std::cerr << "ERROR: storage backend: " << error << "\n";
+            return 4;
+        }
+        std::cout << "Storage backend: " << storage->info().name << " (" << storage->info().description
+                  << "), runtime contract " << shadow::runtime::v1::kContractMajor << "."
+                  << shadow::runtime::v1::kContractMinor << "\n";
+        if (!system.mount_assets(std::move(storage), std::move(identity), error)) {
             std::cerr << "ERROR: could not mount game assets: " << error << "\n";
             return 4;
+        }
+        if (system.save_store_active()) {
+            // The game's own options live in the PC settings (options.cfg, loaded by the mount; the user's decision
+            // C, docs/SAVE_REROUTE_PLAN.md): the language and sound mode the game reads from the console settings at
+            // boot follow them, so the screens before the save loads match too. Game language 0 JP .. 5 IT ->
+            // the OS's (0 English, 1 German, 2 French, 3 Spanish, 4 Italian); Japanese has no OS value (kept).
+            const gekko::PcSettings pc = gekko::pc_settings().current();
+            // 6 = Hungarian: English to the game (its fonts / texts swapped at the mount).
+            static constexpr int kOsLanguage[7] = {-1, 0, 2, 3, 1, 4, 0};
+            const int language = pc.language >= 0 && pc.language <= 6 ? kOsLanguage[pc.language] : -1;
+            const int stereo = pc.speaker < 0 ? -1 : (pc.speaker == 1 ? 0 : 1);
+            system.ipl().override_console_settings(language, stereo);
         }
         const gekko::assets::MountReport& report = system.assets().report();
         std::cout << "Assets: " << report.files << " files, " << report.directories
@@ -1886,6 +2103,83 @@ int run(Options options) {
             return 2;
         }
         system.set_boot_event(*options.boot_event);
+    }
+    if (options.boot_cutscene) {
+        if (options.boot_stage || options.boot_event || options.boot_story || options.boot_flashback ||
+            options.load_state_at_start || options.ui_test_mode || options.ui_test_script) {
+            std::cerr << "ERROR: --boot-cutscene needs a cold boot without another --boot-*, --load-state or "
+                         "--ui-test"
+                      << std::endl;
+            return 2;
+        }
+        // The cutscene's script (files/event/eventNNNN.scr) or its movie (files/ENNNN.sfd) must exist.
+        char script[32], movie[16];
+        std::snprintf(script, sizeof(script), "event%04u.scr", static_cast<unsigned>(*options.boot_cutscene));
+        std::snprintf(movie, sizeof(movie), "E%04u.sfd", static_cast<unsigned>(*options.boot_cutscene));
+        std::error_code exists_error;
+        if (!std::filesystem::exists(*root / "files" / "event" / script, exists_error) &&
+            !std::filesystem::exists(*root / "files" / movie, exists_error)) {
+            std::cerr << "ERROR: --boot-cutscene: neither files/event/" << script << " nor files/" << movie
+                      << " is in the game data" << std::endl;
+            return 2;
+        }
+        system.set_boot_cutscene(*options.boot_cutscene);
+    }
+    if (options.boot_story_stage) {
+        if (options.boot_stage || options.boot_event || options.boot_story || options.boot_flashback ||
+            options.boot_cutscene || options.load_state_at_start || options.ui_test_mode || options.ui_test_script) {
+            std::cerr << "ERROR: --boot-story-stage needs a cold boot without another --boot-*, --load-state or "
+                         "--ui-test"
+                      << std::endl;
+            return 2;
+        }
+        // The stage must be a record of the guest's stage table (59 records of 0x50 bytes at 0x804C5AE8).
+        bool known = false;
+        for (gekko::u32 record = 0; record < 59u; ++record) {
+            if (system.guest_memory().read32(0x804C5AE8u + record * 0x50u) == *options.boot_story_stage) known = true;
+        }
+        if (!known) {
+            std::cerr << "ERROR: --boot-story-stage: stg" << *options.boot_story_stage
+                      << " is not in the guest stage table; run --list-stages" << std::endl;
+            return 2;
+        }
+        system.set_boot_story_stage(*options.boot_story_stage);
+    }
+    {
+        const int modes = (options.boot_2p ? 1 : 0) + (options.boot_2p_three ? 1 : 0) +
+                          (options.boot_last_story ? 1 : 0) + (options.boot_expert ? 1 : 0);
+        if (modes > 0) {
+            if (modes > 1 || options.boot_stage || options.boot_event || options.boot_story || options.boot_flashback ||
+                options.boot_cutscene || options.boot_story_stage || options.load_state_at_start ||
+                options.ui_test_mode || options.ui_test_script) {
+                std::cerr << "ERROR: --boot-2p / --boot-2p-three / --boot-last-story / --boot-expert need a cold boot "
+                             "without another --boot-*, --load-state or --ui-test"
+                          << std::endl;
+                return 2;
+            }
+            if (options.boot_2p && (*options.boot_2p < 800u || *options.boot_2p > 802u)) {
+                std::cerr << "ERROR: --boot-2p takes stg0800, stg0801 or stg0802 (the stages whose record carries the "
+                             "2P flag)"
+                          << std::endl;
+                return 2;
+            }
+            if (options.boot_expert && *options.boot_expert > 22u) {
+                std::cerr << "ERROR: --boot-expert takes a run position 0..22" << std::endl;
+                return 2;
+            }
+            for (const gekko::u32 c : options.boot_2p_characters) {
+                if (c < 14u || c > 19u) {
+                    std::cerr << "ERROR: --boot-2p-chars takes two character words 14..19" << std::endl;
+                    return 2;
+                }
+            }
+            if (options.boot_2p)
+                system.set_boot_2p(*options.boot_2p, options.boot_2p_characters[0], options.boot_2p_characters[1]);
+            if (options.boot_2p_three)
+                system.set_boot_2p_three(options.boot_2p_characters[0], options.boot_2p_characters[1]);
+            if (options.boot_last_story) system.set_boot_last_story();
+            if (options.boot_expert) system.set_boot_expert(*options.boot_expert);
+        }
     }
     if (options.boot_story) {
         if (options.boot_stage || options.boot_event || options.load_state_at_start || options.ui_test_mode ||
@@ -2162,8 +2456,33 @@ int run(Options options) {
     system.set_trace_stale_contacts(options.trace_stale_contacts);
     system.set_chara_colli_bone_native(options.chara_colli_bone_native);
     system.set_chara_colli_bone_memo(options.chara_colli_bone_memo);
-    system.cpu().set_interrupt_fpr_shadow(options.fpr_shadow);
+    system.cpu().set_interrupt_fpr_shadow(options.fpr_shadow || gekko::os_threads::single_thread_configuration());  // one thread: the host save / restore replaces the lazy FPU switch (native_interrupts.cpp os_set_current_context)
     system.set_sofdec_playend_stub(options.sofdec_playend_stub.value_or(false));
+    std::vector<gekko::guest_watch::Range> deferred_watch_ranges;  // --watch-guest-from-tick
+    if (options.watch_guest_from_tick != 0u && (!options.watch_guest || options.window)) {
+        std::cerr << "ERROR: --watch-guest-from-tick needs --watch-guest and --headless\n";
+        return 2;
+    }
+    if (options.watch_guest) {
+        std::vector<gekko::guest_watch::Range> ranges;
+        std::string watch_error;
+        const bool deferred = options.watch_guest_from_tick != 0u;
+        if (system.cpu().recompiled() == nullptr ||
+            !gekko::guest_watch::parse_ranges(options.watch_guest->string(), ranges, &watch_error) ||
+            (!deferred && !gekko::guest_watch::start(system.guest_memory(), *system.cpu().recompiled(),
+                                                      std::move(ranges), &watch_error))) {
+            std::cerr << "ERROR: --watch-guest: "
+                      << (watch_error.empty() ? std::string("no recompiled code attached") : watch_error) << '\n';
+            return 2;
+        }
+        if (deferred) {
+            deferred_watch_ranges = std::move(ranges);
+            std::cout << "guest watch: arms at the boundary after game tick " << options.watch_guest_from_tick << " ("
+                      << options.watch_guest->string() << ")\n";
+        } else {
+            std::cout << "guest watch: armed (" << options.watch_guest->string() << ")\n";
+        }
+    }
     gekko::UiTestScript ui_test_script;
     bool ui_test_active = false;
     if (options.ui_test_script || options.ui_test_mode) {
@@ -2196,6 +2515,81 @@ int run(Options options) {
         // oracle budget produces ~23M segments; 2M capped coverage at 8.6%.
         system.cpu().set_verify_recompiled(true, 16, 50000000ull);
         std::cout << "Verifying every recompiled call against the interpreter\n";
+    }
+    if (options.verify_player) {
+        std::ifstream scope_file(*options.verify_player);
+        std::vector<gekko::u32> scope;
+        std::vector<std::pair<gekko::u32, gekko::u32>> ranges;
+        std::vector<gekko::u32> r4_dead;
+        std::string line;
+        while (std::getline(scope_file, line)) {
+            char* end = nullptr;
+            const unsigned long value = std::strtoul(line.c_str(), &end, 16);
+            if (end != line.c_str() && value != 0u) scope.push_back(static_cast<gekko::u32>(value));
+            // "address,size" (size in bytes, decimal): every segment inside the function is a candidate too.
+            if (end != line.c_str() && value != 0u && *end == ',') {
+                char* rest = nullptr;
+                const unsigned long size = std::strtoul(end + 1, &rest, 10);
+                if (size != 0u) ranges.emplace_back(static_cast<gekko::u32>(value), static_cast<gekko::u32>(value + size));
+                if (rest != nullptr && std::strncmp(rest, ",r4dead", 7) == 0) {
+                    r4_dead.push_back(static_cast<gekko::u32>(value));
+                }
+            }
+        }
+        if (scope.empty()) {
+            std::cerr << "ERROR: --verify-player: no entries in " << options.verify_player->string() << "\n";
+            return 2;
+        }
+        system.cpu().set_verify_scope(std::move(scope), options.verify_player_all_segments);
+        system.cpu().set_verify_ranges(std::move(ranges));
+        system.cpu().set_verify_r4_dead(std::move(r4_dead));
+        system.cpu().set_frc_probe(true);  // observation only (docs/SHADOW_PLAYER_COVERAGE_AUDIT.md, frC)
+        // Every segment of the route: --verify-recomp's 50M-segment budget ended a 90 s Westopolis run's checking
+        // about two thirds of the way in, and the coverage would have described only that part.
+        if (options.verify_player_all_segments) system.cpu().set_verify_recompiled(true, 16, ~0ull);
+        // Fast mode by default. A fixture works in either mode: its owner's first arrivals are checked.
+        std::vector<gekko::u32> known;
+        for (const auto& path : options.verify_player_known) {
+            std::ifstream rows(path);
+            std::string row;
+            std::getline(rows, row);  // header: entry,verified,mismatches,...,owner_mismatches,...
+            while (std::getline(rows, row)) {
+                unsigned long long fields[7] = {};
+                const char* at = row.c_str();
+                char* end = nullptr;
+                fields[0] = std::strtoull(at, &end, 16);
+                for (int i = 1; i < 7 && end != nullptr && *end == ','; ++i) fields[i] = std::strtoull(end + 1, &end, 10);
+                // verified > 0, no mismatch, no owner mismatch
+                if (fields[0] != 0u && fields[1] != 0u && fields[2] == 0u && fields[6] == 0u)
+                    known.push_back(static_cast<gekko::u32>(fields[0]));
+            }
+        }
+        auto sampling = options.verify_player_sampling;
+        sampling.enabled = !options.verify_player_strict;
+        system.cpu().set_verify_sampling(sampling, known);
+        if (!options.verify_player_fixture.empty()) {
+            const auto colon = options.verify_player_fixture.find(':');
+            const std::string kind = options.verify_player_fixture.substr(0, colon);
+            const gekko::u32 at = colon == std::string::npos
+                                      ? 0u
+                                      : static_cast<gekko::u32>(
+                                            std::strtoul(options.verify_player_fixture.c_str() + colon + 1, nullptr, 16));
+            if (at == 0u || (kind != "exact" && kind != "corrupt")) {
+                std::cerr << "ERROR: --verify-player-fixture wants exact:<hex> or corrupt:<hex>\n";
+                return 2;
+            }
+            system.cpu().set_verify_owner_fixture(at, kind == "corrupt" ? 2 : 1);
+        }
+        if (sampling.enabled) {
+            std::cout << "Verifying the player scope (fast diagnostic sampling, not full oracle equivalence: first "
+                      << sampling.first_per_entry << " arrivals per entry, then 1 in " << sampling.period
+                      << "; previously verified entries 1 in " << sampling.known_period << " (" << known.size()
+                      << " listed); verifier CPU " << sampling.cpu_share * 100.0 << " % of the game thread) ("
+                      << options.verify_player->string() << ")\n";
+        } else {
+            std::cout << "Verifying the player scope against the interpreter (strict: every segment) ("
+                      << options.verify_player->string() << ")\n";
+        }
     }
     system.cpu().set_history_depth(options.debug_history ? 4096u : 0u);
     system.cpu().set_instruction_trace(options.trace);
@@ -2279,20 +2673,29 @@ int run(Options options) {
         return 4;
     }
     gekko::LiftedRender lifted_render;
+    gekko::ThreadSampler thread_sampler;  // per-thread CPU rows for GEKKO_PRESENT_TRACE (inert otherwise)
+    thread_sampler.start();
     {
         gekko::LiftedRenderOptions lifted_options;
         lifted_options.vsync = options.vsync;
         lifted_options.collect_timing = options.telemetry_log.has_value() || options.performance_log.has_value();
         lifted_options.game_framing = options.game_framing;
-        // G10: the render size (--render-width / --render-height, display.cfg), aspect-locked by the renderer.
-        lifted_options.render_width = display.render_width > 0 ? static_cast<std::uint32_t>(display.render_width) : 0u;
-        lifted_options.render_height =
-            display.render_height > 0 ? static_cast<std::uint32_t>(display.render_height) : 0u;
+        // G10: the render size comes from the display geometry when the game output is set (apply_resolution);
+        // until then the window's size.
+        lifted_options.render_width = 0u;
+        lifted_options.render_height = 0u;
+        // Image quality (display.cfg msaa / anisotropy, --msaa / --anisotropy); changed live by the Options page.
+        lifted_options.msaa_samples = static_cast<std::uint32_t>(gekko::display_settings().current().msaa);
+        lifted_options.anisotropy = static_cast<std::uint32_t>(gekko::display_settings().current().anisotropy);
         std::string lifted_error;
         if (!lifted_render.start(lifted_options, &lifted_error)) {
             std::cerr << "ERROR: native renderer: " << lifted_error << std::endl;
             return 4;
         }
+        // The Options page offers only the MSAA counts this GPU takes for the scene (a saved one it lacks is shown as
+        // such and the renderer keeps the one it can - msaa_note).
+        gekko::options_display::set_msaa_supported(lifted_render.msaa_supported_mask());
+        if (!lifted_render.msaa_note().empty()) std::cerr << "WARNING: " << lifted_render.msaa_note() << "\n";
         // The 2D identity hooks' announcements lay the game's 2D out for the real output (R2_DRIVER.md 4.8).
         system.set_hud_listener(lifted_render.hud_listener());
         lifted_render.set_draw_distance(options.draw_distance);
@@ -2310,6 +2713,10 @@ int run(Options options) {
         }
         lifted_render.set_fade_in_ticks(static_cast<gekko::u64>(options.fade_in_ms) *
                                         (gekko::kGameTicksPerSecond / 1000u));
+        // VISetBlack: the console's display is black while the game has the black flag in force.
+        // SHADOW_VI_BLANK=0 turns it off (A/B against the pre-blanking behaviour).
+        if (const char* blank = std::getenv("SHADOW_VI_BLANK"); blank == nullptr || blank[0] != '0')
+            lifted_render.set_display_blank([&system] { return system.video().black_requested(); });
         // The lifted build's native owners (extract/native-owners-r2.txt: the lock-on mark's draw).
         lifted_render.install_owners(system.cpu());
         // The cull cone is the displayed cone (R2_DRIVER.md 4.12): the renderer draws each view's width from the
@@ -2566,6 +2973,29 @@ int run(Options options) {
     }
     gekko::InputTape recording_tape;
     gekko::InputTape* const tape_recorder = options.input_tape_record ? &recording_tape : nullptr;
+    // A recording is also saved every 10 s of wall time while it runs (a copy, written on a worker so the game thread
+    // never waits on the file), so a run that does not reach the clean shutdown keeps its input up to the last save.
+    std::thread tape_autosave;
+    std::atomic<bool> tape_autosave_busy{false};
+    struct TapeAutosaveJoin {
+        std::thread& worker;
+        ~TapeAutosaveJoin() {
+            if (worker.joinable()) worker.join();
+        }
+    } tape_autosave_join{tape_autosave};
+    auto tape_autosave_next = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    const auto autosave_tape = [&]() {
+        const auto now = std::chrono::steady_clock::now();
+        if (now < tape_autosave_next || tape_autosave_busy.load(std::memory_order_acquire)) return;
+        tape_autosave_next = now + std::chrono::seconds(10);
+        if (tape_autosave.joinable()) tape_autosave.join();
+        tape_autosave_busy.store(true, std::memory_order_release);
+        tape_autosave = std::thread([copy = *tape_recorder, path = *options.input_tape_record, &tape_autosave_busy]() {
+            std::string error;
+            if (!copy.write(path, 0u, 0u, &error)) std::cerr << "[input-tape] autosave: " << error << "\n";
+            tape_autosave_busy.store(false, std::memory_order_release);
+        });
+    };
     // Replay markers (docs/tools/REPLAY_MARKERS.md): each press of the marker key appends one line - where the game
     // is (tick, frames) and where the tape is (the next sample) - so the moment can be replayed and inspected again.
     const std::filesystem::path marker_path = options.marker_file ? *options.marker_file
@@ -2583,6 +3013,7 @@ int run(Options options) {
     gekko::u64 marker_ordinal = 0;
     gekko::u64 range_ordinal = 0;
     bool range_open = false;
+    bool window_state_reported = false;  // the window owner's first DisplayWindowState sent (UI loop)
     // `kind`: "point" (the marker key) or "range-start" / "range-end" (the range key's alternate presses).
     // `point`: where the user pointed (a click or the mouse at the marker key), a fraction of the window from the top left.
     const auto record_marker = [&](gekko::u64 game_ticks, double wall_s, const char* kind = "point",
@@ -2621,12 +3052,136 @@ int run(Options options) {
         out << line.str() << "\n";
         std::cout << "[marker] #" << marker_ordinal << " -> " << marker_path.string() << "\n";
     };
+    // The recorder's meta (gekko/input_tape.h version 3, docs/tools/RECORDER.md): what a replay needs to know it is
+    // replaying the same thing - the build, the start route, the card and SRAM, the settings - and, for --record, the
+    // folder's pristine initial/ copies and manifest.json, taken now (before the game has run a frame).
+    const auto file_fnv64 = [](const std::filesystem::path& path) -> std::string {
+        std::ifstream in(path, std::ios::binary);
+        if (!in) return {};
+        std::uint64_t h = 1469598103934665603ull;
+        std::vector<char> buffer(1u << 20);
+        while (in) {
+            in.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+            const std::streamsize got = in.gcount();
+            for (std::streamsize i = 0; i < got; ++i) {
+                h ^= static_cast<unsigned char>(buffer[static_cast<std::size_t>(i)]);
+                h *= 1099511628211ull;
+            }
+        }
+        char text[24];
+        std::snprintf(text, sizeof(text), "%016llx", static_cast<unsigned long long>(h));
+        return text;
+    };
+    const auto fill_tape_meta = [&](gekko::InputTape& tape) {
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        const std::time_t now = std::time(nullptr);
+        std::tm local{};
+        localtime_s(&local, &now);
+        char date[40];
+        std::strftime(date, sizeof(date), "%Y-%m-%d %H:%M:%S", &local);
+        tape.set_meta("recorder", "shadow-input-tape 3 (docs/tools/RECORDER.md)");
+        tape.set_meta("date", date);
+        const fs::path exe = executable_path();
+        tape.set_meta("exe", exe.string() + " size " + std::to_string(fs::file_size(exe, ec)));
+        std::string line;
+        for (const std::string& a : options.command_line) line += (line.empty() ? "" : " ") + a;
+        tape.set_meta("command_line", line);
+        if (options.boot_stage) tape.set_meta("boot_stage", std::to_string(*options.boot_stage));
+        tape.set_meta("video", options.pal_boot ? "pal" : "ntsc");
+        const fs::path card = system.memory_card_backing_path(), sram = system.memory_card_sram_path();
+        if (!card.empty()) tape.set_meta("card", "fnv64 " + file_fnv64(card) + " " + card.string());
+        if (!sram.empty()) tape.set_meta("sram", "fnv64 " + file_fnv64(sram) + " " + sram.string());
+        const gekko::DisplaySettings s = gekko::display_settings().current();
+        char settings[256];
+        std::snprintf(settings, sizeof(settings),
+                      "mode %s resolution %dx%d aspect %g render_scale %g msaa %d anisotropy %d vsync %d rate %g",
+                      !s.fullscreen ? "windowed" : s.exclusive ? "exclusive" : "borderless", s.window_width,
+                      s.window_height, s.aspect, s.render_scale, s.msaa, s.anisotropy, s.vsync ? 1 : 0, s.render_rate);
+        tape.set_meta("display", settings);
+        tape.set_meta("draw_distance", std::to_string(s.draw_distance));
+        tape.set_meta("gameplay_aspect", options.gameplay_aspect_arg ? *options.gameplay_aspect_arg
+                                                                      : (s.gameplay_aspect > 0.0 ? std::to_string(s.gameplay_aspect)
+                                                                                                 : std::string("follow")));
+        tape.set_meta("framing", options.game_framing ? "game" : "square-pixels");
+        tape.set_meta("native_visibility", options.native_visibility ? "on" : "off");
+        tape.set_meta("check_interval_s", std::to_string(options.tape_check_seconds));
+        if (!options.record_dir) return;
+        // --record: the folder's initial/ (the pristine card, SRAM and the two configs) and manifest.json.
+        const fs::path dir = *options.record_dir;
+        fs::create_directories(dir / "initial", ec);
+        if (!card.empty()) fs::copy_file(card, dir / "initial" / "card.raw", fs::copy_options::overwrite_existing, ec);
+        if (!sram.empty()) fs::copy_file(sram, dir / "initial" / "SRAM.pc.raw", fs::copy_options::overwrite_existing, ec);
+        if (fs::exists(display_cfg_path(options)))
+            fs::copy_file(display_cfg_path(options), dir / "initial" / "display.cfg", fs::copy_options::overwrite_existing, ec);
+        const fs::path pad = options.pad_cfg ? *options.pad_cfg : executable_directory() / "pad.cfg";
+        if (fs::exists(pad)) fs::copy_file(pad, dir / "initial" / "pad.cfg", fs::copy_options::overwrite_existing, ec);
+        std::ofstream manifest(dir / "manifest.json", std::ios::binary | std::ios::trunc);
+        const auto json = [](const std::string& text) {
+            std::string out;
+            for (const char ch : text) {
+                if (ch == '\\' || ch == '"') out.push_back('\\');
+                out.push_back(ch);
+            }
+            return out;
+        };
+        manifest << "{\n  \"format\": \"shadow-recording 1\",\n  \"tape\": \"input.tape\",\n  \"date\": \"" << date
+                 << "\",\n  \"boot_stage\": " << (options.boot_stage ? std::to_string(*options.boot_stage) : "null")
+                 << ",\n  \"exe\": \"" << json(exe.string()) << "\",\n  \"command_line\": \"" << json(line)
+                 << "\",\n  \"card_fnv64\": \"" << (card.empty() ? "" : file_fnv64(card)) << "\",\n  \"display\": \""
+                 << settings << "\"\n}\n";
+        std::cout << "[record] " << dir.string() << ": initial/ copied, manifest.json written\n";
+    };
     if (tape_recorder != nullptr) {
         tape_recorder->begin_recording(system.game_ticks(), static_cast<int>(display.window_width),
                                        static_cast<int>(display.window_height));
+        fill_tape_meta(*tape_recorder);
         std::cout << "[input-tape] recording to " << options.input_tape_record->string() << " from tick "
                   << system.game_ticks() << "\n";
     }
+    // At every host service, after the samples are latched (windowed and headless alike): the recorder's checkpoints and
+    // a replay's comparisons (gekko/replay_check.h), and a replay's recorded settings (draw_distance moves the spawn
+    // range). The interval is a whole number of host services, so recording and replay compute at the same ticks.
+    const gekko::u64 tape_check_ticks =
+        static_cast<gekko::u64>(options.tape_check_seconds * 200.0 + 0.5) * gekko::System::kHostServiceTicks;
+    gekko::u64 next_tape_check = 0;
+    struct ReplayChecks {
+        gekko::u64 compared = 0, matched = 0, first_tick = 0;
+        std::string first_groups;
+    } replay_checks;
+    const auto tape_service = [&](gekko::u64 tick) {
+        const auto checkpoint = [&]() {
+            return gekko::replay_check::compute([&](gekko::u32 address) { return system.guest_memory().read32(address); });
+        };
+        if (tape_recorder != nullptr && tape_recorder->recording() && tape_check_ticks != 0u) {
+            if (next_tape_check == 0u) {
+                next_tape_check = tick + tape_check_ticks;
+            } else if (tick >= next_tape_check) {
+                tape_recorder->note_check(tick, checkpoint());
+                next_tape_check = tick + tape_check_ticks;
+            }
+        }
+        if (!input_tape.playing()) return;
+#if defined(SHADOW_RENDER_LIFTED)
+        for (const gekko::InputTape::Setting& s : input_tape.settings_at(tick))
+            if (s.key == "draw_distance") lifted_render.set_draw_distance(std::stof(s.value));
+#endif
+        std::string expected;
+        if (!input_tape.check_at(tick, &expected)) return;
+        ++replay_checks.compared;
+        const std::string got = checkpoint();
+        if (got == expected) {
+            ++replay_checks.matched;
+            return;
+        }
+        if (replay_checks.first_tick != 0u) return;
+        replay_checks.first_tick = tick;
+        replay_checks.first_groups = gekko::replay_check::differing_groups(expected, got);
+        std::cerr << "[replay] diverged at game time " << static_cast<double>(tick - input_tape.start_tick()) /
+                                                                static_cast<double>(gekko::kGameTicksPerSecond)
+                  << " s (tick " << tick << "): " << replay_checks.first_groups << " differ\n";
+        if (options.replay_strict) system.cpu().request_stop(gekko::StopReason::HostRequest, "replay diverged");
+    };
 #if defined(SHADOW_RENDER_LIFTED)
     // The game-visible output (HW_REPORT J, F1-F3). The game's state depends on the output's aspect: the R2 driver's
     // screen tests (the widescreen HUD clamp, rw_driver projection.cpp visible_screen) and the native frustum
@@ -2640,9 +3195,16 @@ int run(Options options) {
     unsigned game_output_changes = 0;
     std::atomic<std::uint64_t> pending_game_output{0};  // the UI thread's newest client size: (w << 32) | h
     bool game_output_mismatch_noted = false;
-    // (Headless captures with an explicit --native-output keep defining the output, as before.)
-    bool exact_render_size = display.render_width > 0 && display.render_height > 0 &&
-                             !(options.native_screenshot && options.native_output_explicit);
+    // The resolution rule (gekko/display_geometry.h): the output the picture is shown in (the window's client area,
+    // or the headless size) and the aspect give the viewport - THE game's output (camera, culling, HUD aspect); the
+    // viewport and the render scale (or an exact render size) give the 3D render size. The aspect, scale and exact
+    // size are the display settings' game group, taken at host services.
+    gekko::DisplaySettings resolution_settings = gekko::display_settings().current();
+    // Headless captures with an explicit --native-output define their picture exactly: no aspect is applied to it.
+    const bool captures_define_output = options.native_screenshot && options.native_output_explicit;
+    int source_output_w = 0;  // the output the picture is shown in (client area / headless size)
+    int source_output_h = 0;
+    gekko::DisplayGeometry resolution_geometry;  // the one in effect (the session report's resolution)
     const auto set_game_output = [&](int w, int h, gekko::u64 tick, const char* source) {
         if (w <= 0 || h <= 0 || (w == game_output_w && h == game_output_h)) return;
         game_output_w = w;
@@ -2655,63 +3217,157 @@ int run(Options options) {
                       << source << ")\n";
         }
     };
+    // A playing tape decides the PICTURE only when asked (--replay-as-recorded: the recording's own picture, the only
+    // way before 2026-11-05); otherwise it decides only the game LOGIC's aspect (its logic records, a version 2 tape's
+    // output w/h) and the picture is this run's own - any resolution, aspect, scale, MSAA or filtering
+    // (docs/RESOLUTION_AUDIT.md section 13, gekko/input_tape.h).
+    const auto tape_sets_output = [&]() {
+        return input_tape.playing() && input_tape.has_outputs() && options.replay_as_recorded &&
+               !options.tape_output_free;
+    };
+    const bool gameplay_aspect_forced = options.gameplay_aspect_arg.has_value() && *options.gameplay_aspect_arg != "recorded";
+    const auto tape_sets_logic = [&]() {
+        return input_tape.playing() && input_tape.has_logic() && !options.tape_output_free && !gameplay_aspect_forced;
+    };
+    // The game logic's aspect (gekko/gameplay_aspect.h): a replay's recorded one, else the policy's fixed ratio, else
+    // the picture's own (follow - live play as it always was). The recorder notes what the logic used.
+    float replay_logic = 0.0f;
+    float applied_logic = 0.0f;
+    unsigned logic_changes = 0;
+    const auto apply_logic = [&](gekko::u64 tick, const char* source) {
+        const float picture = game_output_h > 0 ? static_cast<float>(game_output_w) / static_cast<float>(game_output_h)
+                                                : 0.0f;
+        const double policy = gameplay_aspect_forced ? options.gameplay_aspect_ratio : resolution_settings.gameplay_aspect;
+        float logic = picture;
+        bool fixed = false;
+        if (replay_logic > 0.0f) {
+            logic = replay_logic;
+            fixed = true;
+        } else if (policy > 0.0) {
+            logic = static_cast<float>(policy);
+            fixed = true;
+        }
+        if (!(logic > 0.0f)) return;
+        system.set_logic_aspect(fixed ? logic : 0.0f);
+        lifted_render.set_logic_aspect(fixed ? logic : 0.0f);
+        if (tape_recorder != nullptr) tape_recorder->note_logic(tick, logic);
+        if (logic != applied_logic && ++logic_changes <= 16u)
+            std::cout << "[logic] the game logic's aspect is " << logic << " from game tick " << tick << " (" << source
+                      << ")\n";
+        applied_logic = logic;
+    };
+    // The viewport and render size for the output w x h. `picture`: w x h already is the picture (an input tape's
+    // recorded output with --replay-as-recorded, headless captures' explicit size) - no aspect is applied to it again.
+    int applied_output_w = 0, applied_output_h = 0;
+    bool resolution_applied = false;
+    unsigned scale_cap_notes = 0;
+    const auto apply_resolution = [&](int w, int h, gekko::u64 tick, const char* source, bool picture) {
+        if (w <= 0 || h <= 0) return;
+        const double aspect = picture ? 0.0 : resolution_settings.aspect;
+        // gekko/display_geometry.h: the picture from the output and the ratio (a picture given whole - a tape's
+        // recorded output, headless captures' --native-output - takes no ratio), the render from the picture and the
+        // resolution scale.
+        resolution_geometry = gekko::display_geometry({static_cast<gekko::u32>(w), static_cast<gekko::u32>(h)}, aspect,
+                                                      resolution_settings.render_scale);
+        applied_output_w = w;
+        applied_output_h = h;
+        resolution_applied = true;
+        if (resolution_geometry.scale_capped && ++scale_cap_notes <= 4u)
+            std::cerr << "WARNING: resolution scale " << resolution_geometry.asked_scale << " % of "
+                      << resolution_geometry.picture.width << "x" << resolution_geometry.picture.height
+                      << " exceeds Direct3D 12's 16384-pixel texture side: " << resolution_geometry.effective_scale
+                      << " % is used (" << resolution_geometry.render.width << "x" << resolution_geometry.render.height
+                      << ", the same shape)\n";
+        // The game's output is the picture: the camera, culling and HUD take its shape.
+        set_game_output(static_cast<int>(resolution_geometry.picture.width),
+                        static_cast<int>(resolution_geometry.picture.height), tick, source);
+        lifted_render.set_present_aspect(resolution_geometry.aspect);
+        // Auto at 100 %: the render size follows the window / captures as it always has (a resize reaches the swap
+        // chain at once, no latch); otherwise exactly the picture x scale.
+        // A tape's picture is never followed: the window may have another shape (it is fitted with bars).
+        const bool from_tape = picture && !captures_define_output;
+        const bool follows = !from_tape && resolution_geometry.picture.width == resolution_geometry.output.width &&
+                             resolution_geometry.picture.height == resolution_geometry.output.height &&
+                             resolution_geometry.effective_scale == 100.0;
+        lifted_render.set_render_size(follows ? 0u : resolution_geometry.render.width,
+                                      follows ? 0u : resolution_geometry.render.height);
+        apply_logic(tick, replay_logic > 0.0f ? "the input tape" : source);
+    };
     const auto start_game_output = [&](int w, int h, const char* source) {
         const gekko::u64 tick = system.game_ticks();
-        if (input_tape.playing() && input_tape.has_outputs()) {
+        source_output_w = w;
+        source_output_h = h;
+        if (tape_sets_logic()) {
+            float aspect = 0.0f;
+            if (input_tape.logic_at(tick, &aspect)) replay_logic = aspect;
+        } else if (input_tape.playing() && !input_tape.has_logic() && !gameplay_aspect_forced) {
+            std::cerr << "WARNING: the input tape has no logic or output records (version 1): the game logic takes this "
+                      << "run's picture aspect; the replay matches the recording only at the recording's aspect (its "
+                      << "display line: " << input_tape.width() << "x" << input_tape.height() << ")\n";
+        }
+        if (tape_sets_output()) {
             int tw = 0, th = 0;
             if (input_tape.output_at(tick, &tw, &th)) {
-                set_game_output(tw, th, tick, "the input tape");
+                apply_resolution(tw, th, tick, "the input tape", true);
                 return;
             }
-        } else if (input_tape.playing()) {
-            std::cerr << "WARNING: the input tape has no output records (version 1): the game's output is this run's "
-                      << w << "x" << h << " (" << source << "); the replay matches the recording only at the "
-                      << "recording's aspect (its display line: " << input_tape.width() << "x" << input_tape.height()
-                      << ")\n";
         }
-        // An exact render size (both a width and a height asked): the game's output IS that size, so the 3D scene is
-        // rasterized at exactly the requested pixels with the camera, culling and HUD at its aspect; a window of
-        // another shape shows it fitted with bars (the present scale). docs/RESOLUTION_AUDIT.md.
-        if (exact_render_size) {
-            set_game_output(static_cast<int>(display.render_width), static_cast<int>(display.render_height), tick,
-                            "the requested render size");
-            return;
-        }
-        set_game_output(w, h, tick, source);
+        apply_resolution(w, h, tick, source, captures_define_output);
     };
     const auto latch_game_output = [&](gekko::u64 tick) {
         const std::uint64_t pending = pending_game_output.load(std::memory_order_acquire);
         const int pw = static_cast<int>(pending >> 32);
         const int ph = static_cast<int>(pending & 0xffffffffu);
         // The display settings' game group (gekko/display_settings.h), here where the driver reads it: the draw
-        // distance, and the render size - an exact one is the game's output from this tick, like a latched resize (a
-        // tape's output records still win); none follows the window again through the latch below.
+        // distance, and the aspect / render scale / exact render size - from this tick, like a latched resize.
+        bool settings_changed = false;
         {
             gekko::DisplaySettings settings;
             if (gekko::display_settings().take_changes(gekko::kDisplayGameChange, &settings) != 0u) {
                 lifted_render.set_draw_distance(settings.draw_distance);
-                lifted_render.set_render_size(static_cast<gekko::u32>(settings.render_width),
-                                              static_cast<gekko::u32>(settings.render_height));
-                exact_render_size = settings.render_width > 0 && settings.render_height > 0 &&
-                                    !(options.native_screenshot && options.native_output_explicit);
-                if (exact_render_size && !(input_tape.playing() && input_tape.has_outputs()))
-                    set_game_output(settings.render_width, settings.render_height, tick, "the display settings");
+                if (tape_recorder != nullptr && settings.draw_distance != resolution_settings.draw_distance)
+                    tape_recorder->note_setting(tick, "draw_distance", std::to_string(settings.draw_distance));
+                settings_changed = settings.aspect != resolution_settings.aspect ||
+                                   settings.render_scale != resolution_settings.render_scale ||
+                                   settings.gameplay_aspect != resolution_settings.gameplay_aspect;
+                resolution_settings = settings;
             }
         }
-        if (input_tape.playing() && input_tape.has_outputs()) {
+        if (pending != 0u && !captures_define_output) {
+            source_output_w = pw;
+            source_output_h = ph;
+        }
+        bool logic_changed = false;
+        if (tape_sets_logic()) {
+            float aspect = 0.0f;
+            if (input_tape.logic_at(tick, &aspect) && aspect != replay_logic) {
+                replay_logic = aspect;
+                logic_changed = true;
+            }
+        }
+        if (tape_sets_output()) {
             int tw = 0, th = 0;
-            if (input_tape.output_at(tick, &tw, &th)) set_game_output(tw, th, tick, "the input tape");
+            if (input_tape.output_at(tick, &tw, &th) &&
+                (settings_changed || !resolution_applied || tw != applied_output_w || th != applied_output_h))
+                apply_resolution(tw, th, tick, "the input tape", true);
+            else if (logic_changed || settings_changed)
+                apply_logic(tick, "the input tape");
             if (pending != 0u && !game_output_mismatch_noted && game_output_w > 0 &&
                 static_cast<long long>(pw) * game_output_h != static_cast<long long>(ph) * game_output_w) {
                 game_output_mismatch_noted = true;
                 std::cerr << "WARNING: the window is " << pw << "x" << ph << " but the input tape's output is "
                           << game_output_w << "x" << game_output_h
-                          << ": the game follows the tape (the picture's culling may not match the window)\n";
+                          << ": --replay-as-recorded shows the recording's picture (fitted into the window with bars)\n";
             }
             return;
         }
-        // With an exact render size a resize only changes how the picture is fitted into the window.
-        if (pending != 0u && !exact_render_size) set_game_output(pw, ph, tick, "window resize");
+        if (source_output_w > 0 &&
+            (settings_changed || !resolution_applied || source_output_w != applied_output_w ||
+             source_output_h != applied_output_h))
+            apply_resolution(source_output_w, source_output_h, tick,
+                             settings_changed ? "the display settings" : "window resize", captures_define_output);
+        else if (logic_changed)
+            apply_logic(tick, "the input tape");
     };
     // Headless: the captures' explicit size defines the output, else the configured display.
     const int headless_output_w = options.native_screenshot && options.native_output_explicit
@@ -3025,12 +3681,16 @@ int run(Options options) {
         // Replaying a tape, a click on the picture marks "the bug is here" (docs/tools/REPLAY_MARKERS.md).
         window.set_click_marks(options.input_tape_play.has_value());
 #if defined(SHADOW_RENDER_LIFTED)
-        // An exact render size: the window takes the picture's shape, so it shows it without bars.
-        if (exact_render_size)
-            gekko::HostWindow::set_content_aspect(static_cast<double>(display.render_width) / display.render_height);
+        // The window keeps the display resolution's shape when it must shrink into the work area (and while its edges
+        // are dragged); the picture's aspect and the render size never shape the window (gekko/display_geometry.h).
+        gekko::HostWindow::set_content_aspect(0.0);  // the window is the player's: any shape, the picture fits in
 #endif
-        if (!window.create(display.window_width, display.window_height, "Shadow the Hedgehog",
-                           display.fullscreen)) {
+        // Exclusive: the monitor's mode fullscreen_width x fullscreen_height (0 x 0: its desktop mode); else the
+        // window size.
+        const bool exclusive_start = display.fullscreen && display.exclusive;
+        if (!window.create(exclusive_start ? display.fullscreen_width : display.window_width,
+                           exclusive_start ? display.fullscreen_height : display.window_height, "Shadow the Hedgehog",
+                           display.fullscreen, display.exclusive)) {
             std::cerr << "WARNING: could not open a window; running headless.\n";
 #if defined(SHADOW_RENDER_LIFTED)
             start_game_output(headless_output_w, headless_output_h, headless_output_source);
@@ -3175,6 +3835,106 @@ int run(Options options) {
             // (unconnected) sample, which the game reads as an absent port.
             std::array<shadow::peripheral::ControllerSample, 4> pads_published{};
             pads_published[0].connected = true;
+            // When pads_published was polled (steady ns): the latch traces its age (InputLatch d).
+            std::int64_t pads_published_ns = 0;
+            // The input thread (default ON since 2026-11-04; GEKKO_INPUT_THREAD=0 or --no-input-thread: the UI thread
+            // samples as before; docs/PERF_60FPS_2026-11-04.md, input): XInput is polled every 1 ms and the keyboard
+            // comes from raw input on its own thread, instead of once per UI iteration, which waits on the present
+            // (~16.7 ms) - the game latched samples 5-11 ms old (p50), up to 33 ms. Without raw input the keyboard
+            // level still comes from the UI thread's window messages (keyboard_published), merged at each poll.
+            const bool input_thread_on = [] {
+                const char* v = std::getenv("GEKKO_INPUT_THREAD");
+                return !(v != nullptr && v[0] == '0');
+            }();
+            shadow::peripheral::ControllerSample keyboard_published{};
+            keyboard_published.connected = true;  // port 0 is always present, as pads_published[0] above
+            const auto steady_ns = [] {
+                return std::chrono::duration_cast<std::chrono::nanoseconds>(
+                           std::chrono::steady_clock::now().time_since_epoch())
+                    .count();
+            };
+            std::jthread input_thread;
+            if (input_thread_on) {
+                input_thread = std::jthread([&](std::stop_token stop) {
+                    gekko::name_this_thread("input-poll");
+                    // The keyboard from raw input on this thread (gekko/raw_keyboard.h): a key change wakes the loop
+                    // and is published at once. Without it, the UI thread's window-message level (keyboard_published).
+                    gekko::RawKeyboard raw_keyboard;
+                    const bool raw_keys = raw_keyboard.start();
+                    const auto raw_held = [](int key, void* context) {
+                        return static_cast<const gekko::RawKeyboard*>(context)->held(key);
+                    };
+#if defined(_WIN32)
+                    HANDLE timer = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+                                                          TIMER_ALL_ACCESS);
+#endif
+                    bool was_active = false;
+                    while (!stop.stop_requested()) {
+                        std::array<shadow::peripheral::ControllerSample, 4> sampled{};
+                        const shadow::peripheral::ControllerSample gamepad =
+                            window.xinput_enabled() ? gekko::poll_xinput_controller(0)
+                                                    : shadow::peripheral::ControllerSample{};
+                        if (options.xinput) {
+                            for (unsigned port = 1; port < 4; ++port)
+                                sampled[port] = gekko::poll_xinput_controller(port);
+                        }
+                        shadow::peripheral::ControllerSample raw_keyboard_sample{};
+                        if (raw_keys) {
+#if defined(_WIN32)
+                            // As the window path: the keyboard counts only while the game window is in front.
+                            const void* game_window = window.native_handle();
+                            const bool active = game_window != nullptr && GetForegroundWindow() == game_window;
+#else
+                            const bool active = false;
+#endif
+                            // Back in front: drop keys released while the sink saw nothing (RawKeyboard::resync),
+                            // as the window path cleared its keys on WM_KILLFOCUS / WM_ACTIVATEAPP.
+                            if (active && !was_active) raw_keyboard.resync();
+                            was_active = active;
+                            raw_keyboard_sample = active ? shadow::peripheral::sample_from_keyboard(raw_held, &raw_keyboard)
+                                                         : shadow::peripheral::sample_from_keyboard(nullptr, nullptr);
+                        }
+                        const std::int64_t polled = steady_ns();
+                        std::uint32_t live_controls = 0;
+                        {
+                            std::lock_guard<std::mutex> guard(pad_mutex);
+                            sampled[0] = shadow::peripheral::combine(raw_keys ? raw_keyboard_sample : keyboard_published,
+                                                                     gamepad);
+                            pads_published = sampled;
+                            pads_published_ns = polled;
+                            live_controls = sampled[0].controls;
+                        }
+                        static std::uint32_t last_live = 0;
+                        if (live_controls != last_live) {
+                            last_live = live_controls;
+                            shadow::render::present_trace::record(shadow::render::present_trace::Ev::LiveInput,
+                                                                  live_controls, 1u, raw_keys ? 1u : 0u);
+                        }
+#if defined(_WIN32)
+                        if (timer != nullptr) {
+                            LARGE_INTEGER due{};
+                            due.QuadPart = -10'000;  // 1 ms, relative, 100 ns units
+                            SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE);
+                            if (raw_keys)
+                                raw_keyboard.wait_and_pump(timer, 5);  // wakes at the timer or at a key
+                            else
+                                WaitForSingleObject(timer, 5);
+                        } else if (raw_keys) {
+                            // No high-resolution timer (before Windows 10 1803, or creation failed): the raw keys
+                            // must still be pumped, or the keyboard is dead for the whole run.
+                            raw_keyboard.wait_and_pump(nullptr, 1);
+                        } else {
+                            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                        }
+#else
+                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+#endif
+                    }
+#if defined(_WIN32)
+                    if (timer != nullptr) CloseHandle(timer);
+#endif
+                });
+            }
 
             // Written by the game thread, read by the UI thread for the frame
             // log and the summary. Plain counters would be legal to cache in a
@@ -3351,6 +4111,45 @@ int run(Options options) {
                     paced_between_ns = 0;
                 }
                 const auto pacing = simulation_clock.observe(game_ticks, after_work);
+                // The render thread's burst lead (gekko/schedule_offset.h, render/burst_ahead.h): the anchor carries the
+                // desired lead, outside the phase lock's own shift. A re-anchored pacer (its own reset: the first
+                // observe, a savestate's ticks going back) carries none until it is applied again here.
+                if (pacing.rebased)
+                    gekko::schedule_offset::applied_lead_ns().store(0, std::memory_order_release);
+                if (pacing.boundary) {
+                    const std::int64_t desired = gekko::schedule_offset::desired_lead_ns().load(std::memory_order_acquire);
+                    const std::int64_t applied = gekko::schedule_offset::applied_lead_ns().load(std::memory_order_relaxed);
+                    if (desired != applied) {
+                        simulation_clock.jump_anchor(std::chrono::nanoseconds(applied - desired));  // a lead is earlier
+                        gekko::schedule_offset::applied_lead_ns().store(desired, std::memory_order_release);
+                    }
+                }
+                // V-Sync off: no vblank paces the frames, so nothing steers the phase (gekko/phase_lock.h display_paced).
+                const bool display_paced = gekko::phase_lock::display_paced().load(std::memory_order_relaxed);
+                if (pacing.boundary && gekko::phase_lock::enabled() && display_paced) {
+                    static std::int64_t shifted_ns = 0;
+                    static std::chrono::steady_clock::time_point traced{};
+                    const std::int64_t hold = gekko::phase_lock::published_hold_ns().load(std::memory_order_relaxed);
+                    const std::int64_t target =
+                        gekko::phase_lock::published_target_shift_ns().load(std::memory_order_relaxed);
+                    const auto tick = std::chrono::nanoseconds(1'000'000'000 / gekko::System::kPacingHz);
+                    // The shared phase controller towards the target shift; SHADOW_PHASE_LOCK_LEGACY=1: the
+                    // proportional law on the hold (gekko/phase_lock.h).
+                    const auto shift = gekko::phase_lock::legacy()
+                                           ? gekko::phase_lock::step_for(hold, tick)
+                                           : gekko::phase_lock::step_to_target(target, shifted_ns, tick);
+                    simulation_clock.shift_anchor(shift);
+                    shifted_ns += shift.count();
+                    // Packets pushed from now on carry the shift they were produced under.
+                    shadow::render::phase_anchor_shift_ns().store(shifted_ns, std::memory_order_relaxed);
+                    if (after_work - traced >= std::chrono::seconds(1)) {
+                        traced = after_work;
+                        shadow::render::present_trace::record(shadow::render::present_trace::Ev::PhaseLock,
+                            static_cast<std::uint64_t>(hold), static_cast<std::uint64_t>(shifted_ns),
+                            static_cast<std::uint64_t>(gekko::phase_lock::kTargetHold.count()),
+                            static_cast<std::uint64_t>(target));
+                    }
+                }
                 // The telemetry stays per 60 Hz quantum: wall time between consecutive 1/60 s boundaries as
                 // observed on this thread, sleep included - exactly 16.67 ms when paced, longer when the host fell
                 // behind. This is the guest-speed distribution the baseline had to reconstruct offline from
@@ -3376,7 +4175,22 @@ int run(Options options) {
                     paced_services.fetch_add(1, std::memory_order_relaxed);
                     {
                         gekko::audio_audit::Scope audit_sleep("pacer", "pacer");
-                        recovered_clock_sleep.sleep_until(pacing.deadline);
+                        const std::int64_t sleep_start =
+                            shadow::render::present_trace::enabled() ? shadow::render::present_trace::now() : 0;
+                        // V-Sync off: the frame that begins at this boundary is presented as soon as it is pushed,
+                        // so this wake is its release time - waken precisely (docs/FRAME_PACING.md "V-Sync off").
+                        const gekko::u64 field = system.video().frame_locked() ? system.video().field_ticks()
+                                                                               : gekko::kGameTicksPerSecond / 60u;
+                        if (!display_paced && field != 0u && game_ticks % field == 0u)
+                            recovered_clock_sleep.sleep_until_precise(pacing.deadline);
+                        else
+                            recovered_clock_sleep.sleep_until(pacing.deadline);
+                        shadow::render::present_trace::record(
+                            shadow::render::present_trace::Ev::PacerSleep, static_cast<std::uint64_t>(sleep_start),
+                            static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                                           pacing.deadline.time_since_epoch())
+                                                           .count()),
+                            game_ticks);
                     }
                     const auto woke = std::chrono::steady_clock::now();
                     simulation_clock.note_wake(woke);
@@ -3403,10 +4217,37 @@ int run(Options options) {
                 if (gekko::MeasureProbes* probes = gekko::MeasureProbes::active()) probes->on_host_service();
                 pace(game_ticks, std::chrono::steady_clock::now(), false);
             });
+            // GEKKO_INPUT_THREAD, live play only: the engine's pad read takes the input thread's newest samples at the
+            // moment it reads (ManagerImpPc::set_live_source). A tape that plays or records keeps the 5 ms latch grid
+            // of game time below, so recordings and replays are unchanged. Traced as an InputLatch at the read.
+            const bool read_latch = [] {  // GEKKO_INPUT_READ_LATCH=0: keep only the 5 ms grid (A/B)
+                const char* v = std::getenv("GEKKO_INPUT_READ_LATCH");
+                return !(v != nullptr && v[0] == '0');
+            }();
+            if (input_thread_on && read_latch && tape_recorder == nullptr) {
+                system.peripheral().set_live_source([&](shadow::peripheral::ManagerImpPc& peripheral) {
+                    if (input_tape.playing() || ui_test_active) return;  // the host service latched them
+                    std::array<shadow::peripheral::ControllerSample, 4> pads;
+                    std::int64_t polled_ns = 0;
+                    {
+                        std::lock_guard<std::mutex> guard(pad_mutex);
+                        pads = pads_published;
+                        polled_ns = pads_published_ns;
+                    }
+                    for (std::size_t port = 0; port < pads.size(); ++port) peripheral.latch(port, pads[port]);
+                    if (shadow::render::present_trace::enabled()) {
+                        shadow::render::present_trace::record(shadow::render::present_trace::Ev::InputLatch,
+                                                              system.game_ticks(), 2u, pads[0].controls,
+                                                              static_cast<std::uint64_t>(polled_ns));
+                    }
+                });
+            }
             system.set_host_service(
                 [&](gekko::u64 game_ticks) {
                     const auto service_start = std::chrono::steady_clock::now();
                     if (gekko::MeasureProbes* probes = gekko::MeasureProbes::active()) probes->on_host_service();
+                    // GEKKO_HEAP_TRACE (gekko/heap_census.h): the OS heaps once per game second.
+                    gekko::HeapTrace::tick(game_ticks, [&](gekko::u32 a) { return system.cpu().mem_read32(a); });
                     game_thread_placement.sample();
                     // Whole-body cost of one host service, so the audit can
                     // tell service work apart from native guest execution.
@@ -3441,18 +4282,46 @@ int run(Options options) {
                     // exactly (docs/lift-20261006/L1_INPUT.md).
                     {
                         std::array<shadow::peripheral::ControllerSample, 4> pads;
+                        std::int64_t pads_polled_ns = 0;
                         {
                             std::lock_guard<std::mutex> guard(pad_mutex);
                             pads = pads_published;
+                            pads_polled_ns = pads_published_ns;
                         }
                         // A tape being played replaces the live samples (gekko/input_tape.h); a recording keeps
                         // what was latched.
                         if (input_tape.playing()) input_tape.samples_at(game_ticks, pads);
+                        // --ui-test(-script) in a window too (the headless loop has its own): its pad replaces
+                        // player 1's, so a scripted tour can be watched and captured with the overlay.
+                        if (ui_test_active) {
+                            const gekko::u32 frame = static_cast<gekko::u32>(system.video().frames());
+                            const std::string* entered = nullptr;
+                            pads[0] = ui_test_script.sample_for_frame(frame, &entered);
+                            if (entered != nullptr) {
+                                std::cout << "[ui-test] VI " << frame << ": " << *entered << "\n";
+                                std::cout.flush();
+                            }
+                        }
                         for (std::size_t port = 0; port < pads.size(); ++port) {
                             system.peripheral().latch(port, pads[port]);
                         }
-                        if (tape_recorder != nullptr) tape_recorder->observe(game_ticks, pads);
+                        if (shadow::render::present_trace::enabled()) {
+                            // Per-frame telemetry: when these samples entered the game (input-to-display latency).
+                            static std::array<shadow::peripheral::ControllerSample, 4> previous_latch{};
+                            bool changed = false;
+                            for (std::size_t port = 0; port < pads.size(); ++port)
+                                changed = changed || !(pads[port] == previous_latch[port]);
+                            previous_latch = pads;
+                            shadow::render::present_trace::record(shadow::render::present_trace::Ev::InputLatch,
+                                                                  game_ticks, changed ? 1u : 0u, pads[0].controls,
+                                                                  static_cast<std::uint64_t>(pads_polled_ns));
+                        }
+                        if (tape_recorder != nullptr) {
+                            tape_recorder->observe(game_ticks, pads);
+                            autosave_tape();
+                        }
                     }
+                    tape_service(game_ticks);
 #if defined(SHADOW_RENDER_LIFTED)
                     // The game-visible output: a resize since the last host service takes effect here.
                     latch_game_output(game_ticks);
@@ -3831,6 +4700,7 @@ int run(Options options) {
                 // A pause is wall time the game did not run: the pacing ladder restarts here (as after a load).
                 const auto now = std::chrono::steady_clock::now();
                 simulation_clock.reset(system.game_ticks(), now);
+                gekko::schedule_offset::applied_lead_ns().store(0, std::memory_order_release);  // re-applied at a boundary
                 last_service_instructions = system.game_ticks();
                 last_service_end = now;
                 paced_between_ns = 0;
@@ -4200,6 +5070,31 @@ int run(Options options) {
                     gekko::dev::Json body = dev_status();
                     body.field("lives", static_cast<gekko::u64>(cpu.mem_read32(kLives)));
                     dev_link.reply(r.id, true, body);
+                } else if (cmd == "goal_stage") {
+                    // The stage's own goal: StageAction manager request 6 (GoalAction), unforced, as every goal
+                    // trigger makes it (0x8011D0EC, 0x8016B43C and eleven more: 0x801762D0(mgr, 6, 0)). The Goal
+                    // action then runs the game's goal sequence and its result screen. 0x801762D0's own rules: no
+                    // request while the action's ignore byte (+0x17 + 6) or the lock (+0x14, unforced) is set.
+                    // docs/tools/STAGE_CONTROL.md.
+                    gekko::Cpu& cpu = system.cpu();
+                    constexpr gekko::u32 kPlayAction = 3u, kGoalAction = 6u;
+                    const gekko::u32 manager = cpu.mem_read32(cpu.gpr[13] + 0x2EDCu);
+                    const char* refused = nullptr;
+                    if (manager == 0u) {
+                        refused = "no stage is running (the StageAction manager does not exist yet)";
+                    } else if (cpu.mem_read32(manager + 0x8u) != kPlayAction) {
+                        refused = "the stage is not in play (goal only from the Play action)";
+                    } else if (cpu.mem_read8(manager + 0x17u + kGoalAction) != 0u ||
+                               cpu.mem_read8(manager + 0x14u) != 0u) {
+                        refused = "the stage refuses goal requests right now";
+                    }
+                    if (refused != nullptr) {
+                        dev_link.reply(r.id, false, gekko::dev::Json(), refused);
+                        return;
+                    }
+                    cpu.mem_write32(manager + 0xCu, kGoalAction);
+                    std::cout << "[dev-link] stage goal requested at " << game_seconds(system) << " s of game time\n";
+                    dev_link.reply(r.id, true, dev_status());
                 } else if (cmd == "quit") {
                     dev_link.reply(r.id, true, dev_status());
                     stop_requested.store(true, std::memory_order_release);
@@ -4344,6 +5239,7 @@ int run(Options options) {
                                 // to this session's wall anchor.
                                 const auto restored_at = std::chrono::steady_clock::now();
                                 simulation_clock.reset(system.game_ticks(), restored_at);
+                                gekko::schedule_offset::applied_lead_ns().store(0, std::memory_order_release);
                                 last_service_instructions = system.game_ticks();
                                 last_service_end = restored_at;
                                 paced_between_ns = 0;
@@ -4593,19 +5489,71 @@ int run(Options options) {
                 // The display settings' UI groups (gekko/display_settings.h), from this iteration: the window's mode
                 // and size (the resize below takes the new client area to the swap chain), V-Sync from the next
                 // present, the render clock's rate and frame blending, the FPS counter.
+                // Alt+Enter: windowed <-> fullscreen (borderless or exclusive, as set), through the display settings so
+                // the Options page and display.cfg follow; nothing else changes.
+                // The same transaction as the Options page (settings_registry.h toggle_fullscreen): refused while a
+                // display trial runs, never saved before the window owner reports an exclusive mode set.
+                if (window.take_fullscreen_toggle()) {
+                    std::string toggle_error;
+                    if (!gekko::settings::registry().toggle_fullscreen(&toggle_error))
+                        std::cerr << "[display] Alt+Enter: " << toggle_error << "\n";
+                }
+                // The Options menu's display trial (gekko/settings_registry.h): a mode or resolution change not
+                // confirmed within 15 s is rolled back here, whatever the screen shows; the take below applies it.
+                gekko::settings::registry().tick();
                 {
                     gekko::DisplaySettings settings;
+                    const std::uint64_t settings_generation = gekko::display_settings().generation();
                     const unsigned changes = gekko::display_settings().take_changes(
                         gekko::kDisplayWindowChange | gekko::kDisplayPresentChange | gekko::kDisplayOverlayChange,
                         &settings);
-                    if ((changes & gekko::kDisplayWindowChange) != 0u) {
-                        const bool exact = settings.render_width > 0 && settings.render_height > 0;
-                        gekko::HostWindow::set_content_aspect(
-                            exact ? static_cast<double>(settings.render_width) / settings.render_height : 0.0);
-                        window.set_mode(settings.fullscreen, settings.window_width, settings.window_height);
+                    if ((changes & gekko::kDisplayWindowChange) != 0u || !window_state_reported) {
+                        if ((changes & gekko::kDisplayWindowChange) != 0u) {
+                            // The window mode and the screen resolution only (gekko/display_geometry.h): the window
+                            // size windowed, the monitor's mode exclusive (0 x 0: its desktop mode).
+                            const bool exclusive_mode = settings.fullscreen && settings.exclusive;
+                            window.set_mode(settings.fullscreen,
+                                            exclusive_mode ? settings.fullscreen_width : settings.window_width,
+                                            exclusive_mode ? settings.fullscreen_height : settings.window_height,
+                                            settings.exclusive);
+                        }
+                        // What the window owner reached (the Options page and the display trial read it).
+                        gekko::DisplayWindowState state;
+                        state.generation = settings_generation;
+                        state.fullscreen = settings.fullscreen;
+                        state.exclusive_wanted = settings.fullscreen && settings.exclusive;
+                        state.exclusive_active = window.exclusive_active();
+                        window.client_size(state.client_width, state.client_height);
+                        window.monitor_size(state.monitor_width, state.monitor_height);
+                        if (state.exclusive_wanted && !state.exclusive_active) state.note = window.exclusive_note();
+                        gekko::display_settings().report_window(state);
+                        window_state_reported = true;
+                    }
+                    // A window the player resized (the drag ended, or maximised / restored): that size is the window
+                    // size from now on - remembered in display.cfg, used again at the next start and after fullscreen.
+                    // Never during a display trial (only confirmed values are saved).
+                    if (!settings.fullscreen && !window.sizing() && !window.minimized() &&
+                        (changes & gekko::kDisplayWindowChange) == 0u && !gekko::display_settings().provisional() &&
+                        !gekko::settings::registry().trial().active) {
+                        int client_w = 0, client_h = 0;
+                        window.client_size(client_w, client_h);
+                        if (client_w >= 320 && client_h >= 240 &&
+                            (client_w != settings.window_width || client_h != settings.window_height)) {
+                            gekko::DisplaySettings resized = settings;
+                            resized.window_width = client_w;
+                            resized.window_height = client_h;
+                            std::string resize_error;
+                            if (gekko::display_settings().apply(resized, &resize_error))
+                                gekko::display_settings().save(&resize_error);
+                            // The window is already that size: nothing for the window group to do.
+                            gekko::display_settings().take_changes(gekko::kDisplayWindowChange, nullptr);
+                        }
                     }
                     if ((changes & gekko::kDisplayPresentChange) != 0u) {
                         lifted_render.set_vsync(settings.vsync);
+                        // MSAA / anisotropic filtering: the renderer takes them at its next frame (no window change).
+                        lifted_render.set_msaa(static_cast<gekko::u32>(settings.msaa));
+                        lifted_render.set_anisotropy(static_cast<gekko::u32>(settings.anisotropy));
                         render_clock.set_target_hz(settings.render_rate);
                         render_clock.reset(std::chrono::steady_clock::now());
                         frame_interpolation = settings.frame_interpolation;
@@ -4615,6 +5563,17 @@ int run(Options options) {
                 }
                 {
                     GEKKO_PROFILE_ZONE("ui/resize");
+                    // The Options page's fullscreen resolution: the monitor the window is on now.
+                    if (int monitor_w = 0, monitor_h = 0; window.monitor_size(monitor_w, monitor_h)) {
+                        // The desktop's size: in exclusive fullscreen the monitor's rectangle is the mode's, so the
+                        // last size seen outside it stays (borderless shows at the desktop's).
+                        if (!window.exclusive_active())
+                            gekko::options_display::set_screen_size(static_cast<gekko::u32>(monitor_w),
+                                                                    static_cast<gekko::u32>(monitor_h));
+                    }
+                    if (int work_w = 0, work_h = 0; window.work_area_client(work_w, work_h))
+                        gekko::options_display::set_work_area(static_cast<gekko::u32>(work_w),
+                                                              static_cast<gekko::u32>(work_h));
                     int client_w = 0;
                     int client_h = 0;
                     window.client_size(client_w, client_h);
@@ -4630,7 +5589,12 @@ int run(Options options) {
                         }
                     }
                 }
-                {
+                if (input_thread_on) {
+                    // The input thread polls XInput and publishes; only the keyboard level is the UI thread's.
+                    const shadow::peripheral::ControllerSample keyboard = window.keyboard_controller();
+                    std::lock_guard<std::mutex> guard(pad_mutex);
+                    keyboard_published = keyboard;
+                } else {
                     std::array<shadow::peripheral::ControllerSample, 4> sampled{};
                     sampled[0] = window.controller();
                     if (options.xinput) {
@@ -4638,8 +5602,18 @@ int run(Options options) {
                             sampled[port] = gekko::poll_xinput_controller(port);
                         }
                     }
-                    std::lock_guard<std::mutex> guard(pad_mutex);
-                    pads_published = sampled;
+                    const std::int64_t polled = steady_ns();
+                    {
+                        std::lock_guard<std::mutex> guard(pad_mutex);
+                        pads_published = sampled;
+                        pads_published_ns = polled;
+                    }
+                    static std::uint32_t last_live = 0;
+                    if (sampled[0].controls != last_live) {
+                        last_live = sampled[0].controls;
+                        shadow::render::present_trace::record(shadow::render::present_trace::Ev::LiveInput,
+                                                              last_live, 0u, 0u);
+                    }
                 }
                 std::string render_error;
                 gekko::LiftedRender::PresentationSample sample;
@@ -4740,7 +5714,11 @@ int run(Options options) {
                         }
                     }
                 }
-                {
+                if (input_thread_on) {
+                    const shadow::peripheral::ControllerSample keyboard = window.keyboard_controller();
+                    std::lock_guard<std::mutex> guard(pad_mutex);
+                    keyboard_published = keyboard;
+                } else {
                     std::array<shadow::peripheral::ControllerSample, 4> sampled{};
                     sampled[0] = window.controller();
                     if (options.xinput) {
@@ -4748,8 +5726,10 @@ int run(Options options) {
                             sampled[port] = gekko::poll_xinput_controller(port);
                         }
                     }
+                    const std::int64_t polled = steady_ns();
                     std::lock_guard<std::mutex> guard(pad_mutex);
                     pads_published = sampled;
+                    pads_published_ns = polled;
                 }
 
                 // D06-F7: hand back any native XFB pin whose flight slot has
@@ -5050,6 +6030,7 @@ int run(Options options) {
             game.join();
 #if defined(SHADOW_RENDER_LIFTED)
             // The game thread is done with the scaffolding: the swap chain goes before its window.
+            thread_sampler.stop();  // its last rows go into the trace the renderer flushes
             lifted_render.stop();
 #endif
             window.destroy();
@@ -5092,6 +6073,7 @@ int run(Options options) {
             presentation_summary.rendered_frames = render_clock.stats().frames;
             presentation_summary.dropped_render_deadlines =
                 render_clock.stats().dropped_deadlines;
+            system.peripheral().set_live_source({});  // it captures this scope's input state
             system.set_host_service({});
             system.set_host_pacing({});
             if (game_exception) {
@@ -5325,6 +6307,7 @@ int run(Options options) {
         // that feeds it (a view's history); --stop-after-capture ends the run at the boundary after it is written.
         std::size_t next_mid_save = 0;
         bool mid_save_pending = false;
+        bool watch_arm_pending = false;
         gekko::u64 mid_save_request_tick = 0;
         bool capture_armed = false;
         gekko::u64 capture_baseline = 0;
@@ -5357,6 +6340,7 @@ int run(Options options) {
                         return;
                     }
                     if (gekko::MeasureProbes* probes = gekko::MeasureProbes::active()) probes->on_host_service();
+                    gekko::HeapTrace::tick(game_ticks, [&](gekko::u32 a) { return system.cpu().mem_read32(a); });
                     game_thread_placement.sample();
                     if (ui_test_active) {
                         const gekko::u32 frame = static_cast<gekko::u32>(ui_driver.system->video().frames());
@@ -5388,6 +6372,7 @@ int run(Options options) {
                         }
                         if (tape_recorder != nullptr) tape_recorder->observe(game_ticks, pads);
                     }
+                    tape_service(game_ticks);
 #if defined(SHADOW_RENDER_LIFTED)
                     latch_game_output(game_ticks);
 #endif
@@ -5400,6 +6385,13 @@ int run(Options options) {
                         system.request_stop_between_traversals(gekko::StopReason::HostRequest, "stop-at-tick");
                     }
                     // --save-state-at-tick: the first host service at or after each tick asks for the boundary.
+                    // --watch-guest-from-tick: the same boundary, then the watch is armed (below).
+                    if (!watch_arm_pending && !deferred_watch_ranges.empty() &&
+                        game_ticks >= options.watch_guest_from_tick) {
+                        watch_arm_pending = true;
+                        system.request_stop_between_traversals(gekko::StopReason::HostRequest,
+                                                               "watch-guest-from-tick");
+                    }
                     if (!mid_save_pending && next_mid_save < options.save_state_at_ticks.size() &&
                         game_ticks >= options.save_state_at_ticks[next_mid_save].first) {
                         mid_save_pending = true;
@@ -5621,7 +6613,20 @@ int run(Options options) {
                     std::cerr << "[save-state-at-tick] " << mid_error << "\n";
                 }
             }
-            if (!saved_mid || budget_reached) break;
+            // A --watch-guest-from-tick boundary: arm the watch, then on.
+            bool armed_watch = false;
+            if (watch_arm_pending && !deferred_watch_ranges.empty()) {
+                std::string watch_error;
+                if (!gekko::guest_watch::start(system.guest_memory(), *system.cpu().recompiled(),
+                                               std::move(deferred_watch_ranges), &watch_error)) {
+                    std::cerr << "ERROR: --watch-guest-from-tick: " << watch_error << "\n";
+                    return 2;
+                }
+                deferred_watch_ranges.clear();
+                std::cout << "guest watch: armed at game tick " << system.game_ticks() << "\n";
+                armed_watch = true;
+            }
+            if ((!saved_mid && !armed_watch) || budget_reached) break;
             system.cpu().clear_stop();
         }
         if (budget_reached) system.cpu().clear_stop();
@@ -5711,6 +6716,7 @@ int run(Options options) {
     }
 #endif
 #if defined(SHADOW_RENDER_LIFTED)
+    thread_sampler.stop();
     lifted_render.stop();
     std::cout << lifted_render.report_text();
 #else
@@ -5932,7 +6938,18 @@ int run(Options options) {
     if (input_tape.playing() || options.input_tape_play) {
         std::cout << "[input-tape] played " << (input_tape.exhausted() ? "to the end" : "partly")
                   << ", entries applied late " << input_tape.late_entries() << "\n";
+        if (input_tape.check_count() != 0u) {
+            std::cout << "[replay] checkpoints: " << replay_checks.matched << " of " << replay_checks.compared
+                      << " compared matched (" << input_tape.check_count() << " recorded, " << input_tape.missed_checks()
+                      << " missed)";
+            if (replay_checks.first_tick != 0u)
+                std::cout << "; first divergence at tick " << replay_checks.first_tick << ": " << replay_checks.first_groups;
+            std::cout << "\n";
+        } else {
+            std::cout << "[replay] the tape has no checkpoints (recorded before version 3): not verified\n";
+        }
     }
+    if (tape_autosave.joinable()) tape_autosave.join();
     if (tape_recorder != nullptr) {
         std::string tape_error;
         if (tape_recorder->write(*options.input_tape_record, stop_at_request_tick,
@@ -6010,17 +7027,16 @@ int run(Options options) {
         // failed - the last two MUST be zero.
         const gekko::assets::AssetSystem::Stats reads = system.assets().stats();
         const gekko::assets::MountReport& mounted = system.assets().report();
-        const gekko::assets::FileProvider::Stats files = system.assets().files().stats();
+        const shadow::runtime::v1::Storage* storage = system.assets().storage();
         char row[512];
         std::snprintf(row, sizeof(row),
-                      "Assets: %llu reads, %.2f MiB, %.3f ms total / %.3f ms worst; %llu of %u "
-                      "files mapped (%.1f MiB); %llu unmapped, %llu out of range, %llu failed\n",
+                      "Assets: %llu reads, %.2f MiB, %.3f ms total / %.3f ms worst; %u files through the %s "
+                      "storage backend; %llu unmapped, %llu out of range, %llu failed\n",
                       static_cast<unsigned long long>(reads.reads),
                       static_cast<double>(reads.bytes) / (1024.0 * 1024.0),
                       static_cast<double>(reads.read_ns) / 1.0e6,
-                      static_cast<double>(reads.read_ns_max) / 1.0e6,
-                      static_cast<unsigned long long>(files.mapped), mounted.files,
-                      static_cast<double>(files.mapped_bytes) / (1024.0 * 1024.0),
+                      static_cast<double>(reads.read_ns_max) / 1.0e6, mounted.files,
+                      storage != nullptr ? std::string(storage->info().name).c_str() : "(none)",
                       static_cast<unsigned long long>(reads.unmapped),
                       static_cast<unsigned long long>(reads.out_of_range),
                       static_cast<unsigned long long>(reads.failed));
@@ -6061,16 +7077,14 @@ int run(Options options) {
         const gekko::NativeFrameLimiter::Stats& limiter = system.frame_limiter().stats();
         char row[512];
         std::snprintf(row, sizeof(row),
-                      "Native audio: %llu passes (%llu silent, %.2f MiB), %llu AX command lists, "
-                      "%llu DSP mails; callbacks AI %llu, DSP DMA %llu, DSP %llu\n",
+                      "Native audio: %llu passes (%llu silent, %.2f MiB), %llu AX frames; "
+                      "callbacks AI %llu, DSP DMA %llu\n",
                       static_cast<unsigned long long>(audio.passes),
                       static_cast<unsigned long long>(audio.silent_passes),
                       static_cast<double>(audio.pass_bytes) / (1024.0 * 1024.0),
                       static_cast<unsigned long long>(audio.command_lists),
-                      static_cast<unsigned long long>(audio.dsp_mails),
                       static_cast<unsigned long long>(audio.ai_callbacks),
-                      static_cast<unsigned long long>(audio.transfer_completions),
-                      static_cast<unsigned long long>(audio.dsp_callbacks));
+                      static_cast<unsigned long long>(audio.transfer_completions));
         std::cout << row;
         using Source = gekko::NativeInterrupts::Source;
         const auto delivered = [&interrupts](Source source) {
@@ -6382,6 +7396,21 @@ int run(Options options) {
                   << " font failures";
         if (!system.options_display().last_error().empty())
             std::cout << "; last error: " << system.options_display().last_error();
+        // What the Display page shows for the settings in effect (fullscreen: the monitor's size is the resolution).
+        {
+            namespace od = gekko::options_display;
+            const od::Model page = od::Model::from(gekko::display_settings().current());
+            const od::Texts& en = od::texts(od::Language::EN);
+            const auto ascii = [](const std::u16string& s) {
+                std::string out;
+                for (const char16_t c : s) out.push_back(c < 0x80 ? static_cast<char>(c) : '?');
+                return out;
+            };
+            std::cout << "; page: " << ascii(page.value_text(od::kDisplayMode, en, u"ON", u"OFF")) << ", ratio "
+                      << ascii(page.value_text(od::kScreenRatio, en, u"ON", u"OFF")) << ", resolution scale "
+                      << ascii(page.value_text(od::kRenderResolution, en, u"ON", u"OFF")) << " (screen "
+                      << page.screen.width << "x" << page.screen.height << ")";
+        }
         std::cout << "\n";
     }
     if (options.fov_probe) {
@@ -6429,6 +7458,11 @@ int run(Options options) {
                           static_cast<unsigned long long>(ipl.sram_persists),
                           static_cast<unsigned long long>(ipl.sram_unchanged),
                           static_cast<unsigned long long>(ipl.sram_failures));
+            std::cout << persist;
+            const gekko::os_report::DebugConsole::Stats& console = system.debug_console().stats();
+            std::snprintf(persist, sizeof(persist), "    OSReport console: %llu lines, %llu bytes (%llu calls suppressed on a retail console)\n",
+                          static_cast<unsigned long long>(console.lines), static_cast<unsigned long long>(console.bytes),
+                          static_cast<unsigned long long>(console.suppressed));
             std::cout << persist;
         }
         {
@@ -6775,6 +7809,83 @@ int run(Options options) {
         }
     }
 
+    if (options.verify_player_report && system.cpu().verify_scoped()) {
+        std::ofstream csv(*options.verify_player_report);
+        csv << "entry,verified,mismatches,skipped_device,skipped_exit,owner_verified,owner_mismatches,"
+               "first_mismatch_tick,instructions,arrivals\n";
+        std::vector<std::pair<gekko::u32, gekko::Cpu::VerifyEntryStats>> rows(
+            system.cpu().verify_entry_stats().begin(), system.cpu().verify_entry_stats().end());
+        std::sort(rows.begin(), rows.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+        char line[256];
+        for (const auto& [entry, e] : rows) {
+            std::snprintf(line, sizeof(line), "%08X,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%u\n", entry,
+                          static_cast<unsigned long long>(e.verified), static_cast<unsigned long long>(e.mismatches),
+                          static_cast<unsigned long long>(e.skipped_device),
+                          static_cast<unsigned long long>(e.skipped_exit),
+                          static_cast<unsigned long long>(e.owner_verified),
+                          static_cast<unsigned long long>(e.owner_mismatches),
+                          static_cast<unsigned long long>(e.first_mismatch_tick),
+                          static_cast<unsigned long long>(e.instructions),
+                          static_cast<unsigned>(system.cpu().verify_arrivals(entry)));
+            csv << line;
+        }
+        // Single multiplies the interpreter replayed with a frC that was not a single: "pc,wide,rounding_changes".
+        {
+            std::ofstream frc(options.verify_player_report->string() + ".frc");
+            frc << "pc,wide,rounding_changes\n";
+            std::vector<std::pair<gekko::u32, gekko::Cpu::FrcProbe>> sites(system.cpu().frc_probe_sites().begin(),
+                                                                          system.cpu().frc_probe_sites().end());
+            std::sort(sites.begin(), sites.end(), [](const auto& x, const auto& y) { return x.first < y.first; });
+            for (const auto& [at, probe] : sites) {
+                std::snprintf(line, sizeof(line), "%08X,%llu,%llu\n", static_cast<unsigned>(at),
+                              static_cast<unsigned long long>(probe.wide),
+                              static_cast<unsigned long long>(probe.rounding_changes));
+                frc << line;
+            }
+        }
+        // How the rows were produced: a sampled run's coverage is what was checked, never the route's.
+        std::ofstream mode(options.verify_player_report->string() + ".mode");
+        const auto& s = system.cpu().verify_sampling();
+        if (s.enabled) {
+            const auto r = system.cpu().verify_sampling_report();
+            mode << "fast first=" << s.first_per_entry << " period=" << s.period << " known_period=" << s.known_period
+                 << " cpu_share=" << s.cpu_share << " arrivals=" << r.arrivals << " sampled=" << r.sampled
+                 << " sampled_out=" << r.sampled_out << " over_budget=" << r.over_budget
+                 << " entries_seen=" << r.entries_seen << " known_entries=" << r.known_entries
+                 << " verifier_seconds=" << r.verifier_seconds << " wall_seconds=" << r.wall_seconds
+                 << " process_cpu_seconds=" << process_cpu_seconds_now() << "\n";
+            // Every candidate address that was arrived at, "address,arrivals,checks": what a sampled run reached
+            // but did not check (docs/SHADOW_PLAYER_COVERAGE_AUDIT.md).
+            std::ofstream arrived(options.verify_player_report->string() + ".arrivals");
+            arrived << "address,arrivals,checks\n";
+            for (gekko::u32 at = gekko::Cpu::kVerifyCoverageBase; at < gekko::Cpu::kVerifyCoverageEnd; at += 4u) {
+                const gekko::u32 n = system.cpu().verify_arrivals(at);
+                if (n == 0u) continue;
+                std::snprintf(line, sizeof(line), "%08X,%u,%u\n", static_cast<unsigned>(at), static_cast<unsigned>(n),
+                              static_cast<unsigned>(system.cpu().verify_checks(at)));
+                arrived << line;
+            }
+        } else {
+            mode << "strict\n";
+        }
+        // Interpreted instruction runs, "start,end" (end exclusive), from the coverage bitmap.
+        std::ofstream runs(options.verify_player_report->string() + ".coverage");
+        const auto& bits = system.cpu().verify_coverage();
+        const gekko::u64 total = static_cast<gekko::u64>(bits.size()) * 64u;
+        for (gekko::u64 i = 0; i < total;) {
+            if (!((bits[i >> 6] >> (i & 63u)) & 1u)) {
+                ++i;
+                continue;
+            }
+            gekko::u64 j = i;
+            while (j < total && ((bits[j >> 6] >> (j & 63u)) & 1u)) ++j;
+            std::snprintf(line, sizeof(line), "%08X,%08X\n",
+                          static_cast<unsigned>(gekko::Cpu::kVerifyCoverageBase + i * 4u),
+                          static_cast<unsigned>(gekko::Cpu::kVerifyCoverageBase + j * 4u));
+            runs << line;
+            i = j;
+        }
+    }
     if (options.verify_recompiled) {
         const auto& report = system.cpu().verify_report();
         char row[352];
@@ -6797,6 +7908,27 @@ int run(Options options) {
                   << static_cast<double>(report.journal_scratch_peak_bytes) /
                          (1024.0 * 1024.0)
                   << " MiB\n";
+        if (system.cpu().verify_sampling().enabled) {
+            const auto r = system.cpu().verify_sampling_report();
+            std::snprintf(row, sizeof(row),
+                          "Verification mode: fast diagnostic SAMPLING (not full oracle equivalence) - %llu of %llu "
+                          "arrivals at %llu candidate entries checked; %llu sampled out, %llu over the CPU budget; "
+                          "verifier %.1f s of %.1f s wall (%.1f %%)\n",
+                          static_cast<unsigned long long>(r.sampled), static_cast<unsigned long long>(r.arrivals),
+                          static_cast<unsigned long long>(r.entries_seen),
+                          static_cast<unsigned long long>(r.sampled_out),
+                          static_cast<unsigned long long>(r.over_budget), r.verifier_seconds, r.wall_seconds,
+                          r.wall_seconds > 0.0 ? 100.0 * r.verifier_seconds / r.wall_seconds : 0.0);
+            std::cout << row;
+            const double process_cpu = process_cpu_seconds_now();
+            std::snprintf(row, sizeof(row),
+                          "  process CPU %.1f s over %.1f s wall (%.2f cores average, all threads, boot included)\n",
+                          process_cpu, r.wall_seconds, r.wall_seconds > 0.0 ? process_cpu / r.wall_seconds : 0.0);
+            std::cout << row;
+        } else if (system.cpu().verify_scoped()) {
+            std::cout << "Verification mode: strict (every segment at the scoped entries"
+                      << (options.verify_player_all_segments ? ", and every other segment" : "") << ")\n";
+        }
         for (const std::string& message : report.mismatch_messages) {
             std::cout << "  MISMATCH " << message << "\n";
         }
@@ -6899,6 +8031,134 @@ int run(Options options) {
 
     // Machine-readable session report: every counter the text report prints,
     // in one JSON document, written on every run unless --no-json-report.
+    {
+        const auto& jobs = system.native_jobs().stats();
+        std::cout << "native jobs: " << (system.native_jobs().enabled() ? "on (SHADOW_NATIVE_JOBS=1)" : "off (default)")
+                  << ", created " << jobs.created << ", completed " << jobs.completed << ", cancelled "
+                  << jobs.cancelled << ", runner passes " << jobs.runs << ", yields inside jobs "
+                  << jobs.yields_inside_jobs << ", other threads declined " << jobs.declined << ", pending "
+                  << system.native_jobs().pending() << '\n';
+        if (const gekko::NativeExpandJobs* ex = system.native_expand_jobs()) {
+            const auto& st = ex->stats();
+            const auto& nx = system.game_memory().native_expand_stats();
+            std::cout << "native expand jobs: "
+                      << (!ex->enabled() ? "off (default)"
+                                         : ex->w2() ? "on, W2 (GEKKO_NATIVE_EXPAND_JOBS=5)"
+                                         : ex->phase3() ? "on, phase 3 (GEKKO_NATIVE_EXPAND_JOBS=4)"
+                                         : ex->phase2() ? "on, phase 2 (GEKKO_NATIVE_EXPAND_JOBS=3)"
+                                         : ex->phase1() ? "on, phase 1 (GEKKO_NATIVE_EXPAND_JOBS=2)"
+                                                        : "on (GEKKO_NATIVE_EXPAND_JOBS=1)")
+                      << ", created without a thread " << st.created << ", published " << st.published
+                      << ", reaper calls " << st.reaper_calls << "; expanded natively " << st.expanded_natively
+                      << " (served ahead " << nx.served_ahead << ", decoded on the game thread " << nx.decoded_here
+                      << ", " << nx.ns / 1000 << " us total, max " << nx.ns_max / 1000 << " us), by the guest step "
+                      << st.expanded_by_guest << "; extracts " << st.extracts << ", queued without a worker "
+                      << st.queued << ", by the PRS owner " << st.expanded_by_owner << ", pending " << ex->pending()
+                      << "; worker: decode-ahead ready " << st.ahead_ready << ", submitted " << st.submitted
+                      << " (copies " << st.snapshot_bytes << " bytes, "
+                      << st.snapshot_ns / 1000 << " us total, max " << st.snapshot_ns_max / 1000
+                      << " us), served " << nx.served_prepared << ", declined " << st.worker_declined << ", waited "
+                      << st.waited << " (" << st.wait_ns / 1000 << " us total, max " << st.wait_ns_max / 1000
+                      << " us), unprepared " << st.unprepared << "; synchronous: stored by the host memmove "
+                      << st.stored_native << ", expanded by the host decoder " << st.synchronous_native
+                      << "; W2 reads: updates " << st.read_updates << ", queued " << st.reads_queued << ", published "
+                      << st.reads_published << " (" << st.read_bytes << " bytes, " << st.read_ns / 1000
+                      << " us total, max " << st.read_ns_max / 1000 << " us)\n";
+        }
+        if (const gekko::NativeOne* one = system.native_one(); one != nullptr && one->enabled()) {
+            const auto& st = one->stats();
+            std::cout << "native ONE layer (GEKKO_NATIVE_ONE=1): Entry " << st.entry << ", IsOpen " << st.is_open
+                      << ", FindName " << st.find_name << ", FindSubstr " << st.find_substr << ", ParseDirectory "
+                      << st.parse << ", Adopt " << st.adopt << ", Close " << st.close << ", ctor " << st.ctor
+                      << ", dtor " << st.dtor << ", Open " << st.open << " (" << st.open_bytes
+                      << " bytes; declined with a thread of the same priority ready " << st.open_thread_ready
+                      << "), OpenAsync " << st.open_async << ", OnRead " << st.on_read << " (tails "
+                      << st.on_read_tail << "), whole-file reads " << st.whole_reads << " (" << st.whole_bytes
+                      << " bytes; declined with a thread ready " << st.whole_thread_ready << "), loader updates "
+                      << st.loader_updates << " (callbacks " << st.loader_callbacks << ", tails " << st.loader_tails
+                      << "); declined to the original "
+                      << st.declined << '\n';
+        }
+        if (const gekko::NativeRtGcnFs* fs = system.native_rtgcnfs()) {
+            const auto& st = fs->stats();
+            std::cout << "native RtGCNFS: opens " << st.opens << ", reads " << st.reads << ", transfers "
+                      << st.transfers << ", bytes " << st.bytes << ", yields " << st.yields
+                      << ", background reads inline " << st.background_reads << " (" << st.background_chunks
+                      << " chunks; GEKKO_NATIVE_BG_READ=1), reads for native callers " << st.sync_reads
+                      << " (yields continued at once " << st.yields_elided << ")\n";
+        }
+        {
+            const auto& cri = system.native_cri().stats();
+            std::cout << "native CRI: " << (system.native_cri().enabled() ? "on (default)" : "off (SHADOW_NATIVE_CRI=0)")
+                      << ", threads replaced " << cri.threads_replaced << ", vsync ticks " << cri.vsync_ticks
+                      << ", svtype4 ticks " << cri.svtype4_ticks << ", deferred " << cri.deferred_ticks
+                      << ", skipped " << cri.skipped_ticks << ", waits in the Idle upcall " << cri.waits_in_idle_upcall
+                      << ", idle calls " << cri.idle_calls << " in " << cri.idle_passes << " passes (preempted "
+                      << cri.idle_preempted << "), lock enters " << cri.lock_enters << ", drains " << cri.drains
+                      << ", callbacks " << cri.callbacks << ", host-work deliveries " << cri.host_work_deliveries
+                      << ", idle points " << cri.idle_points << " (other loop " << cri.idle_points_other_loop
+                      << ", a thread current " << cri.idle_points_thread_set << ", nothing to do "
+                      << cri.idle_points_nothing << ")\n";
+        }
+        {
+            const auto& svm = system.native_svm().stats();
+            std::cout << "native SVM (CRI server manager, docs/CRI_SERVERS.md 1): server calls " << svm.server_calls
+                      << " (type 2 " << svm.server_calls_by_type[2] << ", 4 " << svm.server_calls_by_type[4] << ", 5 "
+                      << svm.server_calls_by_type[5] << ", 6 " << svm.server_calls_by_type[6] << "), callbacks "
+                      << svm.callbacks << ", lock hooks called " << svm.locks << ", unlock hooks called " << svm.unlocks
+                      << ", registrations " << svm.registrations << ", test-and-sets " << svm.test_and_sets
+                      << ", user hook calls " << svm.user_hook_calls << ", error reports " << svm.errors << '\n';
+        }
+        {
+            const auto& sj = system.native_sj().stats();
+            std::cout << "native SJ (CRI stream joints, docs/CRI_SERVERS.md 4b): creates " << sj.creates << ", destroys "
+                      << sj.destroys << ", gets " << sj.gets << ", puts " << sj.puts << ", ungets " << sj.ungets
+                      << ", splits " << sj.splits << ", queries " << sj.queries << ", mirrored bytes "
+                      << sj.bytes_mirrored << ", errors " << sj.errors << ", guest callbacks " << sj.guest_callbacks
+                      << '\n';
+            const auto& adx = system.native_adx_output().stats();
+            std::cout << "native ADX output (CRI rna, docs/CRI_SERVERS.md 4c): passes " << adx.passes << ", handles "
+                      << adx.handles << ", consumes " << adx.consumes << " (" << adx.consumed_samples
+                      << " samples), transfers " << adx.transfers << " (" << adx.transfer_bytes
+                      << " bytes), silence transfers " << adx.silence_transfers << " (" << adx.silence_bytes
+                      << " bytes)\n";
+        }
+        {
+            const auto& errata = system.errata_stats();
+            std::cout << "game errata (deliberate fixes, docs/GAME_ERRATA.md): "
+                      << (system.errata_installed() ? "on" : "off (SHADOW_ERRATA=0)") << ", E1 EnemyBaseAI constructed "
+                      << errata.ai_constructed << ", lock garbage cleared " << errata.ai_lock_cleared
+                      << "; E2 PlayerMotion constructed " << errata.motion_constructed << ", counter garbage cleared "
+                      << errata.motion_counter_cleared << "; E3 land layers loaded " << errata.land_layers_ready
+                      << ", land pattern sets seen " << errata.land_pattern_sets << ", clocks aligned "
+                      << errata.land_clocks_aligned << '\n';
+        }
+        {
+            const auto& gm = system.game_memory().stats();
+            std::cout << std::fixed << std::setprecision(3) << "loading work on the game thread: PRS expands served from "
+                      << "the decode-ahead workers " << gm.prs_ahead_served << " (total " << gm.prs_ahead_ns / 1.0e6
+                      << " ms, max " << gm.prs_ahead_ns_max / 1.0e6 << " ms), decoded here " << gm.prs_engine_slices
+                      << " slices (total " << gm.prs_engine_ns / 1.0e6 << " ms, max slice "
+                      << gm.prs_engine_ns_max / 1.0e6 << " ms)\n";
+        }
+        if (!jobs.job_ns.empty()) {
+            std::vector<std::uint64_t> sorted = jobs.job_ns;
+            std::sort(sorted.begin(), sorted.end());
+            const auto at = [&](double q) { return sorted[static_cast<std::size_t>(q * (sorted.size() - 1))] / 1.0e6; };
+            std::cout << std::fixed << std::setprecision(3) << "native jobs: game-thread ms per job p50 " << at(0.5)
+                      << " p99 " << at(0.99) << " max " << sorted.back() / 1.0e6 << " total "
+                      << jobs.job_ns_total / 1.0e6 << " (slowest kind: vtable 0x" << std::hex << jobs.job_max_kind
+                      << std::dec << ")\n";
+        }
+    }
+    if (options.watch_guest) {
+        gekko::guest_watch::stop();
+        std::string watch_error;
+        if (!gekko::guest_watch::write_report(options.watch_report.string(), &watch_error))
+            std::cerr << "ERROR: --watch-report: " << watch_error << '\n';
+        else
+            std::cout << "guest watch: report " << options.watch_report.string() << '\n';
+    }
     if (options.json_report_enabled) {
         const std::filesystem::path report_path =
             options.json_report.value_or(std::filesystem::path("session-report.json"));
@@ -6943,6 +8203,7 @@ int run(Options options) {
                  << ", \"dec_edge_total\": " << diag.dec_edge_total
                  << ", \"dec_edge_suppressed_ee_clear\": "
                  << diag.dec_edge_suppressed_ee_clear
+                 << ", \"dec_edge_dropped_no_consumer\": " << diag.dec_edge_dropped_no_consumer
                  << ", \"dec_pending_taken\": " << diag.dec_pending_taken
                  << ", \"dec_pending_dropped_ee_clear\": "
                  << diag.dec_pending_dropped_ee_clear
@@ -7012,13 +8273,63 @@ int run(Options options) {
             r << "  \"resolution\": {\"render_width\": " << rw << ", \"render_height\": " << rh
               << ", \"aspect\": " << (rh != 0u ? static_cast<double>(rw) / rh : 0.0) << ", \"family\": \""
               << family.name << "\", \"family_exact\": " << (family.exact ? "true" : "false")
-              << ", \"asked\": \"" << display.render_width << "x" << display.render_height
+              << ", \"asked\": \"" << resolution_geometry.render.width << "x" << resolution_geometry.render.height
               << "\", \"logical_raster\": \"640x480 (PAL 640x528) game canvas units\", \"game_output\": \""
               << game_output_w << "x" << game_output_h << "\", \"window_mode\": \""
               << (!options.window ? "headless" : display.fullscreen ? "borderless-fullscreen" : "windowed")
               << "\", \"window\": \"" << display.window_width << "x" << display.window_height << "\"";
+            // The four independent settings in effect at the end and what they gave (gekko/display_geometry.h).
+            {
+                const gekko::DisplaySettings now = gekko::display_settings().current();
+                const gekko::DisplayGeometry& g = resolution_geometry;
+                r << ", \"settings\": {\"window_mode\": \""
+                  << (!now.fullscreen ? "windowed" : now.exclusive ? "exclusive-fullscreen" : "borderless-fullscreen")
+                  << "\", \"window_size\": \"" << now.window_width << "x" << now.window_height
+                  << "\", \"exclusive_mode\": \"" << now.fullscreen_width << "x" << now.fullscreen_height
+                  << "\", \"aspect\": " << now.aspect << ", \"render_scale\": " << now.render_scale
+                  << ", \"session_overrides\": \"" << gekko::display_settings().session_overrides() << "\"}"
+                  << ", \"geometry\": {\"output\": \"" << g.output.width << "x" << g.output.height
+                  << "\", \"picture\": \"" << g.picture.width << "x" << g.picture.height << "+" << g.picture_x << "+"
+                  << g.picture_y << "\", \"aspect\": " << g.aspect << ", \"render\": \"" << g.render.width << "x"
+                  << g.render.height << "\", \"render_in_use\": \"" << rw << "x" << rh
+                  << "\", \"scale_asked\": " << g.asked_scale << ", \"scale_in_use\": " << g.effective_scale
+                  << ", \"render_pixels_vs_picture\": "
+                  << (g.picture.width != 0u ? static_cast<double>(g.render.width) * g.render.height /
+                                                  (static_cast<double>(g.picture.width) * g.picture.height)
+                                            : 0.0)
+                  << "}";
+                {
+                    const gekko::DisplayWindowState w = gekko::display_settings().window_state();
+                    r << ", \"achieved\": {\"client\": \"" << w.client_width << "x" << w.client_height
+                      << "\", \"monitor\": \"" << w.monitor_width << "x" << w.monitor_height
+                      << "\", \"exclusive_wanted\": " << (w.exclusive_wanted ? "true" : "false")
+                      << ", \"exclusive_active\": " << (w.exclusive_active ? "true" : "false") << ", \"note\": \""
+                      << w.note << "\"}";
+                }
+                // Image quality: asked (the settings) and in use (the renderer), the GPU's MSAA counts, any refusal.
+                std::string supported;
+                for (std::uint32_t bit = 0; bit <= 5; ++bit)
+                    if ((lifted_render.msaa_supported_mask() & (1u << bit)) != 0u)
+                        supported += (supported.empty() ? "" : ",") + std::to_string(1u << bit);
+                r << ", \"quality\": {\"msaa_asked\": " << now.msaa << ", \"msaa_active\": "
+                  << lifted_render.msaa_active() << ", \"msaa_supported\": \"" << supported
+                  << "\", \"anisotropy_asked\": " << now.anisotropy << ", \"anisotropy_active\": "
+                  << lifted_render.anisotropy_active() << ", \"note\": \"" << lifted_render.msaa_note()
+                  << "\"}";  // the renderer's own text: no quotes or backslashes
+            }
+            // The device name is "\\.\DISPLAY1": its backslashes escaped, or the report is not JSON.
+            const auto json_text = [](const std::string& text) {
+                std::string out;
+                for (const char ch : text) {
+                    if (ch == '\\' || ch == '"')
+                        out.push_back('\\');
+                    out.push_back(ch);
+                }
+                return out;
+            };
             if (monitor != nullptr)
-                r << ", \"monitor\": \"" << monitor->monitor << "\", \"monitor_device\": \"" << monitor->device
+                r << ", \"monitor\": \"" << json_text(monitor->monitor) << "\", \"monitor_device\": \""
+                  << json_text(monitor->device)
                   << "\", \"monitor_native\": \"" << monitor->desktop_width << "x" << monitor->desktop_height
                   << "\", \"monitor_refresh_hz\": " << monitor->desktop_refresh_hz;
             r << "},\n";
@@ -7283,15 +8594,13 @@ int run(Options options) {
         }
         {
             const gekko::assets::AssetSystem::Stats reads = system.assets().stats();
-            const gekko::assets::FileProvider::Stats files = system.assets().files().stats();
+            const shadow::runtime::v1::Storage* storage = system.assets().storage();
             json << ",\n  \"assets\": {\"reads\": " << reads.reads
                  << ", \"bytes\": " << reads.bytes
                  << ", \"read_ns\": " << reads.read_ns
                  << ", \"read_ns_max\": " << reads.read_ns_max
                  << ", \"files\": " << system.assets().report().files
-                 << ", \"mapped\": " << files.mapped
-                 << ", \"mapped_bytes\": " << files.mapped_bytes
-                 << ", \"map_failures\": " << files.failures
+                 << ", \"storage_backend\": \"" << (storage != nullptr ? storage->info().name : "") << "\""
                  << ", \"address_span\": " << system.assets().report().address_span
                  << ", \"unmapped\": " << reads.unmapped
                  << ", \"out_of_range\": " << reads.out_of_range
@@ -7330,6 +8639,50 @@ void require_native_renderer() {
 #endif
 }
 
+// The recorder's folders (docs/tools/RECORDER.md). --record <dir>: the tape is <dir>/input.tape (the initial/ copies
+// and manifest.json are written when the recording starts, from the card the run resolved). --replay <dir>: a fresh
+// run folder <dir>/replays/<date-time>/ gets copies of <dir>/initial/'s card and SRAM (the recording's are never
+// written), the tape is <dir>/input.tape (or the older <dir>/run/input.tape), and the start route comes from the tape's
+// meta unless given. --replay-as-recorded also takes the recording's display.cfg (a copy).
+void prepare_recorder_folders(Options& options) {
+    namespace fs = std::filesystem;
+    if (options.record_dir && !options.input_tape_record)
+        options.input_tape_record = *options.record_dir / "input.tape";
+    if (!options.replay_dir) return;
+    const fs::path dir = *options.replay_dir;
+    fs::path tape = dir / "input.tape";
+    if (!fs::exists(tape) && fs::exists(dir / "run" / "input.tape")) tape = dir / "run" / "input.tape";
+    if (!fs::exists(tape)) throw std::runtime_error("--replay: no input.tape in " + dir.string());
+    if (!options.input_tape_play) options.input_tape_play = tape;
+    const std::time_t now = std::time(nullptr);
+    std::tm local{};
+    localtime_s(&local, &now);
+    char stamp[32];
+    std::strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", &local);
+    const fs::path run = dir / "replays" / stamp;
+    fs::create_directories(run);
+    std::error_code ec;
+    for (const char* name : {"card.raw", "SRAM.pc.raw"}) {
+        if (fs::exists(dir / "initial" / name))
+            fs::copy_file(dir / "initial" / name, run / name, fs::copy_options::overwrite_existing, ec);
+    }
+    if (!options.memory_card && fs::exists(run / "card.raw")) options.memory_card = run / "card.raw";
+    if (options.replay_as_recorded && !options.display_cfg && fs::exists(dir / "initial" / "display.cfg")) {
+        fs::copy_file(dir / "initial" / "display.cfg", run / "display.cfg", fs::copy_options::overwrite_existing, ec);
+        options.display_cfg = run / "display.cfg";
+    }
+    // The start route from the tape's meta (a version 3 tape); an older one needs --boot-stage given.
+    if (!options.boot_stage) {
+        gekko::InputTape probe;
+        std::string error;
+        if (probe.load(tape, &error)) {
+            const std::string stage = probe.meta("boot_stage");
+            if (!stage.empty()) options.boot_stage = static_cast<gekko::u32>(std::stoul(stage));
+        }
+    }
+    std::cout << "[replay] " << tape.string() << " in " << run.string() << "\n";
+}
+
 Options parse_options(int argc, char** argv) {
     Options options;
     for (int index = 1; index < argc; ++index) {
@@ -7356,6 +8709,7 @@ Options parse_options(int argc, char** argv) {
         const char* development_only[] = {
             "--dev-link", "--dev-link-name", "--start-paused", "--ui-test", "--ui-test-script",
             "--asset-trace", "--file-origin-trace", "--resource-lineage", "--native-boot-contract-dir",
+            "--tape-output-free",
             "--measure", "--measure-out", "--measure-probes", "--visibility-probe", "--fov-probe", "--ui-probe",
         };
         for (const char* control : development_only) {
@@ -7569,6 +8923,18 @@ Options parse_options(int argc, char** argv) {
             options.trace_stale_contacts = true;
             continue;
         }
+        if (argument == "--watch-guest" && index + 1 < argc) {
+            options.watch_guest = std::filesystem::path(argv[++index]);
+            continue;
+        }
+        if (argument == "--watch-report" && index + 1 < argc) {
+            options.watch_report = std::filesystem::path(argv[++index]);
+            continue;
+        }
+        if (argument == "--watch-guest-from-tick" && index + 1 < argc) {
+            options.watch_guest_from_tick = std::strtoull(argv[++index], nullptr, 10);
+            continue;
+        }
         if (argument == "--chara-colli-pass") {
             options.chara_colli_pass = true;
             continue;
@@ -7716,6 +9082,109 @@ Options parse_options(int argc, char** argv) {
             options.boot_flashback = true;
             continue;
         }
+        if (argument == "--record" && index + 1 < argc) {
+            options.record_dir = std::filesystem::path(argv[++index]);
+            continue;
+        }
+        if (argument == "--replay" && index + 1 < argc) {
+            options.replay_dir = std::filesystem::path(argv[++index]);
+            continue;
+        }
+        if (argument == "--replay-as-recorded") {
+            options.replay_as_recorded = true;
+            continue;
+        }
+        if (argument == "--replay-strict") {
+            options.replay_strict = true;
+            continue;
+        }
+        if (argument == "--tape-check-seconds" && index + 1 < argc) {
+            options.tape_check_seconds = std::max(0.0, std::stod(argv[++index]));
+            continue;
+        }
+        if (argument == "--gameplay-aspect" && index + 1 < argc) {
+            const std::string value = argv[++index];
+            double ratio = 0.0;
+            if (value == "follow" || value == "recorded") {
+                ratio = 0.0;
+            } else if (value == "original") {
+                ratio = 4.0 / 3.0;
+            } else if (const std::size_t colon = value.find(':'); colon != std::string::npos) {
+                const double w = std::atof(value.substr(0, colon).c_str()), h = std::atof(value.substr(colon + 1).c_str());
+                ratio = h > 0.0 ? w / h : 0.0;
+                if (!(ratio >= 0.25 && ratio <= 8.0)) throw std::invalid_argument("--gameplay-aspect: a ratio of 0.25..8");
+            } else {
+                ratio = std::atof(value.c_str());
+                if (!(ratio >= 0.25 && ratio <= 8.0))
+                    throw std::invalid_argument("--gameplay-aspect wants follow, original, recorded, W:H or a number");
+            }
+            options.gameplay_aspect_arg = value;
+            options.gameplay_aspect_ratio = ratio;
+            continue;
+        }
+        if (argument == "--tape-output-free") {
+            options.tape_output_free = true;
+            continue;
+        }
+        if (argument == "--boot-2p" || argument == "--boot-expert") {
+            std::string value = index + 1 < argc ? argv[++index] : std::string();
+            if (value.rfind("stg", 0) == 0) value = value.substr(3);
+            const bool digits = !value.empty() && value.size() <= 4 &&
+                                std::all_of(value.begin(), value.end(),
+                                            [](char c) { return c >= '0' && c <= '9'; });
+            if (!digits) {
+                std::cerr << "ERROR: " << argument << " expects a decimal number" << std::endl;
+                std::exit(2);
+            }
+            (argument == "--boot-2p" ? options.boot_2p : options.boot_expert) =
+                static_cast<gekko::u32>(std::stoul(value, nullptr, 10));
+            continue;
+        }
+        if (argument == "--boot-2p-three") {
+            options.boot_2p_three = true;
+            continue;
+        }
+        if (argument == "--boot-last-story") {
+            options.boot_last_story = true;
+            continue;
+        }
+        if (argument == "--boot-2p-chars") {
+            const std::string value = index + 1 < argc ? argv[++index] : std::string();
+            unsigned a = 0, b = 0;
+            if (std::sscanf(value.c_str(), "%u,%u", &a, &b) != 2) {
+                std::cerr << "ERROR: --boot-2p-chars expects a,b" << std::endl;
+                std::exit(2);
+            }
+            options.boot_2p_characters[0] = a;
+            options.boot_2p_characters[1] = b;
+            continue;
+        }
+        if (argument == "--boot-story-stage") {
+            std::string value = index + 1 < argc ? argv[++index] : std::string();
+            if (value.rfind("stg", 0) == 0) value = value.substr(3);
+            const bool digits = !value.empty() && value.size() <= 4 &&
+                                std::all_of(value.begin(), value.end(),
+                                            [](char c) { return c >= '0' && c <= '9'; });
+            if (!digits || std::stoul(value, nullptr, 10) == 0u) {
+                std::cerr << "ERROR: --boot-story-stage expects stgNNNN or NNNN (decimal, not 0)" << std::endl;
+                std::exit(2);
+            }
+            options.boot_story_stage = static_cast<gekko::u32>(std::stoul(value, nullptr, 10));
+            continue;
+        }
+        if (argument == "--boot-cutscene") {
+            std::string value = index + 1 < argc ? argv[++index] : std::string();
+            if (value.rfind("event", 0) == 0) value = value.substr(5);
+            const bool digits = !value.empty() && value.size() <= 4 &&
+                                std::all_of(value.begin(), value.end(),
+                                            [](char c) { return c >= '0' && c <= '9'; });
+            if (!digits || std::stoul(value, nullptr, 10) == 0u) {
+                std::cerr << "ERROR: --boot-cutscene expects eventNNNN or NNNN (decimal, not 0)" << std::endl;
+                std::exit(2);
+            }
+            options.boot_cutscene = static_cast<gekko::u32>(std::stoul(value, nullptr, 10));
+            continue;
+        }
         if (argument == "--boot-event") {
             std::string value = index + 1 < argc ? argv[++index] : std::string();
             if (value.rfind("event", 0) == 0) value = value.substr(5);
@@ -7812,12 +9281,28 @@ Options parse_options(int argc, char** argv) {
             options.console_type = (kind == "retail") ? 0x00000003ul : 0x10000006ul;
         } else if (argument == "--no-xinput") {
             options.xinput = false;
+        } else if (argument == "--no-input-thread" || argument == "--no-phase-lock" ||
+                   argument == "--no-audio-rate-trim" || argument == "--jit-present") {
+            // The latency switches are read where they act (phase_lock.h, audio_runtime.cpp, render/jit_pacer.h, the
+            // input thread below) from their environment variables; these flags set them before anything reads them.
+            const char* name = argument == "--no-input-thread"    ? "GEKKO_INPUT_THREAD"
+                               : argument == "--no-phase-lock"    ? "SHADOW_PHASE_LOCK"
+                               : argument == "--no-audio-rate-trim" ? "SHADOW_AUDIO_RATE_TRIM"
+                                                                    : "SHADOW_R2_JIT";
+            const char* value = argument == "--jit-present" ? "1" : "0";
+#if defined(_WIN32)
+            _putenv_s(name, value);
+#else
+            setenv(name, value, 1);
+#endif
         } else if (argument == "--original-save-text") {
             options.pc_save_text = false;
         } else if (argument == "--headless") {
             options.window = false;
         } else if (argument == "--profile") {
             options.profile = true;
+        } else if (argument == "--original-boot") {
+            options.original_boot = true;
         } else if (argument == "--no-recomp") {
             options.recompiled = false;
         } else if (argument == "--no-debug-history") {
@@ -7826,6 +9311,28 @@ Options parse_options(int argc, char** argv) {
             options.debug_history = true;
         } else if (argument == "--verify-recomp") {
             options.verify_recompiled = true;
+        } else if (argument == "--verify-player" && index + 1 < argc) {
+            options.verify_recompiled = true;
+            options.verify_player = std::filesystem::path(argv[++index]);
+        } else if (argument == "--verify-player-report" && index + 1 < argc) {
+            options.verify_player_report = std::filesystem::path(argv[++index]);
+        } else if (argument == "--verify-player-all-segments") {
+            options.verify_player_all_segments = true;
+        } else if (argument == "--verify-player-fixture" && index + 1 < argc) {
+            options.verify_player_fixture = argv[++index];
+        } else if (argument == "--verify-player-strict") {
+            options.verify_player_strict = true;
+        } else if (argument == "--verify-player-first" && index + 1 < argc) {
+            options.verify_player_sampling.first_per_entry = static_cast<gekko::u32>(std::strtoul(argv[++index], nullptr, 10));
+        } else if (argument == "--verify-player-period" && index + 1 < argc) {
+            options.verify_player_sampling.period = static_cast<gekko::u32>(std::strtoul(argv[++index], nullptr, 10));
+        } else if (argument == "--verify-player-known-period" && index + 1 < argc) {
+            options.verify_player_sampling.known_period =
+                static_cast<gekko::u32>(std::strtoul(argv[++index], nullptr, 10));
+        } else if (argument == "--verify-player-cpu" && index + 1 < argc) {
+            options.verify_player_sampling.cpu_share = std::clamp(std::strtod(argv[++index], nullptr), 1.0, 100.0) / 100.0;
+        } else if (argument == "--verify-player-known" && index + 1 < argc) {
+            options.verify_player_known.emplace_back(argv[++index]);
         } else if (argument == "--fallback-audit") {
             options.fallback_audit = true;
         } else if (argument == "--visibility-probe") {
@@ -7885,6 +9392,14 @@ Options parse_options(int argc, char** argv) {
             options.game_data = std::filesystem::path(argv[++index]);
         } else if (argument == "--memory-card" && index + 1 < argc) {
             options.memory_card = std::filesystem::path(argv[++index]);
+        } else if (argument == "--save-file" && index + 1 < argc) {
+            options.save_file = std::filesystem::path(argv[++index]);
+        } else if (argument == "--legacy-memory-card") {
+            options.legacy_memory_card = true;
+        } else if (argument == "--storage-backend" && index + 1 < argc) {
+            options.storage_backend = argv[++index];
+        } else if (argument == "--disc-image" && index + 1 < argc) {
+            options.disc_image = std::filesystem::path(argv[++index]);
         } else if (argument == "--service-interval" || argument == "--tick-profile") {
             std::cerr << "ERROR: " << argument << " is gone: there is no instruction clock; the host "
                          "service runs every 5 ms of game time, headless or not\n";
@@ -7997,6 +9512,30 @@ Options parse_options(int argc, char** argv) {
             options.fullscreen = true;
         } else if (argument == "--windowed") {
             options.fullscreen = false;
+        } else if (argument == "--exclusive") {
+            // Fullscreen as the monitor's display mode --width x --height (gekko/display_geometry.h).
+            options.fullscreen = true;
+            options.exclusive = true;
+        } else if (argument == "--borderless") {
+            options.fullscreen = true;
+            options.exclusive = false;
+        } else if ((argument == "--msaa" || argument == "--anisotropy") && index + 1 < argc) {
+            const std::string value = argv[++index];
+            const int n = value == "off" ? 1 : std::atoi(value.c_str());
+            const bool msaa = argument == "--msaa";
+            const bool ok = msaa ? (n == 1 || n == 2 || n == 4 || n == 8 || n == 16 || n == 32)
+                                 : (n == 1 || n == 2 || n == 4 || n == 8 || n == 16);
+            if (!ok) {
+                std::cerr << "ERROR: " << argument << (msaa ? " must be off, 2, 4, 8, 16 or 32\n" : " must be off, 2, 4, 8 or 16\n");
+                std::exit(1);
+            }
+            (msaa ? options.msaa : options.anisotropy) = n;
+        } else if (argument == "--render-scale" && index + 1 < argc) {
+            options.render_scale = std::stod(argv[++index]);
+            if (!(*options.render_scale >= gekko::kMinRenderScale && *options.render_scale <= gekko::kMaxRenderScale)) {
+                std::cerr << "ERROR: --render-scale must be 25..200 (percent per side of the game resolution)\n";
+                std::exit(1);
+            }
         } else if (argument == "--render-width" && index + 1 < argc) {
             options.render_width = std::stoi(argv[++index]);
         } else if (argument == "--render-height" && index + 1 < argc) {
@@ -8017,19 +9556,21 @@ Options parse_options(int argc, char** argv) {
                     std::exit(1);
                 }
             }
-        } else if (argument == "--aspect" && index + 1 < argc) {
-            bool ok = false;
-            options.aspect = gekko::parse_aspect_mode(argv[++index], &ok);
-            if (!ok) {
-                std::cerr << "ERROR: unknown aspect mode\n";
-                print_usage();
+        } else if ((argument == "--aspect" || argument == "--aspect-ratio") && index + 1 < argc) {
+            // The same values as display.cfg's aspect (gekko/display_geometry.h parse_aspect_value): before
+            // 2026-11-05 --aspect knew only six names and refused 32:10.
+            const std::string value = argv[++index];
+            double ratio = 0.0;
+            if (!gekko::parse_aspect_value(value, &ratio)) {
+                std::cerr << "ERROR: " << argument << " wants auto, W:H (4:3, 16:9, 32:10, 64:27, ...) or a number of "
+                          << "0.25..8\n";
                 std::exit(1);
             }
-        } else if (argument == "--aspect-ratio" && index + 1 < argc) {
-            options.custom_aspect = std::stof(argv[++index]);
-            if (!options.aspect) {
-                options.aspect = gekko::AspectMode::Custom;
-            }
+            options.aspect_ratio = ratio;
+            bool named = false;
+            const gekko::AspectMode mode = gekko::parse_aspect_mode(value, &named);
+            options.aspect = named ? mode : ratio > 0.0 ? gekko::AspectMode::Custom : gekko::AspectMode::Auto;
+            if (!named && ratio > 0.0) options.custom_aspect = static_cast<float>(ratio);
         } else if (argument == "--hud-scale" && index + 1 < argc) {
             options.hud_scale = std::stof(argv[++index]);
         } else if ((argument == "--hud-inset" || argument == "--hud-safe-zone") &&
@@ -8075,6 +9616,8 @@ Options parse_options(int argc, char** argv) {
         }
     }
     require_native_renderer();
+    for (int index = 0; index < argc; ++index) options.command_line.emplace_back(argv[index]);
+    prepare_recorder_folders(options);
     return options;
 }
 

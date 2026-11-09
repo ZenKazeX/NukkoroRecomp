@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <utility>
 #include <vector>
 
 #include "peripheral/controls.h"
@@ -61,6 +62,14 @@ public:
     void latch(std::size_t port, const ControllerSample& sample) noexcept;
     const ControllerSample& sample(std::size_t port) const noexcept;
 
+    // Live play only (docs/PERF_60FPS_2026-11-04.md, input grid): called at the start of every read() so the host
+    // can latch its newest samples at the moment the engine reads them, instead of the last 5 ms latch of game time
+    // (which, in wall time, can be up to ~12 ms older: the game's frame work runs game time in bursts). The host
+    // installs it only for live input and must leave the latches alone while a tape plays or records - a replay
+    // stays exact because tapes keep the 5 ms grid.
+    using LiveSource = std::function<void(ManagerImpPc&)>;
+    void set_live_source(LiveSource source) { live_source_ = std::move(source); }
+
     // ---- what the engine asks ---------------------------------------------------------------------------
     std::uint32_t port_count() const noexcept { return static_cast<std::uint32_t>(kPorts); }
     // Reads ports 0 .. count-1 into `out` (one frame's read); a port past kPorts reads absent.
@@ -94,6 +103,7 @@ private:
     std::array<ControllerSample, kPorts> samples_{};
     std::array<bool, kPorts> rumble_{};
     RumbleListener rumble_listener_;
+    LiveSource live_source_;
     Stats stats_;
 };
 

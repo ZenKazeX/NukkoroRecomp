@@ -89,6 +89,19 @@ std::vector<u8> serialize(const Table& table) {
     return out;
 }
 
+// A message's UTF-8 text as the table's UTF-16 units (the save fonts hold only Basic Multilingual Plane glyphs).
+std::u16string utf16_of(const char* text) {
+    std::u16string out;
+    for (const unsigned char* p = reinterpret_cast<const unsigned char*>(text); *p != 0u;) {
+        u32 code = *p++;
+        int more = code >= 0xF0u ? 3 : code >= 0xE0u ? 2 : code >= 0xC0u ? 1 : 0;
+        if (more != 0) code &= 0x3Fu >> more;
+        for (; more > 0 && (*p & 0xC0u) == 0x80u; --more) code = code << 6 | (*p++ & 0x3Fu);
+        out.push_back(static_cast<char16_t>(code <= 0xFFFFu ? code : 0xFFFDu));
+    }
+    return out;
+}
+
 // The glyph codes a .met lists: "METRICS1", the name, the count, then one
 // "code x0 y0 x1 y1 #" line per glyph.
 bool glyph_codes(const std::vector<u8>& met, std::set<u32>& codes, std::string& error) {
@@ -159,26 +172,51 @@ const std::vector<Message>& pc_english_messages() {
     return messages;
 }
 
+namespace {
+#include "pc_save_texts.inc"  // kPcSaveTexts: {suffix, id, UTF-8 text}, generated from tools/options_menu_sim/save_text
+}  // namespace
+
+const std::vector<Message>& pc_messages(std::string_view suffix) {
+    static const std::vector<Message> none;
+    if (suffix == "EN") return pc_english_messages();
+    static const auto by_language = [] {
+        std::vector<std::pair<std::string, std::vector<Message>>> out;
+        for (const PcSaveText& t : kPcSaveTexts) {
+            auto it = std::find_if(out.begin(), out.end(), [&](const auto& p) { return p.first == t.suffix; });
+            if (it == out.end()) it = out.insert(out.end(), {t.suffix, {}});
+            it->second.push_back(Message{t.id, t.text});
+        }
+        return out;
+    }();
+    for (const auto& [language, messages] : by_language)
+        if (language == suffix) return messages;
+    return none;
+}
+
 bool rewrite_table(const std::vector<u8>& table_bytes, const std::vector<u8>& glyph_list,
+                   const std::vector<Message>& messages, std::vector<u8>& out, std::string& error) {
+    return rewrite_table(table_bytes, std::vector<std::vector<u8>>{glyph_list}, messages, out, error);
+}
+
+bool rewrite_table(const std::vector<u8>& table_bytes, const std::vector<std::vector<u8>>& glyph_lists,
                    const std::vector<Message>& messages, std::vector<u8>& out, std::string& error) {
     Table table;
     if (!parse(table_bytes, table, error)) return false;
     std::set<u32> glyphs;
-    if (!glyph_codes(glyph_list, glyphs, error)) return false;
+    for (const std::vector<u8>& list : glyph_lists)
+        if (!glyph_codes(list, glyphs, error)) return false;
     for (const Message& message : messages) {
         if (message.id >= table.texts.size()) {
             error = "message " + std::to_string(message.id) + " is outside the table";
             return false;
         }
-        std::u16string text;
-        for (const char* p = message.text; *p != '\0'; ++p) {
-            const u8 code = static_cast<u8>(*p);
-            if (code >= 0x80u || (code != '\n' && glyphs.count(code) == 0u)) {
-                error = "message " + std::to_string(message.id) + " uses a glyph the atlas lacks: '" +
-                        std::string(1, *p) + "'";
+        std::u16string text = utf16_of(message.text);
+        for (const char16_t unit : text) {
+            if (unit != u'\n' && glyphs.count(unit) == 0u) {
+                error = "message " + std::to_string(message.id) + " uses a glyph the atlas lacks: U+" +
+                        std::to_string(static_cast<u32>(unit));
                 return false;
             }
-            text.push_back(static_cast<char16_t>(code));
         }
         table.texts[message.id] = std::move(text);
     }
@@ -196,22 +234,24 @@ bool rewordings_of(const std::vector<u8>& save_table, const std::vector<Message>
             error = "message " + std::to_string(message.id) + " is outside the table";
             return false;
         }
-        Rewording rewording{table.texts[message.id], {}};
-        for (const char* p = message.text; *p != '\0'; ++p) {
-            rewording.replacement.push_back(static_cast<char16_t>(static_cast<u8>(*p)));
-        }
-        out.push_back(std::move(rewording));
+        out.push_back(Rewording{table.texts[message.id], utf16_of(message.text)});
     }
     return true;
 }
 
 bool reword_table(const std::vector<u8>& table_bytes, const std::vector<u8>& glyph_list,
                   const std::vector<Rewording>& rewordings, std::vector<u8>& out, u32& reworded, std::string& error) {
+    return reword_table(table_bytes, std::vector<std::vector<u8>>{glyph_list}, rewordings, out, reworded, error);
+}
+
+bool reword_table(const std::vector<u8>& table_bytes, const std::vector<std::vector<u8>>& glyph_lists,
+                  const std::vector<Rewording>& rewordings, std::vector<u8>& out, u32& reworded, std::string& error) {
     reworded = 0;
     Table table;
     if (!parse(table_bytes, table, error)) return false;
     std::set<u32> glyphs;
-    if (!glyph_codes(glyph_list, glyphs, error)) return false;
+    for (const std::vector<u8>& list : glyph_lists)
+        if (!glyph_codes(list, glyphs, error)) return false;
     for (const Rewording& rewording : rewordings) {
         for (const char16_t unit : rewording.replacement) {
             if (unit != u'\n' && glyphs.count(unit) == 0u) {
@@ -246,12 +286,65 @@ bool replace_texts(const std::vector<u8>& table_bytes, const std::vector<std::pa
     return true;
 }
 
+bool texts_of(const std::vector<u8>& table_bytes, std::vector<std::u16string>& out, std::string& error) {
+    Table table;
+    if (!parse(table_bytes, table, error)) return false;
+    out = std::move(table.texts);
+    return true;
+}
+
 bool message_text(const std::vector<u8>& table_bytes, u32 id, std::u16string& text) {
     Table table;
     std::string error;
     if (!parse(table_bytes, table, error) || id >= table.texts.size()) return false;
     text = table.texts[id];
     return true;
+}
+
+bool insert_texts(const std::vector<u8>& table_bytes, const std::vector<std::pair<u32, std::u16string>>& texts,
+                  u32 template_id, std::vector<u8>& out, std::string& error) {
+    Table table;
+    if (!parse(table_bytes, table, error)) return false;
+    const auto key_of = [](const std::array<u8, kEntryBytes>& e) { return load_le32(e.data() + 4u); };
+    const auto find_key = [&](u32 key) -> std::ptrdiff_t {
+        for (std::size_t i = 0; i < table.entries.size(); ++i)
+            if (key_of(table.entries[i]) == key) return static_cast<std::ptrdiff_t>(i);
+        return -1;
+    };
+    const std::ptrdiff_t model = find_key(template_id * 1000u + 100u);
+    if (model < 0) {
+        error = "the template message " + std::to_string(template_id) + " is not in the table";
+        return false;
+    }
+    for (const auto& [id, text] : texts) {
+        const u32 key = id * 1000u + 100u;
+        if (find_key(key) >= 0) {
+            error = "message " + std::to_string(id) + " already exists";
+            return false;
+        }
+        // The game binary-searches the keys: insert in order.
+        std::size_t at = 0;
+        while (at < table.entries.size() && key_of(table.entries[at]) < key) ++at;
+        std::array<u8, kEntryBytes> entry = table.entries[static_cast<std::size_t>(model)];
+        store_le32(entry.data() + 4u, key);
+        table.entries.insert(table.entries.begin() + static_cast<std::ptrdiff_t>(at), entry);
+        table.texts.insert(table.texts.begin() + static_cast<std::ptrdiff_t>(at), text);
+    }
+    out = serialize(table);
+    return true;
+}
+
+bool text_by_id(const std::vector<u8>& table_bytes, u32 id, std::u16string& text) {
+    Table table;
+    std::string error;
+    if (!parse(table_bytes, table, error)) return false;
+    for (std::size_t i = 0; i < table.entries.size(); ++i) {
+        if (load_le32(table.entries[i].data() + 4u) == id * 1000u + 100u) {
+            text = table.texts[i];
+            return true;
+        }
+    }
+    return false;
 }
 
 }  // namespace gekko::save_text

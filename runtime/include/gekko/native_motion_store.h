@@ -70,6 +70,7 @@ private:
     void pool_destroy(Cpu& c);
     void upload(Cpu& c);
     void fetch(Cpu& c);
+    void copy(u8* destination, u32 to, const u8* source, u32 bytes);
     void take_interrupts(Cpu& c);
     bool ensure_arena(Cpu& c);
     bool ensure_committed(Cpu& c, u32 end);  // the arena committed up to `end` (a guest address)

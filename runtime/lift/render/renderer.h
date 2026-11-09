@@ -42,9 +42,11 @@
 #include "render/frame.h"
 #include "render/frame_graph.h"
 #include "render/frame_loop.h"
+#include "render/burst_ahead.h"
 #include "render/gpu_device.h"
 #include "render/gpu_memory.h"
 #include "render/gpu_timer.h"
+#include "render/jit_pacer.h"
 #include "render/packet_stream.h"
 #include "render/resource_worker.h"
 #include "render/resources.h"
@@ -116,8 +118,33 @@ public:
     // ---- output -----------------------------------------------------------------------------------------------
     bool attach_window(HWND window, std::uint32_t width, std::uint32_t height, std::string* error);
     bool resize_window(std::uint32_t width, std::uint32_t height, std::string* error);
-    // Renders the packet into the window's next back buffer and presents it.
-    bool render(const FramePacket& packet, PresentMode mode, std::string* error);
+    // Takes the swap chain's frame-latency credit now (waits for it) so that the caller can choose the packet only
+    // once a back buffer may be queued: the newest packet at that moment, not one taken a refresh earlier
+    // (docs/TIMING_ARCHITECTURE.md finding 3). The credit is held until the next render(); without it render() waits.
+    // False: the wait ended without a credit (timed out or failed); the frame is still recorded and presented, and the
+    // caller must not treat now as the credit's time.
+    bool acquire_frame();
+    // SHADOW_R2_JIT (render/jit_pacer.h): after acquire_frame, before the caller picks its packet - waits until the
+    // frame should start so that it is done shortly before the vblank it is shown at. VSync presents only; without
+    // the switch, a window or a usable vblank grid it returns at once. Returns the planned start (steady ns), 0 when
+    // none was planned: the phase lock measures its hold against it.
+    // fill_mpx: the packet's estimated particle fill (particle_fill_mpx), used by SHADOW_R2_JIT_ASSIST=predict.
+    std::int64_t jit_wait(bool vsync, double fill_mpx = 0.0);
+    // The packet's estimated particle fill in megapixels at the render size (render/particle_fill.h; CPU only).
+    double particle_fill_mpx(const FramePacket& packet) const;
+    // SHADOW_R2_JIT_ASSIST=predict: the fill of the packet actually recorded, when it is not the one jit_wait was given
+    // (a newer packet pushed during the wait) - the pacer's model learns from the frame it measures (rendering thread).
+    void set_jit_fill_mpx(double fill_mpx) noexcept { jit_fill_mpx_ = fill_mpx; }
+    // SHADOW_R2_JIT: the measured refresh period (rendering thread).
+    std::int64_t jit_period_ns() const noexcept { return jit_.period_ns(); }
+    // render/burst_ahead.h: true for a few frames after the frames-in-flight mode switched - their holds measure the
+    // switch, not the game's phase, and the phase lock leaves them out (rendering thread).
+    bool burst_settling() const noexcept { return burst_settle_ > 0u; }
+    // Renders the packet into the window's next back buffer and presents it. credit_ns given: eager start
+    // (render/burst_ahead.h) - recorded and submitted before the swap chain's credit is taken; *credit_ns = when it came.
+    bool render(const FramePacket& packet, PresentMode mode, std::string* error, std::int64_t* credit_ns = nullptr);
+    // How much earlier than the phase lock's schedule packets come now (burst lead), for the hold the lock measures.
+    std::int64_t hold_bias_ns() const noexcept;
     // C3 (HW_REPORT S): true while render / render_to_image reads `packet` (any thread). A packet handed back to the
     // frame builder (FrameBuilder::recycle, its vectors refilled by the next frame) must not be one read here.
     bool reading(const FramePacket& packet) const noexcept {
@@ -130,6 +157,22 @@ public:
     void set_render_size(std::uint32_t width, std::uint32_t height) noexcept {
         render_size_.store((std::uint64_t{width} << 32) | height, std::memory_order_release);
     }
+    // The picture's exact aspect (the game's viewport, gekko/display_geometry.h): where a scaled render size is placed
+    // in the back buffer - the largest rectangle of it, centred, bars outside. 0: the render size's own aspect.
+    void set_present_aspect(double aspect) noexcept { present_aspect_.store(aspect, std::memory_order_release); }
+    // Image quality, any thread, taken at the start of the next frame (no swap chain is touched):
+    // MSAA - the sample count of the scene's colour and depth targets (1 = single-sample rendering, no resolve work).
+    //   A count the GPU does not support for both formats is refused: the count in use stays, msaa_note() says why.
+    // Anisotropic filtering - the level of the game's filtered textures (1 = Off: the console's linear filter; 2..16);
+    //   the sampler table is rewritten with the GPU idle. Screen copies, effects and point textures keep theirs.
+    void set_msaa_samples(std::uint32_t samples) noexcept { msaa_request_.store(samples, std::memory_order_release); }
+    void set_anisotropy(std::uint32_t level) noexcept { anisotropy_request_.store(level, std::memory_order_release); }
+    std::uint32_t msaa_samples() const noexcept { return msaa_active_.load(std::memory_order_acquire); }
+    std::uint32_t anisotropy() const noexcept { return anisotropy_active_.load(std::memory_order_acquire); }
+    // Bit n set: 2^n samples work for the scene colour and depth formats (bit 0: single-sample, always).
+    std::uint32_t msaa_supported_mask() const noexcept { return msaa_supported_mask_; }
+    bool msaa_supported(std::uint32_t samples) const noexcept;
+    std::string msaa_note() const;
     // G10's proof hook: captures rendered at the render size and scaled into their own size by the same pass.
     void set_capture_at_render_size(bool on) noexcept { capture_at_render_size_.store(on, std::memory_order_release); }
     // Renders the packet at width x height and returns its pixels (RGBA8, rows top first); with `rgba` null nothing is
@@ -191,6 +234,7 @@ public:
         std::uint64_t folded_glare_spans = 0;       // all frames: the tile rows those composites were still drawn on
         std::uint64_t image_misses = 0;      // all frames: draws of a snapshot or history that did not exist
         std::uint64_t views_over_views = 0;  // all frames: views started from the views under them (split screen)
+        std::uint64_t views_folded = 0;      // all frames: of those, the view under resolved straight into them
         std::uint64_t skin_overflows = 0;  // all frames: skinned draws the cache had no room for
         std::size_t pipelines = 0;
         std::size_t textures = 0;
@@ -276,6 +320,7 @@ private:
         MorphSource morph;     // delta targets; targets 0: not morphed
         std::uint32_t vertex_count = 0;
         std::vector<assets::MeshData::Submesh> submeshes;
+        bool opaque_colours = false;  // every vertex colour's alpha is 255 (or no colours: the channel is opaque black)
     };
     struct MeshSlot : MeshResources {
         Scope scope = Scope::Session;
@@ -294,7 +339,7 @@ private:
     // ResolveGlare: the view's resolve with the glare composite folded in (B3a).
     // ResolveTiles: the glare sources' resolve on their marked tiles (VSGlareTiles + PSResolve, G2).
     enum class Screen : std::uint8_t {
-        GlareCapture, GlareBlur, GlareBox, GlareMerge, GlareComposite, Resolve, Under, Scale, ResolveGlare, ResolveTiles
+        GlareCapture, GlareBlur, GlareBox, GlareMerge, GlareComposite, Resolve, DepthBits, Under, Scale, ResolveGlare, ResolveTiles
     };
     // The glare capture's compute steps (shaders/glare.hlsl CSGlareRows / CSGlareColumns, GLARE_OPTIMIZATION.md G1).
     enum class Compute : std::uint8_t { GlareRows, GlareColumns, GlareTilesClear };
@@ -305,10 +350,13 @@ private:
         std::uint32_t samples;
         bool lines;
         bool tiles;  // the GLARE_TILES pixel shader (glare_tiles.hlsli)
+        bool plain;  // the blend unit off, colour channels only written (a blend proven to be the identity)
+        bool no_depth;  // no depth target at all (the full-resolution HUD overlay draws onto the presented picture)
         bool operator<(const PipelineKey& o) const {
-            return std::tie(program, src, dst, cull, depth_test, depth_write, colour, samples, lines, tiles) <
+            return std::tie(program, src, dst, cull, depth_test, depth_write, colour, samples, lines, tiles, plain,
+                            no_depth) <
                    std::tie(o.program, o.src, o.dst, o.cull, o.depth_test, o.depth_write, o.colour, o.samples,
-                            o.lines, o.tiles);
+                            o.lines, o.tiles, o.plain, o.no_depth);
         }
     };
     // A view's history (R2_DRIVER.md 4.9): its scene colour as the view last saved it, kept across frames; sized to
@@ -330,6 +378,9 @@ private:
         // G10: the imported resource's own size when the frame is rendered at width x height and scaled into it
         // (0: the resource is width x height, nothing is scaled).
         std::uint32_t present_width = 0, present_height = 0;
+        // The shape the frame is placed in the resource with (0: width / height): the game's picture, the same on
+        // every frame.
+        double picture_aspect = 0.0;
     };
 
     void release_locked(TextureHandle texture);
@@ -359,7 +410,8 @@ private:
     // `lines`: the pipeline draws line primitives (immediate geometry only). `tiles`: its pixel shader marks the glare
     // sources' tiles (the glare-sources pass, G2).
     ID3D12PipelineState* mesh_pipeline(Program program, const Recipe& recipe, DXGI_FORMAT colour, std::uint32_t samples,
-                                       std::string* error, bool lines = false, bool tiles = false);
+                                       std::string* error, bool lines = false, bool tiles = false, bool plain = false,
+                                       bool no_depth = false);
     ID3D12PipelineState* screen_pipeline(Screen screen, DXGI_FORMAT colour, std::uint32_t samples, std::string* error);
     ID3D12PipelineState* compute_pipeline(Compute compute, std::string* error);
     // Records the frame into `output` in frame slot `slot`; the caller submits. `capture` receives the readback copy
@@ -421,6 +473,18 @@ private:
     // builds (the hooks compile out there). Records what this renderer is asked, for another backend to replay.
     std::unique_ptr<PacketRecorder> recorder_;
     std::atomic<std::uint64_t> render_size_{0};      // G10: (width << 32) | height; 0: the window's size
+    std::atomic<double> present_aspect_{0.0};         // the picture's aspect for the present scale; 0: the render's
+    // Image quality (set_msaa_samples / set_anisotropy): requests from any thread, applied by apply_quality() under
+    // render_mutex_ at the start of a frame; msaa_ is the count the frame being recorded uses.
+    void apply_quality();
+    std::atomic<std::uint32_t> msaa_request_{0};
+    std::atomic<std::uint32_t> anisotropy_request_{0};
+    std::atomic<std::uint32_t> msaa_active_{4};
+    std::atomic<std::uint32_t> anisotropy_active_{16};
+    std::uint32_t msaa_ = 4;
+    std::uint32_t msaa_supported_mask_ = 1u;
+    mutable std::mutex msaa_note_mutex_;
+    std::string msaa_note_;
     std::atomic<bool> capture_at_render_size_{false};  // G10's proof hook (captures scaled like the present)
     bool created_ = false;
     // Resources are created and released on the game thread while frames record on the render thread
@@ -428,6 +492,34 @@ private:
     // rendering thread's and is never taken by the game thread.
     mutable std::mutex table_mutex_;
     std::mutex render_mutex_;
+    bool frame_acquired_ = false;  // render_mutex_: acquire_frame() took the latency credit; render() has not yet
+    // SHADOW_R2_JIT (render/jit_pacer.h): the rendering thread's; started on the first jit_wait with the switch on.
+    JitPacer jit_;
+    // The direct resolve (SHADOW_R2_DIRECT_RESOLVE, unorm_calibration.cpp): this device's measured thresholds of the
+    // R16 store -> compose -> 8-bit chain, R32_UINT 256 x 4 (channel row, byte column), made once before the first
+    // frame that could use it. Without a table (the calibration failed or never ran) the compose path runs.
+    bool calibrate_unorm_resolve(DXGI_FORMAT output_format, std::string* why);
+    void ensure_unorm_calibration(DXGI_FORMAT output_format);
+    GpuTexture unorm_table_;
+    DXGI_FORMAT unorm_table_format_ = DXGI_FORMAT_UNKNOWN;
+    bool unorm_calibration_tried_ = false;
+    std::int64_t jit_start_ns_ = 0;  // the start jit_wait returned for the frame render() is about to record
+    double jit_fill_mpx_ = 0.0;      // that frame's estimated particle fill (for the predictive model)
+    // Render-ahead in GPU bursts (render/burst_ahead.h; the rendering thread's, under render_mutex_ except burst_).
+    void apply_burst_mode();       // before a credit wait: follow what the spans ask for
+    bool take_credit();            // the credit wait, plus a credit owed by leaving the mode; false: none taken
+    void leave_burst_mode_unmeasured();  // a new or resized swap chain: back to one frame in flight
+    BurstAhead burst_;
+    bool burst_ahead_ = false;       // two frames in flight now
+    std::uint32_t burst_repay_ = 0;  // credits to take on top of the next frame's (leaving the mode)
+    std::uint32_t burst_settle_ = 0; // frames whose hold the phase lock should not sample (a switch just happened)
+    // Credits owed: frames presented after a wait that took none. Each such present returns a credit later; it is taken
+    // back without waiting as soon as it is there, so the pipeline does not stay a frame deeper (take_credit).
+    std::uint32_t credit_debt_ = 0;
 };
+
+// Diagnostics (SHADOW_R2_FOLD_CHECK, lifted_render.cpp): 0 / 1 force the fold of a view under its overlay off / on for
+// the renders that follow; -1 follows SHADOW_R2_FOLD_UNDER again.
+void set_fold_under_override(int forced);
 
 }  // namespace shadow::render

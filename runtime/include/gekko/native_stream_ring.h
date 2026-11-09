@@ -13,12 +13,11 @@
 // blocks.
 //
 // Native here: the ring lives in a native arena (SoundArena; sound addresses at kSoundBase, past the GCAX banks'
-// span). Four call sites are lowered (extract/lift-sites-native.txt): the ARAlloc returns the arena's sound
-// address; the ARFree releases it and reports the size, as ARFree does; each ARQPostRequest fills the request
-// record as ARQPostRequest does (the callbacks read it), copies the chunk into the ring and hands the completion to
-// the DSP DMA interrupt (NativeAudio::complete_transfer), whose delivery runs the callback in interrupt context at
-// the same point the original's did - the spin loop's first back edge. The ARQ queue is never touched. Everything
-// else - CRI's ring arithmetic, the decoder, the voices' addresses - stays the game's.
+// span). Two call sites are lowered (extract/lift-sites-native.txt): the ARAlloc returns the arena's sound
+// address; the ARFree releases it and reports the size, as ARFree does. The stream server's transfers belong to the
+// native ADX output (gekko/native_adx_output.h) since 2026-11-03: copy() puts each chunk into the ring and the
+// output completes it at once (until then two lowered ARQPostRequest sites handed the completion to the DSP DMA
+// interrupt). The ARQ queue is never touched. The voices' addresses stay the game's.
 
 #include <string>
 
@@ -29,12 +28,11 @@ namespace gekko {
 
 class Cpu;
 class GuestMemory;
-class NativeAudio;
 
 class NativeStreamRing {
 public:
-    NativeStreamRing(Cpu& cpu, GuestMemory& memory, NativeAudio& audio) noexcept
-        : cpu_(cpu), audio_(audio), arena_(memory, kSoundBase, kSoundSpan, kArenaBase, "native stream ring") {}
+    NativeStreamRing(Cpu& cpu, GuestMemory& memory) noexcept
+        : cpu_(cpu), arena_(memory, kSoundBase, kSoundSpan, kArenaBase, "native stream ring") {}
 
     void install();
 
@@ -44,10 +42,11 @@ public:
 
     const SoundArena& arena() const noexcept { return arena_; }
 
-    // The lowered sites (scaffold::stream_ring_reserve / _release / _post).
+    // The lowered sites (scaffold::stream_ring_reserve / _release).
     u32 reserve(Cpu& c, u32 bytes);
     u32 release(Cpu& c, u32 size_out);
-    void post(Cpu& c, u32 request, u32 owner, u32 type, u32 source, u32 destination, u32 bytes, u32 callback);
+    // A transfer into the ring: the native ADX output (docs/CRI_SERVERS.md 4c) completes it itself.
+    bool copy(u32 source, u32 destination, u32 bytes, std::string& why);
     // A savestate made before ARAM was retired: its ring [base, base + bytes) (ARAM's bytes in `image`) taken over
     // at the same addresses (docs/ARAM.md "Old savestates").
     bool adopt(u32 base, u32 bytes, const u8* image, std::string& why) { return arena_.adopt(base, bytes, image, why); }
@@ -66,7 +65,6 @@ private:
     void stop(Cpu& c, const std::string& why);
 
     Cpu& cpu_;
-    NativeAudio& audio_;
     SoundArena arena_;
     Stats stats_;
 };

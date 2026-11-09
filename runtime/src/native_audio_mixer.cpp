@@ -1,5 +1,7 @@
 #include "native_audio_mixer.h"
 
+#include <algorithm>
+
 #if defined(__AVX2__)
 #include <immintrin.h>
 #endif
@@ -388,12 +390,38 @@ void Mixer::render_voice(const VoiceFrame& voice, MixStats& stats) noexcept {
     // runs SRC before the envelope and the mix) ----
     std::array<std::int16_t, 4>& history = history_[voice.slot % kMaxVoices];
     if (voice.restart) history = voice.start_history;
-    // The window: w(j) = the 4 samples read before this frame for j < 4, then source[j - 4].
+    // The window: w(j) = the 4 samples read before this frame for j < 4, then source[j - 4] (silence at or past count).
     const auto w = [&](std::uint64_t j) -> std::int32_t {
         return j < 4u ? history[static_cast<std::size_t>(j)] : voice.source.at(j - 4u);
     };
+    // The same window laid out flat - history, the source, then silence - so the per-sample SRC reads are plain loads
+    // instead of two range tests each (2026-11-04: render_voice 0.053 ms/frame on the game thread). Covers every w(j)
+    // the frame reads: j <= n + 3, n = (frac + 160 * ratio) >> 16; a voice reaching further (ratio above what the
+    // window holds) keeps w.
+    constexpr std::size_t kFlat = 4u + 1024u + 4u;
+    const std::uint64_t reach = ((voice.frac + static_cast<std::uint64_t>(kFrameSamples) * voice.ratio) >> 16) + 4u;
+    std::array<std::int16_t, kFlat> flat;
+    const bool use_flat = reach <= kFlat;
+    if (use_flat) {
+        std::copy(history.begin(), history.end(), flat.begin());
+        const std::size_t from_source =
+            static_cast<std::size_t>(std::min<std::uint64_t>(voice.source.count, reach > 4u ? reach - 4u : 0u));
+        if (from_source != 0u) std::copy_n(voice.source.samples, from_source, flat.begin() + 4);
+        std::fill(flat.begin() + 4 + static_cast<std::ptrdiff_t>(from_source),
+                  flat.begin() + static_cast<std::ptrdiff_t>(reach), std::int16_t{0});
+    }
     std::array<std::int32_t, kFrameSamples> y{};
-    if (voice.src == SrcMode::Linear) {
+    if (voice.src == SrcMode::Linear && use_flat) {
+        // As the loop below, reading the flat window.
+        for (std::uint32_t i = 0; i < kFrameSamples; ++i) {
+            const std::uint64_t t = voice.frac + static_cast<std::uint64_t>(i + 1u) * voice.ratio;
+            const std::size_t k = static_cast<std::size_t>(t >> 16);
+            const std::int64_t f = static_cast<std::int64_t>(t & 0xFFFFu);
+            const std::int32_t s0 = flat[k + 2u];
+            const std::int32_t d = sat16(static_cast<std::int64_t>(flat[k + 3u]) - s0);
+            y[i] = sat16(s0 + product_round16(static_cast<std::int64_t>(d) * f));
+        }
+    } else if (voice.src == SrcMode::Linear) {
         // src_type 1 (IRAM 0x0753..0x0813): per output the phase is advanced FIRST (0x07D9 ADDAX), the two NEWEST taps
         // of the window are taken (0x07DA..0x07DD), their difference is stored through the saturating accumulator read
         // (0x07DE) and the output is s0 + rounded(d * f / 65536) (MULX signed x unsigned 0x0803, ADDPAXZ 0x0804). The
@@ -423,7 +451,8 @@ void Mixer::render_voice(const VoiceFrame& voice, MixStats& stats) noexcept {
         // The window after the frame: the 4 newest samples read (the frame consumed n new samples).
         const std::uint64_t n = (voice.frac + static_cast<std::uint64_t>(kFrameSamples) * voice.ratio) >> 16;
         std::array<std::int16_t, 4> next{};
-        for (std::uint32_t j = 0; j < 4u; ++j) next[j] = static_cast<std::int16_t>(w(n + j));
+        for (std::uint32_t j = 0; j < 4u; ++j)
+            next[j] = use_flat ? flat[static_cast<std::size_t>(n + j)] : static_cast<std::int16_t>(w(n + j));
         history = next;
     }
 
@@ -457,6 +486,13 @@ void Mixer::render_voice(const VoiceFrame& voice, MixStats& stats) noexcept {
     }
 
 #endif
+
+    // ---- host category gain (not in the microcode): Q15 multiply of the enveloped voice, before every bus send, so
+    // its reverb send follows it. Unity does nothing - the default output is the DSP's, bit for bit. ----
+    if (voice.gain < kUnityVoiceGain) {
+        const std::int32_t g = static_cast<std::int32_t>(voice.gain);
+        for (std::uint32_t i = 0; i < kFrameSamples; ++i) scaled[i] = (scaled[i] * g) >> 15;
+    }
 
     // ---- mixing into the enabled buses (section 7.6): dst += floor(x * v / 32768); a ramping bus steps its volume
     // by delta every sample (v_i = vol + i*delta, mod 2^16) ----

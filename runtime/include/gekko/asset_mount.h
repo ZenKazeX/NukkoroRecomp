@@ -12,15 +12,18 @@
 //                      DVDFileInfo.startAddr; the only arithmetic the guest
 //                      ever performs on it is `token + offset`
 //
-// The source of truth is the host filesystem. No table is read: the disc's
-// FST is a test oracle only (asset_namespace_tests prove the host tree
-// reproduces it entry for entry), and nothing about a disc - an offset, a
-// sector, an extent order - exists anywhere in the process.
+// The source of truth is the runtime contract's storage backend
+// (shadow/runtime/v1/runtime.h, runtime/backends/storage): the tree it
+// enumerates and the bytes it reads. This file does no host I/O and knows no
+// disc: whether the bytes come from the extracted tree on the host or from a
+// GameCube disc image is the backend's business (docs/RUNTIME_CONTRACT.md).
+// The core sorts the tree itself, so the namespace - and every guest token -
+// is the same whichever backend serves it.
 //
 // See docs/native-asset-pipeline-20261005/README.md.
 
-#include <filesystem>
 #include <functional>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -30,6 +33,7 @@
 #include "gekko/asset_providers.h"
 #include "gekko/asset_runtime.h"
 #include "gekko/types.h"
+#include "shadow/runtime/v1/runtime.h"
 
 namespace gekko::assets {
 
@@ -39,6 +43,20 @@ struct MountReport {
     u64 declared_bytes = 0;   // sum of the file sizes
     u64 address_span = 0;     // bytes of 32-bit token space the assets occupy
     u64 table_bytes = 0;      // RAM the token decode table costs
+};
+
+// The contract's storage backend as an asset provider: map = the backend's
+// view (empty when it has none), read = the backend's read (zero-fill past the
+// end, as the contract specifies).
+class StorageProvider final : public AssetProvider {
+public:
+    void attach(shadow::runtime::v1::Storage* storage) noexcept { storage_ = storage; }
+    const char* name() const noexcept override { return "storage"; }
+    ByteSpan map(u64 key, u64 size) override;
+    bool read(u64 key, u64 offset, u64 length, u8* dest, u64& got) override;
+
+private:
+    shadow::runtime::v1::Storage* storage_ = nullptr;
 };
 
 // ---------------------------------------------------------------------------
@@ -55,7 +73,7 @@ struct MountReport {
 class AssetSystem {
 public:
     AssetSystem() : resources_(registry_) {
-        resources_.set_provider(ProviderKind::File, &files_);
+        resources_.set_provider(ProviderKind::Storage, &storage_provider_);
         resources_.set_provider(ProviderKind::Memory, &replacements_);
     }
 
@@ -68,18 +86,33 @@ public:
     using TreeReader = std::function<bool(std::string_view path, std::vector<u8>& bytes)>;
     using Replacement = std::function<bool(const TreeReader& read, std::vector<u8>& bytes, std::string& error)>;
     void replace(std::string path, Replacement build);
+    // A file with several native contents, one served at a time by `selector` (asked at every read; MemoryProvider::
+    // add_switchable): every variant is built at the mount, the file's declared size is the largest one's and a
+    // shorter variant reads as zeros past its end. The setting `selector` reads takes effect at the next read, with
+    // no remount. Same failure rules as replace(): a variant that fails to build leaves the host file served.
+    void replace_switchable(std::string path, std::vector<Replacement> variants, std::function<std::size_t()> selector);
+    // A file whose bytes are produced at every read by `reader` (offset, length, dest, got) - nothing is held in
+    // memory or built at the mount; `size` is its declared size. For a large composed file whose content follows a
+    // runtime setting (the switchable dialogue-voice archive, gekko/voice_language.h).
+    using VirtualReader = std::function<bool(u64 offset, u64 length, u8* dest, u64& got)>;
+    void replace_virtual(std::string path, u64 size, VirtualReader reader);
     u32 replaced_count() const noexcept { return replaced_count_; }
     const std::vector<std::string>& replacement_errors() const noexcept { return replacement_errors_; }
 
-    // Mounts the host tree under `files_root`. `identity` is the 32-byte block
-    // the game's drive-identity probe reads to learn which title is mounted
+    // Mounts the tree a storage backend enumerates, and keeps the backend for
+    // the session (every read goes to it). `identity` is the 32-byte block the
+    // game's drive-identity probe reads to learn which title is mounted
     // (DVDInquiryAsync / DVDReadDiskID): a game-visible datum, served directly,
-    // never through the token space. A partial mount is never kept.
-    bool mount(const std::filesystem::path& files_root, std::vector<u8> identity, std::string& error);
-    // The same with the namespace already built (tests; any other source of
-    // the tree). Its files must live under `files_root` at their paths.
-    bool mount(const std::filesystem::path& files_root, AssetNamespace names,
+    // never through the token space. A partial mount is never kept. Host
+    // directory trees mount through runtime/backends/storage
+    // (shadow::backends::mount_host_directory).
+    bool mount(std::unique_ptr<shadow::runtime::v1::Storage> storage, std::vector<u8> identity, std::string& error);
+    // The same with the namespace already built (tests, a filtered tree): every
+    // file entry of `names` must exist in the backend's tree with its size.
+    bool mount(std::unique_ptr<shadow::runtime::v1::Storage> storage, AssetNamespace names,
                std::vector<u8> identity, std::string& error);
+    // The backend serving this mount (null before a mount).
+    const shadow::runtime::v1::Storage* storage() const noexcept { return storage_.get(); }
 
     bool mounted() const noexcept { return mounted_; }
     const AssetNamespace& names() const noexcept { return names_; }
@@ -156,15 +189,27 @@ public:
     const AssetRegistry& registry() const noexcept { return registry_; }
     ResourceManager& resources() noexcept { return resources_; }
     const AssetAddressSpace& space() const noexcept { return space_; }
-    FileProvider& files() noexcept { return files_; }
 
 private:
     AssetNamespace names_;
     AssetRegistry registry_;
-    FileProvider files_;
+    std::unique_ptr<shadow::runtime::v1::Storage> storage_;
+    StorageProvider storage_provider_;
     MemoryProvider replacements_;
     ReadPatch read_patch_;
     std::vector<std::pair<std::string, Replacement>> pending_replacements_;
+    struct Switchable {
+        std::string path;
+        std::vector<Replacement> variants;
+        std::function<std::size_t()> selector;
+    };
+    std::vector<Switchable> pending_switchables_;
+    struct Virtual {
+        std::string path;
+        u64 size;
+        VirtualReader reader;
+    };
+    std::vector<Virtual> pending_virtuals_;
     std::vector<std::string> replacement_errors_;
     u32 replaced_count_ = 0;
     ResourceManager resources_;

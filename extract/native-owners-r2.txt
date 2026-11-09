@@ -12,3 +12,215 @@
 # EffectDrawGlobalLensFlareTask) - laid out natively against the view the output shows
 # (runtime/lift/effects/lens_flare.h, runtime/game/game_owners.cpp GameOwners::lens_flare_build; NE-RW1).
 0x80432360 Effect global lens flare build
+
+# gxC (docs/agents/card-saves.md): the GX vertex path is dead in the lifted build (extract/gx-fail-sites-lifted.txt): GXBegin is refused with its
+# own message, the vertex descriptor / format / array setters are served and silent (gx_state::install_lifted, installed by
+# LiftedRender::install_owners).
+0x80395758 GXClearVtxDesc
+0x8039530C vertex descriptor setter (switch on the attribute)
+0x80395790 vertex attribute format setter (switch on the attribute)
+0x80395CF4 vertex array setter (GXSetArray shape)
+0x80396934 GXBegin (refused)
+
+# docs/agents/vi.md "Step 4" (gx-rw-plan cluster rwR1): the RwDevice standard-function table's bodies whose every dispatch
+# site is lowered (lift-sites-r2.txt): served by the scaffold functions the sites call
+# (runtime/scaffold/rw_driver/rw_driver.cpp install_device_surface_owners).
+0x80498954 GcnSetRenderState
+0x804984C4 GcnGetRenderState
+0x804956F4 GcnCameraBeginUpdate
+0x80495CAC GcnCameraEndUpdate
+0x80495638 GcnCameraClear
+0x80491E80 GcnIm2DRenderPrimitive
+0x8049245C GcnIm2DRenderIndexedPrimitive
+0x80496208 GcnCameraTextureCopy
+0x804960F0 device record accessor
+
+# docs/agents/os-other.md step 12: the Im2D line / triangle emitters (device table data words 0x8056F524 / 0x8056F528), served
+# by the same immediate path as GcnIm2DRenderIndexedPrimitive (runtime/scaffold/rw_driver/im2d_prims.cpp).
+0x80491D0C GcnIm2DRenderLine
+0x80491B08 GcnIm2DRenderTriangle
+
+# docs/agents/vi.md "Step 5" (gx-rw-plan cluster rwR4): the world-sector pipeline entries, runtime/src/gekko/native_rw_world.cpp.
+# 0x804651D8 and 0x80465210 are served exactly; so are the five native-data stream callbacks (0x8046615C 0x80466188 0x804661D0
+# 0x804661FC 0x80466250: runtime/src/gekko/native_rw_registry.cpp) and the four vertex-format decoders (0x8046798C 0x804679F0
+# 0x80467A3C 0x80467AA4: native_rw_world_decode.cpp); the 9 others are stop owners (0 hits on three recordings).
+# 0x80465818 (plugin attach) and 0x804662B0 (native world-sector reader) stay translated.
+0x804651D8 world-sector pipeline node-definition init
+0x80465210 world-sector pipeline descriptor accessor
+0x8046521C world pipeline node 0x8046521C
+0x80465438 world pipeline node 0x80465438
+0x80465864 world pipeline 0x80465864
+0x8046615C sizeGeometryNative__sub0
+0x80466188 writeGeometryNative__sub0
+0x804661D0 readGeometryNative__sub0
+0x804661FC sizeWorldSectorNative__sub0
+0x80466250 writeWorldSectorNative__sub0
+0x80466624 world pipeline 0x80466624
+0x80466D2C world pipeline 0x80466D2C
+0x80466F24 world pipeline 0x80466F24
+0x804671E4 world pipeline 0x804671E4
+0x8046798C world pipeline 0x8046798C
+0x804679F0 world pipeline 0x804679F0
+0x80467A3C world pipeline 0x80467A3C
+0x80467AA4 world pipeline 0x80467AA4
+0x80467BA8 world pipeline 0x80467BA8
+0x80468C18 world pipeline 0x80468C18
+
+# structural twins (tools/platform/structure_match.py): an empty RenderWare hook and a small-data getter; VISetPostRetraceCallback is in native-owners.txt.
+0x8049C198 empty RenderWare hook
+0x8049C6BC RenderWare small-data getter
+
+# docs/agents/vi.md "Step 7" (gx-rw-plan cluster rwR5): the registry rows that are self-contained (only the arena, the engine globals
+# and the error report): served exactly; the two with 0 hits on three recordings stop. The other 11 stay translated (reasons in the report).
+0x8049BCE0 RenderWare current plugin-globals slot
+0x8049C190 RenderWare plugin callback returning TRUE
+0x8049C9F4 RenderWare distinct key count
+0x8049C90C RenderWare static arena allocation from the top
+0x8049C97C RenderWare static arena allocation from the floor
+0x8049CA80 RenderWare registry entry nothing enters (stop owner)
+0x8049BD30 RenderWare plugin-globals slot push / pop
+0x8049CC9C RenderWare node record registration
+#
+# gx_display::install_lifted (docs/agents/axfx-effects.md, Step H): GXCopyDisp, whose copy trigger is a dead site in this build.
+0x80397444 GXCopyDisp (refused)
+
+# docs/agents/vi.md "Step 8" (gx-rw-plan cluster rwR3): the Im3D entry points are served (runtime/src/gekko/native_rw_world.cpp,
+# install_native_rw_im3d_owners; the pipeline execution stays the scaffold's); the six texture-dictionary image conversions stop (0 hits on three recordings).
+0x8049B87C RwIm3DTransform
+0x8049B95C RwIm3DEnd
+0x8049B9AC RwIm3DRenderIndexedPrimitive
+0x8049BB48 RwIm3DRenderPrimitive
+#
+# gx_texobj::install_lifted (docs/agents/axfx-effects.md, Step J): the texture loads, served silent in the lifted tree.
+0x803982C0 GX texture load (pre-loaded)
+0x8039843C GXLoadTexObj
+0x803984C8 GXLoadTlut
+0x803987B8 GXInvalidateTexAll
+#
+# rw_node_stops::install_lifted (docs/agents/axfx-effects.md, Step K): RenderWare entries nothing enters in the lifted build; each stops the machine naming the entry.
+0x8049C6C4 RxPipelineExecute (stop owner)
+0x80464AAC RwGC all-in-one pipeline node body (stop owner)
+0x80464FF4 RwGC world-sector pipeline node body (stop owner)
+0x804A0B68 RwGC SubmitNoLight pipeline node body (stop owner)
+
+# docs/agents/native-boot.md Step 7 (gx-rw-plan cluster rwR1): the device's render-state entries, exact owners
+# (runtime/src/gekko/native_rw_device_state.cpp, rw_device_state::install).
+0x804960FC camera view-matrix upload (no guest-visible effect)
+0x804987C8 device alpha-test / z-compare-location mode setter
+
+# docs/agents/native-boot.md Step 8 (gx-rw-plan cluster rwR5): the plugin-registry entries RenderWare's engine start-up registers,
+# exact owners (runtime/src/gekko/native_rw_registry.cpp, rw_registry::install; RenderWare core is reached through guest_call).
+0x80494EB4 RenderWare plugin init
+0x8049BFE4 driver plugin destruct
+0x8049C048 driver plugin construct
+0x8049C11C device pool construct
+0x8049C160 device pool destruct
+0x8049AB74 texture free-list element initialiser
+0x8049AB88 texture free-list element terminator
+0x8049C7BC device pool object create
+0x8049C850 device pool object destroy
+0x8049C3A0 device pool entry remove
+0x8049CE40 device pool entry swap
+0x80465818 world plugin attach
+0x80465800 world plugin element destructor
+0x80465810 world plugin empty callback
+0x80465814 world plugin empty callback
+0x804662B0 world sector read
+0x8049A604 native texture write
+
+# docs/agents/vi.md "Step 12" (gx-rw-plan cluster rwR1): the display swap (runtime/src/gekko/native_rw_display.cpp, rw_raster::install_display_owners;
+# lifted build only: the hooks are the scaffold's lowered sites).
+0x80495CBC GcnShowRaster
+0x80495D38 GcnShowRaster: the row after its first OSRestoreInterrupts
+0x80494A2C GcnDrawSyncCallback
+0x80494B0C GcnVIPreRetraceCallback
+0x80494BE8 GcnVIPostRetraceCallback
+0x80494CD4 GcnSetVideoMode
+0x80494EDC GcnSystem
+0x804981E8 GcnStateDefaults
+0x8049847C GcnContextTeardown
+0x80494CCC GcnDefaultStandardFunction
+
+0x80499924 GcnRasterRender
+0x8049A8DC GcnNativeTextureRead
+# docs/agents/cri-threads.md (os.threads S5): the single guest thread's waits, owned in the lifted (shipping) build only. Yield has
+# nothing to yield to; Sleep waits natively (the clock runs to the next event and its source is processed without an exception),
+# Wakeup ends the wait on its queue; a second guest thread is a loud stop. The reference (non-lifted) build keeps the guest bodies
+# for the modes that create guest threads (SHADOW_NATIVE_CRI=0, the three loader switches =0): there the owners are not installed
+# (runtime/src/gekko/native_os_threads.cpp install_waits); the lifted build refuses those modes at start-up.
+0x80378A08 OSYieldThread
+0x803792C4 OSSleepThread
+0x803793B0 OSWakeupThread
+
+# docs/agents/vi.md Step 17: VIWaitForRetrace and its two resume rows (the rows after the two interrupt gates), served in the same
+# single-thread configuration as OSSleepThread (runtime/src/gekko/native_vi_wait.cpp).
+0x8037ECD4 VIWaitForRetrace
+0x8037ECEC VIWaitForRetrace after OSDisableInterrupts
+0x8037ED10 VIWaitForRetrace after OSRestoreInterrupts
+
+# docs/agents/cri-threads.md "Thread lifecycle": the rest of the thread API in the single-thread configuration. Creating, ending,
+# cancelling, resuming, suspending or re-prioritising a guest thread is an ExecutionFault naming the function; __OSReschedule is the
+# nothing it does with RunQueueHint clear. With these served, SelectThread has no guest caller left in the lifted build.
+0x80378A44 OSCreateThread
+0x80378C2C OSExitThread
+0x80378D10 OSCancelThread
+0x80378ECC OSResumeThread
+0x80379154 OSSuspendThread
+0x803794B4 OSSetThreadPriority
+0x803789D8 __OSReschedule
+# The guest exception tails that end in OSLoadContext (native_os_threads.h): faults if entered; the exception vectors are native.
+0x80371BE4 guest exception tail
+0x80373590 guest unhandled-exception report
+0x80373684 guest exception report helper
+0x80373708 guest exception report helper
+0x803765F4 guest interrupt-handler tail
+
+# runtime/src/gekko/native_rw_raster.cpp (rw_raster::install_lifted): the raster-level clear quad; it needs the lifted renderer.
+0x80499E58 GcnRasterClearQuad
+# docs/agents/cri-threads.md "Static closure of the thread API": the lifted build serves the CRI server routines and the native loaders'
+# two entries without a decline path (SHADOW_NATIVE_CRI=0, the loader switches =0 and any other loader mode are refused at start-up), so
+# every guest body that called the thread API through them is pruned.
+0x803C565C CRI lock enter
+0x803C55F0 CRI lock leave
+0x803C5534 adxm_goto_mwidle_border (the drain)
+0x803C5454 CRI Vsync server thread entry (never entered)
+0x803C53FC CRI svtype 4 server thread entry (never entered)
+0x803C5330 CRI Idle server thread entry (never entered)
+0x803C5504 CRI spinner thread entry (never entered)
+0x8004C770 the ONE member extract (native expand jobs, mode 5)
+0x800453E0 TBGReadManager::update (native expand jobs, W2)
+# The game's Thread class and its two users (native_os_threads.h): no object of these classes exists in the lifted build (their
+# constructors' only callers are the owners of 0x8004C770 and 0x800453E0 above), so constructors, destructors and the worker entry are
+# faults if entered.
+0x8035A15C Thread::Thread
+0x8035A0C8 Thread::~Thread
+0x8035A01C Thread worker entry
+0x80043E78 TExpandBG::TExpandBG
+0x80043E10 TExpandBG::~TExpandBG
+0x80045778 TBGRead::TBGRead
+0x80045714 TBGRead::~TBGRead
+
+# The SDK's __init_cpp (the constructor table walk): the native boot walks the table itself (NativeBoot::constructors_begin); its return
+# point 0x803796FC is an owner entry inside this function, which kept the whole body alive. Faults if entered; its only caller is the
+# wrapper 0x803796AC (called from __start's owner only).
+0x803796CC __init_cpp
+# docs/agents/native-boot.md Step 12: the RenderWare math owners that have no decline path in the lifted build (native_rw_refusal.h: the FPU
+# off, GQR0 not float or an operation outside 0..2 is a loud stop in the single-thread configuration, the lifted build's only one), each
+# contract-tested against the original DOL (rw_matrix / rw_vector / rw_view_cache_contract_tests). RwV3dNormalize (0x8048327C) stays out:
+# a vector of length 0 takes the original's RenderWare error path, which the owner leaves to the guest body.
+0x80480100 RwMatrixInvert
+0x804803E8 RwMatrixScale
+0x804805EC RwMatrixTranslate
+0x8048077C RwMatrixTransform
+0x8047FD24 RwMatrixRotateOneMinusCosineSine
+0x8047FBF0 RwMatrixUpdate
+0x8047F9E0 RwMatrixOptimize
+0x804834A8 RwV3dTransformPoint
+0x804834F4 RwV3dTransformPoints
+0x80483554 RwV3dTransformVector
+0x80483390 _rwSqrt
+0x804833E4 _rwInvSqrt
+0x80483350 RwV3dLength
+0x80483440 RwV2dLength
+0x804759B4 driver camera view offset
+0x80475A1C driver camera view-matrix cache

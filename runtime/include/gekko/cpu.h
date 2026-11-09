@@ -379,6 +379,12 @@ public:
     // the scheduler at its deadline): latch the exception condition - whatever
     // MSR[EE] is; EE = 0 delays it - and re-arm the next edge 2^32 ticks on.
     void latch_decrementer() noexcept;
+    // Whether the sign edge raises the exception at all (default: yes, as the architecture says). The native boot turns
+    // it off: this program has no alarm (no OSSetAlarm caller is compiled), so the OS's decrementer handler would only
+    // find an empty queue and resume the code; a guest `mtdec` turns delivery back on (the code arms the decrementer,
+    // so its handler must exist). Not part of a savestate: the program's configuration, set at construction.
+    void set_decrementer_delivery(bool on) noexcept { dec_delivery_ = on; }
+    bool decrementer_delivery() const noexcept { return dec_delivery_; }
     // mtspr HID2, from translated code (ppc::write_spr) and the interpreter.
     // LSQE and PSE are machine invariants (kHid2PairedSingleEnables): a value
     // that would clear either is refused - the machine stops with a diagnostic
@@ -618,6 +624,10 @@ public:
     // rfi restores unless a nested raise already owns the snapshot.
     void restore_interrupt_fpr() noexcept;
 
+    // The effect of an `rfi` executed at `site` (MSR from SRR1, the interrupt-FPR bookkeeping, resume at SRR0), for native code
+    // that has already loaded the interrupted state: hands control to the dispatcher at SRR0 like the rfi instruction does.
+    void return_from_interrupt(u32 site) noexcept;
+
     // Record where an exception will actually resume, when the raiser rewrites
     // SRR0 after raise_exception (sc resumes at the instruction AFTER the sc).
     // restore_interrupt_fpr compares against this to decide whether the rfi is
@@ -641,6 +651,10 @@ public:
     // the machine stops.
     using IdleHandler = std::function<void(Cpu&)>;
     void set_idle_handler(IdleHandler handler) { idle_handler_ = std::move(handler); }
+    // Before a wait point waits: native work that becomes a delivery instead (native_cri.h: CRI's Idle server runs
+    // when the scheduler idles). True when it raised one - the wait is skipped and the loop dispatches into it.
+    using IdleWorkHook = std::function<bool(Cpu&)>;
+    void set_idle_work_hook(IdleWorkHook hook) { idle_work_hook_ = std::move(hook); }
     void idle_wait();
     // A `progress` back edge (extract/wait-points.txt): a loop whose iteration
     // calls or stores, so only the run time can tell whether it waits. Taken,
@@ -778,6 +792,9 @@ public:
     // fully emulated the call and the interpreter must return to LR.
     using HleHandler = std::function<bool(Cpu&)>;
     void install_hle(u32 address, HleHandler handler, std::string name);
+    // Native code running the installed owner of `address` (one of this program's own native services, never a
+    // guest body) with the registers as the caller set them. False when nothing owns the address.
+    bool serve_owner(u32 address);
     // 2026-09-05 audit: every installed hook with its hit count.
     const auto& hle_entries() const noexcept { return hle_; }
     bool has_hle(u32 address) const;
@@ -805,6 +822,19 @@ public:
         }
         return try_hle_slow(address);
     }
+    // The generated entry thunk (ppcrecomp): `if (c.hle_clear(A)) return body(c, A); c.enter_slow(A, &body);`.
+    // hle_clear is exactly try_hle's filter (false: the slot names A, or is kHleSlotAll); enter_slow is the rest of
+    // the old `if (c.try_hle(A)) return; body(c, A);`. Both arms are tail calls, so the thunk needs no stack frame:
+    // the old one saved a register and adjusted the stack on every call only because try_hle_slow was a call in the
+    // middle of it (2026-11-04 line profile: the thunk line was 0.40 ms/frame, 18 % of translated code).
+    GEKKO_ALWAYS_INLINE bool hle_clear(u32 address) const noexcept {
+        const u32 slot = hle_slots_[(address >> 2) & kHleSlotMask];
+        return slot != address && slot != kHleSlotAll;
+    }
+    using EntryBody = void (*)(Cpu&, u32);
+    GEKKO_NOINLINE void enter_slow(u32 address, EntryBody body) {
+        if (!try_hle_slow(address)) body(*this, address);
+    }
     // Calls that got past the inline filter. Counted on the out-of-line side
     // only, so the reject path stays call- and write-free.
     u64 hle_slow_calls() const noexcept { return hle_slow_calls_; }
@@ -817,6 +847,16 @@ public:
     void set_lift_sites(const LiftSiteRecord* sites, std::size_t count) noexcept {
         lift_sites_ = sites;
         lift_site_count_ = count;
+        lift_site_filter_.fill(0u);
+        for (std::size_t i = 0; i < count; ++i) {
+            const u32 bit = (sites[i].address >> 2) & (kLiftSiteFilterBits - 1u);
+            lift_site_filter_[bit >> 6] |= u64{1} << (bit & 63u);
+        }
+    }
+    // Exact pre-test for find_lift_site: false proves no site is at the address (a set bit still needs the search).
+    bool maybe_lift_site(u32 address) const noexcept {
+        const u32 bit = (address >> 2) & (kLiftSiteFilterBits - 1u);
+        return ((lift_site_filter_[bit >> 6] >> (bit & 63u)) & 1u) != 0u;
     }
     const LiftSiteRecord* find_lift_site(u32 address) const noexcept;
     std::size_t lift_site_count() const noexcept { return lift_site_count_; }
@@ -956,6 +996,19 @@ public:
     // returned to, a precise R2 recognition point), when the callee published
     // a transfer (kExitTransfer, R12), or when the machine stopped.
     bool exiting() const noexcept { return exit_pending_ != 0u || stopped(); }
+    // Native code entered from native code that did not come through the dispatcher (gekko::guest_call, a native owner calling
+    // game functions) starts as a native entry does: the exit word re-armed from what is deliverable now. Without it a stale
+    // kExitInterrupt - set while an earlier native frame ran with MSR[EE] set, since cleared at the source - makes the callee
+    // hand control back at its first call or return.
+    // gekko::guest_call is running a callee right now (a native owner called from it must finish its work in C++: there is no
+    // dispatcher to hand a continuation to). Counted by guest_call.
+    u32 guest_call_depth() const noexcept { return guest_call_depth_; }
+    void enter_guest_call() noexcept { ++guest_call_depth_; }
+    void leave_guest_call() noexcept { --guest_call_depth_; }
+    u8 exit_state() const noexcept { return exit_pending_; }       // diagnostics
+    u8 interrupt_line_bits() const noexcept { return interrupt_lines_; }
+    u32 last_leave_site() const noexcept { return leave_site_; }  // diagnostics: where the last hand-back was made
+    void rearm_native_entry() noexcept { exit_pending_ = native_entry_exit_state(); }
 
     // ---- LK=0 transfers (audit R12, 2026-09-28) ----------------------------
     //
@@ -1063,6 +1116,70 @@ public:
     void set_verify_recompiled(bool enabled, std::size_t max_messages = 8,
                                u64 max_calls = 2000000);
     const VerifyReport& verify_report() const noexcept { return verify_; }
+
+    // --verify-player (reference runner only; docs/SHADOW_PLAYER_NATIVE_RECONSTRUCTION.md, batch 00): the same oracle
+    // scoped to a set of function entries (the player census). Segments entered elsewhere run unverified (still cut
+    // per call). A scoped entry with a hook (a native owner) is verified too: the handler runs as the native pass of
+    // verify_dispatch and the replay interprets the original words from the same state - instead of the hook running
+    // outside the oracle as `skipped_hle`. Per entry: how each attempt ended, and the instructions the replays
+    // interpreted (a bitmap over the code range: verified coverage, never a sampled estimate).
+    struct VerifyEntryStats {
+        u64 verified = 0, mismatches = 0, skipped_device = 0, skipped_exit = 0, skipped_hle = 0;
+        u64 owner_verified = 0, owner_mismatches = 0;  // the entry was a hooked native owner
+        u64 first_mismatch_tick = 0;                    // game tick of the first mismatch (0: none)
+        u64 instructions = 0;
+    };
+    static constexpr u32 kVerifyCoverageBase = 0x80000000u, kVerifyCoverageEnd = 0x80600000u;
+    // all_segments: every translated segment is verified (a player function's code after a call returns runs in
+    // whichever segment the callee's return belongs to, entered elsewhere; entry scoping cannot reach it), and the
+    // coverage bitmap says which player instructions were replayed. Owner passes stay limited to `entries`.
+    void set_verify_scope(std::vector<u32> entries, bool all_segments = false);
+    // [start, end) function ranges whose every segment is a candidate too (the scope file's "address,size" lines).
+    void set_verify_ranges(std::vector<std::pair<u32, u32>> ranges);
+    // Owner entries whose r4 is dead at every caller (the scope file's "address,size,r4dead" lines): their owner
+    // pass is not compared on r4. The evidence is the binary's (tools/dolrecon/player_r4dead.py), never a run.
+    void set_verify_r4_dead(std::vector<u32> entries);
+    bool verify_scoped() const noexcept { return !verify_scope_.empty(); }
+    const std::unordered_map<u32, VerifyEntryStats>& verify_entry_stats() const noexcept { return verify_entry_stats_; }
+    // One bit per instruction of [kVerifyCoverageBase, kVerifyCoverageEnd) interpreted by a scoped replay.
+    const std::vector<u64>& verify_coverage() const noexcept { return verify_coverage_; }
+    // The test owner that proves the owner path: at `address`, a hook that runs the translated body (mode 1, "exact",
+    // must verify) or the translated body and then flips bit 0 of the last byte it wrote outside the dead stack - or of
+    // r3 when it wrote none (mode 2, "corrupt": the first served call must mismatch; a mismatch stops the run).
+    // Reference runner only.
+    void set_verify_owner_fixture(u32 address, int mode);
+    // The hook at `address` run as try_hle_slow runs it (hits counted, pc = LR when served), for a verified native
+    // pass. False when there is no hook or it declined.
+    bool serve_hle_for_verify(u32 address);
+    // --verify-player's default mode: a fast diagnostic, not the oracle's proof. Only some arrivals at a candidate
+    // entry (a scoped entry, or any address with all_segments) are checked - each checked segment exactly as strict
+    // mode checks it - and the rest run as free native code: no per-call cut, no journal, no replay. Strict mode
+    // (enabled = false) checks every segment. Arrivals are counted at the call (try_hle_slow) and at the dispatcher.
+    struct VerifySampling {
+        bool enabled = false;
+        u32 first_per_entry = 4;   // the first arrivals at an entry are checked (new code first)
+        u32 period = 1024;         // after them, one arrival in `period` (0: none)
+        u32 known_period = 16384;  // an entry a previous run verified clean: only one in `known_period` (0: none)
+        // Verifier time (native pass + replay + compare) as a share of the game thread's wall time, as a token
+        // bucket: a check is taken only while the bucket is positive, so the verifier yields to the game.
+        double cpu_share = 0.30;
+        double burst_seconds = 0.25;
+    };
+    struct VerifySamplingReport {
+        u64 arrivals = 0, sampled = 0, sampled_out = 0, over_budget = 0, known_entries = 0, entries_seen = 0;
+        double verifier_seconds = 0.0, wall_seconds = 0.0;
+    };
+    // After set_verify_scope. `known`: entries a previous run verified with no mismatch.
+    void set_verify_sampling(const VerifySampling& sampling, const std::vector<u32>& known);
+    const VerifySampling& verify_sampling() const noexcept { return verify_sampling_; }
+    VerifySamplingReport verify_sampling_report() const;
+    u32 verify_arrivals(u32 address) const noexcept;
+    u32 verify_checks(u32 address) const noexcept;  // checks taken there (saturates at 255)
+    // The frC probe (reference interpreter): per single-multiply instruction, executions whose frC was not a single
+    // (wide) and those a 25-bit significand rounding would change. Cpu::note_single_multiply_frc.
+    struct FrcProbe { u64 wide = 0, rounding_changes = 0; };
+    void set_frc_probe(bool enabled) { frc_probe_ = enabled; }
+    const std::unordered_map<u32, FrcProbe>& frc_probe_sites() const noexcept { return frc_probe_sites_; }
 
     // ---- helpers used by devices and the loader ----------------------------
     void set_cr_field(u32 field, u32 value);
@@ -1229,6 +1346,7 @@ private:
     u8 interrupt_lines_ = 0;
     bool instruction_trace_ = false;
     RecompiledCode* recompiled_ = nullptr;
+    IdleWorkHook idle_work_hook_;
     // kExitLeave: leave_to_dispatcher ran (pc is the resume address).
     // kExitInterrupt: a condition became deliverable while native code ran; the
     // next exiting() check (always right after a call returned, R2) unwinds.
@@ -1238,6 +1356,7 @@ private:
     // waiting for a return runs it (finish_transfers). R12.
     static constexpr u8 kExitTransfer = 0x04u;
     u8 exit_pending_ = 0;
+    u32 guest_call_depth_ = 0;
     std::optional<u32> pending_native_call_;
     // (The separate pending_decrementer_ bool that followed is folded into
     // interrupt_lines_; the u32 below keeps its offset.)
@@ -1271,6 +1390,7 @@ private:
     // ---- game time state (see time_base()) ---------------------------------
     GameClock clock_;
     u64 time_base_offset_ = 0;  // time base = clock + offset (mttb moves it)
+    bool dec_delivery_ = true;
     u32 dec_value_ = 0;         // the value last written to DEC ...
     u64 dec_written_at_ = 0;    // ... at this clock time
     IdleHandler idle_handler_;
@@ -1300,6 +1420,11 @@ private:
     // while it is set: the replay executes the guest instructions the native
     // pass translated, and handlers run only from the dispatcher.
     bool verify_replaying_ = false;
+    // HLE handlers (native owners) running now. A guest call a handler makes (recomp::call_indirect from native code:
+    // RtGCNFS's callbacks, the motion store's heap calls) is part of the handler's effect and must return to it, so
+    // the per-call verify cut does not apply while one runs: under --verify-recomp it used to cut the callee back to
+    // the dispatcher and the owner stopped with "a guest call did not return" (0.02 s into every boot).
+    u32 handler_depth_ = 0;
     std::size_t verify_message_limit_ = 0;
     u64 verify_call_limit_ = 0;
     VerifyReport verify_;
@@ -1308,6 +1433,36 @@ private:
     // writes and is bounded by GuestMemory::kJournalLimit (and eight bytes per entry).
     std::vector<GuestMemory::JournalEntry> verify_native_writes_scratch_;
     std::vector<std::pair<u32, u8>> verify_native_bytes_scratch_;
+    std::vector<u32> verify_scope_;  // sorted; empty: every segment (--verify-recomp)
+    bool verify_owner_pass_ = false;
+    bool verify_all_segments_ = false;  // the segment being verified is a native owner's (dead stack excluded)
+    std::unordered_map<u32, VerifyEntryStats> verify_entry_stats_;
+    std::vector<u64> verify_coverage_;
+    bool in_verify_scope(u32 entry) const noexcept;
+    std::vector<std::pair<u32, u32>> verify_ranges_;  // sorted, disjoint
+    std::vector<u32> verify_r4_dead_;  // sorted
+    bool verify_candidate(u32 pc) const noexcept;
+    // verify_dispatch with the attempt's outcome credited to `entry` (and `owner`: the native pass was a hook).
+    void verify_scoped_dispatch(RecompiledCode::Fn native, u32 entry, bool owner);
+    // Fast mode (VerifySampling): per instruction slot of the coverage range, arrivals (saturating), checks taken
+    // (saturating) and the previous run's clean entries.
+    VerifySampling verify_sampling_;
+    VerifySamplingReport verify_sampling_counts_;
+    std::vector<u32> verify_arrivals_;
+    std::vector<u8> verify_sampled_n_;
+    std::vector<u8> verify_known_;
+    double verify_tokens_ = 0.0;
+    std::chrono::steady_clock::time_point verify_refill_at_{}, verify_started_at_{};
+    // True while verify_dispatch's native pass runs: only then is every call cut (the segment protocol).
+    bool verify_in_pass_ = false;
+    // The call try_hle_slow cut because it was sampled; the dispatcher's arrival there checks it without counting
+    // the arrival again.
+    u32 verify_sampled_entry_ = 0;
+    bool verify_sample_arrival(u32 entry);
+    bool frc_probe_ = false;
+    std::unordered_map<u32, FrcProbe> frc_probe_sites_;
+    void note_single_multiply_frc(u64 c);
+    bool verify_take_sample(u32 entry);
 
     std::vector<TraceEntry> history_;
     std::size_t history_head_ = 0;
@@ -1321,9 +1476,12 @@ private:
     };
     std::vector<HleEntry> hle_;
     const HleEntry* find_hle(u32 address) const;
-    // Direct-mapped try_hle filter (see try_hle). 1024 slots = 4 KiB, one
+    // Direct-mapped try_hle filter (see try_hle). 4096 slots = 16 KiB, one
     // cache line touched per call; two hooks in one slot mark it kHleSlotAll.
-    static constexpr u32 kHleSlotCount = 1024u;
+    // 2026-11-04: 1024 slots left 32 of ~250 hooks sharing a slot, and every
+    // call to any address of a shared slot paid try_hle_slow plus a hash
+    // lookup (find_hle + try_hle_slow 0.11 ms/frame); 4096 leaves ~7.
+    static constexpr u32 kHleSlotCount = 4096u;
     static constexpr u32 kHleSlotMask = kHleSlotCount - 1u;
     static constexpr u32 kHleSlotEmpty = 1u;  // not word-aligned: never a call target
     static constexpr u32 kHleSlotAll = 3u;    // not word-aligned: never a call target
@@ -1354,6 +1512,17 @@ private:
     // Exact address -> hle_ index. find_hle used to binary-search 112-byte
     // rows on every hooked call and every dispatcher iteration.
     std::unordered_map<u32, std::size_t> hle_index_;
+    // hle_ index of the one hooked address a slot names (valid only when
+    // hle_slots_[i] is that address): find_hle answers a single-hook slot with
+    // one load instead of the hash lookup (2026-10-30: find_hle was 1.5 % of
+    // the game thread, net). Shared slots and verification (kHleSlotAll) keep
+    // the hash path. Declared last: no offset the generated code reaches moves.
+    u32 hle_slot_entry_[kHleSlotCount]{};
+    // A shared slot's hooks (kHleSlotAll outside verification / a fault): hle_slot_entry_ holds
+    // first << 8 | count into hle_shared_, the hle_ indices of the hooks mapping to it, so find_hle scans those few
+    // instead of hashing. hle_slots_all_ marks the verify / fault fill, where no slot has such a list.
+    std::vector<u32> hle_shared_;
+    bool hle_slots_all_ = false;
     // Reference interpreter only (step()): the instruction step() just executed
     // ends at a recognition point R2/R3/R4/R5 (see interrupt_lines_), so the
     // next step() takes a deliverable condition before fetching. Cpu::run's R1
@@ -1377,6 +1546,12 @@ private:
     u32 poll_site_ = 0;  // 0: nothing tracked
     void capture_poll_registers(PollRegisters& out) const noexcept;
     void wait_for_event();
+    // set_lift_sites' filter: one bit per (address >> 2) mod 8192, set where a site maps. Cpu::run asks
+    // run_lift_site_at_pc on every dispatch iteration, and the binary search over ~1,050 sites to learn that the pc
+    // is no site cost 0.035 ms/frame (2026-11-04); the filter answers most of those with one load. 1 KiB. Declared
+    // last: no offset the generated code reaches moves.
+    static constexpr u32 kLiftSiteFilterBits = 8192u;
+    std::array<u64, kLiftSiteFilterBits / 64u> lift_site_filter_{};
 };
 
 static_assert(sizeof(std::atomic<bool>) == 1 && alignof(std::atomic<bool>) == 1,

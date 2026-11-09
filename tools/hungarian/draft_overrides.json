@@ -1,0 +1,6 @@
+{
+ "_comment": "Hand-chosen Hungarian lines that replace the machine drafts: 'section:position' -> text (' / ' = line break). Applied by gen_hu_draft.py.",
+ "stg0202:266": "Shadow! Merre kódorogtál, csigusz?",
+ "stg0202:258": "Mozgásban kell maradnom!",
+ "stg0402:246": "A hitvány tudós még mindig / dacol velünk. Használd az ágyúinkat, / és szedd le a hajóit az égről!"
+}

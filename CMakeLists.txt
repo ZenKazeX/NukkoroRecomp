@@ -38,6 +38,16 @@ if(SHADOW_SHIPPING)
     set(SHADOW_ENABLE_TRACY OFF CACHE BOOL "" FORCE)
     add_compile_definitions(GEKKO_SHIPPING=1)
 endif()
+# Symbols for every object and program (a PDB): --watch-guest (include/gekko/guest_watch.h) then attributes accesses
+# made by leaf translated rows, which have no unwind record. Diagnostic trees only; code generation is unchanged.
+option(SHADOW_WATCH_SYMBOLS "Build with a PDB so the guest watch attributes leaf rows exactly" OFF)
+if(SHADOW_WATCH_SYMBOLS AND MSVC)
+    if(SHADOW_SHIPPING)
+        message(FATAL_ERROR "SHADOW_WATCH_SYMBOLS is for diagnostic trees (the guest watch is compiled out of shipping)")
+    endif()
+    add_compile_options(/Zi)
+    add_link_options(/DEBUG:FULL /OPT:REF /OPT:NOICF)  # no folding: identical rows keep distinct host code
+endif()
 
 # R2e (docs/lift-20261006/R2_DRIVER.md 4.3): the generator also lowers the RenderWare driver's draw-facing call
 # sites (extract/lift-sites-r2.txt) into the scaffolding (runtime/scaffold/rw_driver), and the game renders through
@@ -169,7 +179,7 @@ if(MSVC)
     add_library(shadow_host_isa_gate OBJECT runtime/src/host_isa/host_isa_gate.cpp)
     target_include_directories(shadow_host_isa_gate PUBLIC runtime/src/host_isa)
     target_compile_definitions(shadow_host_isa_gate PRIVATE SHADOW_HOST_ISA_REQUIRE_${SHADOW_HOST_ISA_TOKEN}=1)
-    target_compile_features(shadow_host_isa_gate PRIVATE cxx_std_17)
+    target_compile_features(shadow_host_isa_gate PRIVATE cxx_std_20)
     target_compile_options(shadow_host_isa_gate PRIVATE /W4 /permissive-)
     set_property(TARGET shadow_host_isa_gate PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     target_link_libraries(shadow_host_isa INTERFACE $<TARGET_OBJECTS:shadow_host_isa_gate>)
@@ -177,7 +187,7 @@ endif()
 
 find_package(Threads REQUIRED)
 add_library(shadow_native_execution STATIC runtime/src/native_execution.cpp)
-target_compile_features(shadow_native_execution PUBLIC cxx_std_17)
+target_compile_features(shadow_native_execution PUBLIC cxx_std_20)
 target_link_libraries(shadow_native_execution PUBLIC Threads::Threads shadow_host_isa)
 if(MSVC)
     target_compile_options(shadow_native_execution PRIVATE /W4 /permissive-)
@@ -187,7 +197,7 @@ else()
 endif()
 
 add_library(shadow_native_memory STATIC runtime/src/native_memory.cpp)
-target_compile_features(shadow_native_memory PUBLIC cxx_std_17)
+target_compile_features(shadow_native_memory PUBLIC cxx_std_20)
 target_link_libraries(shadow_native_memory PUBLIC shadow_host_isa)
 if(WIN32)
     target_link_libraries(shadow_native_memory PRIVATE psapi)
@@ -200,13 +210,86 @@ else()
 endif()
 
 add_library(shadow_native_gameplay STATIC runtime/src/native_gameplay.cpp)
-target_compile_features(shadow_native_gameplay PUBLIC cxx_std_17)
+target_compile_features(shadow_native_gameplay PUBLIC cxx_std_20)
 target_link_libraries(shadow_native_gameplay PUBLIC shadow_native_execution shadow_native_memory)
 if(MSVC)
     target_compile_options(shadow_native_gameplay PRIVATE /W4 /permissive-)
     set_property(TARGET shadow_native_gameplay PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 else()
     target_compile_options(shadow_native_gameplay PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+# ---- the game's MSL math library, native (docs/NATIVE_MSL_MATH.md) ------------
+# fdlibm as the game compiled it: pure C++, no CPU state. Shared by the lifted subsystems and the native RenderWare
+# core (RwMatrixRotate's sin / cos).
+add_library(shadow_msl STATIC
+    runtime/lift/math/msl.cpp)
+target_include_directories(shadow_msl PUBLIC runtime/lift)
+target_compile_features(shadow_msl PUBLIC cxx_std_20)
+target_link_libraries(shadow_msl PUBLIC shadow_host_isa)
+if(MSVC)
+    target_compile_options(shadow_msl PRIVATE /W4 /permissive-)
+    set_property(TARGET shadow_msl PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+else()
+    target_compile_options(shadow_msl PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+# ---- native RenderWare core (rwcore/README.md) --------------------------------
+# RenderWare Graphics 3.7 rebuilt from the game's own RenderWare functions as plain x64 C++20: no GameCube code, no
+# guest memory, no dependency on the emulator runtime (only on the game's native MSL math). Each module is proven
+# against the original instructions by a reference-interpreter test (runtime/tests/rwcore_*_tests.cpp).
+add_library(rwcore STATIC
+    rwcore/src/binary.cpp
+    rwcore/src/camera.cpp
+    rwcore/src/device.cpp
+    rwcore/src/engine.cpp
+    rwcore/src/error.cpp
+    rwcore/src/frame.cpp
+    rwcore/src/image.cpp
+    rwcore/src/list.cpp
+    rwcore/src/plugin.cpp
+    rwcore/src/pluginstream.cpp
+    rwcore/src/palquant.cpp
+    rwcore/src/raster.cpp
+    rwcore/src/resample.cpp
+    rwcore/src/resources.cpp
+    rwcore/src/stream.cpp
+    rwcore/src/string.cpp
+    rwcore/src/texture.cpp
+    rwcore/src/matrix.cpp
+    rwcore/src/memory.cpp
+    rwcore/src/vector.cpp)
+target_include_directories(rwcore PUBLIC rwcore/include)
+target_compile_features(rwcore PUBLIC cxx_std_20)
+target_link_libraries(rwcore PRIVATE shadow_msl)
+if(MSVC)
+    target_compile_options(rwcore PRIVATE /W4 /permissive- /fp:precise)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")   # clang-cl: /fp:precise still contracts a*b+c within an expression
+        target_compile_options(rwcore PRIVATE /clang:-ffp-contract=off)
+    endif()
+    set_property(TARGET rwcore PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+else()
+    # bit-identical results need every a*b+c rounded twice unless the source fuses it (std::fmaf)
+    target_compile_options(rwcore PRIVATE -Wall -Wextra -Wpedantic -ffp-contract=off)
+endif()
+
+# The native RenderWare world plugin (rpworld/include/rw/world, rwcore/README.md "rpworld"): same build rules as
+# rwcore (bit-identical floating point: no contraction).
+add_library(rpworld STATIC
+    rpworld/src/light.cpp
+    rpworld/src/material.cpp
+    rpworld/src/world.cpp)
+target_include_directories(rpworld PUBLIC rpworld/include)
+target_compile_features(rpworld PUBLIC cxx_std_20)
+target_link_libraries(rpworld PUBLIC rwcore PRIVATE shadow_msl)
+if(MSVC)
+    target_compile_options(rpworld PRIVATE /W4 /permissive- /fp:precise)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        target_compile_options(rpworld PRIVATE /clang:-ffp-contract=off)
+    endif()
+    set_property(TARGET rpworld PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+else()
+    target_compile_options(rpworld PRIVATE -Wall -Wextra -Wpedantic -ffp-contract=off)
 endif()
 
 # ---- lifted subsystems (docs/lift-20261006) ----------------------------------
@@ -220,7 +303,6 @@ add_library(shadow_lift STATIC
     runtime/lift/math/scalar.cpp
     runtime/lift/math/matrix.cpp
     runtime/lift/math/hermite.cpp
-    runtime/lift/math/msl.cpp
     runtime/lift/object/type_cast.cpp
     runtime/lift/peripheral/controls.cpp
     runtime/lift/peripheral/gamepad_binding.cpp
@@ -229,8 +311,8 @@ add_library(shadow_lift STATIC
     # NE-RW2c (HW_REPORT Y): the game's 2D layout policy, plain values (it left gekko/native_hud + display).
     runtime/lift/ui/hud_layout.cpp)
 target_include_directories(shadow_lift PUBLIC runtime/lift)
-target_compile_features(shadow_lift PUBLIC cxx_std_17)
-target_link_libraries(shadow_lift PUBLIC shadow_host_isa)
+target_compile_features(shadow_lift PUBLIC cxx_std_20)
+target_link_libraries(shadow_lift PUBLIC shadow_host_isa shadow_msl)
 if(MSVC)
     target_compile_options(shadow_lift PRIVATE /W4 /permissive-)
     set_property(TARGET shadow_lift PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -251,7 +333,7 @@ add_library(shadow_assets STATIC
     runtime/lift/assets/texture_dictionary.cpp
     runtime/lift/assets/texture_import.cpp)
 target_include_directories(shadow_assets PUBLIC runtime/lift)
-target_compile_features(shadow_assets PUBLIC cxx_std_17)
+target_compile_features(shadow_assets PUBLIC cxx_std_20)
 if(MSVC)
     target_compile_options(shadow_assets PRIVATE /W4 /permissive-)
     set_property(TARGET shadow_assets PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -266,7 +348,7 @@ add_library(shadow_motion STATIC
     runtime/lift/motion/pose_math.cpp
     runtime/lift/motion/skeleton_pose.cpp)
 target_include_directories(shadow_motion PUBLIC runtime/lift)
-target_compile_features(shadow_motion PUBLIC cxx_std_17)
+target_compile_features(shadow_motion PUBLIC cxx_std_20)
 target_link_libraries(shadow_motion PUBLIC shadow_lift)  # math/msl: the game's sin / cos / acos
 set_property(TARGET shadow_motion PROPERTY CXX_STANDARD 20)
 if(MSVC)
@@ -330,6 +412,7 @@ if(WIN32)
                            "glare|PSGlareMerge|ps_6_6|render_ps_glare_merge.h"
                            "glare|PSGlareComposite|ps_6_6|render_ps_glare_composite.h"
                            "glare|PSResolveGlare|ps_6_6|render_ps_resolve_glare.h"
+                           "utility|PSDepthBits|ps_6_6|render_ps_depth_bits.h"
                            "glare|CSGlareRows|cs_6_6|render_cs_glare_rows.h"
                            "glare|CSGlareColumns|cs_6_6|render_cs_glare_columns.h"
                            "glare|VSGlareTiles|vs_6_6|render_vs_glare_tiles.h"
@@ -379,15 +462,17 @@ if(WIN32)
         runtime/lift/render/gpu_device.cpp
         runtime/lift/render/gpu_memory.cpp
         runtime/lift/render/gpu_timer.cpp
+        runtime/lift/render/jit_pacer.cpp
         runtime/lift/render/pipelines.cpp
         runtime/lift/render/renderer.cpp
+        runtime/lift/render/unorm_calibration.cpp
         runtime/lift/render/resource_worker.cpp
         runtime/lift/render/resources.cpp
         runtime/lift/render/skin_cache.cpp
         runtime/lift/render/swap_chain.cpp)
     add_dependencies(shadow_render shadow_render_shaders)
     target_include_directories(shadow_render PUBLIC runtime/lift "${SHADOW_RENDER_SHADER_DIR}")
-    target_compile_features(shadow_render PUBLIC cxx_std_17)
+    target_compile_features(shadow_render PUBLIC cxx_std_20)
     target_compile_definitions(shadow_render PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
     target_link_libraries(shadow_render PUBLIC shadow_d3d12ma shadow_assets d3d12 dxgi dxguid)
     if(MSVC)
@@ -399,7 +484,7 @@ if(WIN32)
     # no console layouts); the RW GameCube driver scaffold is its adapter until R4 / R6.
     add_library(shadow_rwim STATIC runtime/lift/rwim/immediate.cpp)
     target_include_directories(shadow_rwim PUBLIC runtime/lift)
-    target_compile_features(shadow_rwim PUBLIC cxx_std_17)
+    target_compile_features(shadow_rwim PUBLIC cxx_std_20)
     target_link_libraries(shadow_rwim PUBLIC shadow_render)
     if(MSVC)
         target_compile_options(shadow_rwim PRIVATE /W4 /permissive-)
@@ -412,6 +497,29 @@ if(WIN32)
     target_link_libraries(stage_preview PRIVATE shadow_render shadow_assets)
     target_include_directories(stage_preview PRIVATE thirdparty/stb)
     target_compile_definitions(stage_preview PRIVATE _CRT_SECURE_NO_WARNINGS)
+    # The offline converter of a stage's GameCube data to the native PC formats the native RenderWare core loads
+    # (tools/stage_convert; rwcore/README.md "Stage conversion").
+    add_executable(stage_convert tools/stage_convert/stage_convert.cpp)
+    target_link_libraries(stage_convert PRIVATE shadow_assets)
+    target_compile_features(stage_convert PRIVATE cxx_std_20)
+    # A stage drawn entirely by the native path along a recorded game camera, into a video
+    # (tools/native_stage_clip/native_stage_clip.cpp).
+    add_executable(native_stage_clip tools/native_stage_clip/native_stage_clip.cpp)
+    target_link_libraries(native_stage_clip PRIVATE shadow_render shadow_assets rpworld)
+    target_include_directories(native_stage_clip PRIVATE thirdparty/stb)
+    target_compile_definitions(native_stage_clip PRIVATE _CRT_SECURE_NO_WARNINGS)
+    target_compile_features(native_stage_clip PRIVATE cxx_std_20)
+    if(MSVC)
+        set_property(TARGET native_stage_clip PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+    add_executable(stage_load_check tools/stage_convert/stage_load_check.cpp)
+    target_link_libraries(stage_load_check PRIVATE shadow_assets rpworld)
+    if(MSVC)
+        set_property(TARGET stage_load_check PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+    if(MSVC)
+        set_property(TARGET stage_convert PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
     # The same, live in a window: fly through a stage (tools/stage_preview/stage_viewer.cpp).
     add_executable(stage_viewer tools/stage_preview/stage_viewer.cpp tools/stage_preview/stage_scene.cpp)
     target_link_libraries(stage_viewer PRIVATE shadow_render shadow_assets)
@@ -441,10 +549,16 @@ add_library(shadow_runtime_common OBJECT
     runtime/src/native_audio_mixer.cpp
     runtime/src/embedded_game_data.cpp
     runtime/src/gekko/guest_memory.cpp
+    runtime/src/gekko/guest_watch.cpp
     runtime/src/gekko/os_exception_entry.cpp
     runtime/src/gekko/asset_trace.cpp
     runtime/src/gekko/display.cpp
     runtime/src/gekko/display_settings.cpp
+    runtime/src/gekko/settings_registry.cpp
+    runtime/src/gekko/settings_display.cpp
+    runtime/src/gekko/save_file.cpp
+    runtime/src/gekko/save_import.cpp
+    runtime/src/gekko/save_store.cpp
     runtime/src/gekko/gx.cpp
     runtime/src/gekko/audio_runtime.cpp
     runtime/src/gekko/timeline.cpp
@@ -453,6 +567,9 @@ add_library(shadow_runtime_common OBJECT
     runtime/src/gekko/process_profile.cpp
     runtime/src/gekko/host_jobs.cpp
     runtime/src/gekko/xinput_pad.cpp
+    runtime/src/gekko/raw_keyboard.cpp
+    runtime/src/gekko/heap_census.cpp
+    runtime/src/gekko/sonicteam_heap.cpp
     runtime/src/gekko/render_geometry.cpp
     runtime/src/gekko/camera.cpp
     runtime/src/gekko/world_anchor.cpp
@@ -462,6 +579,7 @@ add_library(shadow_runtime_common OBJECT
     runtime/src/gekko/asset_providers.cpp
     runtime/src/gekko/asset_namespace.cpp
     runtime/src/gekko/asset_mount.cpp
+    runtime/backends/storage/storage_backends.cpp
     runtime/src/gekko/native_frame.cpp
     runtime/src/gekko/rw_capture.cpp
     runtime/src/gekko/native_renderer.cpp
@@ -477,8 +595,23 @@ add_library(shadow_runtime_common OBJECT
     runtime/src/gekko/game_clock.cpp
     runtime/src/gekko/native_interrupts.cpp
     runtime/src/gekko/native_video.cpp
+    runtime/src/gekko/native_rw_world.cpp
+    runtime/src/gekko/native_rw_device_state.cpp
+    runtime/src/gekko/native_rw_registry.cpp
+    runtime/src/gekko/native_rw_world_decode.cpp
+    runtime/src/gekko/native_rw_vector.cpp
+    runtime/src/gekko/native_rw_matrix.cpp
+    runtime/src/gekko/native_rw_view_cache.cpp
     runtime/src/gekko/native_audio.cpp
     runtime/src/gekko/native_reverb_owner.cpp
+    runtime/src/gekko/native_axfx_effects.cpp
+    runtime/src/gekko/native_os_arena_clock.cpp
+    runtime/src/gekko/native_os_debug.cpp
+    runtime/src/gekko/native_os_report.cpp
+    runtime/src/gekko/native_trk.cpp
+    runtime/src/gekko/native_os_font.cpp
+    runtime/src/gekko/native_vec_math.cpp
+    runtime/src/gekko/native_mix_entries.cpp
     runtime/src/gekko/native_sound_tables.cpp
     runtime/src/gekko/native_gcax_midi.cpp
     runtime/src/gekko/native_se_manager.cpp
@@ -491,21 +624,63 @@ add_library(shadow_runtime_common OBJECT
     runtime/src/gekko/sound_arena.cpp
     runtime/src/gekko/native_object_range.cpp
     runtime/src/gekko/native_attached_effects.cpp
+    runtime/src/gekko/native_gx_state.cpp
+    runtime/src/gekko/native_gx_display.cpp
+    runtime/src/gekko/native_gx_texobj.cpp
+    runtime/src/gekko/native_rw_node_stops.cpp
+    runtime/src/gekko/native_rw_raster.cpp
+    runtime/src/gekko/native_rw_raster_image.cpp
+    runtime/src/gekko/native_rw_raster_size.cpp
+    runtime/src/gekko/native_rw_display.cpp
     runtime/src/gekko/native_gx_sync.cpp
     runtime/src/gekko/native_immediate.cpp
     runtime/src/gekko/host_files.cpp
     runtime/src/gekko/native_card.cpp
     runtime/src/gekko/native_save_text.cpp
+    runtime/src/gekko/native_hungarian_text.cpp
+    runtime/src/gekko/native_hungarian_data.cpp
+    runtime/src/gekko/native_hungarian_draft.cpp
+    runtime/src/gekko/native_hungarian_palsel.cpp
     runtime/src/gekko/native_options_display.cpp
+    runtime/src/gekko/native_options_menu.cpp
+    runtime/src/gekko/settings_game.cpp
+    runtime/src/gekko/voice_language.cpp
+    runtime/src/gekko/pc_settings.cpp
+    runtime/src/gekko/config_file.cpp
+    runtime/src/gekko/menu_backgrounds.cpp
     runtime/src/gekko/button_glyphs.cpp
     runtime/src/gekko/native_ipl.cpp
+    runtime/src/gekko/native_os_settings.cpp
+    runtime/src/gekko/native_os_heap.cpp
+    runtime/src/gekko/native_os_panic.cpp
+    runtime/src/gekko/native_os_misc.cpp
+    runtime/src/gekko/native_os_machine_check.cpp
+    runtime/src/gekko/native_ax_mix_alloc.cpp
+    runtime/src/gekko/native_math_affine.cpp
+    runtime/src/gekko/native_rw_pixel.cpp
+    runtime/src/gekko/native_rw_image.cpp
+    runtime/src/gekko/native_os_threads.cpp
+    runtime/src/gekko/native_vi_wait.cpp
+    runtime/src/gekko/native_guest_scheduler.cpp  # the reference build's guest SelectThread / OSLoadContext (not in the lifted tree)
     runtime/src/gekko/native_reset.cpp
+    runtime/src/gekko/native_boot.cpp
     runtime/src/gekko/native_disc_error.cpp
     runtime/src/gekko/native_link_groups.cpp
+    runtime/src/gekko/native_world_collision.cpp
+    runtime/src/gekko/thread_sampler.cpp
+    runtime/src/gekko/native_world_line.cpp
     runtime/src/gekko/prs_ahead.cpp
     runtime/src/gekko/native_directory_scan.cpp
     runtime/src/gekko/native_cri_file_device.cpp
     runtime/src/gekko/native_rtgcnfs.cpp
+    runtime/src/gekko/native_jobs.cpp
+    runtime/src/gekko/native_expand_jobs.cpp
+    runtime/src/gekko/native_one.cpp
+    runtime/src/gekko/native_cri.cpp
+    runtime/src/gekko/game_errata.cpp
+    runtime/src/gekko/native_svm.cpp
+    runtime/src/gekko/native_sj.cpp
+    runtime/src/gekko/native_adx_output.cpp
     runtime/src/gekko/game_memory.cpp
     runtime/src/gekko/gameplay_scheduler.cpp
     runtime/src/gekko/rw_geometry_convert.cpp
@@ -523,28 +698,37 @@ add_library(shadow_runtime_common OBJECT
     runtime/src/gekko/dev_link.cpp
     runtime/src/gekko/input_tape.cpp
 )
+# The runtime sources the lifted (shipping) tree does not compile. One list: it removes them below, and the generator's
+# liveness roots for that tree (extract/liveness-roots-lifted.txt) are generated without their literals, so guest code
+# only they enter is not kept (tools/ppcrecomp/liveness_roots.py --without; the native_liveness_roots_lifted test
+# refuses a roots file made for a different list).
+set(SHADOW_LIFTED_UNCOMPILED_SOURCES
+    runtime/src/gekko/rw_capture.cpp
+    runtime/src/gekko/native_renderer.cpp
+    runtime/src/gekko/native_gpu.cpp
+    runtime/src/gekko/render/gpu_transfer.cpp
+    runtime/src/gekko/render/upload_arena.cpp
+    runtime/src/gekko/bloom.cpp
+    runtime/src/gekko/bloom_gpu.cpp
+    runtime/src/gekko/native_immediate.cpp
+    # NE-RW2c: the legacy renderer's view of the 2D layout policy (its canvas affine); the policy is shadow_lift's.
+    runtime/src/gekko/native_hud.cpp
+    # The guest scheduler entry of the modes that create guest threads (the lifted build refuses them).
+    runtime/src/gekko/native_guest_scheduler.cpp
+    # A test of the generated body of SelectThread's idle spin (0x803788FC): it runs against the reference tree, not the lifted one.
+    runtime/tests/compiler_body_tests.cpp)
 if(SHADOW_RENDER_LIFTED)
     # G5 (HW_REPORT T.1): the lifted (shipping) build carries no legacy renderer: no RenderWare capture, no legacy
     # GPU / presenter / bloom, no GX immediate builder. They stay in the native tree (SHADOW_RENDER_LIFTED=OFF), the
     # R2 gate's baseline. The sources that remain read SHADOW_RENDER_LIFTED (PRIVATE: the recomp shards do not see it).
     get_target_property(SHADOW_COMMON_SOURCES shadow_runtime_common SOURCES)
-    list(REMOVE_ITEM SHADOW_COMMON_SOURCES
-        runtime/src/gekko/rw_capture.cpp
-        runtime/src/gekko/native_renderer.cpp
-        runtime/src/gekko/native_gpu.cpp
-        runtime/src/gekko/render/gpu_transfer.cpp
-        runtime/src/gekko/render/upload_arena.cpp
-        runtime/src/gekko/bloom.cpp
-        runtime/src/gekko/bloom_gpu.cpp
-        runtime/src/gekko/native_immediate.cpp
-        # NE-RW2c: the legacy renderer's view of the 2D layout policy (its canvas affine); the policy is shadow_lift's.
-        runtime/src/gekko/native_hud.cpp)
+    list(REMOVE_ITEM SHADOW_COMMON_SOURCES ${SHADOW_LIFTED_UNCOMPILED_SOURCES})
     set_target_properties(shadow_runtime_common PROPERTIES SOURCES "${SHADOW_COMMON_SOURCES}")
     target_compile_definitions(shadow_runtime_common PRIVATE SHADOW_RENDER_LIFTED=1)
 endif()
 
 target_include_directories(shadow_runtime_common PUBLIC runtime/include)
-target_compile_features(shadow_runtime_common PUBLIC cxx_std_17)
+target_compile_features(shadow_runtime_common PUBLIC cxx_std_20)
 target_link_libraries(shadow_runtime_common PUBLIC shadow_host_isa shadow_native_execution shadow_native_memory shadow_native_gameplay shadow_lift shadow_assets)
 # The development link (gekko/dev_link.h) connects to the comparison workstation over loopback TCP.
 if(WIN32 AND NOT SHADOW_SHIPPING)  # ES: the dev link is compiled out of the shipping exe
@@ -556,11 +740,11 @@ endif()
 # machinery that existed only for it. tools/ppcrecomp/check_native_boundary.py
 # refuses any of its symbols in either runtime archive and in the executable.
 
-add_library(shadow_runtime STATIC runtime/src/gekko/cpu.cpp runtime/src/gekko/flat_memory.cpp)
+add_library(shadow_runtime STATIC runtime/src/gekko/cpu.cpp runtime/src/gekko/flat_memory.cpp runtime/src/gekko/indirect_call_trace.cpp runtime/src/gekko/native_guest_call.cpp)
 set(SHADOW_CPU_TARGETS shadow_runtime)
 set_property(TARGET shadow_runtime PROPERTY INTERFACE_SHADOW_CPU_EXECUTION native)
 if(SHADOW_BUILD_TESTS OR SHADOW_BUILD_REFERENCE)
-    add_library(shadow_runtime_reference STATIC runtime/src/gekko/cpu.cpp runtime/src/gekko/flat_memory.cpp)
+    add_library(shadow_runtime_reference STATIC runtime/src/gekko/cpu.cpp runtime/src/gekko/flat_memory.cpp runtime/src/gekko/indirect_call_trace.cpp runtime/src/gekko/native_guest_call.cpp)
     target_compile_definitions(shadow_runtime_reference PRIVATE SHADOW_CPU_REFERENCE_BUILD=1)
     set_property(TARGET shadow_runtime_reference PROPERTY INTERFACE_SHADOW_CPU_EXECUTION reference)
     list(APPEND SHADOW_CPU_TARGETS shadow_runtime_reference)
@@ -640,6 +824,10 @@ if(SHADOW_RENDER_LIFTED)
         runtime/scaffold/rw_driver/pipelines.cpp
         runtime/scaffold/rw_driver/glare.cpp
         runtime/scaffold/rw_driver/immediate.cpp
+        runtime/scaffold/rw_driver/im2d_prims.cpp
+        runtime/scaffold/rw_driver/im2d_prims_install.cpp
+        runtime/scaffold/rw_driver/raster_render.cpp
+        runtime/scaffold/rw_driver/raster_render_install.cpp
         runtime/scaffold/rw_driver/screens.cpp
         runtime/scaffold/rw_driver/projection.cpp
         runtime/scaffold/rw_driver/far_objects.cpp
@@ -652,11 +840,25 @@ if(SHADOW_RENDER_LIFTED)
     # runtime/game: the game-level owners (NE-RW1) - functions of the game itself, outside the RenderWare scaffold.
     target_include_directories(shadow_render_lifted PRIVATE runtime/include runtime/scaffold runtime thirdparty/stb)
     target_compile_definitions(shadow_render_lifted PRIVATE _CRT_SECURE_NO_WARNINGS)
-    target_compile_features(shadow_render_lifted PRIVATE cxx_std_17)
+    target_compile_features(shadow_render_lifted PRIVATE cxx_std_20)
     target_link_libraries(shadow_render_lifted PRIVATE shadow_render shadow_rwim shadow_assets shadow_motion)
     if(MSVC)
         target_compile_options(shadow_render_lifted PRIVATE /W4 /permissive- ${SHADOW_ARCH_FLAGS})
         set_property(TARGET shadow_render_lifted PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+    # The pixel harness for what is drawn through RwDriver (WARP adapter, test guest memory): built on request only
+    # (cmake --build <lifted tree> --target rw_im2d_pixel_tests), run by hand or by ctest in a tree with testing on.
+    if(WIN32)
+        add_executable(rw_im2d_pixel_tests EXCLUDE_FROM_ALL runtime/tests/rw_im2d_pixel_tests.cpp)
+        target_include_directories(rw_im2d_pixel_tests PRIVATE runtime/include runtime/scaffold runtime thirdparty/stb)
+        target_link_libraries(rw_im2d_pixel_tests PRIVATE shadow_render_lifted shadow_render shadow_rwim shadow_assets shadow_motion shadow_runtime shadow_lift)
+        target_compile_features(rw_im2d_pixel_tests PRIVATE cxx_std_20)
+        if(MSVC)
+            target_compile_options(rw_im2d_pixel_tests PRIVATE /W4 /permissive- ${SHADOW_ARCH_FLAGS})
+            set_property(TARGET rw_im2d_pixel_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rw_im2d_pixel_tests COMMAND rw_im2d_pixel_tests)
+        set_tests_properties(rw_im2d_pixel_tests PROPERTIES TIMEOUT 300 LABELS "lifted;render")
     endif()
 endif()
 # The native renderer's Tracy zones (runtime/lift/render/profile.h, HW 2026-10-20): only a Tracy build gives its
@@ -688,7 +890,7 @@ if(CMAKE_CROSSCOMPILING)
 else()
     add_executable(ppcrecomp tools/ppcrecomp/main.cpp)
     target_include_directories(ppcrecomp PRIVATE runtime/include)
-    target_compile_features(ppcrecomp PRIVATE cxx_std_17)
+    target_compile_features(ppcrecomp PRIVATE cxx_std_20)
     if(MSVC)
         target_compile_options(ppcrecomp PRIVATE /W4 /permissive-)
         set_property(TARGET ppcrecomp PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -736,7 +938,13 @@ else()
     # file adds the guest code the native runtime names (HLE hooks, native
     # callers) and the address census's augmented roots. The native_liveness_roots
     # test refuses it when a runtime literal is missing.
-    set(SHADOW_RECOMP_LIVENESS_ROOTS "${CMAKE_CURRENT_SOURCE_DIR}/extract/liveness-roots.txt")
+    # The lifted tree compiles none of SHADOW_LIFTED_UNCOMPILED_SOURCES, so it is rooted by the file made without
+    # their literals; the other trees (the R2 baseline, the tests tree) compile them and keep the full file.
+    if(SHADOW_RENDER_LIFTED)
+        set(SHADOW_RECOMP_LIVENESS_ROOTS "${CMAKE_CURRENT_SOURCE_DIR}/extract/liveness-roots-lifted.txt")
+    else()
+        set(SHADOW_RECOMP_LIVENESS_ROOTS "${CMAKE_CURRENT_SOURCE_DIR}/extract/liveness-roots.txt")
+    endif()
     list(APPEND SHADOW_RECOMP_ARGS --prune-roots "${SHADOW_RECOMP_LIVENESS_ROOTS}")
     # Recognized switch tables: their words are reached from the rows that can
     # read them (the dispatcher and any row forming an address inside the
@@ -752,6 +960,39 @@ else()
     # so the generator emits the game clock's wait there (Cpu::idle_wait). The
     # native_wait_points test refuses a file the classifier would not produce.
     set(SHADOW_RECOMP_WAIT_POINTS "${CMAKE_CURRENT_SOURCE_DIR}/extract/wait-points.txt")
+    if(SHADOW_RENDER_LIFTED)
+        # Back edges of functions only the lifted build owns (extract/native-owners-r2.txt) are left out of its list: the generator
+        # refuses a site whose function it prunes. The reference build keeps the guest body, so it keeps the wait point; a spin
+        # without one never advances the game clock (strict mode B hung in GcnSystem's request-3 wait, 2026-11-09).
+        set(_wp_lifted_retired "${CMAKE_CURRENT_SOURCE_DIR}/extract/wait-points-retired-lifted.txt")
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${SHADOW_RECOMP_WAIT_POINTS}" "${_wp_lifted_retired}")
+        file(STRINGS "${_wp_lifted_retired}" _wp_skip_lines REGEX "^0x[0-9A-Fa-f]+")
+        set(_wp_skip "")
+        foreach(_line IN LISTS _wp_skip_lines)
+            string(REGEX MATCH "^0x[0-9A-Fa-f]+" _site "${_line}")
+            string(TOUPPER "${_site}" _site)
+            string(REPLACE "0X" "0x" _site "${_site}")
+            list(APPEND _wp_skip "${_site}")
+        endforeach()
+        file(STRINGS "${SHADOW_RECOMP_WAIT_POINTS}" _wp_lines)
+        set(_wp_text "")
+        set(_wp_removed 0)
+        foreach(_line IN LISTS _wp_lines)
+            string(REGEX MATCH "^0x[0-9A-Fa-f]+" _site "${_line}")
+            if(_site AND "${_site}" IN_LIST _wp_skip)
+                math(EXPR _wp_removed "${_wp_removed} + 1")
+            else()
+                string(APPEND _wp_text "${_line}
+")
+            endif()
+        endforeach()
+        list(LENGTH _wp_skip _wp_skip_count)
+        if(NOT _wp_removed EQUAL _wp_skip_count)
+            message(FATAL_ERROR "extract/wait-points-retired-lifted.txt lists ${_wp_skip_count} sites, ${_wp_removed} are in extract/wait-points.txt")
+        endif()
+        set(SHADOW_RECOMP_WAIT_POINTS "${CMAKE_CURRENT_BINARY_DIR}/wait-points-lifted.txt")
+        file(CONFIGURE OUTPUT "${SHADOW_RECOMP_WAIT_POINTS}" CONTENT "${_wp_text}" @ONLY NEWLINE_STYLE UNIX)
+    endif()
     list(APPEND SHADOW_RECOMP_ARGS --wait-points "${SHADOW_RECOMP_WAIT_POINTS}")
     # Platform sites: the listed VI register accesses of non-VI code (OS fonts,
     # CARD, SI, OS reset; docs/native-time-20261005/STAGE2_VI.md D5). Each is
@@ -904,7 +1145,7 @@ else()
 endif()
 
 target_include_directories(shadow_recomp PUBLIC runtime/include)
-target_compile_features(shadow_recomp PUBLIC cxx_std_17)
+target_compile_features(shadow_recomp PUBLIC cxx_std_20)
 target_link_libraries(shadow_recomp PUBLIC shadow_host_isa shadow_lift)
 if(SHADOW_RENDER_LIFTED)
     # The generated code calls the scaffolding at R2's lowered sites (gekko::scaffold).
@@ -1028,7 +1269,7 @@ if(SHADOW_ENABLE_PLUME)
     # build; there is no runtime fallback.
     add_executable(shaderbake tools/shaderbake/main.cpp)
     target_include_directories(shaderbake PRIVATE runtime/src/gekko runtime/include)
-    target_compile_features(shaderbake PRIVATE cxx_std_17)
+    target_compile_features(shaderbake PRIVATE cxx_std_20)
     target_link_libraries(shaderbake PRIVATE d3dcompiler)
     target_compile_definitions(shaderbake PRIVATE _CRT_SECURE_NO_WARNINGS)
     if(MSVC)
@@ -1202,12 +1443,6 @@ if(MSVC)
     endforeach()
 endif()
 
-# This distribution leaves out runtime/tests and test_data/: the regression suite
-# needs memory images and fixtures taken from the original game.
-if(SHADOW_BUILD_TESTS AND NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/runtime/tests")
-    message(FATAL_ERROR "SHADOW_BUILD_TESTS needs runtime/tests and test_data/, which this distribution does not include")
-endif()
-
 if(SHADOW_BUILD_TESTS)
     include(CTest)
     # The new native camera and visibility system: projection construction,
@@ -1216,7 +1451,7 @@ if(SHADOW_BUILD_TESTS)
     # no device, so it runs everywhere and runs fast.
     add_executable(camera_tests runtime/tests/camera_tests.cpp runtime/src/gekko/camera.cpp)
     target_include_directories(camera_tests PRIVATE runtime/include)
-    target_compile_features(camera_tests PRIVATE cxx_std_17)
+    target_compile_features(camera_tests PRIVATE cxx_std_20)
     if(MSVC)
         target_compile_options(camera_tests PRIVATE /W4 /permissive-)
         set_property(TARGET camera_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -1228,7 +1463,7 @@ if(SHADOW_BUILD_TESTS)
     # its world point's pixel on every output, canvas and framing. Pure arithmetic.
     add_executable(view_boundary_tests runtime/tests/view_boundary_tests.cpp)
     target_include_directories(view_boundary_tests PRIVATE runtime/lift)
-    target_compile_features(view_boundary_tests PRIVATE cxx_std_17)
+    target_compile_features(view_boundary_tests PRIVATE cxx_std_20)
     if(MSVC)
         target_compile_options(view_boundary_tests PRIVATE /W4 /permissive-)
         set_property(TARGET view_boundary_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -1241,7 +1476,7 @@ if(SHADOW_BUILD_TESTS)
     # documented edge bands; the view the output shows on wider / narrower / split-screen views. Pure arithmetic.
     add_executable(lens_flare_tests runtime/tests/lens_flare_tests.cpp)
     target_include_directories(lens_flare_tests PRIVATE runtime/lift)
-    target_compile_features(lens_flare_tests PRIVATE cxx_std_17)
+    target_compile_features(lens_flare_tests PRIVATE cxx_std_20)
     if(MSVC)
         target_compile_options(lens_flare_tests PRIVATE /W4 /permissive- ${SHADOW_ARCH_FLAGS})
         set_property(TARGET lens_flare_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -1254,7 +1489,7 @@ if(SHADOW_BUILD_TESTS)
     # the false positives rejected. Pure arithmetic.
     add_executable(tiled_strip_tests runtime/tests/tiled_strip_tests.cpp)
     target_include_directories(tiled_strip_tests PRIVATE runtime/lift)
-    target_compile_features(tiled_strip_tests PRIVATE cxx_std_17)
+    target_compile_features(tiled_strip_tests PRIVATE cxx_std_20)
     if(MSVC)
         target_compile_options(tiled_strip_tests PRIVATE /W4 /permissive-)
         set_property(TARGET tiled_strip_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -1268,7 +1503,7 @@ if(SHADOW_BUILD_TESTS)
     # that silently loads as something else.
     add_executable(pad_mapping_tests runtime/tests/pad_mapping_tests.cpp)
     target_link_libraries(pad_mapping_tests PRIVATE shadow_lift)
-    target_compile_features(pad_mapping_tests PRIVATE cxx_std_17)
+    target_compile_features(pad_mapping_tests PRIVATE cxx_std_20)
     if(MSVC)
         target_compile_options(pad_mapping_tests PRIVATE /W4 /permissive-)
         set_property(TARGET pad_mapping_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -1294,7 +1529,7 @@ if(SHADOW_BUILD_TESTS)
     if(WIN32)
         add_executable(packet_queue_tests runtime/tests/packet_queue_tests.cpp)
         target_include_directories(packet_queue_tests PRIVATE runtime/lift)
-        target_compile_features(packet_queue_tests PRIVATE cxx_std_17)
+        target_compile_features(packet_queue_tests PRIVATE cxx_std_20)
         target_compile_definitions(packet_queue_tests PRIVATE GEKKO_SHIPPING=1)
         if(MSVC)
             target_compile_options(packet_queue_tests PRIVATE /W4 /permissive-)
@@ -1358,7 +1593,7 @@ if(SHADOW_BUILD_TESTS)
                    runtime/src/gekko/display_settings.cpp)
     target_link_libraries(options_display_tests PRIVATE shadow_assets)
     target_include_directories(options_display_tests PRIVATE runtime/include)
-    target_compile_features(options_display_tests PRIVATE cxx_std_17)
+    target_compile_features(options_display_tests PRIVATE cxx_std_20)
     if(MSVC)
         target_compile_options(options_display_tests PRIVATE /W4 /permissive-)
         set_property(TARGET options_display_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -1369,6 +1604,136 @@ if(SHADOW_BUILD_TESTS)
         add_test(NAME options_display_tests COMMAND options_display_tests)
     endif()
     set_tests_properties(options_display_tests PROPERTIES TIMEOUT 120 LABELS "assets;menu")
+    # The Options > Audio category volumes (gekko/audio_categories.h, native_audio_mixer.h VoiceFrame::gain): the
+    # guest-table voice classifier and the mixer's per-voice gain. Standalone (no guest, no device).
+    add_executable(options_audio_mix_tests runtime/tests/options_audio_mix_tests.cpp
+                   runtime/src/native_audio_mixer.cpp runtime/lift/audio/reverb.cpp
+                   runtime/lift/audio/output_stage.cpp runtime/lift/audio/effect_stage.cpp)
+    target_include_directories(options_audio_mix_tests PRIVATE runtime/include runtime/lift)
+    target_compile_features(options_audio_mix_tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(options_audio_mix_tests PRIVATE /W4 /permissive-)
+        set_property(TARGET options_audio_mix_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+    # The mixer is compiled for the build's host ISA model: it links shadow_host_isa (the model's flags AND the CPUID gate), instead of
+    # a hand-set /arch:AVX2 that left this image without the gate (native_host_isa_gate lane E).
+    target_link_libraries(options_audio_mix_tests PRIVATE shadow_host_isa)
+    add_test(NAME options_audio_mix_tests COMMAND options_audio_mix_tests)
+    set_tests_properties(options_audio_mix_tests PROPERTIES TIMEOUT 60 LABELS "audio;menu")
+    # The game's save file on the host (gekko/save_file.h, docs/SAVE_REROUTE_PLAN.md): DES / MD5 vectors, the GCI
+    # round trip, extraction from a memory-card image, the record check. Real saves can be passed as arguments.
+    add_executable(save_file_tests runtime/tests/save_file_tests.cpp runtime/src/gekko/save_file.cpp
+                   runtime/src/gekko/save_import.cpp)
+    target_include_directories(save_file_tests PRIVATE runtime/include)
+    target_compile_features(save_file_tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(save_file_tests PRIVATE /W4 /permissive-)
+        set_property(TARGET save_file_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+    add_test(NAME save_file_tests COMMAND save_file_tests)
+    set_tests_properties(save_file_tests PROPERTIES TIMEOUT 60 LABELS "saves")
+    # The universal save recognizer (gekko/save_recognize.h, docs/SAVE_FORMATS.md): CRC-32 / deflate / LZARI, every
+    # container built here (GC GCI and card image in three regions, AR MAX, SharkPort, PSV, CodeBreaker, Xbox
+    # Save.dat, ZIP), the GC conversion to the PC GCI, scan(). The user's sample saves can be passed as arguments.
+    add_executable(save_recognize_tests runtime/tests/save_recognize_tests.cpp runtime/src/gekko/save_recognize.cpp
+                   runtime/src/gekko/save_file.cpp)
+    target_include_directories(save_recognize_tests PRIVATE runtime/include)
+    target_compile_features(save_recognize_tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(save_recognize_tests PRIVATE /W4 /permissive-)
+        set_property(TARGET save_recognize_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+    add_test(NAME save_recognize_tests COMMAND save_recognize_tests)
+    set_tests_properties(save_recognize_tests PROPERTIES TIMEOUT 120 LABELS "saves")
+    # The Options menu's settings registry (gekko/settings_registry.h): routing by id, apply + save, the 15 s display
+    # trial (confirm, revert, expiry) and the Display / Graphics providers over the display settings service.
+    add_executable(settings_registry_tests runtime/tests/settings_registry_tests.cpp
+                   runtime/src/gekko/settings_registry.cpp runtime/src/gekko/settings_display.cpp
+                   runtime/src/gekko/native_options_display.cpp runtime/src/gekko/native_save_text.cpp
+                   runtime/src/gekko/display_settings.cpp)
+    target_link_libraries(settings_registry_tests PRIVATE shadow_assets)
+    target_include_directories(settings_registry_tests PRIVATE runtime/include)
+    target_compile_features(settings_registry_tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(settings_registry_tests PRIVATE /W4 /permissive-)
+        set_property(TARGET settings_registry_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+    add_test(NAME settings_registry_tests COMMAND settings_registry_tests)
+    set_tests_properties(settings_registry_tests PROPERTIES TIMEOUT 60 LABELS "menu")
+    # Settings validation (docs: tools/options_tests/RESULTS.md): config_file, PcSettingsService, the Audio / Controls /
+    # Save Data / System providers over a fake GameOptions, the registry trial refusal and the menu text table. The audio
+    # gain and XInput owners are recording stubs inside the test.
+    add_executable(options_settings_tests runtime/tests/options_settings_tests.cpp
+                   runtime/src/gekko/config_file.cpp runtime/src/gekko/pc_settings.cpp
+                   runtime/src/gekko/settings_game.cpp runtime/src/gekko/voice_language.cpp
+                   runtime/src/gekko/settings_registry.cpp runtime/src/gekko/settings_display.cpp
+                   runtime/src/gekko/native_options_display.cpp runtime/src/gekko/native_save_text.cpp
+                   runtime/src/gekko/display_settings.cpp)
+    target_link_libraries(options_settings_tests PRIVATE shadow_assets)
+    target_include_directories(options_settings_tests PRIVATE runtime/include runtime/lift)
+    target_compile_features(options_settings_tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(options_settings_tests PRIVATE /W4 /permissive-)
+        set_property(TARGET options_settings_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+    add_test(NAME options_settings_tests COMMAND options_settings_tests)
+    set_tests_properties(options_settings_tests PROPERTIES TIMEOUT 120 LABELS "menu")
+    # Input settings (Agent 4): the XInput pad's preferences, bindings and options.cfg. The test defines the audio gain
+    # functions itself, so audio_runtime.cpp is not linked.
+    add_executable(options_input_tests runtime/tests/options_input_tests.cpp
+                   runtime/src/gekko/xinput_pad.cpp runtime/src/gekko/pc_settings.cpp runtime/src/gekko/config_file.cpp
+                   runtime/lift/peripheral/gamepad_binding.cpp runtime/lift/peripheral/keyboard_layout.cpp
+                   runtime/lift/peripheral/controls.cpp)
+    target_include_directories(options_input_tests PRIVATE runtime/include runtime/lift)
+    target_compile_features(options_input_tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(options_input_tests PRIVATE /W4 /permissive-)
+        set_property(TARGET options_input_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+    add_test(NAME options_input_tests COMMAND options_input_tests)
+    set_tests_properties(options_input_tests PROPERTIES TIMEOUT 60 LABELS "menu")
+    # Configuration / persistence (Agent 2): options.cfg, the game providers and the registry, with the audio gain, the
+    # XInput preferences, the Display / Graphics providers and the Japanese-voice flag stubbed inside the test.
+    add_executable(options_config_tests runtime/tests/options_config_tests.cpp
+                   runtime/src/gekko/config_file.cpp runtime/src/gekko/pc_settings.cpp
+                   runtime/src/gekko/settings_game.cpp runtime/src/gekko/settings_registry.cpp
+                   runtime/src/gekko/display_settings.cpp)
+    target_include_directories(options_config_tests PRIVATE runtime/include runtime/lift)
+    target_compile_features(options_config_tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(options_config_tests PRIVATE /W4 /permissive-)
+        set_property(TARGET options_config_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+    add_test(NAME options_config_tests COMMAND options_config_tests)
+    set_tests_properties(options_config_tests PROPERTIES TIMEOUT 60 LABELS "menu")
+    # The gameplay recorder's tape (gekko/input_tape.h, docs/tools/RECORDER.md): version 3 round trip, versions 1 / 2
+    # read as before (a version 2 output is its logic aspect), checkpoint comparison (gekko/replay_check.h).
+    add_executable(input_tape_tests runtime/tests/input_tape_tests.cpp runtime/src/gekko/input_tape.cpp)
+    target_include_directories(input_tape_tests PRIVATE runtime/include runtime/lift)
+    target_compile_features(input_tape_tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(input_tape_tests PRIVATE /W4 /permissive-)
+        set_property(TARGET input_tape_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+    add_test(NAME input_tape_tests COMMAND input_tape_tests)
+    set_tests_properties(input_tape_tests PROPERTIES TIMEOUT 60 LABELS "recorder")
+
+    # Full-height menu backgrounds (gekko/menu_backgrounds.h): with the game data, the five retail layouts are
+    # rewritten in exactly their background's scaleY word; anything else is refused.
+    add_executable(menu_backgrounds_tests runtime/tests/menu_backgrounds_tests.cpp
+                   runtime/src/gekko/menu_backgrounds.cpp)
+    target_include_directories(menu_backgrounds_tests PRIVATE runtime/include)
+    target_compile_features(menu_backgrounds_tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(menu_backgrounds_tests PRIVATE /W4 /permissive-)
+        set_property(TARGET menu_backgrounds_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+    if(SHADOW_RECOMP_DOL)
+        add_test(NAME menu_backgrounds_tests COMMAND menu_backgrounds_tests "${SHADOW_RECOMP_DOL}")
+    else()
+        add_test(NAME menu_backgrounds_tests COMMAND menu_backgrounds_tests)
+    endif()
+    set_tests_properties(menu_backgrounds_tests PROPERTIES TIMEOUT 60 LABELS "assets;menu")
 
     # tools/launcher.py's pure helpers and log reading: budget parsing, flag
     # splitting, per-line output decoding, the path scrubber, the classifier
@@ -1381,7 +1746,7 @@ if(SHADOW_BUILD_TESTS)
     target_include_directories(native_display_tests PRIVATE runtime/include)
     # NE-RW2c: display.h's 2D anchors / classifiers are the 2D layout policy's (shadow_lift, runtime/lift/ui).
     target_link_libraries(native_display_tests PRIVATE shadow_lift)
-    target_compile_features(native_display_tests PRIVATE cxx_std_17)
+    target_compile_features(native_display_tests PRIVATE cxx_std_20)
     if(MSVC)
         target_compile_options(native_display_tests PRIVATE /W4 /permissive-)
         set_property(TARGET native_display_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -1399,6 +1764,15 @@ if(SHADOW_BUILD_TESTS)
         add_test(NAME launcher_tests
                  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/test_launcher.py)
         set_tests_properties(launcher_tests PROPERTIES TIMEOUT 60 LABELS "tools")
+        # naming-evidence gates of tools/dolrecon (string pools, callback registers): cases that once passed wrongly
+        add_test(NAME dolrecon_evidence_tests
+                 COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_SOURCE_DIR}/tools/test_dolrecon_evidence.py
+                 WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}/tools)
+        set_tests_properties(dolrecon_evidence_tests PROPERTIES TIMEOUT 60 LABELS "tools")
+        # tools/platform/structure_match.py: instruction tokens and owner templates on fixed words
+        add_test(NAME structure_match_tests
+                 COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_SOURCE_DIR}/tools/test_structure_match.py)
+        set_tests_properties(structure_match_tests PROPERTIES TIMEOUT 60 LABELS "tools;platform")
     endif()
 
     # Adversarial mathematical audit of the camera/visibility system: AABB
@@ -1407,7 +1781,7 @@ if(SHADOW_BUILD_TESTS)
     # same predicate as clip-space membership.
     add_executable(camera_frustum_tests runtime/tests/camera_frustum_tests.cpp runtime/src/gekko/camera.cpp)
     target_include_directories(camera_frustum_tests PRIVATE runtime/include)
-    target_compile_features(camera_frustum_tests PRIVATE cxx_std_17)
+    target_compile_features(camera_frustum_tests PRIVATE cxx_std_20)
     if(MSVC)
         target_compile_options(camera_frustum_tests PRIVATE /W4 /permissive-)
         set_property(TARGET camera_frustum_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -1421,7 +1795,7 @@ if(SHADOW_BUILD_TESTS)
                    runtime/src/gekko/world_anchor.cpp
     runtime/src/gekko/health_bar.cpp runtime/src/gekko/camera.cpp)
     target_include_directories(world_anchor_tests PRIVATE runtime/include)
-    target_compile_features(world_anchor_tests PRIVATE cxx_std_17)
+    target_compile_features(world_anchor_tests PRIVATE cxx_std_20)
     if(MSVC)
         target_compile_options(world_anchor_tests PRIVATE /W4 /permissive-)
         set_property(TARGET world_anchor_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -1439,7 +1813,7 @@ if(SHADOW_BUILD_TESTS)
                    runtime/src/gekko/health_bar.cpp runtime/src/gekko/world_anchor.cpp
                    runtime/src/gekko/camera.cpp)
     target_include_directories(health_bar_tests PRIVATE runtime/include)
-    target_compile_features(health_bar_tests PRIVATE cxx_std_17)
+    target_compile_features(health_bar_tests PRIVATE cxx_std_20)
     if(MSVC)
         target_compile_options(health_bar_tests PRIVATE /W4 /permissive-)
         set_property(TARGET health_bar_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -1455,9 +1829,10 @@ if(SHADOW_BUILD_TESTS)
                    runtime/tests/support/fst_oracle.cpp
                    runtime/src/gekko/asset_runtime.cpp runtime/src/gekko/asset_providers.cpp
                    runtime/src/gekko/asset_namespace.cpp runtime/src/gekko/asset_mount.cpp
+                   runtime/backends/storage/storage_backends.cpp
                    runtime/src/gekko/prs.cpp runtime/src/native_memory.cpp)
     target_include_directories(asset_runtime_tests PRIVATE runtime/include runtime/tests)
-    target_compile_features(asset_runtime_tests PRIVATE cxx_std_17)
+    target_compile_features(asset_runtime_tests PRIVATE cxx_std_20)
     if(MSVC)
         target_compile_options(asset_runtime_tests PRIVATE /W4 /permissive-)
         set_property(TARGET asset_runtime_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -1473,10 +1848,11 @@ if(SHADOW_BUILD_TESTS)
                    runtime/tests/support/fst_oracle.cpp
                    runtime/src/gekko/native_save_text.cpp
                    runtime/src/gekko/asset_namespace.cpp runtime/src/gekko/asset_mount.cpp
+                   runtime/backends/storage/storage_backends.cpp
                    runtime/src/gekko/asset_runtime.cpp runtime/src/gekko/asset_providers.cpp
                    runtime/src/gekko/prs.cpp runtime/src/native_memory.cpp)
     target_include_directories(asset_namespace_tests PRIVATE runtime/include runtime/tests)
-    target_compile_features(asset_namespace_tests PRIVATE cxx_std_17)
+    target_compile_features(asset_namespace_tests PRIVATE cxx_std_20)
     if(MSVC)
         target_compile_options(asset_namespace_tests PRIVATE /W4 /permissive-)
         set_property(TARGET asset_namespace_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -1488,17 +1864,41 @@ if(SHADOW_BUILD_TESTS)
     endif()
     set_tests_properties(asset_namespace_tests PROPERTIES TIMEOUT 120 LABELS "native-runtime")
 
+    # The runtime contract's storage service (shadow/runtime/v1/runtime.h) against both backends: host-directory on
+    # ../game/files and gamecube-disc on the disc image tools/platform/gcm.py rebuilds into .build/platform. Every
+    # file byte for byte, the read rule, concurrency, and the same guest tokens through AssetSystem. Registered only
+    # when both media exist (build the image first: python -B tools/platform/gcm.py build ../game .build/platform/GUPP8P.gcm).
+    add_executable(runtime_storage_contract_tests runtime/tests/runtime_storage_contract_tests.cpp
+                   runtime/src/gekko/asset_runtime.cpp runtime/src/gekko/asset_providers.cpp
+                   runtime/src/gekko/asset_namespace.cpp runtime/src/gekko/asset_mount.cpp
+                   runtime/backends/storage/storage_backends.cpp
+                   runtime/src/gekko/prs.cpp runtime/src/native_memory.cpp)
+    target_include_directories(runtime_storage_contract_tests PRIVATE runtime/include runtime/tests)
+    target_compile_features(runtime_storage_contract_tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(runtime_storage_contract_tests PRIVATE /W4 /permissive-)
+        set_property(TARGET runtime_storage_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+    set(SHADOW_DISC_IMAGE "${CMAKE_CURRENT_SOURCE_DIR}/.build/platform/GUPP8P.gcm" CACHE FILEPATH
+        "The GameCube disc image the gamecube-disc storage backend tests read")
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../game/files" AND EXISTS "${SHADOW_DISC_IMAGE}")
+        add_test(NAME runtime_storage_contract_tests COMMAND runtime_storage_contract_tests
+                 "${CMAKE_CURRENT_SOURCE_DIR}/../game" "${SHADOW_DISC_IMAGE}")
+        set_tests_properties(runtime_storage_contract_tests PROPERTIES TIMEOUT 600 LABELS "native-runtime;runtime-contract")
+    endif()
+
     # The prompts' modern controller buttons (gekko/button_glyphs.h): the style key, the family choice and, with the
     # game data, every button sheet patched as the game reads it.
     add_executable(button_glyphs_tests runtime/tests/button_glyphs_tests.cpp
                    runtime/src/gekko/button_glyphs.cpp runtime/src/gekko/gx_texture_decode.cpp
                    runtime/src/gekko/native_save_text.cpp
                    runtime/src/gekko/asset_namespace.cpp runtime/src/gekko/asset_mount.cpp
+                   runtime/backends/storage/storage_backends.cpp
                    runtime/src/gekko/asset_runtime.cpp runtime/src/gekko/asset_providers.cpp
                    runtime/src/gekko/prs.cpp runtime/src/native_memory.cpp)
     target_link_libraries(button_glyphs_tests PRIVATE shadow_lift)
     target_include_directories(button_glyphs_tests PRIVATE runtime/include runtime/tests)
-    target_compile_features(button_glyphs_tests PRIVATE cxx_std_17)
+    target_compile_features(button_glyphs_tests PRIVATE cxx_std_20)
     if(MSVC)
         target_compile_options(button_glyphs_tests PRIVATE /W4 /permissive-)
         set_property(TARGET button_glyphs_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -1515,7 +1915,7 @@ if(SHADOW_BUILD_TESTS)
     # Pure arithmetic, no device, so it runs everywhere and runs fast.
     add_executable(bloom_tests runtime/tests/bloom_tests.cpp runtime/src/gekko/bloom.cpp)
     target_include_directories(bloom_tests PRIVATE runtime/include)
-    target_compile_features(bloom_tests PRIVATE cxx_std_17)
+    target_compile_features(bloom_tests PRIVATE cxx_std_20)
     if(MSVC)
         target_compile_options(bloom_tests PRIVATE /W4 /permissive-)
         set_property(TARGET bloom_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -1548,6 +1948,285 @@ if(SHADOW_BUILD_TESTS)
         endif()
         add_test(NAME axfx_reverb_contract_tests COMMAND axfx_reverb_contract_tests "${SHADOW_RECOMP_DOL}")
         set_tests_properties(axfx_reverb_contract_tests PROPERTIES TIMEOUT 120 LABELS "reference;native-contract")
+        add_executable(axfx_effects_contract_tests runtime/tests/axfx_effects_contract_tests.cpp)
+        target_link_libraries(axfx_effects_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(axfx_effects_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET axfx_effects_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME axfx_effects_contract_tests COMMAND axfx_effects_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(axfx_effects_contract_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        # os.memory + os.time (docs/agents/axfx-effects.md, Step B): the arena accessors and the time-base readers.
+        add_executable(os_arena_clock_contract_tests runtime/tests/os_arena_clock_contract_tests.cpp)
+        target_link_libraries(os_arena_clock_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(os_arena_clock_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET os_arena_clock_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME os_arena_clock_contract_tests COMMAND os_arena_clock_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(os_arena_clock_contract_tests PROPERTIES TIMEOUT 120 LABELS "reference;native-contract")
+        # os.debug (docs/agents/axfx-effects.md, Step C): InitializeUART.
+        add_executable(os_debug_contract_tests runtime/tests/os_debug_contract_tests.cpp)
+        target_link_libraries(os_debug_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(os_debug_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET os_debug_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME os_debug_contract_tests COMMAND os_debug_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(os_debug_contract_tests PROPERTIES TIMEOUT 120 LABELS "reference;native-contract")
+        # os.debug (docs/agents/axfx-effects.md, Step D): OSReport's native formatter against the original vprintf.
+        add_executable(os_report_contract_tests runtime/tests/os_report_contract_tests.cpp)
+        target_link_libraries(os_report_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(os_report_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET os_report_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME os_report_contract_tests COMMAND os_report_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(os_report_contract_tests PROPERTIES TIMEOUT 900 LABELS "reference;native-contract")
+        # debug.trk (docs/agents/axfx-effects.md, Step G): DBInit and the TRK console procedures.
+        add_executable(trk_contract_tests runtime/tests/trk_contract_tests.cpp)
+        target_link_libraries(trk_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(trk_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET trk_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME trk_contract_tests COMMAND trk_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(trk_contract_tests PROPERTIES TIMEOUT 120 LABELS "reference;native-contract")
+        # saves.card (docs/agents/card-saves.md): the save store's owners against the original DOL words.
+        add_executable(save_store_contract_tests runtime/tests/save_store_contract_tests.cpp)
+        target_link_libraries(save_store_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(save_store_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET save_store_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME save_store_contract_tests COMMAND save_store_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(save_store_contract_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract;saves")
+        # os.interrupts (docs/agents/card-saves.md): the interrupt gate's owners and the exception-vector table
+        # against the original DOL words.
+        add_executable(gx_state_contract_tests runtime/tests/gx_state_contract_tests.cpp)
+        target_link_libraries(gx_state_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(gx_state_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET gx_state_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME gx_state_contract_tests COMMAND gx_state_contract_tests "${SHADOW_RECOMP_DOL}" "${CMAKE_CURRENT_SOURCE_DIR}/extract/gx-sites.txt")
+        set_tests_properties(gx_state_contract_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        # The GX display-copy and FIFO-setup leaves (docs/agents/axfx-effects.md, Step H).
+        add_executable(gx_display_contract_tests runtime/tests/gx_display_contract_tests.cpp)
+        target_link_libraries(gx_display_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(gx_display_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET gx_display_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME gx_display_contract_tests COMMAND gx_display_contract_tests "${SHADOW_RECOMP_DOL}" "${CMAKE_CURRENT_SOURCE_DIR}/extract/gx-sites.txt")
+        set_tests_properties(gx_display_contract_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        # The GX texture-object functions (docs/agents/axfx-effects.md, Step J1).
+        add_executable(gx_texobj_contract_tests runtime/tests/gx_texobj_contract_tests.cpp)
+        target_link_libraries(gx_texobj_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(gx_texobj_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET gx_texobj_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME gx_texobj_contract_tests COMMAND gx_texobj_contract_tests "${SHADOW_RECOMP_DOL}" "${CMAKE_CURRENT_SOURCE_DIR}/extract/gx-sites.txt" "${CMAKE_CURRENT_SOURCE_DIR}/test_data/gx-texobj-corpus")
+        set_tests_properties(gx_texobj_contract_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        # rwR2 (docs/agents/card-saves.md): the RenderWare raster life cycle's owners against the original DOL words.
+        add_executable(rw_raster_contract_tests runtime/tests/rw_raster_contract_tests.cpp)
+        target_link_libraries(rw_raster_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rw_raster_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rw_raster_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rw_raster_contract_tests COMMAND rw_raster_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rw_raster_contract_tests PROPERTIES TIMEOUT 1500 LABELS "reference;native-contract")
+        add_executable(os_interrupts_contract_tests runtime/tests/os_interrupts_contract_tests.cpp)
+        target_link_libraries(os_interrupts_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(os_interrupts_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET os_interrupts_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME os_interrupts_contract_tests COMMAND os_interrupts_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(os_interrupts_contract_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(os_threads_contract_tests runtime/tests/os_threads_contract_tests.cpp)
+        target_link_libraries(os_threads_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(os_threads_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET os_threads_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME os_threads_contract_tests COMMAND os_threads_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(os_threads_contract_tests PROPERTIES TIMEOUT 120 LABELS "reference;native-contract")
+        add_executable(guest_call_tests runtime/tests/guest_call_tests.cpp)
+        target_link_libraries(guest_call_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(guest_call_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET guest_call_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME guest_call_tests COMMAND guest_call_tests)
+        set_tests_properties(guest_call_tests PROPERTIES TIMEOUT 120 LABELS "reference;native-contract")
+        add_executable(os_settings_contract_tests runtime/tests/os_settings_contract_tests.cpp)
+        target_link_libraries(os_settings_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(os_settings_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET os_settings_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME os_settings_contract_tests COMMAND os_settings_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(os_settings_contract_tests PROPERTIES TIMEOUT 120 LABELS "reference;native-contract")
+        add_executable(os_heap_contract_tests runtime/tests/os_heap_contract_tests.cpp)
+        target_link_libraries(os_heap_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(os_heap_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET os_heap_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME os_heap_contract_tests COMMAND os_heap_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(os_heap_contract_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(os_panic_contract_tests runtime/tests/os_panic_contract_tests.cpp)
+        target_link_libraries(os_panic_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(os_panic_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET os_panic_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME os_panic_contract_tests COMMAND os_panic_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(os_panic_contract_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(os_misc_contract_tests runtime/tests/os_misc_contract_tests.cpp)
+        target_link_libraries(os_misc_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(os_misc_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET os_misc_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME os_misc_contract_tests COMMAND os_misc_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(os_misc_contract_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(os_machine_check_contract_tests runtime/tests/os_machine_check_contract_tests.cpp)
+        target_link_libraries(os_machine_check_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(os_machine_check_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET os_machine_check_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME os_machine_check_contract_tests COMMAND os_machine_check_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(os_machine_check_contract_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(os_halt_contract_tests runtime/tests/os_halt_contract_tests.cpp)
+        target_link_libraries(os_halt_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(os_halt_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET os_halt_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME os_halt_contract_tests COMMAND os_halt_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(os_halt_contract_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(ax_mix_alloc_contract_tests runtime/tests/ax_mix_alloc_contract_tests.cpp)
+        target_link_libraries(ax_mix_alloc_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(ax_mix_alloc_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET ax_mix_alloc_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME ax_mix_alloc_contract_tests COMMAND ax_mix_alloc_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(ax_mix_alloc_contract_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(math_affine_contract_tests runtime/tests/math_affine_contract_tests.cpp)
+        target_link_libraries(math_affine_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(math_affine_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET math_affine_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME math_affine_contract_tests COMMAND math_affine_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(math_affine_contract_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(im2d_prims_tests runtime/tests/im2d_prims_tests.cpp runtime/scaffold/rw_driver/im2d_prims.cpp)
+        target_include_directories(im2d_prims_tests PRIVATE runtime/scaffold)
+        target_link_libraries(im2d_prims_tests PRIVATE shadow_lift shadow_runtime_reference shadow_rwim)
+        if(MSVC)
+            target_compile_options(im2d_prims_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET im2d_prims_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME im2d_prims_tests COMMAND im2d_prims_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(im2d_prims_tests PROPERTIES TIMEOUT 120 LABELS "reference;native-contract")
+        add_executable(raster_render_contract_tests runtime/tests/raster_render_contract_tests.cpp runtime/scaffold/rw_driver/raster_render.cpp)
+        target_include_directories(raster_render_contract_tests PRIVATE runtime/scaffold)
+        target_link_libraries(raster_render_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(raster_render_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET raster_render_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME raster_render_contract_tests COMMAND raster_render_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(raster_render_contract_tests PROPERTIES TIMEOUT 120 LABELS "reference;native-contract")
+        add_executable(rw_pixel_contract_tests runtime/tests/rw_pixel_contract_tests.cpp)
+        target_link_libraries(rw_pixel_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rw_pixel_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rw_pixel_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rw_pixel_contract_tests COMMAND rw_pixel_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rw_pixel_contract_tests PROPERTIES TIMEOUT 120 LABELS "reference;native-contract")
+        add_executable(rw_image_contract_tests runtime/tests/rw_image_contract_tests.cpp)
+        target_link_libraries(rw_image_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rw_image_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rw_image_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rw_image_contract_tests COMMAND rw_image_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rw_image_contract_tests PROPERTIES TIMEOUT 300 LABELS "reference;native-contract")
+        # audio-ax step 1 (docs/agents/audio-ax.md): the AX registration owners against the original DOL
+        add_executable(ax_registration_contract_tests runtime/tests/ax_registration_contract_tests.cpp)
+        target_link_libraries(ax_registration_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(ax_registration_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET ax_registration_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME ax_registration_contract_tests COMMAND ax_registration_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(ax_registration_contract_tests PROPERTIES TIMEOUT 120 LABELS "reference;native-contract")
+        # audio-ax stage c: the AX voice setter owners against the original DOL
+        add_executable(ax_voice_contract_tests runtime/tests/ax_voice_contract_tests.cpp)
+        target_link_libraries(ax_voice_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(ax_voice_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET ax_voice_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME ax_voice_contract_tests COMMAND ax_voice_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(ax_voice_contract_tests PROPERTIES TIMEOUT 120 LABELS "reference;native-contract")
+        # audio-ax stage e step 1: the native AX sync against the original DOL
+        add_executable(ax_sync_contract_tests runtime/tests/ax_sync_contract_tests.cpp)
+        target_link_libraries(ax_sync_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(ax_sync_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET ax_sync_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME ax_sync_contract_tests COMMAND ax_sync_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(ax_sync_contract_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(ax_frame_contract_tests runtime/tests/ax_frame_contract_tests.cpp)
+        target_link_libraries(ax_frame_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(ax_frame_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET ax_frame_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME ax_frame_contract_tests COMMAND ax_frame_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(ax_frame_contract_tests PROPERTIES TIMEOUT 300 LABELS "reference;native-contract")
+        add_executable(ax_out_contract_tests runtime/tests/ax_out_contract_tests.cpp)
+        target_link_libraries(ax_out_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(ax_out_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET ax_out_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME ax_out_contract_tests COMMAND ax_out_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(ax_out_contract_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(os_font_contract_tests runtime/tests/os_font_contract_tests.cpp)
+        target_link_libraries(os_font_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(os_font_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET os_font_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME os_font_contract_tests COMMAND os_font_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(os_font_contract_tests PROPERTIES TIMEOUT 120 LABELS "reference;native-contract")
+        add_executable(vec_math_contract_tests runtime/tests/vec_math_contract_tests.cpp)
+        target_link_libraries(vec_math_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(vec_math_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET vec_math_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME vec_math_contract_tests COMMAND vec_math_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(vec_math_contract_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(mix_entries_contract_tests runtime/tests/mix_entries_contract_tests.cpp)
+        target_link_libraries(mix_entries_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(mix_entries_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET mix_entries_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME mix_entries_contract_tests COMMAND mix_entries_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(mix_entries_contract_tests PROPERTIES TIMEOUT 120 LABELS "reference;native-contract")
         add_executable(sound_table_contract_tests runtime/tests/sound_table_contract_tests.cpp)
         target_link_libraries(sound_table_contract_tests PRIVATE shadow_runtime_reference)
         if(MSVC)
@@ -1587,6 +2266,19 @@ if(SHADOW_BUILD_TESTS)
                  COMMAND se_manager_contract_tests "${SHADOW_RECOMP_DOL}" "${sound_table_game}/files/sound"
                          "${se_manager_image}")
         set_tests_properties(se_manager_contract_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        # C++ reconstruction of leaf functions (tools/dolrecon/lift_cpp.py) against the original words
+        # (docs/DOLRECON.md "C++ reconstruction").
+        file(GLOB dolrecon_lifted_sources CONFIGURE_DEPENDS
+             "${CMAKE_CURRENT_SOURCE_DIR}/runtime/tests/generated/dolrecon_lifted_*.cpp")
+        add_executable(dolrecon_lift_tests runtime/tests/dolrecon_lift_tests.cpp ${dolrecon_lifted_sources})
+        target_include_directories(dolrecon_lift_tests PRIVATE runtime/tests runtime/tests/generated)
+        target_link_libraries(dolrecon_lift_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(dolrecon_lift_tests PRIVATE /W4 /permissive- /bigobj)
+            set_property(TARGET dolrecon_lift_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME dolrecon_lift_tests COMMAND dolrecon_lift_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(dolrecon_lift_tests PROPERTIES TIMEOUT 1800 LABELS "reference;native-contract")
         # The native MSL math library against the original words (docs/NATIVE_MSL_MATH.md).
         add_executable(native_msl_tests runtime/tests/native_msl_tests.cpp)
         target_link_libraries(native_msl_tests PRIVATE shadow_lift shadow_runtime_reference)
@@ -1612,6 +2304,275 @@ if(SHADOW_BUILD_TESTS)
         endif()
         add_test(NAME native_hermite_tests COMMAND native_hermite_tests "${SHADOW_RECOMP_DOL}")
         set_tests_properties(native_hermite_tests PROPERTIES TIMEOUT 120 LABELS "reference;native-contract")
+        # The native RenderWare core against the original RenderWare instructions (rwcore/README.md).
+        add_executable(rwcore_matrix_tests runtime/tests/rwcore_matrix_tests.cpp)
+        target_link_libraries(rwcore_matrix_tests PRIVATE rwcore shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rwcore_matrix_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_matrix_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_matrix_tests COMMAND rwcore_matrix_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rwcore_matrix_tests PROPERTIES TIMEOUT 300 LABELS "reference;native-contract")
+        add_executable(rwcore_vector_tests runtime/tests/rwcore_vector_tests.cpp)
+        target_link_libraries(rwcore_vector_tests PRIVATE rwcore shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rwcore_vector_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_vector_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_vector_tests COMMAND rwcore_vector_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rwcore_vector_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(rwcore_memory_tests runtime/tests/rwcore_memory_tests.cpp)
+        target_link_libraries(rwcore_memory_tests PRIVATE rwcore shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rwcore_memory_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_memory_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_memory_tests COMMAND rwcore_memory_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rwcore_memory_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(rwcore_plugin_tests runtime/tests/rwcore_plugin_tests.cpp)
+        target_link_libraries(rwcore_plugin_tests PRIVATE rwcore shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rwcore_plugin_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_plugin_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_plugin_tests COMMAND rwcore_plugin_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rwcore_plugin_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(rwcore_stream_tests runtime/tests/rwcore_stream_tests.cpp)
+        target_link_libraries(rwcore_stream_tests PRIVATE rwcore shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rwcore_stream_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_stream_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_stream_tests COMMAND rwcore_stream_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rwcore_stream_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(rwcore_binary_tests runtime/tests/rwcore_binary_tests.cpp)
+        target_link_libraries(rwcore_binary_tests PRIVATE rwcore shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rwcore_binary_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_binary_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_binary_tests COMMAND rwcore_binary_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rwcore_binary_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(rwcore_frame_tests runtime/tests/rwcore_frame_tests.cpp)
+        target_link_libraries(rwcore_frame_tests PRIVATE rwcore shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rwcore_frame_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_frame_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_frame_tests COMMAND rwcore_frame_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rwcore_frame_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(rwcore_texture_tests runtime/tests/rwcore_texture_tests.cpp)
+        target_link_libraries(rwcore_texture_tests PRIVATE rwcore shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rwcore_texture_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_texture_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_texture_tests COMMAND rwcore_texture_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rwcore_texture_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(rwcore_image_tests runtime/tests/rwcore_image_tests.cpp)
+        target_link_libraries(rwcore_image_tests PRIVATE rwcore shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rwcore_image_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_image_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_image_tests COMMAND rwcore_image_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rwcore_image_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(rwcore_resources_tests runtime/tests/rwcore_resources_tests.cpp)
+        target_link_libraries(rwcore_resources_tests PRIVATE rwcore shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rwcore_resources_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_resources_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_resources_tests COMMAND rwcore_resources_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rwcore_resources_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(rwcore_resample_tests runtime/tests/rwcore_resample_tests.cpp)
+        target_link_libraries(rwcore_resample_tests PRIVATE rwcore shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rwcore_resample_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_resample_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_resample_tests COMMAND rwcore_resample_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rwcore_resample_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(rwcore_palquant_tests runtime/tests/rwcore_palquant_tests.cpp)
+        target_link_libraries(rwcore_palquant_tests PRIVATE rwcore shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rwcore_palquant_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_palquant_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_palquant_tests COMMAND rwcore_palquant_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rwcore_palquant_tests PROPERTIES TIMEOUT 900 LABELS "reference;native-contract")
+        add_executable(rpworld_material_tests runtime/tests/rpworld_material_tests.cpp)
+        target_link_libraries(rpworld_material_tests PRIVATE rpworld shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rpworld_material_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rpworld_material_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rpworld_material_tests COMMAND rpworld_material_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rpworld_material_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(rpworld_light_tests runtime/tests/rpworld_light_tests.cpp)
+        target_link_libraries(rpworld_light_tests PRIVATE rpworld shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rpworld_light_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rpworld_light_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rpworld_light_tests COMMAND rpworld_light_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rpworld_light_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(rpworld_world_tests runtime/tests/rpworld_world_tests.cpp)
+        target_link_libraries(rpworld_world_tests PRIVATE rpworld shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rpworld_world_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rpworld_world_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rpworld_world_tests COMMAND rpworld_world_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rpworld_world_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(rwcore_camera_tests runtime/tests/rwcore_camera_tests.cpp)
+        target_link_libraries(rwcore_camera_tests PRIVATE rwcore shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rwcore_camera_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_camera_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_camera_tests COMMAND rwcore_camera_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rwcore_camera_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(rwcore_pluginstream_tests runtime/tests/rwcore_pluginstream_tests.cpp)
+        target_link_libraries(rwcore_pluginstream_tests PRIVATE rwcore shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rwcore_pluginstream_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_pluginstream_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_pluginstream_tests COMMAND rwcore_pluginstream_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rwcore_pluginstream_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(rwcore_list_tests runtime/tests/rwcore_list_tests.cpp)
+        target_link_libraries(rwcore_list_tests PRIVATE rwcore shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rwcore_list_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_list_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_list_tests COMMAND rwcore_list_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rwcore_list_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-contract")
+        add_executable(rwcore_lifecycle_tests runtime/tests/rwcore_lifecycle_tests.cpp)
+        target_link_libraries(rwcore_lifecycle_tests PRIVATE rwcore)
+        if(MSVC)
+            target_compile_options(rwcore_lifecycle_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_lifecycle_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_lifecycle_tests COMMAND rwcore_lifecycle_tests)
+        set_tests_properties(rwcore_lifecycle_tests PROPERTIES TIMEOUT 600 LABELS "native-contract")
+        add_executable(rwcore_frame_bench runtime/tests/rwcore_frame_bench.cpp)
+        target_link_libraries(rwcore_frame_bench PRIVATE rwcore)
+        if(MSVC)
+            target_compile_options(rwcore_frame_bench PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_frame_bench PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_executable(rwcore_camera_bench runtime/tests/rwcore_camera_bench.cpp)
+        target_link_libraries(rwcore_camera_bench PRIVATE rwcore)
+        if(MSVC)
+            target_compile_options(rwcore_camera_bench PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_camera_bench PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_executable(rwcore_frame_native_tests runtime/tests/rwcore_frame_native_tests.cpp)
+        target_link_libraries(rwcore_frame_native_tests PRIVATE rwcore)
+        if(MSVC)
+            target_compile_options(rwcore_frame_native_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_frame_native_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_frame_native_tests COMMAND rwcore_frame_native_tests)
+        set_tests_properties(rwcore_frame_native_tests PROPERTIES TIMEOUT 600 LABELS "native-contract")
+        add_executable(rpworld_material_native_tests runtime/tests/rpworld_material_native_tests.cpp)
+        target_link_libraries(rpworld_material_native_tests PRIVATE rpworld)
+        if(MSVC)
+            target_compile_options(rpworld_material_native_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rpworld_material_native_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rpworld_material_native_tests COMMAND rpworld_material_native_tests)
+        set_tests_properties(rpworld_material_native_tests PROPERTIES TIMEOUT 600 LABELS "native-contract")
+        add_executable(rpworld_light_native_tests runtime/tests/rpworld_light_native_tests.cpp)
+        target_link_libraries(rpworld_light_native_tests PRIVATE rpworld)
+        if(MSVC)
+            target_compile_options(rpworld_light_native_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rpworld_light_native_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rpworld_light_native_tests COMMAND rpworld_light_native_tests)
+        set_tests_properties(rpworld_light_native_tests PROPERTIES TIMEOUT 600 LABELS "native-contract")
+        add_executable(rpworld_world_native_tests runtime/tests/rpworld_world_native_tests.cpp)
+        target_link_libraries(rpworld_world_native_tests PRIVATE rpworld)
+        if(MSVC)
+            target_compile_options(rpworld_world_native_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rpworld_world_native_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rpworld_world_native_tests COMMAND rpworld_world_native_tests)
+        set_tests_properties(rpworld_world_native_tests PROPERTIES TIMEOUT 600 LABELS "native-contract")
+        add_executable(rwcore_texture_native_tests runtime/tests/rwcore_texture_native_tests.cpp)
+        target_link_libraries(rwcore_texture_native_tests PRIVATE rwcore)
+        if(MSVC)
+            target_compile_options(rwcore_texture_native_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_texture_native_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_texture_native_tests COMMAND rwcore_texture_native_tests)
+        set_tests_properties(rwcore_texture_native_tests PROPERTIES TIMEOUT 600 LABELS "native-contract")
+        add_executable(rwcore_image_native_tests runtime/tests/rwcore_image_native_tests.cpp)
+        target_link_libraries(rwcore_image_native_tests PRIVATE rwcore)
+        if(MSVC)
+            target_compile_options(rwcore_image_native_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_image_native_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_image_native_tests COMMAND rwcore_image_native_tests)
+        set_tests_properties(rwcore_image_native_tests PROPERTIES TIMEOUT 600 LABELS "native-contract")
+        add_executable(rwcore_resources_native_tests runtime/tests/rwcore_resources_native_tests.cpp)
+        target_link_libraries(rwcore_resources_native_tests PRIVATE rwcore)
+        if(MSVC)
+            target_compile_options(rwcore_resources_native_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_resources_native_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_resources_native_tests COMMAND rwcore_resources_native_tests)
+        set_tests_properties(rwcore_resources_native_tests PROPERTIES TIMEOUT 600 LABELS "native-contract")
+        add_executable(rwcore_resample_native_tests runtime/tests/rwcore_resample_native_tests.cpp)
+        target_link_libraries(rwcore_resample_native_tests PRIVATE rwcore)
+        if(MSVC)
+            target_compile_options(rwcore_resample_native_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_resample_native_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_resample_native_tests COMMAND rwcore_resample_native_tests)
+        set_tests_properties(rwcore_resample_native_tests PROPERTIES TIMEOUT 600 LABELS "native-contract")
+        add_executable(rwcore_palquant_native_tests runtime/tests/rwcore_palquant_native_tests.cpp)
+        target_link_libraries(rwcore_palquant_native_tests PRIVATE rwcore)
+        if(MSVC)
+            target_compile_options(rwcore_palquant_native_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_palquant_native_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_palquant_native_tests COMMAND rwcore_palquant_native_tests)
+        set_tests_properties(rwcore_palquant_native_tests PROPERTIES TIMEOUT 600 LABELS "native-contract")
+        add_executable(rwcore_camera_native_tests runtime/tests/rwcore_camera_native_tests.cpp)
+        target_link_libraries(rwcore_camera_native_tests PRIVATE rwcore)
+        if(MSVC)
+            target_compile_options(rwcore_camera_native_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_camera_native_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_camera_native_tests COMMAND rwcore_camera_native_tests)
+        set_tests_properties(rwcore_camera_native_tests PROPERTIES TIMEOUT 600 LABELS "native-contract")
+        add_executable(rwcore_limits_tests runtime/tests/rwcore_limits_tests.cpp)
+        target_link_libraries(rwcore_limits_tests PRIVATE rwcore)
+        if(MSVC)
+            target_compile_options(rwcore_limits_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_limits_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_limits_tests COMMAND rwcore_limits_tests "${CMAKE_BINARY_DIR}")
+        set_tests_properties(rwcore_limits_tests PROPERTIES TIMEOUT 600 LABELS "native-contract")
+        add_executable(rwcore_math_tests runtime/tests/rwcore_math_tests.cpp)
+        target_link_libraries(rwcore_math_tests PRIVATE rwcore)
+        if(MSVC)
+            target_compile_options(rwcore_math_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_math_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_math_tests COMMAND rwcore_math_tests)
+        set_tests_properties(rwcore_math_tests PROPERTIES TIMEOUT 600 LABELS "native-contract")
+        add_executable(rwcore_fp_digest_tests runtime/tests/rwcore_fp_digest_tests.cpp)
+        target_link_libraries(rwcore_fp_digest_tests PRIVATE rwcore)
+        if(MSVC)
+            target_compile_options(rwcore_fp_digest_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rwcore_fp_digest_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rwcore_fp_digest_tests COMMAND rwcore_fp_digest_tests)
+        set_tests_properties(rwcore_fp_digest_tests PROPERTIES TIMEOUT 600 LABELS "native-contract")
         add_executable(native_matrix_compose_tests runtime/tests/native_matrix_compose_tests.cpp)
         target_link_libraries(native_matrix_compose_tests PRIVATE shadow_lift shadow_runtime_reference)
         if(MSVC)
@@ -1629,6 +2590,15 @@ if(SHADOW_BUILD_TESTS)
         endif()
         add_test(NAME native_matrix_call_tests COMMAND native_matrix_call_tests "${CMAKE_CURRENT_SOURCE_DIR}/extract/lift-sites-math.txt")
         set_tests_properties(native_matrix_call_tests PROPERTIES TIMEOUT 60 LABELS "native-contract")
+        add_executable(guest_call_translated_tests runtime/tests/guest_call_translated_tests.cpp)
+        target_include_directories(guest_call_translated_tests PRIVATE "${SHADOW_RECOMP_DIR}")
+        target_link_libraries(guest_call_translated_tests PRIVATE shadow_lift shadow_recomp shadow_runtime)
+        if(MSVC)
+            target_compile_options(guest_call_translated_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET guest_call_translated_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME guest_call_translated_tests COMMAND guest_call_translated_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(guest_call_translated_tests PROPERTIES TIMEOUT 60 LABELS "native-contract")
         set(SHADOW_TYPE_CATALOG_DIR "${CMAKE_CURRENT_BINARY_DIR}/Testing/type-catalog")
         add_custom_command(
             OUTPUT "${SHADOW_TYPE_CATALOG_DIR}/native_type_catalog.inc" "${SHADOW_TYPE_CATALOG_DIR}/catalog.json"
@@ -1799,6 +2769,16 @@ if(SHADOW_BUILD_TESTS)
         endif()
         add_test(NAME native_directory_scan_tests COMMAND native_directory_scan_tests "${SHADOW_RECOMP_DOL}")
         set_tests_properties(native_directory_scan_tests PROPERTIES TIMEOUT 300 LABELS "reference;native-runtime")
+        # The layout manager's link-group lists (docs/GPU_FILL.md "stage start"): the native owner of 0x800CAEAC
+        # against the original words in the reference interpreter.
+        add_executable(native_link_groups_tests runtime/tests/native_link_groups_tests.cpp)
+        target_link_libraries(native_link_groups_tests PRIVATE shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(native_link_groups_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET native_link_groups_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME native_link_groups_tests COMMAND native_link_groups_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(native_link_groups_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-runtime")
         # Disc cut 3: CRI's file device gcCi native, against its original words in the reference interpreter.
         add_executable(native_cri_file_device_tests runtime/tests/native_cri_file_device_tests.cpp)
         target_link_libraries(native_cri_file_device_tests PRIVATE shadow_runtime_reference)
@@ -1817,6 +2797,125 @@ if(SHADOW_BUILD_TESTS)
         endif()
         add_test(NAME native_rtgcnfs_tests COMMAND native_rtgcnfs_tests "${SHADOW_RECOMP_DOL}")
         set_tests_properties(native_rtgcnfs_tests PROPERTIES TIMEOUT 300 LABELS "reference;native-runtime")
+        # TBGRead's chunked background read served inline (docs/STAGE_LOADING.md 9d), against the original loop,
+        # RwFread and RtGCNFS words in the reference interpreter.
+        add_executable(native_bg_read_tests runtime/tests/native_bg_read_tests.cpp)
+        target_link_libraries(native_bg_read_tests PRIVATE shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(native_bg_read_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET native_bg_read_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME native_bg_read_tests COMMAND native_bg_read_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(native_bg_read_tests PROPERTIES TIMEOUT 300 LABELS "reference;native-runtime")
+        # TExpandBG without a GameCube thread (docs/NATIVE_WORKERS.md W1): the native Thread constructor against the
+        # original words in the reference interpreter.
+        add_executable(native_expand_jobs_tests runtime/tests/native_expand_jobs_tests.cpp)
+        target_link_libraries(native_expand_jobs_tests PRIVATE shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(native_expand_jobs_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET native_expand_jobs_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME native_expand_jobs_tests COMMAND native_expand_jobs_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(native_expand_jobs_tests PROPERTIES TIMEOUT 120 LABELS "reference;native-runtime")
+        # The ONE archive layer in C++ (Phase 4, docs/ONE_LAYER.md): every function against the original words, and
+        # every archive on the disc adopted and parsed both ways.
+        add_executable(native_one_tests runtime/tests/native_one_tests.cpp)
+        target_link_libraries(native_one_tests PRIVATE shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(native_one_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET native_one_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME native_one_tests COMMAND native_one_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(native_one_tests PROPERTIES TIMEOUT 1800 LABELS "reference;native-runtime")
+        # The OS heap census (docs/MEMORY_ALLOCATORS.md) against the original OSAlloc words: a real heap churned to
+        # full and back, the census checked after every call (first fit, coalescing, conservation, live blocks).
+        add_executable(heap_census_tests runtime/tests/heap_census_tests.cpp)
+        target_link_libraries(heap_census_tests PRIVATE shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(heap_census_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET heap_census_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME heap_census_tests COMMAND heap_census_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(heap_census_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-runtime")
+        # Sonicteam::System::Heap in C++20 against its original words: every byte after every call.
+        add_executable(sonicteam_heap_tests runtime/tests/sonicteam_heap_tests.cpp)
+        target_link_libraries(sonicteam_heap_tests PRIVATE shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(sonicteam_heap_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET sonicteam_heap_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME sonicteam_heap_tests COMMAND sonicteam_heap_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(sonicteam_heap_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-runtime")
+        # DCInvalidateRange / DCFlushRangeNoSync's native owner against their original words: every register.
+        add_executable(cache_range_owner_tests runtime/tests/cache_range_owner_tests.cpp)
+        target_link_libraries(cache_range_owner_tests PRIVATE shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(cache_range_owner_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET cache_range_owner_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME cache_range_owner_tests COMMAND cache_range_owner_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(cache_range_owner_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-runtime")
+        # The OS thread service's observable contract (docs/NATIVE_THREADS.md): scenarios on the original words in
+        # the reference interpreter (stage 1); the native scheduler against them (stage 2).
+        # Gate 2's dynamic half (include/gekko/guest_watch.h): exact row attribution of watched guest accesses.
+        add_executable(guest_watch_tests runtime/tests/guest_watch_tests.cpp)
+        target_link_libraries(guest_watch_tests PRIVATE shadow_runtime_reference)
+        if(MSVC)
+            # Symbols: the watch attributes leaf functions (no unwind record) only through a PDB.
+            target_compile_options(guest_watch_tests PRIVATE /W4 /permissive- /Zi)
+            target_link_options(guest_watch_tests PRIVATE /DEBUG)
+            set_property(TARGET guest_watch_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME guest_watch_tests COMMAND guest_watch_tests)
+        set_tests_properties(guest_watch_tests PROPERTIES TIMEOUT 60 LABELS "native;platform")
+        add_executable(native_threads_tests runtime/tests/native_threads_tests.cpp)
+        target_link_libraries(native_threads_tests PRIVATE shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(native_threads_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET native_threads_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME native_threads_tests COMMAND native_threads_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(native_threads_tests PROPERTIES TIMEOUT 300 LABELS "reference;native-runtime")
+        # Deliberate original-game bug fixes (docs/GAME_ERRATA.md) on the original words: the bug reproduces without
+        # the fix and every affected AI enters its intended state with it.
+        add_executable(game_errata_tests runtime/tests/game_errata_tests.cpp)
+        target_link_libraries(game_errata_tests PRIVATE shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(game_errata_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET game_errata_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME game_errata_tests COMMAND game_errata_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(game_errata_tests PROPERTIES TIMEOUT 120 LABELS "reference;errata")
+        # CRI's server manager (docs/CRI_SERVERS.md section 1): NativeSvm against the original twenty functions.
+        add_executable(native_svm_tests runtime/tests/native_svm_tests.cpp)
+        target_link_libraries(native_svm_tests PRIVATE shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(native_svm_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET native_svm_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME native_svm_tests COMMAND native_svm_tests "${SHADOW_RECOMP_DOL}"
+                 "${CMAKE_CURRENT_SOURCE_DIR}/extract/native-owners.txt")
+        set_tests_properties(native_svm_tests PROPERTIES TIMEOUT 120 LABELS "reference;native-runtime")
+        # CRI's stream joints (docs/CRI_SERVERS.md section 4b): NativeSj against the original SJMEM / SJRBF words.
+        add_executable(native_sj_tests runtime/tests/native_sj_tests.cpp)
+        target_link_libraries(native_sj_tests PRIVATE shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(native_sj_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET native_sj_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME native_sj_tests COMMAND native_sj_tests "${SHADOW_RECOMP_DOL}"
+                 "${CMAKE_CURRENT_SOURCE_DIR}/extract/native-owners.txt")
+        set_tests_properties(native_sj_tests PROPERTIES TIMEOUT 300 LABELS "reference;native-runtime")
+        # CRI's ADX output to the voices (docs/CRI_SERVERS.md section 4c): NativeAdxOutput against the original.
+        add_executable(native_adx_output_tests runtime/tests/native_adx_output_tests.cpp)
+        target_link_libraries(native_adx_output_tests PRIVATE shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(native_adx_output_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET native_adx_output_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME native_adx_output_tests COMMAND native_adx_output_tests "${SHADOW_RECOMP_DOL}"
+                 "${CMAKE_CURRENT_SOURCE_DIR}/extract/native-owners.txt")
+        set_tests_properties(native_adx_output_tests PROPERTIES TIMEOUT 300 LABELS "reference;native-runtime")
         # R16: the guarded paired-single specialisations (ppc::psq_load_k / psq_store_k) against the generic
         # helpers they stand in for, byte-, FPR- and access-trace-exact (findings-20261019-EV/EV_REPORT.md 16).
         add_executable(psq_specialised_tests runtime/tests/psq_specialised_tests.cpp)
@@ -1857,6 +2956,95 @@ if(SHADOW_BUILD_TESTS)
         endif()
         add_test(NAME native_video_reference_tests COMMAND native_video_reference_tests "${SHADOW_RECOMP_DOL}")
         set_tests_properties(native_video_reference_tests PROPERTIES TIMEOUT 300 LABELS "reference;native-video")
+        add_executable(native_rw_world_reference_tests runtime/tests/native_rw_world_reference_tests.cpp)
+        target_link_libraries(native_rw_world_reference_tests PRIVATE shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(native_rw_world_reference_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET native_rw_world_reference_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME native_rw_world_reference_tests COMMAND native_rw_world_reference_tests "${SHADOW_RECOMP_DOL}"
+                 "${CMAKE_CURRENT_SOURCE_DIR}/test_data/platform/gx_rw_frontier.csv")
+        set_tests_properties(native_rw_world_reference_tests PROPERTIES TIMEOUT 300 LABELS "reference;native-rw-world")
+        add_executable(rw_pool_contract_tests runtime/tests/rw_pool_contract_tests.cpp)
+        target_link_libraries(rw_pool_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rw_pool_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rw_pool_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rw_pool_contract_tests COMMAND rw_pool_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rw_pool_contract_tests PROPERTIES TIMEOUT 1200 LABELS "reference;native-rw-world")
+        add_executable(rw_texture_write_contract_tests runtime/tests/rw_texture_write_contract_tests.cpp)
+        target_link_libraries(rw_texture_write_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rw_texture_write_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rw_texture_write_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rw_texture_write_contract_tests COMMAND rw_texture_write_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rw_texture_write_contract_tests PROPERTIES TIMEOUT 900 LABELS "reference;native-rw-world")
+        add_executable(rw_vector_contract_tests runtime/tests/rw_vector_contract_tests.cpp)
+        target_link_libraries(rw_vector_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rw_vector_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rw_vector_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rw_vector_contract_tests COMMAND rw_vector_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rw_vector_contract_tests PROPERTIES TIMEOUT 1800 LABELS "reference;native-contract")
+        add_executable(rw_matrix_contract_tests runtime/tests/rw_matrix_contract_tests.cpp)
+        target_link_libraries(rw_matrix_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rw_matrix_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rw_matrix_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rw_matrix_contract_tests COMMAND rw_matrix_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rw_matrix_contract_tests PROPERTIES TIMEOUT 1800 LABELS "reference;native-contract")
+        add_executable(rw_view_cache_contract_tests runtime/tests/rw_view_cache_contract_tests.cpp)
+        target_link_libraries(rw_view_cache_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rw_view_cache_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rw_view_cache_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rw_view_cache_contract_tests COMMAND rw_view_cache_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rw_view_cache_contract_tests PROPERTIES TIMEOUT 1800 LABELS "reference;native-contract")
+        add_executable(rw_world_contract_tests runtime/tests/rw_world_contract_tests.cpp)
+        target_link_libraries(rw_world_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rw_world_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rw_world_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rw_world_contract_tests COMMAND rw_world_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rw_world_contract_tests PROPERTIES TIMEOUT 900 LABELS "reference;native-rw-world")
+        add_executable(rw_world_stream_contract_tests runtime/tests/rw_world_stream_contract_tests.cpp)
+        target_link_libraries(rw_world_stream_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rw_world_stream_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rw_world_stream_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rw_world_stream_contract_tests COMMAND rw_world_stream_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rw_world_stream_contract_tests PROPERTIES TIMEOUT 900 LABELS "reference;native-rw-world")
+        add_executable(rw_world_decode_tests runtime/tests/rw_world_decode_tests.cpp)
+        target_link_libraries(rw_world_decode_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rw_world_decode_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rw_world_decode_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rw_world_decode_tests COMMAND rw_world_decode_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rw_world_decode_tests PROPERTIES TIMEOUT 900 LABELS "reference;native-rw-world")
+        add_executable(rw_registry_contract_tests runtime/tests/rw_registry_contract_tests.cpp)
+        target_link_libraries(rw_registry_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rw_registry_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rw_registry_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rw_registry_contract_tests COMMAND rw_registry_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rw_registry_contract_tests PROPERTIES TIMEOUT 600 LABELS "reference;native-rw-world")
+        add_executable(rw_device_state_contract_tests runtime/tests/rw_device_state_contract_tests.cpp)
+        target_link_libraries(rw_device_state_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(rw_device_state_contract_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET rw_device_state_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME rw_device_state_contract_tests COMMAND rw_device_state_contract_tests "${SHADOW_RECOMP_DOL}")
+        set_tests_properties(rw_device_state_contract_tests PROPERTIES TIMEOUT 300 LABELS "reference;native-rw-world")
         # The native GX draw sync / breakpoint / FIFO owners and deliveries
         # against the original GX library words in the reference interpreter
         # (docs/native-time-20261005/STAGE4_GX_SYNC.md).
@@ -1932,6 +3120,17 @@ if(SHADOW_BUILD_TESTS)
         set_property(TARGET gekko_core_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     endif()
     add_test(NAME gekko_core_tests COMMAND gekko_core_tests)
+
+    # The native player's migration boundary (docs/SHADOW_PLAYER_NATIVE_RECONSTRUCTION.md, batch 00).
+    add_executable(player_view_tests runtime/tests/player_view_tests.cpp)
+    target_link_libraries(player_view_tests PRIVATE shadow_runtime_reference)
+    if(MSVC)
+        target_compile_options(player_view_tests PRIVATE /W4 /permissive-)
+        set_property(TARGET player_view_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+    add_test(NAME player_view_tests COMMAND player_view_tests
+             "${CMAKE_CURRENT_SOURCE_DIR}/test_data/player/player_shadow_fields.csv")
+    set_tests_properties(player_view_tests PROPERTIES TIMEOUT 60 LABELS "player")
 
     if(WIN32 AND SHADOW_ENABLE_PLUME)
         # The RHI transfer queue against a real device: COPY-queue uploads read
@@ -2039,7 +3238,7 @@ if(SHADOW_BUILD_TESTS)
         # against IsProcessorFeaturePresent. Links the gate object directly, compiled for the baseline.
         add_executable(host_isa_gate_tests runtime/tests/host_isa_gate_tests.cpp)
         target_link_libraries(host_isa_gate_tests PRIVATE shadow_host_isa_gate)
-        target_compile_features(host_isa_gate_tests PRIVATE cxx_std_17)
+        target_compile_features(host_isa_gate_tests PRIVATE cxx_std_20)
         target_compile_definitions(host_isa_gate_tests PRIVATE SHADOW_TEST_EXPECTED_LEVEL="${SHADOW_X64_ARCH}")
         target_compile_options(host_isa_gate_tests PRIVATE /W4 /permissive-)
         set_property(TARGET host_isa_gate_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -2084,24 +3283,24 @@ if(SHADOW_BUILD_TESTS)
     set_tests_properties(numeric_probe_tests PROPERTIES LABELS "measurement" TIMEOUT 30)
     add_executable(native_fence_retirement_tests runtime/tests/native_fence_retirement_tests.cpp)
     target_include_directories(native_fence_retirement_tests PRIVATE thirdparty/plume)
-    target_compile_features(native_fence_retirement_tests PRIVATE cxx_std_17)
+    target_compile_features(native_fence_retirement_tests PRIVATE cxx_std_20)
     add_executable(native_segment_failure_tests runtime/tests/native_segment_failure_tests.cpp)
     target_include_directories(native_segment_failure_tests PRIVATE thirdparty/plume)
     target_link_libraries(native_segment_failure_tests PRIVATE shadow_runtime)
-    target_compile_features(native_segment_failure_tests PRIVATE cxx_std_17)
+    target_compile_features(native_segment_failure_tests PRIVATE cxx_std_20)
     add_executable(native_presentation_retirement_tests runtime/tests/native_presentation_retirement_tests.cpp)
     target_include_directories(native_presentation_retirement_tests PRIVATE runtime/include thirdparty/plume)
-    target_compile_features(native_presentation_retirement_tests PRIVATE cxx_std_17)
+    target_compile_features(native_presentation_retirement_tests PRIVATE cxx_std_20)
     add_executable(native_gpu_lifetime_tests runtime/tests/native_gpu_lifetime_tests.cpp)
     target_include_directories(native_gpu_lifetime_tests PRIVATE runtime/include)
-    target_compile_features(native_gpu_lifetime_tests PRIVATE cxx_std_17)
+    target_compile_features(native_gpu_lifetime_tests PRIVATE cxx_std_20)
     add_executable(copy_dependency_publication_tests runtime/tests/copy_dependency_publication_tests.cpp)
     target_include_directories(copy_dependency_publication_tests PRIVATE runtime/include)
-    target_compile_features(copy_dependency_publication_tests PRIVATE cxx_std_17)
+    target_compile_features(copy_dependency_publication_tests PRIVATE cxx_std_20)
     add_executable(native_failure_publication_tests runtime/tests/native_failure_publication_tests.cpp)
     target_include_directories(native_failure_publication_tests PRIVATE runtime/include thirdparty/plume)
     target_link_libraries(native_failure_publication_tests PRIVATE shadow_runtime)
-    target_compile_features(native_failure_publication_tests PRIVATE cxx_std_17)
+    target_compile_features(native_failure_publication_tests PRIVATE cxx_std_20)
     foreach(retirement_target IN ITEMS native_fence_retirement_tests native_segment_failure_tests native_presentation_retirement_tests native_gpu_lifetime_tests copy_dependency_publication_tests native_failure_publication_tests)
         if(MSVC)
             target_compile_options(${retirement_target} PRIVATE /W4 /permissive-)
@@ -2116,7 +3315,7 @@ if(SHADOW_BUILD_TESTS)
         # words; not linked into shipping until its caller/packet contract closes.
         add_executable(native_billboard_tests runtime/tests/native_billboard_tests.cpp runtime/src/native_billboard.cpp)
         target_link_libraries(native_billboard_tests PRIVATE shadow_runtime_reference)
-        target_compile_features(native_billboard_tests PRIVATE cxx_std_17)
+        target_compile_features(native_billboard_tests PRIVATE cxx_std_20)
         if(MSVC)
             target_compile_options(native_billboard_tests PRIVATE /W4 /permissive- /fp:strict)
             set_property(TARGET native_billboard_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -2126,7 +3325,7 @@ if(SHADOW_BUILD_TESTS)
         # Complete original producer population; never a shipping Cpu adapter.
         add_executable(ptank_producer_contract_tests runtime/tests/ptank_producer_contract_tests.cpp)
         target_link_libraries(ptank_producer_contract_tests PRIVATE shadow_runtime_reference)
-        target_compile_features(ptank_producer_contract_tests PRIVATE cxx_std_17)
+        target_compile_features(ptank_producer_contract_tests PRIVATE cxx_std_20)
         if(MSVC)
             target_compile_options(ptank_producer_contract_tests PRIVATE /W4 /permissive- /fp:strict)
             set_property(TARGET ptank_producer_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -2136,7 +3335,7 @@ if(SHADOW_BUILD_TESTS)
         foreach(contract_target IN ITEMS format_lifetime_reference_tests ptank_source_view_reference_tests)
             add_executable(${contract_target} runtime/tests/${contract_target}.cpp)
             target_link_libraries(${contract_target} PRIVATE shadow_runtime_reference)
-            target_compile_features(${contract_target} PRIVATE cxx_std_17)
+            target_compile_features(${contract_target} PRIVATE cxx_std_20)
             if(MSVC)
                 target_compile_options(${contract_target} PRIVATE /W4 /permissive- /fp:strict)
                 set_property(TARGET ${contract_target} PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -2329,6 +3528,115 @@ if(SHADOW_BUILD_TESTS)
                              --census "${CMAKE_CURRENT_SOURCE_DIR}/test_data/address-census-20261005-v1/census-v2.json"
                              --check "${CMAKE_CURRENT_SOURCE_DIR}/extract/liveness-roots.txt")
             set_tests_properties(native_liveness_roots PROPERTIES TIMEOUT 120 LABELS "native;build")
+            # The lifted tree's roots: the same scan without the sources that tree does not compile.
+            set(SHADOW_LIFTED_WITHOUT_ARGS)
+            foreach(_source ${SHADOW_LIFTED_UNCOMPILED_SOURCES})
+                list(APPEND SHADOW_LIFTED_WITHOUT_ARGS --without "${_source}")
+            endforeach()
+            add_test(NAME native_liveness_roots_lifted
+                     COMMAND "${Python3_EXECUTABLE}" -B
+                             "${CMAKE_CURRENT_SOURCE_DIR}/tools/ppcrecomp/liveness_roots.py"
+                             --runtime "${CMAKE_CURRENT_SOURCE_DIR}/runtime"
+                             --census "${CMAKE_CURRENT_SOURCE_DIR}/test_data/address-census-20261005-v1/census-v2.json"
+                             ${SHADOW_LIFTED_WITHOUT_ARGS}
+                             --base "${CMAKE_CURRENT_SOURCE_DIR}/extract/liveness-roots.txt"
+                             --check "${CMAKE_CURRENT_SOURCE_DIR}/extract/liveness-roots-lifted.txt")
+            set_tests_properties(native_liveness_roots_lifted PROPERTIES TIMEOUT 120 LABELS "native;build")
+            # GameCube SDK removal (docs/GC_REMOVAL_PLAN.md): the generator's liveness graph classified by the
+            # platform manifest. Fails when more platform-SDK bodies are compiled than the ratchet (a new hook or
+            # literal pinned SDK code: the work list names what enters it), or when the planner's prediction for a
+            # real ownership step (OSInit owned) differs from the generator's run. Lower the ratchet as services
+            # are removed. Needs the pal-v30 manifest and skeleton (tools/dolrecon), so registered only with them.
+            # Per configuration (measured 2026-11-02): the lifted renderer retires six more RenderWare GameCube
+            # driver bodies, so the shipping (release, SHADOW_RENDER_LIFTED) tree compiles 1,057 and the tests tree
+            # (not lifted) 1,063. Measured 2026-11-07 after the room reverb's init / shutdown were owned (step 2,
+            # docs/GC_REMOVAL_PLAN.md) on top of the CRI and other owners since: shipping 1,044, tests tree 1,050.
+            # Measured after merging agent/axfx-effects (ReverbStd / Chorus / Delay, docs/agents/axfx-effects.md):
+            # shipping 1,024, tests tree 1,030. After merging agent/card-saves (the CARD library is not compiled,
+            # docs/agents/card-saves.md): shipping 968, tests tree 974. After os-other step B (console-settings
+            # accessors, docs/agents/os-other.md): shipping 963, tests tree 969. After agent/vi (VI owners) and
+            # card-saves step 2 (OS interrupt APIs): shipping 949, tests tree 955. After vi step 2 (VIConfigure) and
+            # sdk-identify's per-build roots (the lifted tree drops rw_capture-only roots): shipping 912, tests 935.
+            # After VISetBlack, the OS arena / clock / UART owners and the GX state API: shipping 855, tests 877.
+            # After sdk-identify's names, card-saves gxC / gxD (GX vertex path, GXInit sync), vi rwR1 / rwR4 (RW
+            # device surface, world-sector pipeline; lifted build only) and the CRI bridge default ON: shipping 520,
+            # tests tree 770. After vi step 6 (VISetPostRetraceCallback + twins), os-other (heap results-only, OSPanic)
+            # and sdk-identify rwR2 1a / 1b (RW pixel conversion, raster format): shipping 506, tests tree 758.
+            # After merge round 6 (native __start / OSInit / decrementer, OSReport + printf / fprintf, AX registration,
+            # scheduler count, RW registry, 41 verified names): shipping 421, tests tree 684.
+            # After merge round 7 (GX TEV / indirect setters + display-copy scale pair, debug.trk, RW Im3D entry points +
+            # flat native-owner dispatch, OSGetConsoleType / DMAErrorHandler, the OS font library): shipping 363,
+            # tests tree 637. After merge round 8 (the guest_call seam, the RW raster life cycle slice 1, the RW device
+            # raster wrappers, the os.threads readers + OSInitThreadQueue, SPEC2_MakeStatus retired): shipping 349,
+            # tests tree 625. After merge round 9 (the GX display-copy leaves and GXInitFifoBase, two BP setters,
+            # MIXQuit / MIXSetSoundMode): shipping 326, tests tree 609. After merge round 12 (the GXInit tail state, the
+            # palette lock pair, two RW device-state rows, eleven AX voice entries, the default exception handler,
+            # PPCHalt): shipping 294, tests tree 582. After merge round 13 (the raster lock / unlock / tile layout, RasterSetImage
+            # with its format bodies and converters, ImageGetRaster, two OS leaves): shipping 239, tests tree 527. After merge
+            # round 14 (the jump-table fix for ImageGetRaster, seven MIX entries, the MIX allocators): shipping 209, tests 497.
+            # After merge round 15 (native OSSleepThread / OSWakeupThread / OSYieldThread, the AX voice sync + native PB
+            # image, the Im2D line / triangle emitters): shipping 195, tests tree 488. After merge round 16 (scheduler cuts 1-2b,
+            # the raster life cycle, the RW registry / pool / world reader, NativeTextureWrite, vector transforms): shipping 149,
+            # tests tree 468.
+            if(SHADOW_RENDER_LIFTED)
+                set(SHADOW_GC_REMOVAL_RATCHET_DEFAULT 41)
+            else()
+                set(SHADOW_GC_REMOVAL_RATCHET_DEFAULT 443)
+            endif()
+            set(SHADOW_GC_REMOVAL_RATCHET ${SHADOW_GC_REMOVAL_RATCHET_DEFAULT})  # not a cache entry: an old tree would keep its first value
+            set(SHADOW_DOLRECON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/.build/dolrecon" CACHE PATH
+                "tools/dolrecon outputs the planner classifies with (pal-v30 manifest, skeleton)")
+            if(EXISTS "${SHADOW_DOLRECON_DIR}/pal-v30/platform_manifest.json" AND
+               EXISTS "${SHADOW_DOLRECON_DIR}/skeleton/functions.csv")
+                add_test(NAME platform_gc_removal_plan
+                         COMMAND "${Python3_EXECUTABLE}" -B
+                                 "${CMAKE_CURRENT_SOURCE_DIR}/tools/platform/removal_plan.py"
+                                 --release-dir "${CMAKE_CURRENT_BINARY_DIR}"
+                                 --out "${CMAKE_CURRENT_BINARY_DIR}/platform/removal_plan"
+                                 --dolrecon-dir "${SHADOW_DOLRECON_DIR}"
+                                 --control-own 0x80372B80
+                                 --max-platform-bodies ${SHADOW_GC_REMOVAL_RATCHET})
+                set_tests_properties(platform_gc_removal_plan PROPERTIES TIMEOUT 900 LABELS "platform;build"
+                                     FIXTURES_SETUP platform_removal_plan)
+                # The runtime's own use of SDK internals (tools/platform/runtime_coupling.py): every use classified,
+                # and no more native -> SDK calls / dispatches than measured (11 on 2026-11-02, 6 after RtGCNFS async retired; lower as removed).
+                set(SHADOW_RUNTIME_SDK_CALLS_RATCHET 2)  # not a cache entry, same reason
+                add_test(NAME platform_runtime_coupling
+                         COMMAND "${Python3_EXECUTABLE}" -B
+                                 "${CMAKE_CURRENT_SOURCE_DIR}/tools/platform/runtime_coupling.py"
+                                 --plan "${CMAKE_CURRENT_BINARY_DIR}/platform/removal_plan/removal_plan.json"
+                                 --out "${CMAKE_CURRENT_BINARY_DIR}/platform/runtime_coupling"
+                                 --require-classified --max-sdk-calls ${SHADOW_RUNTIME_SDK_CALLS_RATCHET})
+                set_tests_properties(platform_runtime_coupling PROPERTIES TIMEOUT 300 LABELS "platform;build"
+                                     FIXTURES_REQUIRED platform_removal_plan)
+                # Gate 2's static half (tools/platform/retired_readers.py) on two real steps of known outcome:
+                # owning OSSetCurrentContext retires OS globals the rest of the OS reads (0x800000D4: readers must be
+                # found; OSInit itself is a native owner since 2026-11-07, so it is no longer the control), owning
+                # ReverbHiInit / Shutdown retires only pointer-addressed state (no proven reader, its unproven
+                # stores reported for the dynamic watch).
+                foreach(control IN ITEMS "context;0x80372B80;readers" "reverb;0x803884E4,0x80388554;no-proven-readers")
+                    list(GET control 0 control_name)
+                    list(GET control 1 control_own)
+                    list(GET control 2 control_expect)
+                    add_test(NAME platform_retired_readers_${control_name}
+                             COMMAND "${Python3_EXECUTABLE}" -B
+                                     "${CMAKE_CURRENT_SOURCE_DIR}/tools/platform/retired_readers.py"
+                                     --own ${control_own} --release-dir "${CMAKE_CURRENT_BINARY_DIR}"
+                                     --dolrecon-dir "${SHADOW_DOLRECON_DIR}"
+                                     --graph "${CMAKE_CURRENT_BINARY_DIR}/platform/removal_plan/live_graph.txt"
+                                     --out "${CMAKE_CURRENT_BINARY_DIR}/platform/retired_readers/${control_name}"
+                                     --expect ${control_expect})
+                    set_tests_properties(platform_retired_readers_${control_name} PROPERTIES TIMEOUT 900
+                                         LABELS "platform;build" FIXTURES_REQUIRED platform_removal_plan)
+                endforeach()
+            endif()
+            # The native RtGCNFS owner serves synchronous files only and refuses an asynchronous one: this proves from
+            # the DOL's bytes that no caller can open asynchronously (every reference to the async-capable openers
+            # accounted for, each mode argument checked), with three mutated images that must be refused.
+            add_test(NAME platform_rtfs_async_proof
+                     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/tools/platform/rtfs_async_proof.py"
+                             "${SHADOW_RECOMP_DOL}" --self-test)
+            set_tests_properties(platform_rtfs_async_proof PROPERTIES TIMEOUT 120 LABELS "platform;native-contract")
             add_test(NAME native_jump_tables
                      COMMAND "${Python3_EXECUTABLE}" -B
                              "${CMAKE_CURRENT_SOURCE_DIR}/tools/ppcrecomp/jump_tables.py"
@@ -2363,8 +3671,18 @@ if(SHADOW_BUILD_TESTS)
                              "${CMAKE_CURRENT_SOURCE_DIR}/tools/ppcrecomp/wait_points.py"
                              --dol "${SHADOW_RECOMP_DOL}"
                              --functions "${SHADOW_RECOMP_FUNCTIONS}"
+                             --retired "${CMAKE_CURRENT_SOURCE_DIR}/extract/wait-points-retired.txt"
+                             --retired-lifted "${CMAKE_CURRENT_SOURCE_DIR}/extract/wait-points-retired-lifted.txt"
                              --check "${CMAKE_CURRENT_SOURCE_DIR}/extract/wait-points.txt")
             set_tests_properties(native_wait_points PROPERTIES TIMEOUT 120 LABELS "native;build")
+            if(NOT SHADOW_RENDER_LIFTED)
+                # A wait point retired for every build must belong to a loop the reference build cannot run (this tree is the reference).
+                add_test(NAME native_wait_points_retired_reach
+                         COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/tools/platform/retired_wait_reach.py"
+                                 --pruned "${SHADOW_RECOMP_DIR}/recomp_pruned.csv"
+                                 --retired "${CMAKE_CURRENT_SOURCE_DIR}/extract/wait-points-retired.txt")
+                set_tests_properties(native_wait_points_retired_reach PROPERTIES TIMEOUT 900 LABELS "native;build")
+            endif()
             add_test(NAME native_wait_points_classifier
                      COMMAND "${Python3_EXECUTABLE}" -B -m unittest test_wait_points
                      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tools/ppcrecomp")
@@ -2383,6 +3701,18 @@ if(SHADOW_BUILD_TESTS)
                      COMMAND "${Python3_EXECUTABLE}" -B -m unittest test_gx_sites
                      WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tools/ppcrecomp")
             set_tests_properties(native_gx_sites_classifier PROPERTIES TIMEOUT 60 LABELS "native;build")
+            # Step K (docs/agents/axfx-effects.md): the static-closure tool is checked against addresses whose answer is known
+            # (RxPipelineExecute closes; the registry init callback 0x80464D30 must come back LIVE).
+            add_test(NAME platform_closure_proof_tool
+                     COMMAND "${Python3_EXECUTABLE}" -B -m unittest test_closure_proof
+                     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tools/platform")
+            set_tests_properties(platform_closure_proof_tool PROPERTIES TIMEOUT 300 LABELS "native;build")
+            # rwR1 (docs/agents/vi.md "Step 4"): the RwDevice-surface owners call the scaffold functions their lowered
+            # sites call, with the sites' arguments (lift-sites-r2.txt), and the accessor returns what the original computes.
+            add_test(NAME native_device_surface_owners
+                     COMMAND "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/tools/test_device_surface_owners.py"
+                             "${SHADOW_RECOMP_DOL}")
+            set_tests_properties(native_device_surface_owners PROPERTIES TIMEOUT 60 LABELS "native;build")
             # L0r0-01: one host ISA / FP model per image that contains gekko guest-semantics code.
             # The check reads the CMake file API codemodel, so ask CMake to write one for this tree.
             set(SHADOW_FILE_API_QUERY "${CMAKE_BINARY_DIR}/.cmake/api/v1/query/client-gekkoforge/codemodel-v2")

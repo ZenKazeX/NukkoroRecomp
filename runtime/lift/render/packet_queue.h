@@ -5,6 +5,7 @@
 // behind, the older unrendered packets are dropped (counted) - the render thread always draws the newest whole frame.
 // Game time never depends on the GPU.
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -16,9 +17,27 @@
 
 namespace shadow::render {
 
+// The phase lock's applied wall-anchor shift (gekko/phase_lock.h; written by the game thread, which also pushes):
+// each packet carries the value it was produced under, so a hold measured later can be corrected for the shift
+// applied since (the shared phase controller's target, not a lagging error).
+inline std::atomic<std::int64_t>& phase_anchor_shift_ns() {
+    static std::atomic<std::int64_t> value{0};
+    return value;
+}
 class PacketQueue {
 public:
     explicit PacketQueue(std::size_t depth = 2) : depth_(depth == 0 ? 1 : depth) {}
+
+    // Render thread: reads the newest queued packet in place (under the queue's lock; f must be quick and keep no
+    // reference). False when the queue is empty.
+    template <typename F>
+    bool with_newest(F&& f) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (packets_.empty())
+            return false;
+        f(static_cast<const FramePacket&>(packets_.back()));
+        return true;
+    }
 
     // Game thread. Does not wait for the consumer; false after close(), leaving packet owned by the caller.
     bool push(FramePacket&& packet) {
@@ -32,12 +51,24 @@ public:
                 ++dropped_;
             }
             const std::uint64_t tick = packet.tick, game_ticks = packet.game_ticks;
+            packet.pushed_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                   std::chrono::steady_clock::now().time_since_epoch())
+                                   .count();
+            packet.anchor_shift_ns = phase_anchor_shift_ns().load(std::memory_order_relaxed);
             packets_.push_back(std::move(packet));
             ++pushed_;
             present_trace::record(present_trace::Ev::Push, tick, game_ticks, packets_.size());
         }
         ready_.notify_one();
         return true;
+    }
+
+    // Render thread: true once a packet is waiting (up to `wait`), without taking it. The render thread then takes the
+    // swap chain's credit and only after that the newest packet, which may be newer than this one.
+    bool wait_for_packet(std::chrono::milliseconds wait) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        ready_.wait_for(lock, wait, [this] { return !packets_.empty() || closed_; });
+        return !packets_.empty() && !closed_;
     }
 
     // Render thread: the newest packet (older ones are dropped), waiting up to `wait` for one. False on timeout or

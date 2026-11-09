@@ -156,6 +156,34 @@ void NativeIpl::reset_settings() {
     initialise_default_settings(settings_);
 }
 
+void NativeIpl::bind_save_folder(const std::filesystem::path& folder) {
+    reset_settings();
+    settings_path_ = folder / "SRAM.pc.raw";
+    if (std::filesystem::exists(settings_path_)) {
+        const std::vector<u8> persisted = read_host_file(settings_path_);
+        if (persisted.size() == settings_.size()) std::copy(persisted.begin(), persisted.end(), settings_.begin());
+    }
+}
+
+void NativeIpl::override_console_settings(int language, int stereo) {
+    if (language >= 0 && language <= 5) settings_[kSettingsSram + 0x12u] = static_cast<u8>(language);
+    if (stereo >= 0) {
+        u8& flags = settings_[kSettingsSram + kSramFlags];
+        flags = static_cast<u8>(stereo != 0 ? (flags | 0x04u) : (flags & ~0x04u));
+    }
+    // The OS checksum pair over counterBias .. flags (as the commit above writes it).
+    u16 sum = 0u, inverse = 0u;
+    for (u32 p = kSramSummed; p < kSramExBase; p += 2u) {
+        const u16 word = static_cast<u16>(settings_[kSettingsSram + p] << 8 | settings_[kSettingsSram + p + 1u]);
+        sum = static_cast<u16>(sum + word);
+        inverse = static_cast<u16>(inverse + static_cast<u16>(~word));
+    }
+    settings_[kSettingsSram + kSramChecksum] = static_cast<u8>(sum >> 8);
+    settings_[kSettingsSram + kSramChecksum + 1u] = static_cast<u8>(sum);
+    settings_[kSettingsSram + kSramChecksum + 2u] = static_cast<u8>(inverse >> 8);
+    settings_[kSettingsSram + kSramChecksum + 3u] = static_cast<u8>(inverse);
+}
+
 void NativeIpl::bind_card(const std::filesystem::path& card_source, const std::filesystem::path& card_backing,
                           const std::vector<u8>& card_image) {
     reset_settings();

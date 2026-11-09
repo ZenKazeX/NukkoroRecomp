@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Writes runtime/src/gekko/options_display_tile.inc: the Display tile's two 82 x 82 images (normal and selected,
-made by make_display_icon.py and approved by the user on 2026-10-28) as RGBA8 bytes, for
+made by make_display_icon.py; first approved by the user on 2026-10-28, redone worn on 2026-10-30) as RGBA8 bytes, for
 gekko/native_options_display.h's place_tile_art, which writes them into cells 46 and 52 of Options2.
 
     python tools/options_menu_sim/emit_display_tile_inc.py

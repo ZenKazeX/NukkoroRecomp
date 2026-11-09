@@ -95,7 +95,14 @@ public:
 
     // Input rate is source_num / source_den Hz. Allocates; not for a hot path.
     // Returns false for a zero or unrepresentable ratio.
-    bool configure(u64 source_num, u64 source_den, u32 output_rate);
+    // fine_ratio: up / down scaled by kFineScale (arithmetically identical output: every product stays an exact
+    // double) so that set_trim can move the ratio in ~0.003 ppm steps (docs/TIMING_ARCHITECTURE.md 7).
+    bool configure(u64 source_num, u64 source_den, u32 output_rate, bool fine_ratio = false);
+    static constexpr u64 kFineScale = u64(1) << 20;
+    // Input frames advanced per output frame become (down + trim) / up from the next pull. |trim| must stay far below
+    // down (the caller bounds it in ppm). 0 restores the configured ratio exactly.
+    void set_trim(std::int64_t trim) noexcept { trim_ = trim; }
+    std::int64_t trim() const noexcept { return trim_; }
     // Drops held input and restarts the output clock at the next pushed frame.
     void reset() noexcept;
 
@@ -124,6 +131,8 @@ public:
 private:
     u64 up_ = 0;
     u64 down_ = 0;
+    std::int64_t trim_ = 0;
+    u64 step() const noexcept { return static_cast<u64>(static_cast<std::int64_t>(down_) + trim_); }
     u32 half_taps_ = 0;
     u32 taps_ = 0;
     double source_hz_ = 0.0;
@@ -347,5 +356,10 @@ private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
 };
+
+// The player's master volume (Options > Audio): a linear gain 0..1 on the endpoint stream after the game's mix, any
+// thread. 1 (the default) leaves the output bit-identical.
+void set_audio_output_gain(float gain) noexcept;
+float audio_output_gain() noexcept;
 
 }  // namespace gekko

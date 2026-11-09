@@ -87,8 +87,17 @@ Vec3 read_vec(const GuestMemory& m, u32 address) noexcept {
 // ---- vector helpers ------------------------------------------------------------------------------------------------
 
 // sqrt 0x8000FF04 (through 0x8000FEE4).
+// For a positive finite single x the original's frsqrte seed, three Newton steps and frsp give exactly the host's
+// correctly rounded single root: checked for all 2,139,095,039 positive finite singles against the sequence below,
+// and se_math_contract_tests compares this function with the original routine. Only that case takes the host root;
+// a double that is not a single, +infinity and every other case keep the original sequence.
 u64 sqrt_guest(Cpu& c, u64 x) noexcept {
     if (fcmpo(c, x, lfs(kSqrtZeroF)) & kGT) {
+        const double value = bits_to_double(x);
+        const float single = static_cast<float>(value);
+        if (static_cast<double>(single) == value && value < HUGE_VAL) {
+            return double_to_bits(static_cast<double>(std::sqrt(single)));
+        }
         u64 g = ppc::fp_rsqrte(c, x);                         // frsqrte f2, f1
         u64 f0 = ppc::fp_mul(c, g, g);                        // fmul f0, f2, f2
         g = ppc::fp_mul(c, kSqrtHalf, g);                     // fmul f2, f4, f2

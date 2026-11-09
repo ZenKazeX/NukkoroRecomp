@@ -397,14 +397,24 @@ void NativeAssetManager::notify_file(const std::string& guest_path) {
     // mostly does not use.
     GEKKO_PROFILE_ZONE("res/notify-file");
     // Only files this manager can load, and never a movie/audio stream.
-    const bool interesting = guest_path.size() > 4u &&
-                             (guest_path.compare(guest_path.size() - 4u, 4u, ".one") == 0 ||
-                              guest_path.compare(guest_path.size() - 4u, 4u, ".txd") == 0);
+    // The suffix in any case (the namespace folds ASCII case; PrsAhead matches ".one" the same way).
+    const auto suffix = [&](const char* ext) {
+        if (guest_path.size() <= 4u) return false;
+        for (std::size_t i = 0; i < 4u; ++i) {
+            char ch = guest_path[guest_path.size() - 4u + i];
+            if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch - 'A' + 'a');
+            if (ch != ext[i]) return false;
+        }
+        return true;
+    };
+    const bool interesting = suffix(".one") || suffix(".txd");
     if (!interesting) return;
     {
         std::scoped_lock lock(mutex_, assets_mutex_);
         if (stop_) return;
         ++stats_.files_notified;
+        for (const std::string& evicted : evicted_sources_) seen_.erase(evicted);
+        evicted_sources_.clear();
         // The cleanest "a load is happening" signal in the whole runtime.
         GEKKO_PROFILE_PLOT("res/files-notified", static_cast<double>(stats_.files_notified));
         if (seen_.emplace(guest_path, true).second) {
@@ -568,7 +578,7 @@ void NativeAssetManager::parse_file(const std::string& guest_path) {
     }
 }
 
-void NativeAssetManager::register_textures(const std::string& /*source*/, const u8* data,
+void NativeAssetManager::register_textures(const std::string& source, const u8* data,
                                            std::size_t size) {
     std::vector<TxdReader::Texture> textures;
     if (!TxdReader::parse(data, size, textures)) return;
@@ -650,6 +660,7 @@ void NativeAssetManager::register_textures(const std::string& /*source*/, const 
             if (resident_bytes_ > byte_budget_ - bytes) return;
             auto entry = std::make_unique<Entry>();
             entry->hash = hash;
+            entry->source = source;
             entry->asset = std::make_shared<const TextureAsset>(std::move(asset));
             entry->last_use = ++use_counter_;
             lru_.push_front(hash);
@@ -719,6 +730,8 @@ void NativeAssetManager::evict_locked(std::size_t need_bytes) {
                                GEKKO_PROFILE_FREE(it->second->asset->rgba8.data(),
                                                   "res/texture-cache");)
         candidate = lru_.erase(candidate);
+        // Its file must be parseable again: otherwise its textures come from the capture path for the rest of the run.
+        if (!it->second->source.empty()) evicted_sources_.push_back(std::move(it->second->source));
         assets_.erase(it);
         resident_bytes_ -= std::min(bytes, resident_bytes_);
         // The only place residency falls, so the curve is exact rather than

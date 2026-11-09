@@ -18,7 +18,8 @@
 // messages; the boot's autosave notice is drawn from it. They are reworded by
 // their original text (reword_table).
 //
-// The other languages keep their original text until they are translated.
+// The other languages (2026-11-05): the same rewrite with their own PC words (pc_messages), of Save_<lang>.fnt and of
+// the copies in Advertise_<lang>.fnt.
 
 #include <string>
 #include <string_view>
@@ -35,11 +36,15 @@ inline constexpr std::string_view kEnglishGlyphs = "FONTS/SAVE/Save_EN00.met";
 
 struct Message {
     u32 id;
-    const char* text;  // ASCII; '\n' breaks a line, '&' is the atlas's trademark glyph
+    const char* text;  // UTF-8; '\n' breaks a line, '&' is the atlas's trademark glyph
 };
 
 // Option A's English messages, by id.
 const std::vector<Message>& pc_english_messages();
+
+// Option A in a language (Save_<suffix>.fnt: "EN", "FR", "GE", "IT", "JP", "SP"; tools/options_menu_sim/save_text,
+// 2026-11-05): the same 29 GameCube-set ids, PC words. Empty for a language without them.
+const std::vector<Message>& pc_messages(std::string_view suffix);
 
 // The table with every message of `messages` replaced; every other entry,
 // every entry's other words and every other text are kept. False (with the
@@ -47,12 +52,27 @@ const std::vector<Message>& pc_english_messages();
 // a glyph `glyph_list` lacks.
 bool rewrite_table(const std::vector<u8>& table, const std::vector<u8>& glyph_list,
                    const std::vector<Message>& messages, std::vector<u8>& out, std::string& error);
+// The same over several glyph lists (the Japanese atlas has Save_JP00..02.met).
+bool rewrite_table(const std::vector<u8>& table, const std::vector<std::vector<u8>>& glyph_lists,
+                   const std::vector<Message>& messages, std::vector<u8>& out, std::string& error);
 
 // The table with the texts of the messages `texts` names (by index) replaced, UTF-16 as given; every other entry,
 // word and text is kept. False (with the reason) when the table cannot be read or an index is outside it. Glyphs are
 // the caller's to check (gekko/native_options_display.h checks every glyph list of its language).
 bool replace_texts(const std::vector<u8>& table, const std::vector<std::pair<u32, std::u16string>>& texts,
                    std::vector<u8>& out, std::string& error);
+
+// The table with new messages inserted in key order (entry word 1 = id * 1000 + 100, the front-end tables' lookup key),
+// each entry's other words copied from message `template_id`'s. False when an id exists already, the template is
+// missing or the table cannot be read. Glyphs are the caller's to check.
+bool insert_texts(const std::vector<u8>& table, const std::vector<std::pair<u32, std::u16string>>& texts,
+                  u32 template_id, std::vector<u8>& out, std::string& error);
+
+// A front-end table's message by id (not index).
+bool text_by_id(const std::vector<u8>& table, u32 id, std::u16string& text);
+
+// Every message's text of a table, in index order.
+bool texts_of(const std::vector<u8>& table, std::vector<std::u16string>& out, std::string& error);
 
 // One message of a table, as UTF-16 code units (for tests and reports).
 bool message_text(const std::vector<u8>& table, u32 id, std::u16string& text);
@@ -76,6 +96,8 @@ bool rewordings_of(const std::vector<u8>& save_table, const std::vector<Message>
 // replaced by that rewording; `reworded` counts the replaced messages. Refused
 // like rewrite_table.
 bool reword_table(const std::vector<u8>& table, const std::vector<u8>& glyph_list,
+                  const std::vector<Rewording>& rewordings, std::vector<u8>& out, u32& reworded, std::string& error);
+bool reword_table(const std::vector<u8>& table, const std::vector<std::vector<u8>>& glyph_lists,
                   const std::vector<Rewording>& rewordings, std::vector<u8>& out, u32& reworded, std::string& error);
 
 }  // namespace gekko::save_text

@@ -1,0 +1,762 @@
+{
+ "inputs": {
+  "main.dol": "fde4fa6f81a60313b710161c196dc51c2260be62251ee02775d5eee06f9d55af",
+  "functions.csv": "c9322fa1c1429531620b2fd3f1dd1d038cd084c5fd70b2f84bcf861a4805d20b",
+  "census": "8e03a478901c829d9abe53bdc760357a365da3420b4e17b64cfec5a26a1d616b",
+  "strict": [
+   [
+    "../.build/player/verify-westopolis-all/verify.csv",
+    "ba37cad295c88f9301840376b89617f5f1bd881fd6e5bb9ca73b49bd1d8a86a1"
+   ],
+   [
+    "../.build/player/strict-ranges-final-haunt/verify.csv",
+    "e79904d5a428a7270d1b531b9a9d40633ed7e980416f7108013679bf69624f85"
+   ]
+  ],
+  "fast": [
+   [
+    "../.build/player/fast-westopolis/verify.csv",
+    "127d601711d926e18ebaaf2d7a085cc33c8d5433041afd6f72b9c0823f5041d5"
+   ],
+   [
+    "../.build/player/fast-final-haunt/verify.csv",
+    "a48b91226d9efd9b3655d3760c9137444dbe7e7f329cadc13f4627a1b02a5b8a"
+   ]
+  ],
+  "owners": [
+   "../extract/native-owners.txt"
+  ],
+  "candidates": [
+   "../test_data/player/package_candidates.csv"
+  ]
+ },
+ "census_rows": 3363,
+ "members": 2541,
+ "shared_engine_dependencies_listed": 822,
+ "integrity": {
+  "size_not_multiple_of_4": 0,
+  "interior_zero_words": 0,
+  "duplicate_addresses_in_census": 0
+ },
+ "totals": {
+  "NATIVE_CANDIDATE_UNVERIFIED": {
+   "functions": 323,
+   "instructions": 26520,
+   "strict_replayed": 13077,
+   "any_replayed": 13077,
+   "executed_functions": 168,
+   "fast0_replayed": 9437,
+   "fast1_replayed": 11039
+  },
+  "SHARED_ENGINE_DEPENDENCY": {
+   "functions": 15,
+   "instructions": 630,
+   "strict_replayed": 405,
+   "any_replayed": 405,
+   "executed_functions": 13,
+   "fast0_replayed": 405,
+   "fast1_replayed": 405
+  },
+  "TRANSLATED_PPC": {
+   "functions": 1224,
+   "instructions": 30741,
+   "strict_replayed": 27515,
+   "any_replayed": 27515,
+   "executed_functions": 1224,
+   "fast0_replayed": 22652,
+   "fast1_replayed": 24936
+  },
+  "UNREACHED_OR_UNTESTED": {
+   "functions": 923,
+   "instructions": 22881,
+   "strict_replayed": 0,
+   "any_replayed": 0,
+   "executed_functions": 0,
+   "fast0_replayed": 0,
+   "fast1_replayed": 0
+  },
+  "UNRESOLVED_IDENTITY": {
+   "functions": 56,
+   "instructions": 1273,
+   "strict_replayed": 740,
+   "any_replayed": 740,
+   "executed_functions": 38,
+   "fast0_replayed": 189,
+   "fast1_replayed": 252
+  },
+  "all": {
+   "functions": 2541,
+   "instructions": 82045,
+   "strict_replayed": 41737,
+   "any_replayed": 41737,
+   "executed_functions": 1443,
+   "fast0_replayed": 32683,
+   "fast1_replayed": 36632
+  },
+  "category:PLAYER_ABILITIES": {
+   "functions": 126,
+   "instructions": 4439,
+   "strict_replayed": 4,
+   "any_replayed": 4,
+   "executed_functions": 1,
+   "fast0_replayed": 0,
+   "fast1_replayed": 4
+  },
+  "category:PLAYER_ACTION": {
+   "functions": 377,
+   "instructions": 8449,
+   "strict_replayed": 4225,
+   "any_replayed": 4225,
+   "executed_functions": 235,
+   "fast0_replayed": 3081,
+   "fast1_replayed": 3313
+  },
+  "category:PLAYER_ANIMATION": {
+   "functions": 175,
+   "instructions": 6087,
+   "strict_replayed": 3589,
+   "any_replayed": 3589,
+   "executed_functions": 92,
+   "fast0_replayed": 3405,
+   "fast1_replayed": 3403
+  },
+  "category:PLAYER_COLLISION": {
+   "functions": 8,
+   "instructions": 218,
+   "strict_replayed": 131,
+   "any_replayed": 131,
+   "executed_functions": 4,
+   "fast0_replayed": 126,
+   "fast1_replayed": 126
+  },
+  "category:PLAYER_COMBAT": {
+   "functions": 378,
+   "instructions": 11104,
+   "strict_replayed": 7089,
+   "any_replayed": 7089,
+   "executed_functions": 266,
+   "fast0_replayed": 3871,
+   "fast1_replayed": 6666
+  },
+  "category:PLAYER_CORE": {
+   "functions": 141,
+   "instructions": 4498,
+   "strict_replayed": 3073,
+   "any_replayed": 3073,
+   "executed_functions": 100,
+   "fast0_replayed": 2935,
+   "fast1_replayed": 2918
+  },
+  "category:PLAYER_INTERACTION": {
+   "functions": 232,
+   "instructions": 6573,
+   "strict_replayed": 2870,
+   "any_replayed": 2870,
+   "executed_functions": 124,
+   "fast0_replayed": 2762,
+   "fast1_replayed": 2578
+  },
+  "category:PLAYER_MOVEMENT": {
+   "functions": 373,
+   "instructions": 15023,
+   "strict_replayed": 5978,
+   "any_replayed": 5978,
+   "executed_functions": 154,
+   "fast0_replayed": 4197,
+   "fast1_replayed": 4684
+  },
+  "category:PLAYER_STATE": {
+   "functions": 138,
+   "instructions": 4561,
+   "strict_replayed": 1676,
+   "any_replayed": 1676,
+   "executed_functions": 48,
+   "fast0_replayed": 1478,
+   "fast1_replayed": 1495
+  },
+  "category:PLAYER_SUPPORT": {
+   "functions": 115,
+   "instructions": 5689,
+   "strict_replayed": 3383,
+   "any_replayed": 3383,
+   "executed_functions": 79,
+   "fast0_replayed": 2833,
+   "fast1_replayed": 2946
+  },
+  "category:UNRESOLVED": {
+   "functions": 478,
+   "instructions": 15404,
+   "strict_replayed": 9719,
+   "any_replayed": 9719,
+   "executed_functions": 340,
+   "fast0_replayed": 7995,
+   "fast1_replayed": 8499
+  },
+  "grade:address-only": {
+   "functions": 58,
+   "instructions": 1283,
+   "strict_replayed": 750,
+   "any_replayed": 750,
+   "executed_functions": 40,
+   "fast0_replayed": 189,
+   "fast1_replayed": 252
+  },
+  "grade:callers-exclusive": {
+   "functions": 1600,
+   "instructions": 47916,
+   "strict_replayed": 25459,
+   "any_replayed": 25459,
+   "executed_functions": 933,
+   "fast0_replayed": 20429,
+   "fast1_replayed": 22694
+  },
+  "grade:callers-mixed": {
+   "functions": 138,
+   "instructions": 3060,
+   "strict_replayed": 2509,
+   "any_replayed": 2509,
+   "executed_functions": 117,
+   "fast0_replayed": 2185,
+   "fast1_replayed": 2348
+  },
+  "grade:class-other": {
+   "functions": 15,
+   "instructions": 630,
+   "strict_replayed": 405,
+   "any_replayed": 405,
+   "executed_functions": 13,
+   "fast0_replayed": 405,
+   "fast1_replayed": 405
+  },
+  "grade:class-player": {
+   "functions": 730,
+   "instructions": 29156,
+   "strict_replayed": 12614,
+   "any_replayed": 12614,
+   "executed_functions": 340,
+   "fast0_replayed": 9475,
+   "fast1_replayed": 10933
+  }
+ },
+ "fast_strict_gap": {
+  "reached and checked, but the checked arrivals took other paths": 1178,
+  "category:PLAYER_MOVEMENT": 309,
+  "post-call continuation, never an arrival (the call before it was not sampled)": 1330,
+  "category:UNRESOLVED": 1155,
+  "reached, never checked (sampled out / over budget)": 934,
+  "category:PLAYER_SUPPORT": 403,
+  "category:PLAYER_CORE": 129,
+  "category:PLAYER_COMBAT": 199,
+  "category:PLAYER_COLLISION": 5,
+  "category:PLAYER_ACTION": 877,
+  "category:PLAYER_STATE": 127,
+  "category:PLAYER_ANIMATION": 146,
+  "category:PLAYER_INTERACTION": 92,
+  "status:TRANSLATED_PPC": 1686,
+  "status:UNRESOLVED_IDENTITY": 488,
+  "status:NATIVE_CANDIDATE_UNVERIFIED": 1268
+ },
+ "states": [
+  {
+   "id": 0,
+   "class": "Player::Behavior::Idle",
+   "creator": "0x80086D3C",
+   "functions": 7,
+   "instructions": 294,
+   "executed_functions": 7,
+   "strict_replayed": 268,
+   "any_replayed": 268
+  },
+  {
+   "id": 1,
+   "class": "Player::Behavior::Ground",
+   "creator": "0x80082D44",
+   "functions": 9,
+   "instructions": 523,
+   "executed_functions": 9,
+   "strict_replayed": 427,
+   "any_replayed": 427
+  },
+  {
+   "id": 2,
+   "class": "Player::Behavior::Fall",
+   "creator": "0x80080724",
+   "functions": 7,
+   "instructions": 373,
+   "executed_functions": 7,
+   "strict_replayed": 325,
+   "any_replayed": 325
+  },
+  {
+   "id": 3,
+   "class": "Player::Behavior::Landing",
+   "creator": "0x80088E58",
+   "functions": 6,
+   "instructions": 214,
+   "executed_functions": 6,
+   "strict_replayed": 214,
+   "any_replayed": 214
+  },
+  {
+   "id": 4,
+   "class": "Player::Behavior::Ottotto",
+   "creator": "0x8008BE48",
+   "functions": 6,
+   "instructions": 125,
+   "executed_functions": 0,
+   "strict_replayed": 0,
+   "any_replayed": 0
+  },
+  {
+   "id": 5,
+   "class": "Player::Behavior::Jump",
+   "creator": "0x80087220",
+   "functions": 10,
+   "instructions": 984,
+   "executed_functions": 9,
+   "strict_replayed": 712,
+   "any_replayed": 712
+  },
+  {
+   "id": 6,
+   "class": "Player::Behavior::JumpDash",
+   "creator": "0x800881F4",
+   "functions": 6,
+   "instructions": 338,
+   "executed_functions": 6,
+   "strict_replayed": 297,
+   "any_replayed": 297
+  },
+  {
+   "id": 7,
+   "class": "Player::Behavior::Sliding",
+   "creator": "0x8008DA28",
+   "functions": 8,
+   "instructions": 271,
+   "executed_functions": 7,
+   "strict_replayed": 226,
+   "any_replayed": 226
+  },
+  {
+   "id": 8,
+   "class": "Player::Behavior::HomingAttack",
+   "creator": "0x80084F58",
+   "functions": 8,
+   "instructions": 438,
+   "executed_functions": 8,
+   "strict_replayed": 373,
+   "any_replayed": 373
+  },
+  {
+   "id": 9,
+   "class": "Player::Behavior::HomingJump",
+   "creator": "0x800868E0",
+   "functions": 9,
+   "instructions": 306,
+   "executed_functions": 9,
+   "strict_replayed": 265,
+   "any_replayed": 265
+  },
+  {
+   "id": 10,
+   "class": "Player::Behavior::Throw",
+   "creator": "0x8008FD40",
+   "functions": 10,
+   "instructions": 272,
+   "executed_functions": 0,
+   "strict_replayed": 0,
+   "any_replayed": 0
+  },
+  {
+   "id": 11,
+   "class": "Player::Behavior::TurnOver",
+   "creator": "0x8009067C",
+   "functions": 10,
+   "instructions": 406,
+   "executed_functions": 0,
+   "strict_replayed": 0,
+   "any_replayed": 0
+  },
+  {
+   "id": 12,
+   "class": "Player::Behavior::EdgeHang",
+   "creator": "0x8007F154",
+   "functions": 10,
+   "instructions": 318,
+   "executed_functions": 0,
+   "strict_replayed": 0,
+   "any_replayed": 0
+  },
+  {
+   "id": 13,
+   "class": "Player::Behavior::WallHang",
+   "creator": "0x800914D0",
+   "functions": 10,
+   "instructions": 542,
+   "executed_functions": 9,
+   "strict_replayed": 445,
+   "any_replayed": 445
+  },
+  {
+   "id": 14,
+   "class": "Player::Behavior::LineHang",
+   "creator": "0x8008A7FC",
+   "functions": 10,
+   "instructions": 743,
+   "executed_functions": 0,
+   "strict_replayed": 0,
+   "any_replayed": 0
+  },
+  {
+   "id": 15,
+   "class": "Player::Behavior::SomethingHang",
+   "creator": "0x8008E310",
+   "functions": 9,
+   "instructions": 538,
+   "executed_functions": 0,
+   "strict_replayed": 0,
+   "any_replayed": 0
+  },
+  {
+   "id": 16,
+   "class": "Player::Behavior::WallJump",
+   "creator": "0x800927A8",
+   "functions": 9,
+   "instructions": 334,
+   "executed_functions": 0,
+   "strict_replayed": 0,
+   "any_replayed": 0
+  },
+  {
+   "id": 17,
+   "class": "Player::Behavior::Grind",
+   "creator": "0x80081178",
+   "functions": 10,
+   "instructions": 839,
+   "executed_functions": 0,
+   "strict_replayed": 0,
+   "any_replayed": 0
+  },
+  {
+   "id": 18,
+   "class": "Player::Behavior::SpinDash",
+   "creator": "0x8008EDA4",
+   "functions": 8,
+   "instructions": 417,
+   "executed_functions": 0,
+   "strict_replayed": 0,
+   "any_replayed": 0
+  },
+  {
+   "id": 19,
+   "class": "Player::Behavior::DarkSpin",
+   "creator": "0x8007D168",
+   "functions": 10,
+   "instructions": 327,
+   "executed_functions": 0,
+   "strict_replayed": 0,
+   "any_replayed": 0
+  },
+  {
+   "id": 20,
+   "class": "Player::Behavior::LightDash",
+   "creator": "0x8008985C",
+   "functions": 8,
+   "instructions": 614,
+   "executed_functions": 7,
+   "strict_replayed": 562,
+   "any_replayed": 562
+  },
+  {
+   "id": 21,
+   "class": "Player::Behavior::PickupObject",
+   "creator": "0x8008C084",
+   "functions": 10,
+   "instructions": 475,
+   "executed_functions": 0,
+   "strict_replayed": 0,
+   "any_replayed": 0
+  },
+  {
+   "id": 22,
+   "class": "Player::Behavior::PickupWeapon",
+   "creator": "0x8008CE94",
+   "functions": 10,
+   "instructions": 406,
+   "executed_functions": 8,
+   "strict_replayed": 296,
+   "any_replayed": 296
+  },
+  {
+   "id": 23,
+   "class": "Player::Behavior::Launch",
+   "creator": "0x800891FC",
+   "functions": 9,
+   "instructions": 422,
+   "executed_functions": 9,
+   "strict_replayed": 343,
+   "any_replayed": 343
+  },
+  {
+   "id": 24,
+   "class": "Player::Behavior::Stream",
+   "creator": "0x8008FABC",
+   "functions": 7,
+   "instructions": 142,
+   "executed_functions": 0,
+   "strict_replayed": 0,
+   "any_replayed": 0
+  },
+  {
+   "id": 25,
+   "class": "Player::Behavior::GroundAttack",
+   "creator": "0x80084200",
+   "functions": 8,
+   "instructions": 446,
+   "executed_functions": 7,
+   "strict_replayed": 304,
+   "any_replayed": 304
+  },
+  {
+   "id": 26,
+   "class": "Player::Behavior::AirAttack",
+   "creator": "0x8007A6A0",
+   "functions": 8,
+   "instructions": 392,
+   "executed_functions": 7,
+   "strict_replayed": 222,
+   "any_replayed": 222
+  },
+  {
+   "id": 27,
+   "class": "Player::Behavior::DriveVehicle",
+   "creator": "0x8007DD5C",
+   "functions": 9,
+   "instructions": 636,
+   "executed_functions": 0,
+   "strict_replayed": 0,
+   "any_replayed": 0
+  },
+  {
+   "id": 28,
+   "class": "Player::Behavior::ChaosBlast",
+   "creator": "0x8007AD94",
+   "functions": 7,
+   "instructions": 344,
+   "executed_functions": 0,
+   "strict_replayed": 0,
+   "any_replayed": 0
+  },
+  {
+   "id": 29,
+   "class": "Player::Behavior::ChaosControl",
+   "creator": "0x8007BA94",
+   "functions": 8,
+   "instructions": 586,
+   "executed_functions": 0,
+   "strict_replayed": 0,
+   "any_replayed": 0
+  },
+  {
+   "id": 30,
+   "class": "Player::Behavior::Damage",
+   "creator": "0x8007CAE0",
+   "functions": 9,
+   "instructions": 327,
+   "executed_functions": 9,
+   "strict_replayed": 286,
+   "any_replayed": 286
+  },
+  {
+   "id": 31,
+   "class": "Player::Behavior::Dead",
+   "creator": "0x8007D8E4",
+   "functions": 7,
+   "instructions": 267,
+   "executed_functions": 0,
+   "strict_replayed": 0,
+   "any_replayed": 0
+  },
+  {
+   "id": 32,
+   "class": "Player::Behavior::ExternalControl",
+   "creator": "0x80080218",
+   "functions": 10,
+   "instructions": 336,
+   "executed_functions": 0,
+   "strict_replayed": 0,
+   "any_replayed": 0
+  },
+  {
+   "id": 33,
+   "class": "Player::Behavior::ElectricCircuit",
+   "creator": "0x80076400",
+   "functions": 10,
+   "instructions": 351,
+   "executed_functions": 0,
+   "strict_replayed": 0,
+   "any_replayed": 0
+  },
+  {
+   "id": 34,
+   "class": "Player::Behavior::Super",
+   "creator": "0x802EB590",
+   "functions": 7,
+   "instructions": 120,
+   "executed_functions": 0,
+   "strict_replayed": 0,
+   "any_replayed": 0
+  }
+ ],
+ "behaviour_classes_not_in_shadow_table": [
+  "Player::Behavior::FirstMeet",
+  "Player::Behavior::Fly",
+  "Player::Behavior::Hide"
+ ],
+ "reached_first_by_later_fast_runs": {
+  "../.build/player/fast-final-haunt/verify.csv": {
+   "instructions": 5108,
+   "functions": 208,
+   "by_category": {
+    "PLAYER_ANIMATION": 24,
+    "PLAYER_CORE": 1,
+    "UNRESOLVED": 525,
+    "PLAYER_ACTION": 267,
+    "PLAYER_ABILITIES": 4,
+    "PLAYER_INTERACTION": 16,
+    "PLAYER_MOVEMENT": 1319,
+    "PLAYER_COMBAT": 2841,
+    "PLAYER_SUPPORT": 76,
+    "PLAYER_STATE": 35
+   },
+   "top": [
+    [
+     "0x80089D64",
+     "Player__Behavior__LightDash__update",
+     300
+    ],
+    [
+     "0x8008A4B0",
+     "Player__Behavior__LightDash__enter",
+     104
+    ],
+    [
+     "0x8008DC70",
+     "Player__Behavior__Sliding__update__sub0",
+     104
+    ],
+    [
+     "0x8023C2B0",
+     "fn_8023C2B0",
+     100
+    ],
+    [
+     "0x8023BB08",
+     "unnamed_PlayerShadowWeaponCannon_cpp__ControlCannon__vf1__sub10",
+     99
+    ],
+    [
+     "0x80089B90",
+     "Player__Behavior__LightDash__update__sub29",
+     92
+    ],
+    [
+     "0x8023B08C",
+     "Player__Shadow__ShadowWeapon__vf11__sub3",
+     92
+    ],
+    [
+     "0x8008D450",
+     "Player__Behavior__PickupWeapon__enter",
+     81
+    ],
+    [
+     "0x80084A7C",
+     "Player__Behavior__GroundAttack__enter",
+     76
+    ],
+    [
+     "0x800842B4",
+     "Player__Behavior__GroundAttack__update",
+     67
+    ],
+    [
+     "0x8023BE44",
+     "unnamed_PlayerShadowWeaponCannon_cpp__ControlCannon__vf1",
+     67
+    ],
+    [
+     "0x8020695C",
+     "Player__Behavior__LightDash__update__sub29__sub4",
+     63
+    ],
+    [
+     "0x8023A490",
+     "fn_8023A490",
+     61
+    ],
+    [
+     "0x800A3E8C",
+     "fn_800A3E8C",
+     56
+    ],
+    [
+     "0x8023C0A8",
+     "unnamed_PlayerShadowWeaponCannon_cpp__ControlCannon__dtor",
+     56
+    ],
+    [
+     "0x80097108",
+     "fn_80097108",
+     54
+    ],
+    [
+     "0x8023BD1C",
+     "unnamed_PlayerShadowWeaponCannon_cpp__ControlCannon__vf1__sub10__sub1",
+     54
+    ],
+    [
+     "0x8008DFFC",
+     "Player__Behavior__Sliding__onCommand",
+     53
+    ],
+    [
+     "0x8009BBDC",
+     "Player__CastWeaponCommand__vf1",
+     52
+    ],
+    [
+     "0x800A3DA8",
+     "fn_800A3DA8",
+     51
+    ],
+    [
+     "0x801E7FA4",
+     "fn_801E7FA4",
+     50
+    ],
+    [
+     "0x8008CEF8",
+     "Player__Behavior__PickupWeapon__update",
+     49
+    ],
+    [
+     "0x8008E188",
+     "Player__Behavior__Sliding__enter",
+     49
+    ],
+    [
+     "0x8023CB84",
+     "unnamed_PlayerShadowWeaponGun_cpp__ControlGun__dtor",
+     49
+    ],
+    [
+     "0x8023CF48",
+     "unnamed_PlayerShadowWeaponGun_cpp__ControlGun__ctor",
+     49
+    ]
+   ]
+  }
+ },
+ "native_owners_in_members": []
+}

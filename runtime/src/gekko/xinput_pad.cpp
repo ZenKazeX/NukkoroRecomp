@@ -117,10 +117,44 @@ bool poll_xinput_gamepad(unsigned user_index, shadow::peripheral::GamepadState& 
 #endif
 }
 
+namespace {
+// The player's controller preferences (Options > Controls / Gameplay, gekko/pc_settings.h), any thread.
+std::atomic<unsigned> g_rumble_percent{100u};
+std::atomic<bool> g_invert_camera_x{false}, g_invert_camera_y{false};
+}  // namespace
+
+void set_xinput_preferences(unsigned rumble_percent, bool invert_camera_x, bool invert_camera_y) noexcept {
+    g_rumble_percent.store(rumble_percent > 100u ? 100u : rumble_percent, std::memory_order_relaxed);
+    g_invert_camera_x.store(invert_camera_x, std::memory_order_relaxed);
+    g_invert_camera_y.store(invert_camera_y, std::memory_order_relaxed);
+}
+
+std::int8_t invert_stick_axis(std::int8_t value) noexcept {
+    // -(-128) does not fit an int8: saturate to +127 instead of wrapping back to -128.
+    return value == -128 ? static_cast<std::int8_t>(127) : static_cast<std::int8_t>(-value);
+}
+
+shadow::peripheral::ControllerSample apply_camera_inversion(shadow::peripheral::ControllerSample sample, bool invert_x,
+                                                            bool invert_y) noexcept {
+    if (invert_x) sample.substick_x = invert_stick_axis(sample.substick_x);
+    if (invert_y) sample.substick_y = invert_stick_axis(sample.substick_y);
+    return sample;
+}
+
+unsigned short xinput_rumble_speed(bool rumble, unsigned percent) noexcept {
+    if (!rumble) return 0u;
+    return static_cast<unsigned short>(0xc000u * (percent > 100u ? 100u : percent) / 100u);
+}
+
 shadow::peripheral::ControllerSample poll_xinput_controller(unsigned user_index) {
     shadow::peripheral::GamepadState state;
     if (!poll_xinput_gamepad(user_index, state)) return shadow::peripheral::ControllerSample{};
-    return shadow::peripheral::sample_from_gamepad(state, g_binding);
+    shadow::peripheral::ControllerSample sample = shadow::peripheral::sample_from_gamepad(state, g_binding);
+    // Camera inversion: the camera stick as the player asked for it, before the sample is latched (an input tape
+    // records what the game read, so a replay needs no setting). Off by default: the original stick.
+    sample = apply_camera_inversion(sample, g_invert_camera_x.load(std::memory_order_relaxed),
+                                    g_invert_camera_y.load(std::memory_order_relaxed));
+    return sample;
 }
 
 void set_xinput_rumble(unsigned user_index, bool rumble) {
@@ -132,8 +166,10 @@ void set_xinput_rumble(unsigned user_index, bool rumble) {
     // One on / off request per port; a strong but not maximal duty on both motors.
     NativeXInputVibration vibration{};
     if (rumble) {
-        vibration.left_motor_speed = 0xc000u;
-        vibration.right_motor_speed = 0xc000u;
+        // 100 % (the default) is the port's original duty, 0xC000.
+        const unsigned short speed = xinput_rumble_speed(true, g_rumble_percent.load(std::memory_order_relaxed));
+        vibration.left_motor_speed = static_cast<decltype(vibration.left_motor_speed)>(speed);
+        vibration.right_motor_speed = static_cast<decltype(vibration.right_motor_speed)>(speed);
     }
     set_state(user_index, &vibration);
 #else

@@ -1,6 +1,7 @@
 #include "render/resources.h"
 
 #include "render/gpu_memory.h"
+#include "render/init_trace.h"
 #include "render/profile.h"
 
 #include <algorithm>
@@ -24,6 +25,7 @@ bool fail(std::string* error, const std::string& what, HRESULT hr) {
 
 bool create_buffer(Device& device, std::uint64_t size, D3D12_HEAP_TYPE heap, D3D12_RESOURCE_FLAGS flags,
                    D3D12_RESOURCE_STATES initial_state, const wchar_t* name, GpuBuffer* out, std::string* error) {
+    init_trace::Scope trace("buffer", name, size);
     D3D12_RESOURCE_DESC desc{};
     desc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
     desc.Width = std::max<std::uint64_t>(size, 1);
@@ -75,6 +77,7 @@ D3D12_RESOURCE_DESC texture_resource_desc(const TextureInfo& info) {
 
 bool allocate_target_memory(Device& device, std::uint64_t size, const wchar_t* name, Com<D3D12MA::Allocation>* out,
                             std::string* error) {
+    init_trace::Scope trace("heap", name, size);
     D3D12MA::ALLOCATION_DESC allocation{};
     allocation.HeapType = D3D12_HEAP_TYPE_DEFAULT;
     allocation.ExtraHeapFlags = D3D12_HEAP_FLAG_ALLOW_ONLY_RT_DS_TEXTURES;
@@ -99,6 +102,7 @@ bool allocate_target_memory(Device& device, std::uint64_t size, const wchar_t* n
 bool create_placed_texture_2d(Device& device, const TextureInfo& info, D3D12MA::Allocation* memory, GpuTexture* out,
                               std::string* error) {
     const D3D12_RESOURCE_DESC desc = texture_resource_desc(info);
+    init_trace::Scope trace("placed", info.name, static_cast<std::uint64_t>(desc.Width) * desc.Height);
     GpuTexture texture;
     const HRESULT hr = device.allocator()->CreateAliasingResource(memory, 0, &desc, info.initial_state, info.clear,
                                                                   IID_PPV_ARGS(&texture.resource));
@@ -112,6 +116,7 @@ bool create_placed_texture_2d(Device& device, const TextureInfo& info, D3D12MA::
 
 bool create_texture_2d(Device& device, const TextureInfo& info, GpuTexture* out, std::string* error) {
     const D3D12_RESOURCE_DESC desc = texture_resource_desc(info);
+    init_trace::Scope trace("texture", info.name, static_cast<std::uint64_t>(desc.Width) * desc.Height);
     D3D12MA::ALLOCATION_DESC allocation{};
     allocation.HeapType = D3D12_HEAP_TYPE_DEFAULT;
     // Large textures (output-sized targets, the view history) own their allocation. Placed in a shared 64 MiB
@@ -516,6 +521,7 @@ void UploadStream::reclaim(bool wait) {
             if (!wait)
                 break;
             GEKKO_PROFILE_ZONE("res/upload-wait");
+            init_trace::Scope trace("upload-wait", L"ring");
             device_->copy().wait(oldest.fence);
             wait = false;
         }

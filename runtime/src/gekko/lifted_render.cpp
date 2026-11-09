@@ -1,6 +1,16 @@
 #include "gekko/lifted_render.h"
+#include "gekko/native_rw_world.h"
+#include "gekko/native_rw_device_state.h"
+#include "gekko/native_rw_registry.h"
+#include "gekko/native_rw_raster.h"
+
+#include "gekko/display_geometry.h"
 
 #include "game/game_owners.h"
+#include "gekko/native_gx_state.h"
+#include "gekko/native_gx_display.h"
+#include "gekko/native_gx_texobj.h"
+#include "gekko/native_rw_node_stops.h"
 
 #include <algorithm>
 #include <array>
@@ -27,13 +37,23 @@
 #include "src/gekko/options_display_overlay.h"
 #include "render/packet_queue.h"
 #include "render/present_trace.h"
+#include "gekko/phase_lock.h"
 #include "render/profile.h"
 #include "render/renderer.h"
 #include "render/view.h"
+#include "rw_driver/im2d_prims.h"
+#include "rw_driver/raster_render.h"
 #include "rw_driver/rw_driver.h"
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+
+namespace gekko::scaffold {
+u32 rw_pipeline_execute_im3d_transform(Cpu& c, u32 pipeline, u32 pool, u32);  // rw_driver.cpp
+u32 rw_native_texture_loaded(Cpu& c, u32 texture, u32 bias_clamp, u32 edge_lod, u32 max_aniso, double lod_bias);  // rw_driver.cpp
+u32 rw_raster_clear(Cpu& c, std::int32_t x, std::int32_t y, std::int32_t w, std::int32_t h, std::uint32_t rgba, bool colour, bool depth);
+u32 rw_pipeline_execute_im3d_render(Cpu& c, u32 pipeline, u32 stash, u32);
+}  // namespace gekko::scaffold
 
 namespace gekko {
 
@@ -51,12 +71,17 @@ struct LiftedRender::Impl {
     bool attached = false;
     std::uint32_t width = 0, height = 0;
     std::uint32_t render_width = 0, render_height = 0;  // G10: the render size last set (0: the window's)
+    std::mutex render_note_mutex;
+    std::string render_note;  // apply_render_size: why the render size in use is not the one asked
     std::uint32_t output_width = 0, output_height = 0;  // the game-visible output last set (set_output_aspect)
     void apply_render_size();
     std::uint64_t presented = 0;
     mutable std::mutex telemetry_mutex;
     LiftedRender::Telemetry timing;
     std::uint64_t pending_packet_wait_ns = 0;  // UI thread, includes empty dequeue waits
+    std::int64_t last_credit_ns = 0;  // eager start: when the last frame's swap-chain credit came (steady ns)
+    // Bumped when V-Sync changes: the phase lock's filters forget their samples (gekko/phase_lock.h display_paced).
+    std::uint32_t pacing_epoch = 0;
     double present_sum_ms = 0.0;
     // Frame pacing as presented (ES 2026-10-19; measurement only, nothing paces by it): the wall time between
     // consecutive presents, in 0.1 ms bins up to 100 ms (the last bin holds everything longer), and the longest.
@@ -210,6 +235,56 @@ struct LiftedRender::Impl {
             }
             rendering = &stripped;
         }
+#if !defined(GEKKO_SHIPPING)
+        // Diagnostics: SHADOW_R2_FOLD_CHECK=1 renders the captured packet with the effect-layer overlay over it (the
+        // view the fold applies to; captures otherwise never carry it) twice - the view under it folded into it, and
+        // resolved and copied as before - and reports whether the two pictures are byte-identical.
+        if (const char* check = std::getenv("SHADOW_R2_FOLD_CHECK");
+            check != nullptr && (check[0] == '1' || check[0] == '2')) {
+            render::FramePacket overlaid = *rendering;
+            effect_overlay.append(overlaid, renderer, capture.width, capture.height);
+            std::vector<std::uint8_t> folded_rgba, copied_rgba;
+            std::string check_error;
+            // SHADOW_R2_FOLD_CHECK=2: the copy rendered first (which render a first-use difference follows).
+            const bool copy_first = check[0] == '2';
+            bool a = false, b = false;
+            if (copy_first) {
+                render::set_fold_under_override(0);
+                b = renderer.render_to_image(overlaid, capture.width, capture.height, &copied_rgba, &check_error, false);
+            }
+            render::set_fold_under_override(1);
+            a = renderer.render_to_image(overlaid, capture.width, capture.height, &folded_rgba, &check_error, false);
+            if (!copy_first) {
+                render::set_fold_under_override(0);
+                b = renderer.render_to_image(overlaid, capture.width, capture.height, &copied_rgba, &check_error, false);
+            }
+            // The folded picture once more: a difference between the first two that this one also shows against the
+            // first is the first render's own (a resource made during it), not the fold's.
+            std::vector<std::uint8_t> again_rgba;
+            render::set_fold_under_override(1);
+            const bool c = renderer.render_to_image(overlaid, capture.width, capture.height, &again_rgba, &check_error,
+                                                    false);
+            render::set_fold_under_override(-1);
+            std::size_t differing = 0, differing_again = 0, first_at = folded_rgba.size();
+            for (std::size_t i = 0; a && b && i < folded_rgba.size() && i < copied_rgba.size(); ++i) {
+                if (folded_rgba[i] != copied_rgba[i]) {
+                    ++differing;
+                    first_at = std::min(first_at, i);
+                }
+            }
+            for (std::size_t i = 0; b && c && i < again_rgba.size() && i < copied_rgba.size(); ++i)
+                differing_again += again_rgba[i] != copied_rgba[i] ? 1u : 0u;
+            std::cerr << "[fold-check] frame " << packet.tick << " views " << overlaid.views.size() << ": "
+                      << (a && b && c ? std::to_string(differing) + " bytes differ, again " +
+                                            std::to_string(differing_again)
+                                      : "render failed: " + check_error);
+            if (differing != 0u)
+                std::cerr << " (first at pixel " << (first_at / 4) % capture.width << ", "
+                          << (first_at / 4) / capture.width << ", byte " << first_at % 4 << ": "
+                          << int(folded_rgba[first_at]) << " vs " << int(copied_rgba[first_at]) << ")";
+            std::cerr << '\n';
+        }
+#endif
         // Windowed, this frame is presented right after: render it without committing the views' histories.
         const bool rendered =
             renderer.render_to_image(*rendering, capture.width, capture.height, &rgba, &error, headless);
@@ -280,6 +355,7 @@ LiftedRender::~LiftedRender() {
 
 bool LiftedRender::start(const LiftedRenderOptions& options, std::string* error) {
     impl_->options = options;
+    gekko::phase_lock::display_paced().store(options.vsync, std::memory_order_relaxed);
     // Diagnostics: SHADOW_R2_WARP=1 renders on the software rasterizer, SHADOW_R2_DEBUG_LAYER=1 enables the D3D12
     // debug layer (its messages go to stderr as frames are rendered).
     if (const char* warp = std::getenv("SHADOW_R2_WARP"))
@@ -288,6 +364,8 @@ bool LiftedRender::start(const LiftedRenderOptions& options, std::string* error)
         impl_->options.debug_layer = impl_->options.debug_layer || debug[0] == '1';
     const LiftedRenderOptions& chosen = impl_->options;
     render::RendererOptions renderer_options;
+    renderer_options.msaa_samples = std::max<std::uint32_t>(chosen.msaa_samples, 1u);
+    renderer_options.max_anisotropy = std::clamp<std::uint32_t>(chosen.anisotropy, 1u, 16u);
     renderer_options.device.adapter =
         chosen.warp ? render::DeviceOptions::Adapter::Warp : render::DeviceOptions::Adapter::HighPerformance;
     renderer_options.device.debug_layer = chosen.debug_layer;
@@ -337,6 +415,11 @@ HudListener* LiftedRender::hud_listener() noexcept {
     return impl_->driver.get();
 }
 
+void LiftedRender::set_display_blank(std::function<bool()> source) {
+    if (impl_->driver)
+        impl_->driver->set_display_blank(std::move(source));
+}
+
 void LiftedRender::set_fade_in_ticks(u64 ticks) noexcept {
     if (impl_->driver)
         impl_->driver->set_fade_in_ticks(ticks);
@@ -363,7 +446,26 @@ std::string LiftedRender::effect_layer_names() {
 
 void LiftedRender::set_fps_counter(bool on) { impl_->effect_overlay.set_fps_counter(on); }
 
-void LiftedRender::set_vsync(bool on) noexcept { impl_->options.vsync = on; }
+void LiftedRender::set_vsync(bool on) noexcept {
+    const bool changed = impl_->options.vsync != on;
+    impl_->options.vsync = on;
+    gekko::phase_lock::display_paced().store(on, std::memory_order_relaxed);
+    if (changed) {
+        // V-Sync off: nothing steers the game clock's phase (no vblank to lock to); it keeps the shift it has. On again:
+        // the lock starts from new holds only - samples from before the switch measured another reference.
+        gekko::phase_lock::published_hold_ns().store(gekko::phase_lock::kNothingMeasured, std::memory_order_relaxed);
+        gekko::phase_lock::published_target_shift_ns().store(gekko::phase_lock::kNothingMeasured,
+                                                             std::memory_order_relaxed);
+        ++impl_->pacing_epoch;
+    }
+}
+
+void LiftedRender::set_msaa(std::uint32_t samples) noexcept { impl_->renderer.set_msaa_samples(samples); }
+void LiftedRender::set_anisotropy(std::uint32_t level) noexcept { impl_->renderer.set_anisotropy(level); }
+std::uint32_t LiftedRender::msaa_active() const noexcept { return impl_->renderer.msaa_samples(); }
+std::uint32_t LiftedRender::anisotropy_active() const noexcept { return impl_->renderer.anisotropy(); }
+std::uint32_t LiftedRender::msaa_supported_mask() const noexcept { return impl_->renderer.msaa_supported_mask(); }
+std::string LiftedRender::msaa_note() const { return impl_->renderer.msaa_note(); }
 
 void LiftedRender::effect_layer_keys(unsigned keys) {
     if (keys != 0u)
@@ -413,10 +515,34 @@ u64 LiftedRender::fade_ins() const noexcept {
 void LiftedRender::install_owners(Cpu& cpu) {
     if (impl_->driver)
         impl_->driver->material_probe().install(cpu);
+    scaffold::install_device_surface_owners(cpu);
+    scaffold::install_display_owners(cpu);  // the display swap (docs/agents/vi.md, step 12)
+    scaffold::install_raster_render_owner(cpu);  // RwRasterRender core 0x80499924 (docs/agents/os-other.md, step 13)
+    scaffold::install_im2d_prim_owners(cpu);  // the device table's Im2D line / triangle emitters (docs/agents/os-other.md, step 12)
+    // rwR3: the Im3D entry points; the pipeline execution is the scaffold's (the sites the lowered bodies called).
+    install_native_rw_im3d_owners(
+        cpu, [](Cpu& c, u32 pipeline, u32 data, u32 option) { return scaffold::rw_pipeline_execute_im3d_transform(c, pipeline, data, option); },
+        [](Cpu& c, u32 pipeline, u32 data, u32 option) { return scaffold::rw_pipeline_execute_im3d_render(c, pipeline, data, option); });
+    install_native_rw_world_owners(cpu);
+    rw_node_stops::install_lifted(cpu);  // entries nothing enters (gekko/native_rw_node_stops.h)
+    rw_raster::install_lifted(cpu, [](Cpu& c, u32 texture, u32 bias_clamp, u32 edge_lod, u32 max_aniso, double lod_bias) {
+        return scaffold::rw_native_texture_loaded(c, texture, bias_clamp, edge_lod, max_aniso, lod_bias);
+    });   // GcnNativeTextureRead (extract/native-owners-r2.txt)
+    rw_raster::set_raster_clear(&scaffold::rw_raster_clear);   // the raster-level clear (ClearQuad 0x80499E58) is the driver's
+    rw_registry::install(cpu);  // rwR5 plugin-registry entries (docs/agents/native-boot.md Step 8)
+    rw_device_state::install(cpu);  // rwR1 device render-state entries (docs/agents/native-boot.md Step 7)
     cpu.install_hle(0x800620D4u, [](Cpu& c) { return game::lockon_mark_draw(c); },
                     "Weapon::LockonMark draw (game owner)");
     cpu.install_hle(0x80432360u, [](Cpu& c) { return game::lens_flare_build(c); },
                     "lens flare build (game owner)");
+    gx_state::install_lifted(cpu);  // the GX vertex path: dead in this build (docs/agents/card-saves.md, gxC)
+    gx_display::install_lifted(cpu);  // GXCopyDisp: its copy trigger is a dead site in this build (Step H)
+    gx_texobj::install_lifted(cpu);  // the texture loads: dead pipe sites, unread words (Step J)
+}
+
+void LiftedRender::set_logic_aspect(float aspect) {
+    if (impl_->driver)
+        impl_->driver->set_logic_aspect(aspect);
 }
 
 void LiftedRender::set_output_aspect(std::uint32_t width, std::uint32_t height) {
@@ -424,6 +550,10 @@ void LiftedRender::set_output_aspect(std::uint32_t width, std::uint32_t height) 
         impl_->driver->set_output_aspect(static_cast<float>(width) / static_cast<float>(height));
     impl_->output_width = width;
     impl_->output_height = height;
+    // The game output is the picture (the viewport, gekko/display_geometry.h): a scaled render size is placed at its
+    // exact aspect.
+    if (width != 0u && height != 0u)
+        impl_->renderer.set_present_aspect(static_cast<double>(width) / static_cast<double>(height));
     impl_->apply_render_size();
 }
 
@@ -433,14 +563,46 @@ void LiftedRender::set_render_size(std::uint32_t width, std::uint32_t height) {
     impl_->apply_render_size();
 }
 
-// G10: the render size for the output (render/view.h render_size_for: exact when both are asked; none asked: the
-// window's size).
+void LiftedRender::set_present_aspect(double aspect) {
+    if (aspect > 0.0) impl_->renderer.set_present_aspect(aspect);
+}
+
+std::string LiftedRender::render_note() const {
+    std::lock_guard<std::mutex> lock(impl_->render_note_mutex);
+    return impl_->render_note;
+}
+
+// G10: the render size. gekko/display_geometry.h is its one owner: both sides asked are taken exactly as asked (the
+// picture's shape already; before 2026-11-05 render_size_for re-fitted them to the game output, so an asked 720x540
+// rendered 720x405 while the settings said 720x540); none asked: the window's size. The only change made here is the
+// GPU's memory: a size whose main targets would not fit in 3/4 of the adapter's dedicated memory is lowered by one
+// factor on both sides (the shape kept), and said so (render_note).
 void LiftedRender::Impl::apply_render_size() {
     const std::uint32_t rw = options.render_width, rh = options.render_height;
-    const render::RenderSize size = render::render_size_for(rw, rh, output_width, output_height);
-    if (size.width == 0u && render_width == 0u)
+    std::uint32_t w = rw != 0u && rh != 0u ? rw : 0u, h = rw != 0u && rh != 0u ? rh : 0u;
+    std::string note;
+    if (w != 0u) {
+        const std::uint64_t budget = renderer.device().caps().dedicated_video_memory / 4u * 3u;
+        const std::uint64_t bytes = gekko::render_target_bytes({w, h}, std::max(1u, renderer.msaa_samples()));
+        if (budget != 0u && bytes > budget) {
+            const double factor = std::sqrt(static_cast<double>(budget) / static_cast<double>(bytes));
+            const std::uint32_t fw = std::max(1u, static_cast<std::uint32_t>(std::floor(w * factor)));
+            const std::uint32_t fh = std::max(1u, static_cast<std::uint32_t>(std::floor(h * factor)));
+            note = "render size " + std::to_string(w) + "x" + std::to_string(h) + " needs ~" +
+                   std::to_string(bytes >> 20) + " MiB of scene targets, more than 3/4 of the GPU's " +
+                   std::to_string(renderer.device().caps().dedicated_video_memory >> 20) + " MiB: " +
+                   std::to_string(fw) + "x" + std::to_string(fh) + " is used (the same shape)";
+            w = fw;
+            h = fh;
+        }
+    }
+    {
+        std::lock_guard<std::mutex> lock(render_note_mutex);
+        if (note != render_note && !note.empty()) std::cerr << "WARNING: [lifted-render] " << note << "\n";
+        render_note = note;
+    }
+    if (w == 0u && render_width == 0u)
         return;
-    const std::uint32_t w = size.width, h = size.height;
     renderer.set_render_size(w, h);
     if (w != render_width || h != render_height) {
         render_width = w;
@@ -595,13 +757,118 @@ bool LiftedRender::present_newest(std::chrono::milliseconds wait, std::string* e
     if (sample) *sample = {};
     const bool timed = impl_->options.collect_timing;
     const auto wait_begin = timed ? Clock::now() : Clock::time_point{};
+    // SHADOW_R2_CREDIT_FIRST=0 (A/B): take the packet first and wait for the swap chain's credit holding it, as before
+    // 2026-10-31. Default: once a packet exists, take the credit, then the newest packet - the frame recorded at a
+    // vblank is the newest one the game had pushed by then (docs/TIMING_ARCHITECTURE.md finding 3). Same GPU start,
+    // same work; up to one refresh less input-to-display latency, depending on where the game's push falls.
+    static const bool credit_first = [] {
+        const char* v = std::getenv("SHADOW_R2_CREDIT_FIRST");
+        return !(v != nullptr && v[0] == '0');
+    }();
     render::FramePacket packet;
-    const bool dequeued = impl_->frames.pop_newest(&packet, wait);
+    const std::int64_t packet_wait_start = render::present_trace::enabled() ? render::present_trace::now() : 0;
+    // Eager start (render/burst_ahead.h; SHADOW_R2_EAGER=1 or the burst lead, not with the JIT pacer): the newest packet
+    // now, recorded at once; the credit is taken inside render() before the present.
+    const bool eager_mode = impl_->attached && impl_->options.vsync && render::BurstAhead::eager() &&
+                            !render::JitPacer::requested();
+    bool credit_then_packet = credit_first && impl_->attached && !eager_mode;
+    bool eager = false;
+    bool dequeued = false;
+    if (eager_mode) {
+        // Eager only for a packet pushed after the last credit: its own credit is then the next one, as with the credit
+        // first. A packet pushed before it would be recorded and queued behind the frame still waiting for its flip - a
+        // frame deeper than the credit-first pipeline, where a newer packet arriving before the credit replaces it
+        // (measured 2026-11-05: such a start settled one frame deeper and the phase lock chased a hold over a period,
+        // 41 ms of shift, until the audio queue ran dry). Such a packet goes the credit-first way.
+        dequeued = impl_->frames.wait_for_packet(wait);
+        if (dequeued) {
+            std::int64_t newest_push = 0;
+            impl_->frames.with_newest([&](const render::FramePacket& p) { newest_push = p.pushed_ns; });
+            eager = newest_push != 0 && newest_push >= impl_->last_credit_ns;
+            if (eager)
+                dequeued = impl_->frames.pop_newest(&packet, std::chrono::milliseconds(0));
+            else
+                credit_then_packet = true;
+        }
+    } else {
+        dequeued = credit_then_packet ? impl_->frames.wait_for_packet(wait) : impl_->frames.pop_newest(&packet, wait);
+    }
+    // The packet wait alone (the credit wait below is traced by the swap chain's WaitBegin / WaitEnd).
+    render::present_trace::record(render::present_trace::Ev::PacketWait, dequeued ? 1u : 0u,
+                                  static_cast<std::uint64_t>(packet_wait_start));
     if (timed) {
         const auto waited = ns(wait_begin, Clock::now());
         impl_->pending_packet_wait_ns += waited;
         std::lock_guard<std::mutex> lock(impl_->telemetry_mutex);
         impl_->timing.packet_wait_ns += waited;
+    }
+    if (dequeued && credit_then_packet) {
+        // A wait that ended without a credit (timed out / failed) has no credit time: it is neither published as the
+        // last credit nor sampled as a hold (Codex review 2026-11-05; the renderer owes the credit instead).
+        const bool credit = impl_->renderer.acquire_frame();
+        if (eager_mode && credit)
+            impl_->last_credit_ns =
+                std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now().time_since_epoch()).count();
+        // SHADOW_R2_JIT (render/jit_pacer.h): start the frame shortly before the vblank it is shown at, not right after
+        // the one before; the newest packet is taken after the wait.
+        // SHADOW_R2_JIT_ASSIST=predict: the newest packet's particle fill, estimated on the CPU before its start is chosen.
+        double fill_mpx = 0.0;
+        bool estimated = false;
+        std::uint64_t estimated_tick = 0;
+        if (render::JitPacer::assist() == render::JitPacer::Assist::Predict)
+            impl_->frames.with_newest([&](const render::FramePacket& newest) {
+                fill_mpx = impl_->renderer.particle_fill_mpx(newest);
+                estimated_tick = newest.tick;
+                estimated = true;
+            });
+        const std::int64_t planned_start = impl_->renderer.jit_wait(impl_->options.vsync, fill_mpx);
+        dequeued = impl_->frames.pop_newest(&packet, std::chrono::milliseconds(0));
+        // The start was chosen from the packet that was newest before the wait; a newer one pushed during it is the one
+        // recorded, and the pacer's model must learn from that frame's own fill, not the other's (Codex review).
+        if (dequeued && estimated && packet.tick != estimated_tick)
+            impl_->renderer.set_jit_fill_mpx(impl_->renderer.particle_fill_mpx(packet));
+        // The hold the phase lock steers: push -> recording begins (now: credit and packet both held). With a planned
+        // start (SHADOW_R2_JIT) push -> that start, negative for a packet pushed after it.
+        // With the JIT pacer requested, a frame it did not plan (no grid yet: the first second, a resize, a refresh
+        // re-base) is not sampled: its hold is measured from the credit, a different reference from the planned frames'
+        // (vblank - lead), and enough such samples flipped the median target by the difference (~8-12 ms) and slewed
+        // the phase the wrong way until the planned frames outvoted them again.
+        const bool unplanned_jit = planned_start == 0 && render::JitPacer::requested();
+        // A frame right after the burst mode switched (render/burst_ahead.h) holds for the switch, not for the phase.
+        // V-Sync off: the credit is not a vblank (an immediate present returns it at once), so a hold measures nothing
+        // the game clock could lock to - it read ~0 against the 2 ms target and the controller ran the game 1000 ppm
+        // fast for ever (gekko/phase_lock.h display_paced, 2026-11-06).
+        if (dequeued && credit && impl_->options.vsync && gekko::phase_lock::enabled() && packet.pushed_ns != 0 &&
+            !unplanned_jit && !impl_->renderer.burst_settling()) {
+            static gekko::phase_lock::HoldFilter hold_filter;
+            static gekko::phase_lock::TargetFilter target_filter;
+            static std::uint32_t epoch = 0;
+            if (epoch != impl_->pacing_epoch) {
+                epoch = impl_->pacing_epoch;
+                hold_filter.reset();
+                target_filter.reset();
+            }
+            const std::int64_t begins =
+                planned_start != 0
+                    ? planned_start
+                    : std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now().time_since_epoch()).count();
+            std::int64_t hold = begins - packet.pushed_ns;
+            if (planned_start == 0)
+                hold -= impl_->renderer.hold_bias_ns();  // burst lead: the packet came early by design
+            if (planned_start != 0) {
+                // The reference is the vblank after the pop - minus the committed lead; a frame that starts after its
+                // vblank names the next one and its hold reads a whole period off. Kept within half a period of the
+                // target, so one late frame cannot pull the phase by a frame (the measured wrap of the first JIT A/B).
+                const std::int64_t period = impl_->renderer.jit_period_ns();
+                const std::int64_t target = gekko::phase_lock::kTargetHold.count();
+                if (period > 0) {
+                    while (hold - target > period / 2) hold -= period;
+                    while (hold - target < -period / 2) hold += period;
+                }
+            }
+            hold_filter.add(hold);  // the legacy law's input, and the trace's
+            target_filter.add(hold, packet.anchor_shift_ns);
+        }
     }
     if (!dequeued)
         return true;
@@ -620,9 +887,30 @@ bool LiftedRender::present_newest(std::chrono::milliseconds wait, std::string* e
     impl_->options_overlay.append(packet, impl_->renderer);
     impl_->effect_overlay.append(packet, impl_->renderer, impl_->width, impl_->height);
     const auto render_begin = timed ? Clock::now() : Clock::time_point{};
+    const std::int64_t pushed_ns = packet.pushed_ns, anchor_shift_ns = packet.anchor_shift_ns;
+    std::int64_t credit_ns = 0;
     const bool ok = impl_->renderer.render(
-        packet, impl_->options.vsync ? render::PresentMode::VSync : render::PresentMode::Immediate, error);
+        packet, impl_->options.vsync ? render::PresentMode::VSync : render::PresentMode::Immediate, error,
+        eager ? &credit_ns : nullptr);
     const auto render_end = Clock::now();  // also the existing presentation histogram observation
+    // Eager start: the phase lock's hold is still push -> the credit (the same reference as with the credit first),
+    // less the burst lead the packet came early by (renderer.hold_bias_ns); a frame right after a mode switch is left out.
+    if (eager && credit_ns != 0)
+        impl_->last_credit_ns = credit_ns;
+    if (eager && ok && credit_ns != 0 && pushed_ns != 0 && gekko::phase_lock::enabled() &&
+        !impl_->renderer.burst_settling()) {
+        static gekko::phase_lock::HoldFilter eager_hold_filter;
+        static gekko::phase_lock::TargetFilter eager_target_filter;
+        static std::uint32_t eager_epoch = 0;
+        if (eager_epoch != impl_->pacing_epoch) {
+            eager_epoch = impl_->pacing_epoch;
+            eager_hold_filter.reset();
+            eager_target_filter.reset();
+        }
+        const std::int64_t hold = credit_ns - pushed_ns - impl_->renderer.hold_bias_ns();
+        eager_hold_filter.add(hold);
+        eager_target_filter.add(hold, anchor_shift_ns);
+    }
     if (timed) {
         const auto capture_ns = ns(capture_begin, render_begin);
         const auto render_ns = ns(render_begin, render_end);
@@ -817,6 +1105,7 @@ std::string LiftedRender::report_text() const {
         << "; renderer last frame: snapshots " << r.snapshots << " history saves " << r.history_saves
         << ", glare composites folded into the resolve (all frames) " << r.glare_composites_folded << " (tile rows still blended "
         << r.folded_glare_spans << ")"
+        << ", views under an overlay resolved into it (all frames) " << r.views_folded << " of " << r.views_over_views
         << ", image misses (all frames) " << r.image_misses << "\n";
     const auto span = [](const std::uint64_t (&frames)[2]) {
         return frames[0] > frames[1] ? std::string("none")

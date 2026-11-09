@@ -1,5 +1,7 @@
 #include "render/pipelines.h"
 
+#include "render/init_trace.h"
+
 namespace shadow::render {
 
 namespace {
@@ -90,6 +92,7 @@ D3D12_DEPTH_STENCIL_DESC GraphicsPipelineInfo::no_depth() {
 
 bool create_graphics_pipeline(Device& device, ID3D12RootSignature* root, const GraphicsPipelineInfo& info,
                               Com<ID3D12PipelineState>* out, std::string* error) {
+    init_trace::Scope trace("pso", info.name);
     D3D12_GRAPHICS_PIPELINE_STATE_DESC desc{};
     desc.pRootSignature = root;
     desc.VS = info.vs;

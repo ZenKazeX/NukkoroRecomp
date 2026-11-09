@@ -1,5 +1,6 @@
 #include "gekko/camera.h"
 #include "gekko/display.h"
+#include "gekko/display_geometry.h"
 
 #include "gekko/host_jobs.h"
 
@@ -452,27 +453,99 @@ bool parse_display_file(const std::string& text, DisplayConfig& config, std::str
             if (!parse_bool(value, &config.fullscreen)) {
                 return fail("invalid fullscreen");
             }
-        } else if (key == "render_width") {
-            if (!parse_int(value, &config.render_width) || config.render_width < 0) {
-                return fail("invalid render_width");
+        } else if (key == "exclusive") {
+            if (!parse_bool(value, &config.exclusive)) {
+                return fail("invalid exclusive");
             }
-        } else if (key == "render_height") {
-            if (!parse_int(value, &config.render_height) || config.render_height < 0) {
-                return fail("invalid render_height");
+        } else if (key == "gameplay_aspect") {
+            const std::string v = lower_copy(trim_copy(value));
+            double ratio = -1.0;
+            if (v == "follow") ratio = 0.0;
+            else if (v == "original") ratio = 4.0 / 3.0;
+            else if (const std::size_t colon = v.find(':'); colon != std::string::npos) {
+                float w = 0.0f, h = 0.0f;
+                if (parse_float(v.substr(0, colon), &w) && parse_float(v.substr(colon + 1), &h) && h > 0.0f)
+                    ratio = static_cast<double>(w) / h;
+            } else {
+                float r = 0.0f;
+                if (parse_float(v, &r)) ratio = r;
+            }
+            if (!(ratio == 0.0 || (ratio >= 0.25 && ratio <= 8.0))) {
+                return fail("invalid gameplay_aspect (follow, original, W:H or a number)");
+            }
+            config.gameplay_aspect = ratio;
+        } else if (key == "msaa" || key == "anisotropy") {
+            // A count, "off" (1) or "Nx".
+            std::string v = lower_copy(trim_copy(value));
+            if (!v.empty() && v.back() == 'x') v.pop_back();
+            int n = 0;
+            if (v == "off") n = 1;
+            else if (!parse_int(v, &n)) n = 0;
+            const bool msaa_key = key == "msaa";
+            const bool ok = msaa_key ? (n == 1 || n == 2 || n == 4 || n == 8 || n == 16 || n == 32)
+                                     : (n == 1 || n == 2 || n == 4 || n == 8 || n == 16);
+            if (!ok) {
+                return fail(msaa_key ? "invalid msaa (off, 2, 4, 8, 16, 32)" : "invalid anisotropy (off, 2, 4, 8, 16)");
+            }
+            (msaa_key ? config.msaa : config.anisotropy) = n;
+        } else if (key == "render_scale") {
+            char* end = nullptr;
+            const double scale = std::strtod(value.c_str(), &end);
+            if (value.empty() || end == value.c_str() || *end != '\0' || !std::isfinite(scale) || scale <= 0.0) {
+                return fail("invalid render_scale (25..200)");
+            }
+            const double kept = std::clamp(scale, kMinRenderScale, kMaxRenderScale);
+            if (kept != scale) {
+                config.warnings.push_back("display.cfg line " + std::to_string(line_number) + ": render_scale=" + value +
+                                          " is outside 25..200 %; " + std::to_string(static_cast<int>(kept)) +
+                                          " % is used (the file keeps its value until the scale is changed)");
+            }
+            config.render_scale = kept;
+        } else if (key == "render_width" || key == "render_height" || key == "manual_width" ||
+                   key == "manual_height" || key == "resolution_mode" || key == "auto_resolution") {
+            // An exact or manual render size (before 2026-11-05) is not a setting any more: the picture follows the
+            // window / screen and the resolution scale (docs/DISPLAY_SETTINGS_AUDIT.md section 6). The legacy
+            // renderer still reads render_width / render_height.
+            int n = 0;
+            if (key == "render_width" && parse_int(value, &n) && n >= 0) config.render_width = n;
+            if (key == "render_height" && parse_int(value, &n) && n >= 0) config.render_height = n;
+            if (!(key == "render_width" || key == "render_height") || (n != 0 && !value.empty()))
+                config.warnings.push_back("display.cfg line " + std::to_string(line_number) + ": " + key + " is no "
+                                          "longer a setting (the picture follows the window or screen and the "
+                                          "resolution scale); ignored");
+        } else if (key == "fullscreen_width") {
+            if (!parse_int(value, &config.fullscreen_width) ||
+                (config.fullscreen_width != 0 && config.fullscreen_width < 160)) {
+                return fail("invalid fullscreen_width (0 = the desktop's mode, or at least 160)");
+            }
+        } else if (key == "fullscreen_height") {
+            if (!parse_int(value, &config.fullscreen_height) ||
+                (config.fullscreen_height != 0 && config.fullscreen_height < 120)) {
+                return fail("invalid fullscreen_height (0 = the desktop's mode, or at least 120)");
             }
         } else if (key == "aspect") {
-            bool ok = false;
-            config.aspect = parse_aspect_mode(value, &ok);
-            if (!ok) {
-                return fail("invalid aspect");
+            // gekko/display_geometry.h parse_aspect_value: the command line's --aspect reads the same values.
+            double ratio = 0.0;
+            if (!parse_aspect_value(value, &ratio)) {
+                return fail("invalid aspect (auto, W:H such as 32:10, or a number such as 2.37)");
+            }
+            config.aspect_ratio = ratio;
+            bool named = false;
+            config.aspect = parse_aspect_mode(value, &named);
+            if (!named) {
+                config.aspect = ratio > 0.0 ? AspectMode::Custom : AspectMode::Auto;
+                if (ratio > 0.0) config.custom_aspect = static_cast<float>(ratio);
             }
         } else if (key == "aspect_ratio" || key == "custom_aspect") {
-            if (!parse_float(value, &config.custom_aspect) || config.custom_aspect <= 0.1f) {
-                return fail("invalid aspect_ratio");
+            // The legacy spelling of a custom ratio: it IS the screen ratio (before, it was ignored after a named
+            // aspect= line).
+            double ratio = 0.0;
+            if (!parse_aspect_value(value, &ratio) || !(ratio > 0.0)) {
+                return fail("invalid aspect_ratio (W:H or a number of 0.25..8)");
             }
-            if (config.aspect == AspectMode::Auto) {
-                config.aspect = AspectMode::Custom;
-            }
+            config.aspect_ratio = ratio;
+            config.aspect = AspectMode::Custom;
+            config.custom_aspect = static_cast<float>(ratio);
         } else if (key == "hud_scale") {
             if (!parse_float(value, &config.hud_scale) || config.hud_scale <= 0.05f) {
                 return fail("invalid hud_scale");

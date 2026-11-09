@@ -13,6 +13,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -38,6 +39,10 @@ struct LiftedRenderOptions {
     // the window (bars when the shapes differ).
     std::uint32_t render_width = 0;
     std::uint32_t render_height = 0;
+    // Image quality at start (display.cfg msaa / anisotropy; changed live by set_msaa / set_anisotropy): the scene's
+    // sample count (1 = single-sample) and the anisotropic level of the game's filtered textures (1 = Off).
+    std::uint32_t msaa_samples = 4;
+    std::uint32_t anisotropy = 16;
 };
 
 // Frames written to PNG files: the first frame the game finished at or after `first_frame`, then every `stride`
@@ -69,6 +74,9 @@ public:
     // The fade-in of models that appear inside the view (gekko/appear_fade.h): its length in game ticks, 0 = off.
     // After start().
     void set_fade_in_ticks(std::uint64_t ticks) noexcept;
+    // VISetBlack: the source of "the game has the display black" (NativeVideo::black_requested); a finished frame is
+    // then shown black. After start().
+    void set_display_blank(std::function<bool()> source);
     // The far-object proxies (docs/DRAW_DISTANCE.md): 1 = the original, none; above 1, to that many times each layout
     // entry's authored range; 8 and up, wherever the projected-size rule allows. After start().
     void set_draw_distance(float range_scale) noexcept;
@@ -84,6 +92,13 @@ public:
     // UI thread: V-Sync from the next present (the swap chain allows tearing whenever the system does, so either mode
     // presents without recreating it).
     void set_vsync(bool on) noexcept;
+    // MSAA and anisotropic filtering, live (any thread; the renderer takes them at its next frame, render/renderer.h).
+    void set_msaa(std::uint32_t samples) noexcept;
+    void set_anisotropy(std::uint32_t level) noexcept;
+    std::uint32_t msaa_active() const noexcept;
+    std::uint32_t anisotropy_active() const noexcept;
+    std::uint32_t msaa_supported_mask() const noexcept;  // bit n: 2^n samples supported
+    std::string msaa_note() const;
     std::uint64_t far_proxy_draws() const noexcept;
     // How many models have faded in so far.
     std::uint64_t fade_ins() const noexcept;
@@ -96,12 +111,19 @@ public:
     // records are applied there), so the game sees the output change at a game tick a replay reproduces. Neither the
     // window (attach / resize) nor a capture request changes it.
     void set_output_aspect(std::uint32_t width, std::uint32_t height);
+    // The aspect the game logic's on-screen test uses (gekko/gameplay_aspect.h); 0 = the output's (live play).
+    void set_logic_aspect(float aspect);
     // The physical render size in use (set_output_aspect's result); 0 x 0 when none is asked (the window's size).
     std::uint32_t render_width() const noexcept;
     std::uint32_t render_height() const noexcept;
     // The render size asked (LiftedRenderOptions::render_width / render_height) while the game runs, for the current
     // output; the same thread as set_output_aspect (the host services). 0 x 0: the window's size.
     void set_render_size(std::uint32_t width, std::uint32_t height);
+    // The picture's exact aspect (gekko/display_geometry.h DisplayGeometry::aspect): where the render size is placed
+    // in the back buffer. The host sets it with the render size.
+    void set_present_aspect(double aspect);
+    // Why the render size in use is not the one asked (the GPU's memory), empty when it is.
+    std::string render_note() const;
 
     // Before the game runs. The capture's size is its picture's only; the game's output is set_output_aspect's.
     void request_capture(const LiftedCapture& capture);

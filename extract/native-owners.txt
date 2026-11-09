@@ -54,6 +54,10 @@
 0x8037620C SetInterruptMask
 0x80376210 entry: native interrupt: guest call return
 0x80376214 entry: native interrupt: reschedule return
+0x80376224 entry: native interrupt: thread-context upcall return
+0x80376218 entry: native jobs: a game worker's step returned (runtime/src/gekko/native_jobs.cpp)
+0x8037621C entry: native jobs: a game worker's finish returned
+0x80376220 entry: native CRI: the drain's Idle server / callback returned (runtime/src/gekko/native_cri.cpp)
 #
 # runtime/src/gekko/native_video.cpp (NativeVideo::install): the VI library's
 # entry points that read video hardware. With these owned nothing registers
@@ -67,11 +71,23 @@
 0x8037FF9C getCurrentFieldEvenOdd
 0x80380004 VIGetNextField
 0x803800A0 VIGetCurrentLine
+# VI staging (docs/agents/vi.md): VIFlush, VISetNextFrameBuffer, the current-buffer word, VISetBlack,
+# VISetPreRetraceCallback and VIGetTvFormat keep the guest words game code reads and nothing of the VI register image.
+# VIWaitForRetrace 0x8037ECD4 is an owner of the lifted build only (extract/native-owners-r2.txt): the reference build keeps the guest body.
+0x8037FD38 VIFlush
+0x8037FE68 VISetNextFrameBuffer
+0x8037FED4 VIGetCurrentFrameBuffer
+0x8037FEDC VISetBlack
+0x80380138 VIGetTvFormat
+0x8037E4F0 VISetPreRetraceCallback
+0x8037E534 VISetPostRetraceCallback
+0x8037F19C VIConfigure
 #
-# runtime/src/gekko/native_audio.cpp (NativeAudio::install): the SDK's AI and
-# DSP libraries and the OS audio bring-up, every entry point surviving guest
-# code can reach. With these owned nothing reaches the AI/DSP registers or
-# their interrupt handlers, and the generator prunes them. ARAM and its queue
+# runtime/src/gekko/native_audio.cpp (NativeAudio::install): the SDK's AI
+# library and the OS audio bring-up, every entry point surviving guest
+# code can reach. With these owned nothing reaches the AI registers or
+# their interrupt handlers, and the generator prunes them (the DSP library
+# went with the AX frame, audio-ax step 3c). ARAM and its queue
 # are not reached at all: the game constructor's ARInit/ARQInit calls are
 # lowered sites (extract/lift-sites-native.txt, docs/ARAM.md step 5).
 # Must equal NativeAudio::addresses().
@@ -91,13 +107,7 @@
 0x80382218 AISetStreamVolRight
 0x80382234 AIGetStreamVolRight
 0x80382244 AIInit
-0x8038C274 DSPCheckMailToDSP
-0x8038C284 DSPCheckMailFromDSP
-0x8038C294 DSPReadMailFromDSP
-0x8038C2AC DSPSendMailToDSP
 0x8038C2C0 DSPInit
-0x8038C38C DSPAddTask
-0x8038C43C DSPAssertTask
 #
 # runtime/src/gekko/native_frame_limiter.cpp (NativeFrameLimiter::install): the
 # game's frame limiter fn_801E1F2C - a wait point of the game clock - and its
@@ -179,6 +189,55 @@
 # driver, and the generator prunes them. Must equal NativeIpl::addresses().
 0x803776F4 __OSInitSram
 0x803778E8 UnlockSram
+#
+# runtime/src/gekko/native_os_settings.cpp (gekko::os_settings::install, after NativeIpl::install): the console settings
+# accessors over the SRAM image (docs/agents/os-other.md); they release the SRAM lock through the UnlockSram owner above.
+0x80377DA0 OSGetSoundMode
+0x80377E20 OSSetSoundMode
+0x80377EC4 OSGetLanguage
+0x80377F30 OSGetProgressiveMode
+0x80377FA0 OSSetProgressiveMode
+#
+# runtime/src/gekko/native_os_heap.cpp (gekko::os_heap::install): the Dolphin OS heap routines, instruction for instruction
+# over the guest heap words (docs/agents/os-other.md, group A). OSFreeToHeap carries its only callee 0x80371F04 (the free
+# list insert) inside, so that helper is unreachable once these are owned.
+0x80371FB0 OSAllocFromHeap
+0x803720AC OSFreeToHeap
+0x80372128 OSSetCurrentHeap
+0x80372138 OSInitAlloc
+0x803721A8 OSCreateHeap
+#
+# runtime/src/gekko/native_os_panic.cpp (gekko::os_panic::install): OSPanic. The game only reaches it from its own end routine
+# (0x80050FF4, message "The End."); the console halts there, so the program ends (docs/agents/os-other.md, step 3).
+0x8037324C OSPanic
+# runtime/src/gekko/native_os_misc.cpp (gekko::os_misc::install): OSGetConsoleType and the empty callback in the DVD file
+# system data (docs/agents/os-other.md, step 5).
+0x80370E04 OSGetConsoleType
+0x8038C384 r13+0x5DD0 getter
+# 0x8037177C: OSReport with the format string at r13+0x26DC and r3 as its argument, through the native OSReport.
+0x8037177C OSReport string print
+0x80378320 empty callback (data word 0x805EEC10)
+# runtime/src/gekko/native_os_machine_check.cpp: DMAErrorHandler (the machine-check handler OSInit registers); prints its two lines
+# then stops (a stated difference: the original returns in its DMA branch; docs/agents/os-other.md, step 6).
+0x803726D8 DMAErrorHandler
+# runtime/src/gekko/native_os_panic.cpp: PPCHalt (cpu.config): the original spins forever, the owner stops with a named fault.
+0x80370B1C PPCHalt
+# the wrapper around PPCHalt (a frame, `bl PPCHalt`), reached from MSL's abort / exit paths: the same hang, the same named fault
+0x80379720 the halt wrapper 0x80379720
+# runtime/src/gekko/native_os_machine_check.cpp: the default exception handler (entry of OSUnhandledException); DMAErrorHandler when
+# registered, else the first report lines and a stop; any other registered handler is a named fault (docs/agents/os-other.md, step 7).
+0x803716BC OSUnhandledException entry
+# runtime/src/gekko/native_ax_mix_alloc.cpp: the AX MIX table entries (words 0x805EECB8 / 0x805EECBC), OSAllocFromHeap / OSFreeToHeap on the current heap.
+0x8038A0DC AX MIX alloc wrapper
+0x8038A104 AX MIX free wrapper
+# runtime/src/gekko/native_rw_pixel.cpp (rw_pixel::install): the GameCube driver's RGBTOPIXEL / PIXELTORGB standard functions
+# (rwR2 steps 1a and 1b, docs/agents/gx-rw-plan.md); reached through the device's standard-function table.
+0x80492BFC RGBTOPIXEL (GameCube driver standard function 2)
+0x80492F10 PIXELTORGB (GameCube driver standard function 3)
+0x804948D8 IMAGEFINDRASTERFORMAT (GameCube driver standard function 9)
+# runtime/src/gekko/native_rw_image.cpp (rw_image::install): the raster -> image standard function (rwR2 step 3, docs/agents/gx-rw-plan.md)
+0x80493A40 IMAGEGETRASTER (GameCube driver standard function 6)
+#
 0x80377C7C __OSReadROM
 0x8039F8E0 InitMetroTRK
 0x8039F928 InitMetroTRK: the resume point after its mtmsr (a row of its own)
@@ -256,11 +315,9 @@
 0x8047C3D4 RtGCNFS abort
 #
 # runtime/src/gekko/game_memory.cpp (GameMemory::install): the game's memory
-# services (docs/memory-architecture-20261006/README.md). RealMode is the OS's
-# real-mode trampoline; its only callers are __OSInitMemoryProtection's BAT
-# configurers, and the game's address window has no BATs and no real mode.
-# Must equal GameMemory::addresses().
-0x80376B48 RealMode
+# services (docs/memory-architecture-20261006/README.md).
+# Must equal GameMemory::addresses(). (RealMode 0x80376B48, the OS's real-mode trampoline, is gone: its only
+# callers were __OSInitMemoryProtection's BAT configurers, which the native OSInit replaced.)
 # The C runtime's "memcpy" (a byte-wise memmove) and the SEGA PRS expander,
 # the stage loads' bulk byte movers (findings-20261019-EV/EV_REPORT.md 7): their
 # loops hand back at every back edge while a dispatch is due, so the two loop
@@ -277,12 +334,23 @@
 0x80370B14 PPCSync
 0x80372534 DCFlushRange
 0x80372564 DCStoreRange
+# 2026-11-04: the two loops without the `sc` (an empty counted loop per 32-byte line here). Their owners leave the
+# loop's registers exactly (game_memory.cpp serve_cache_range_loop).
+0x80372508 DCInvalidateRange
+0x80372594 DCFlushRangeNoSync
+0x80372524 entry: DCInvalidateRange: line loop resumes
+0x803725B0 entry: DCFlushRangeNoSync: line loop resumes
 #
 # runtime/src/gekko/native_reverb_owner.cpp (System::install_reverb_owner): the
 # game's room reverb. The SDK's ReverbHi callback - the only aux callback the
 # game registers (0x8043F304 type 2, aux A) - is the native effect in the
 # mixer. With it owned, its crossfeed (0x80387D24) and HandleReverb
 # (0x80387EB4) lose their only caller and the generator prunes them.
+# ReverbHiInit / ReverbHiShutdown are owned as well (docs/GC_REMOVAL_PLAN.md step 2): the effect setup's
+# __ReverbHiCreate (0x8038779C and its four loop rows) and __ReverbHiFree (0x803883C0 and its three rows) lose their
+# only callers; the delay lines they allocated are not allocated (guest watch: no reader after init).
+0x803884E4 AXFXReverbHiInit
+0x80388554 AXFXReverbHiShutdown
 0x803885A0 AXFXReverbHiCallback
 #
 # runtime/src/gekko/native_sound_tables.cpp (System::start): the game's sound-effect table
@@ -308,3 +376,341 @@
 0x801D51F0 SE GateClear
 0x801D5218 SE GateSet
 0x801D6270 SE FrameSE
+#
+# runtime/src/gekko/native_svm.cpp (NativeSvm::install): CRI's server manager
+# (SVM/GC Ver.1.58), all eighteen functions over its .bss block 0x805C0E20, which
+# no other code addresses (docs/CRI_SERVERS.md section 1). Must equal
+# NativeSvm::addresses() (CTest native_svm_tests).
+0x803CBFB8 SVM test-and-set
+0x803CC0CC SVM_Finish
+0x803CC0D0 entry: native SVM: a guest call returned (runtime/src/gekko/native_svm.cpp)
+0x803CC194 SVM_Init
+0x803CC24C SVM server type 6 (Idle)
+0x803CC2DC SVM server type 5 (Main)
+0x803CC36C SVM server type 4
+0x803CC3FC SVM server type 2 (Vsync)
+0x803CC48C SVM_SetCbUnlock
+0x803CC49C SVM_SetCbLock
+0x803CC4AC SVM user hook call
+0x803CC4F0 SVM user hook set
+0x803CC5F4 SVM_SetCbSvrId
+0x803CC7D0 SVM_DelCbSvr
+0x803CC970 SVM_SetCbSvr
+0x803CCB2C SVM error report
+0x803CCB84 SVM formatted error report
+0x803CCC5C svm_unlock
+0x803CCCEC svm_lock
+#
+# runtime/src/gekko/native_sj.cpp (NativeSj::install): CRI's stream joints - SJMEM,
+# SJRBF, SJ_SplitChunk, the SJCRS user count and the SJ error forwarder; 38
+# functions 0x803C9E7C..0x803CBF98 (docs/CRI_SERVERS.md section 4b). SJCRS_Lock /
+# Unlock (0x803C9E30 / 0x803C9DE4) stay translated: ADX calls them too. Must equal
+# NativeSj::addresses() (CTest native_sj_tests).
+0x803C9E7C SJCRS finish
+0x803C9EAC SJCRS init
+0x803C9EDC SJMEM_GetBufSize
+0x803C9F88 SJMEM_IsGetChunk
+0x803CA09C SJMEM_UngetChunk
+0x803CA230 SJMEM_PutChunk
+0x803CA334 SJMEM_GetChunk
+0x803CA468 SJMEM_GetNumData
+0x803CA55C SJMEM_Reset
+0x803CA608 SJMEM_EntryErrFunc
+0x803CA6C4 SJMEM_GetUuid
+0x803CA770 SJMEM_Destroy
+0x803CA824 SJMEM_Create
+0x803CA9F0 SJMEM_Finish
+0x803CA9F4 entry: native SJ: a guest call returned (runtime/src/gekko/native_sj.cpp)
+0x803CAA44 SJMEM_Init
+0x803CAAA4 SJMEM_Error
+0x803CAACC SJRBF transfer counter
+0x803CABA0 SJRBF_GetXtrSize
+0x803CAC4C SJRBF_GetBufSize
+0x803CACF8 SJRBF_GetBufPtr
+0x803CADA4 SJRBF_IsGetChunk
+0x803CAF08 SJRBF_UngetChunk body
+0x803CB120 SJRBF_UngetChunk
+0x803CB178 SJRBF_PutChunk body
+0x803CB320 SJRBF_PutChunk
+0x803CB378 SJRBF_GetChunk body
+0x803CB580 SJRBF_GetChunk
+0x803CB5E8 SJRBF_GetNumData
+0x803CB6DC SJRBF_Reset
+0x803CB7A0 SJRBF_EntryErrFunc
+0x803CB85C SJRBF_GetUuid
+0x803CB908 SJRBF_Destroy
+0x803CB9BC SJRBF_Create
+0x803CBB90 SJRBF_Finish
+0x803CBBE4 SJRBF_Init
+0x803CBC44 SJRBF_Error
+0x803CBF34 SJ_SplitChunk
+0x803CBF98 SJ error report
+#
+# runtime/src/gekko/native_adx_output.cpp (NativeAdxOutput::install): CRI's ADX output
+# to the AX voices - every handle, one handle, the consume step and both transfer
+# completions; each transfer is a synchronous copy into the stream ring whose
+# completion runs at once (docs/CRI_SERVERS.md section 4c). Must equal
+# NativeAdxOutput::addresses() (CTest native_adx_output_tests).
+0x803CEEB4 ADX output: every handle
+0x803CEF10 ADX output: one handle
+0x803CF260 ADX output: silence transfer completion
+0x803CF32C ADX output: transfer completion
+0x803CF408 ADX output: consume what the voice played
+#
+# runtime/src/gekko/native_boot.cpp (NativeBoot::install): the program's start-up. __start is owned: the native boot
+# sets the state main reads and runs OSInit, the constructors and main as guest calls; the three return points of the
+# original __start are its continuations. With __start owned nothing reaches __init_registers, __init_hardware, the
+# paired-single / FPR / HID0 setup or the debug monitor's entry, and the generator prunes them. Must equal
+# NativeBoot::addresses().
+0x80003154 __start
+0x80370E68 OSInit
+0x800032A0 entry: native boot: the constructors returned
+0x803796FC entry: native boot: a constructor returned to the table walk (the native __init_cpp, docs/agents/cri-threads.md)
+0x800032AC entry: native boot: main returned
+
+# runtime/src/gekko/native_axfx_effects.cpp (axfx_effects::install): the three further AXFX effects the sound start-up
+# initializes and never registers as aux callbacks (docs/agents/axfx-effects.md): ReverbStd 0x80388FF8 / 0x80389064,
+# Chorus 0x80389464 / 0x803896AC, Delay 0x80389FF4 / 0x8038A03C. The owners return the original's verdict on the
+# parameters and write nothing: __ReverbStdCreate (0x803886A4 and its loop rows), __ReverbStdFree (0x80388ED4), the chorus
+# settings (0x803896FC), the delay settings (0x80389D2C) and the powf they call lose their only callers.
+0x80388FF8 AXFXReverbStdInit
+0x80389064 AXFXReverbStdShutdown
+0x80389464 AXFXChorusInit
+0x803896AC AXFXChorusShutdown
+0x80389FF4 AXFXDelayInit
+0x8038A03C AXFXDelayShutdown
+# runtime/src/gekko/save_store.cpp (SaveStore::install): the game's saves (docs/agents/card-saves.md). The card job
+# runner (the game's TMemoryCardCtrl code 0x8029A66C..0x8029C2A4: seven jobs of fourteen CARD operations, an issue and
+# a poll step each) is served by the host save file, so the runner's steps and the CARD library under them have no
+# caller left and are not compiled. CARDInit (0x801E258C) and CARDGetResultCode (the reset path 0x8032D304) are the two
+# library entries the game still calls. Must equal SaveStore::addresses() (CTest native_file_api_tests).
+0x8029BA8C card job runner: tick
+0x8029BF84 card job runner: start
+0x8038DE3C CARDInit
+0x8038E044 CARDGetResultCode
+# runtime/src/gekko/native_interrupts.cpp (NativeInterrupts::install): the critical-section primitives (docs/agents/card-saves.md, os.interrupts). They read and write MSR[EE]; the interrupt recognition points stay the CPU's. Must equal the matching rows of NativeInterrupts::addresses().
+0x8037611C OSDisableInterrupts
+0x80376130 OSEnableInterrupts
+0x80376144 OSRestoreInterrupts
+# runtime/src/gekko/native_os_arena_clock.cpp (os_arena_clock::install): the OS arena accessors and the time-base
+# readers (docs/agents/axfx-effects.md, Step B). The arena cells stay guest memory; the time base is the native game
+# clock (Cpu::time_base). OSGetTime's retry loop (a wait point) and the three leaf bodies lose their only callers.
+0x80372214 OSGetArenaHi
+0x8037221C OSGetArenaLo
+0x8037222C OSSetArenaLo
+0x80379628 OSGetTime
+0x80379640 OSGetTick
+# runtime/src/gekko/native_os_debug.cpp (os_debug::install): InitializeUART, the debug UART's bring-up, entered only from the
+# console write routine 0x803AF5A8 (docs/agents/axfx-effects.md, Step C). The UART enable word it sets is read by the
+# WriteUARTN owner (native_ipl.cpp).
+0x803B57D8 InitializeUART
+# runtime/src/gekko/native_gx_state.cpp (gx_state::install): the GX state API, served and silent (docs/agents/card-saves.md, graphics.gx cluster gxA). Must equal gx_state::addresses().
+0x80395D48 GXSetTexCoordGen2
+0x80395FC8 GXSetNumTexGens
+0x80396B54 GXSetCullMode
+0x80397A34 GXLoadLightObjImm
+0x80397AB0 GXSetChanAmbColor
+0x80397B98 GXSetChanMatColor
+0x80397C80 GXSetNumChans
+0x80397CBC GXSetChanCtrl
+0x80399778 GXSetAlphaCompare
+0x80399A0C GXSetFog
+0x80399D44 GXSetBlendMode
+0x80399D98 GXSetColorUpdate
+0x80399DC4 GXSetAlphaUpdate
+0x80399DF0 GXSetZMode
+0x80399E24 GXSetZCompLoc
+0x80399F58 GXSetDstAlpha
+0x8039A0B4 GXSetProjection
+0x8039A158 GXSetProjectionv
+0x8039A22C GXLoadPosMtxImm
+0x8039A27C GXLoadNrmMtxImm
+0x8039A2CC GXSetCurrentMtx
+0x8039A300 GXLoadTexMtxImm
+0x8039A444 GXSetViewportJitter
+0x8039A49C GXSetViewport
+0x8039A4E4 GXSetScissor
+0x8039A55C GXSetScissorBoxOffset
+# gxC (docs/agents/card-saves.md): the vertex-cache invalidate and the display-list call are served and silent (gx_state::install);
+# GXSetDrawSync (0x80396428) is NativeGxSync's: the two token completions its BP 0x48 / 0x47 stores were.
+0x80395D38 GXInvalidateVtxCache
+0x8039A044 GXCallDisplayList
+0x80396428 GXSetDrawSync
+# gxD (docs/agents/card-saves.md): GXInit and GXDrawDone are NativeGxSync's (GXInit's performance-select platform sites leave extract/platform-sites.txt in the same change);
+# GXSetMisc is a silent gx_state owner.
+0x80393A88 GXInit
+0x803964E8 GXDrawDone (refused)
+0x80396004 GXSetMisc
+# runtime/src/gekko/native_os_report.cpp (os_report::install): OSReport, formatted natively from the guest's registers and
+# overflow area; the text goes to the host debug console (docs/agents/axfx-effects.md, Step D).
+0x803731CC OSReport
+# runtime/src/gekko/native_os_report.cpp (os_report::install), Step E: MSL's fprintf and printf on the console files (stdout, stderr),
+# the same formatter; the FILE objects, the UART path and the stdout buffer lose their last game-side users.
+0x803AA4AC fprintf
+0x803AA58C printf
+#
+# runtime/src/gekko/native_os_threads.cpp (gekko::os_threads::install): the scheduler-disable count (S1) and the three pure thread readers (S2) (docs/agents/cri-threads.md, os.threads).
+0x803784CC OSDisableScheduler
+0x8037850C OSEnableScheduler
+0x8037848C OSGetCurrentThread
+0x80378498 OSIsThreadTerminated
+0x80379574 OSGetThreadPriority
+0x8037847C OSInitThreadQueue
+#
+# runtime/include/gekko/native_ax_registration.h (audio-ax step 1): the AX library's registration entries
+0x80385050 AXRegisterAuxACallback
+0x8038505C AXRegisterAuxBCallback
+0x80385784 AXSetMode
+0x80385F60 AXRegisterCallback
+# audio-ax stage c: the AX voice setters (gekko/native_ax_voice.h; names: AXSetVoiceMix, AXSetVoiceSrcRatio).
+0x803871B0 AXSetVoiceMix
+0x80387650 AXSetVoiceSrcRatio
+0x80387090 AXSetVoiceSrcType
+0x80387154 AXSetVoiceState
+0x80387404 AXSetVoiceAddr
+0x80387514 AXSetVoiceAdpcm
+0x803875B8 AXSetVoiceSrc
+0x803876E8 AXSetVoiceAdpcmLoop
+0x803849D4 AXFreeVoice
+# audio-ax stage e step 1 (gekko/native_ax_sync.h): __AXSyncPBs with __AXSyncPB / depop / callback-stack push inlined; the budget
+# walk is the "console DSP budget", preserved for identical output.
+0x80386BC0 __AXSyncPBs
+# audio-ax stage e step 3a (gekko/native_ax_frame.h): __AXNextFrame; the DSP command list becomes the native next-frame list (AxLists), its cost
+# stays in sda 0x5D30 (console DSP budget, preserved for identical output).
+0x803850AC __AXNextFrame
+# audio-ax stage e step 3b: the frame sequencing (the AI DMA callback runs the whole frame: sync, mix, callbacks, next list), AXInit and AXQuit; the
+# DSP task, its INIT and cancel handshakes, the mailbox waits and the profile record are not reproduced (wait-points-retired.txt).
+0x8038465C AXInit
+0x803846CC AXQuit
+0x8038A1F4 MIXInit
+0x8038A2C8 MIXInitChannel
+0x8038B1F8 MIXUpdateSettings
+0x8038A12C MIX hook setter
+0x8038B144 MIXReleaseChannel
+0x8038B164 MIXSetInput
+0x8038B18C MIXSetPan
+0x80384A54 AXAcquireVoice
+0x80384AB8 AXAcquireVoice: search loop resumes
+# gxB (docs/agents/card-saves.md): the TEV / indirect-texture setters (silent), the empty body 0x80399294, two getters and GXSetBreakPtCallback (gx_state::install).
+0x80398828 TEV / indirect setter (124 B)
+0x80398E14 GXSetTevIndirect
+0x80398E80 indirect texture matrix setter (376 B)
+0x80398FF8 GXSetIndTexCoordScale
+0x8039913C GXSetIndTexOrder
+0x80399228 GXSetNumIndStages
+0x8039924C GXSetTevDirect
+0x803992EC GXSetTevOp
+0x80399378 GXSetTevColorIn
+0x803993BC GXSetTevAlphaIn
+0x80399400 GXSetTevColorOp
+0x80399468 GXSetTevAlphaOp
+0x80399530 TEV setter (100 B)
+0x80399594 GXSetTevKColor
+0x803995F8 GXSetTevKColorSel
+0x80399654 GXSetTevKAlphaSel
+0x80399848 GXSetTevOrder
+0x803999E4 GXSetNumTevStages
+0x80399294 empty body (blr only)
+0x803952FC GXGetCPUFifo
+0x803982B8 GXGetTexObjData shape
+0x8039822C GXGetTexObjFmt shape
+0x80398234 GXGetTexObjMipMap
+0x80394F3C GXSetBreakPtCallback
+# gxD's last two rows (docs/agents/card-saves.md): the display-copy scale pair, gx_state::install.
+0x803970E4 GXSetDispCopyYScale
+0x80396EAC GXGetYScaleFactor
+# rwR2 slice 2 (docs/agents/card-saves.md): the palette lock pair.
+0x804972B8 GcnRasterLockPalette
+0x80497388 GcnRasterUnlockPalette
+# runtime/src/gekko/native_trk.cpp (trk::install): DBInit and the TRK console close / write / read procedures
+# (debug.trk; no debugger in this program; docs/agents/axfx-effects.md, Step G).
+0x80370BF0 DBInit
+0x803A051C TRK console close
+0x803A05A0 TRK console write
+0x803A065C TRK console read
+#
+# runtime/src/gekko/native_gx_display.cpp (gx_display::install): the GX display-copy and FIFO-setup leaves, served and silent
+# (GXInitFifoBase reproduces its FIFO object exactly; docs/agents/axfx-effects.md, Step H).
+0x80394AF4 GXInitFifoBase
+0x80396098 GXFlush
+0x80396BD4 GXSetDispCopySrc
+0x80396CCC GXSetDispCopyDst
+0x80396E54 GX display copy clamp
+0x80397228 GXSetCopyFilter
+0x80397430 GX display copy gamma
+0x80399E58 GX pixel format setter
+0x80399FCC GX BP mask setter
+0x803971B0 GX BP 0x4F-0x51 setter
+0x803992C8 GX BP state register setter
+# runtime/src/gekko/native_os_font.cpp (os_font::install): the OS font library (docs/agents/os-font.md). OSGetFontEncode
+# is served natively (r3 = 0 ANSI: the video contract serves no Japanese encoder; the live caller is CARDInit);
+# OSInitFont and OSGetFontTexture are owned as never entered (the font comes from the boot ROM, which this program
+# does not have): entering them stops the run. Their callees (ReadFont, Decode, GetFontCode, ExpandFontSheet,
+# ParseStringS) lose their last entry. Must equal os_font::Owners (native_file_api_tests).
+0x80375150 OSGetFontEncode
+0x80375DA0 OSInitFont
+0x80375FAC OSGetFontTexture
+# runtime/src/gekko/native_mix_entries.cpp (mix_entries::install): the AX mixer library's MIXQuit (a bare blr) and
+# MIXSetSoundMode (stw r3,0x5DC8(r13): the sound-mode word the mixer's own bodies read). Must equal
+# mix_entries::Owners (native_file_api_tests).
+0x8038A2BC MIXQuit
+0x8038A2C0 MIXSetSoundMode
+# rwR2 slice 1 (docs/agents/card-saves.md): the RenderWare GameCube driver's raster life cycle - the table rows that only move
+# words, the draw-sync token test and RasterDestroy (runtime/src/gekko/native_rw_raster.cpp, rw_raster::install).
+0x8049819C GcnTextureSetRaster
+0x804981B8 GcnRasterSubRaster
+0x8049A570 GcnRasterSetContext
+0x804966D8 GcnRasterGetMipLevels
+0x8049B7DC draw-sync token reached
+0x80498058 GcnRasterDestroy
+#
+# runtime/src/gekko/native_gx_texobj.cpp (gx_texobj::install): the GX texture-object functions, reproduced exactly
+# (docs/agents/axfx-effects.md, Step J1).
+0x80397E34 GXInitTexObj
+0x80398080 GXInitTexObjCI
+0x803980C8 GXInitTexObjLOD
+0x8039824C GXGetTexObjLODBias
+0x8039828C GXGetTexObjBiasClamp
+0x80398298 GXGetTexObjEdgeLOD
+0x803982AC GXGetTexObjMaxAniso
+0x80398490 GXInitTexCacheRegion
+0x8039A1E4 GXGetProjectionv
+0x80497104 GcnRasterUnlock
+0x80496CA4 GcnRasterLock
+0x8049A124 GcnRasterClearRect
+0x8049A52C GcnRasterClear
+0x8049A508 GcnRasterClearEntry
+0x80497CA8 GcnRasterCreate
+0x80497458 GcnRasterFormat
+0x80497A70 GcnRasterSetMipLevels
+0x8049677C GcnRasterTile
+0x80496A10 GcnRasterUntile
+0x80496478 GcnRasterLevelBytes
+0x80494614 GcnRasterSetImage
+0x80493C38 GcnImageToPaletted4
+0x80493E90 GcnImageToPaletted8
+0x804940EC GcnImageToRaster16
+0x80494380 GcnImageToRaster32
+0x80493B74 GcnImageQuantise
+0x80491448 GcnImageQuantiseEnd
+0x80491124 GcnImageQuantiseTreeFree
+0x80492B04 log2 loop (raster size arithmetic)
+0x804965A8 all mip levels bytes
+0x8049A57C GcnRasterGetSize
+
+# runtime/src/gekko/native_math_affine.cpp (docs/agents/os-other.md step 15): the 3x4 matrix leaves of the 0x8040C* family.
+0x8040C6CC matrix 3x4 point transform
+0x8040C5EC matrix 3x4 translate by rotated vector
+0x8040C7E0 matrix 3x4 scale columns
+#
+# runtime/src/gekko/native_vec_math.cpp (vec_math::install): the game's 3-vector helpers on {float x, y, z}
+# (docs/agents/native-math.md). Scalar single arithmetic in the original's load/store order with the FPSCR[NI] policy
+# read at the call; Length ends in the game's sqrt. Must equal vec_math::Owners (native_file_api_tests).
+0x8040DDC4 Vec3Sub
+0x8040DDF8 Vec3Scale
+0x8040DE20 Vec3Add
+0x8040DE54 Vec3SubFrom
+0x8040DFA0 Vec3Length
+0x8040DFE0 Vec3Dot
+0x8040E008 Vec3Cross
+0x8040E048 Vec3AddTo

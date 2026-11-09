@@ -5,6 +5,7 @@
 #include "gekko/native_video.h"
 
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 
 #include "gekko/cpu.h"
@@ -22,6 +23,14 @@ constexpr u32 kViInit = 0x8037E824u;            // VIInit (with __VIInit, the co
 constexpr u32 kGetCurrentFieldEvenOdd = 0x8037FF9Cu;  // getCurrentFieldEvenOdd (static)
 constexpr u32 kViGetNextField = 0x80380004u;    // VIGetNextField
 constexpr u32 kViGetCurrentLine = 0x803800A0u;  // VIGetCurrentLine
+constexpr u32 kViFlush = 0x8037FD38u;               // VIFlush
+constexpr u32 kViSetNextFrameBuffer = 0x8037FE68u;  // VISetNextFrameBuffer
+constexpr u32 kViGetCurrentFrameBuffer = 0x8037FED4u;  // returns the buffer VIFlush made current (r13 + 0x5C18)
+constexpr u32 kViSetBlack = 0x8037FEDCu;            // VISetBlack
+constexpr u32 kViGetTvFormat = 0x80380138u;         // VIGetTvFormat
+constexpr u32 kViConfigure = 0x8037F19Cu;           // VIConfigure
+constexpr u32 kViSetPreRetraceCallback = 0x8037E4F0u;  // VISetPreRetraceCallback
+constexpr u32 kViSetPostRetraceCallback = 0x8037E534u;  // VISetPostRetraceCallback
 
 // ---- guest functions a retrace delivery calls
 constexpr u32 kOsWakeupThread = 0x803793B0u;
@@ -37,20 +46,19 @@ constexpr u32 kSdaEncoderType = 0x5BE8u;    // set by VIInit, read by VIConfigur
 constexpr u32 kSdaDisplayOffsetH = 0x5BECu; // s16, from SRAM
 constexpr u32 kSdaDisplayOffsetV = 0x5BEEu; // s16
 constexpr u32 kSdaClearedByInit = 0x5BF0u;  // a word VIInit clears
-constexpr u32 kSdaChangedHi = 0x5BF8u;      // changed (64-bit, index 0 = MSB)
-constexpr u32 kSdaChangedLo = 0x5BFCu;
 constexpr u32 kSdaChangeMode = 0x5C00u;     // a staged interlace change waits for the first field
-constexpr u32 kSdaShadowChangedHi = 0x5C08u;  // shdwChanged: staged by VIFlush
-constexpr u32 kSdaShadowChangedLo = 0x5C0Cu;
 constexpr u32 kSdaCurrTiming = 0x5C10u;
 constexpr u32 kSdaCurrTvMode = 0x5C14u;
 constexpr u32 kSdaNextBufAddr = 0x5C18u;
 constexpr u32 kSdaCurrBufAddr = 0x5C1Cu;
+constexpr u32 kSdaFlushedBuffer = 0x5C20u;  // set by VISetNextFrameBuffer
+constexpr u32 kSdaConfigureWarned = 0x5C28u;  // VIConfigure's one-time warning flag
 constexpr u32 kSdaCustomTiming = 0x5C24u;   // getTiming's indices 28-30
 
 // ---- the VI library's static block (regs[], shdwRegs[], HorVer)
 constexpr u32 kViStatic = 0x80587C28u;
-constexpr u32 kShadowRegs = 0x78u;          // shdwRegs[]
+constexpr u8 kChangedDisplay = 1u, kChangedClock = 2u;  // changed_ bits
+constexpr u8 kStagedDisplay = 1u, kStagedDisplayOn = 2u, kStagedClock = 4u, kStagedClock54 = 8u;  // staged_ bits
 constexpr u32 kHorVerDispPosX = 0xF0u;
 constexpr u32 kHorVerDispPosY = 0xF2u;
 constexpr u32 kHorVerDispSizeX = 0xF4u;
@@ -70,6 +78,8 @@ constexpr u32 kHorVerFbMode = 0x110u;
 constexpr u32 kHorVerNonInter = 0x114u;
 constexpr u32 kHorVerTv = 0x118u;
 constexpr u32 kStaticTiming = 0x144u;       // the configured VITiming
+constexpr u32 kStaticBufAddr = 0x120u;      // HorVer.bufAddr, set by VISetNextFrameBuffer
+constexpr u32 kStaticBlack = 0x130u;        // the black flag, set by VISetBlack
 // The register indices the commit cares about (bit 63 - index of the 64-bit mask).
 constexpr u32 kRegDisplayControl = 1u;      // DCR, offset 0x02
 constexpr u32 kRegClockSelect = 54u;        // VICLK, offset 0x6C
@@ -87,25 +97,29 @@ constexpr u32 kSramDisplayOffsetH = 0x10u;
 constexpr u32 kSramSavedLevel = 0x44u;      // OSDisableInterrupts() saved by the lock
 constexpr u32 kSramLocked = 0x48u;
 
-// ---- the register the listed platform sites name (the reset path's two DCR
-// writes left with stage 6: OSResetSystem is owned, __OSDoHotReset pruned)
-constexpr u32 kViEncoderStatus = 0xCC00206Eu;   // VISEL / DTV status
+// ---- no register read site is left: the reset path's two DCR writes left with stage 6 (OSResetSystem is owned,
+// __OSDoHotReset pruned); the last VISEL reads left with the CARD library (saves.card) and the OS font library
+// (os-font: OSGetFontEncode is owned, OSInitFont / OSGetFontTexture never entered)
 
 // The retrace delivery's progress, kept in the delivery frame's scratch word 0.
-enum Phase : u32 { kPhaseStart = 0, kPhaseCommit, kPhasePostCallback, kPhaseWakeup, kPhaseDone };
+enum Phase : u32 { kPhaseStart = 0, kPhaseCommit, kPhasePostCallback, kPhaseWakeup, kPhaseTick, kPhaseDone };
 
 const NativeVideo::Address kAddresses[] = {
     {kViInit, "VIInit", false},
     {kGetCurrentFieldEvenOdd, "getCurrentFieldEvenOdd", false},
     {kViGetNextField, "VIGetNextField", false},
     {kViGetCurrentLine, "VIGetCurrentLine", false},
+    {kViFlush, "VIFlush", false},
+    {kViSetNextFrameBuffer, "VISetNextFrameBuffer", false},
+    {kViGetCurrentFrameBuffer, "VIGetCurrentFrameBuffer", false},
+    {kViSetBlack, "VISetBlack", false},
+    {kViGetTvFormat, "VIGetTvFormat", false},
+    {kViConfigure, "VIConfigure", false},
+    {kViSetPreRetraceCallback, "VISetPreRetraceCallback", false},
+    {kViSetPostRetraceCallback, "VISetPostRetraceCallback", false},
 };
 
 const NativeVideo::Site kSites[] = {
-    {0x80375178u, 0xA003206Eu, "video_encoder_status"},   // OSGetFontEncode
-    {0x80375DDCu, 0xA004206Eu, "video_encoder_status"},   // OS font 0x80375DA0 (inlined OSGetFontEncode)
-    {0x8037600Cu, 0xA063006Eu, "video_encoder_status"},   // OS font 0x80375FAC (inlined OSGetFontEncode)
-    {0x80391910u, 0xA243206Eu, "video_encoder_status"},   // __CARDFormatRegionAsync: card ID +0x1C
     {0x802BEA00u, 0x3800412Bu, "display_field_us"},       // the loading screen's draw: li r0,0x412B
 };
 
@@ -120,11 +134,6 @@ void stop(Cpu& c, const std::string& why) {
 }
 
 s32 sext16(u32 value) noexcept { return static_cast<s32>(static_cast<s16>(static_cast<u16>(value))); }
-
-// The 64-bit changed masks: index 0 is the most significant bit of the high word.
-bool mask_has(u32 hi, u32 lo, u32 index) noexcept {
-    return index < 32u ? (hi & (0x80000000u >> index)) != 0u : (lo & (0x80000000u >> (index - 32u))) != 0u;
-}
 
 }  // namespace
 
@@ -156,6 +165,8 @@ u64 NativeVideo::field_ticks() const noexcept {
 void NativeVideo::reset() noexcept {
     enabled_ = false;
     clock54_ = false;
+    staged_ = 0u;
+    changed_ = 0u;
     field_index_ = 0;
     origin_ticks_ = 0;
     origin_fraction_ = 0;
@@ -329,19 +340,11 @@ bool NativeVideo::retrace_handler(Cpu& c, u32 frame, u32 step) {
                     ++stats_.gated_commits;
                     break;
                 }
-                const u32 hi = c.mem_read32(sda + kSdaShadowChangedHi);
-                const u32 lo = c.mem_read32(sda + kSdaShadowChangedLo);
                 // What the hardware would now run with: the staged clock select
                 // and display enable, when staged.
-                if (mask_has(hi, lo, kRegClockSelect)) {
-                    clock54_ = (c.mem_read16(kViStatic + kShadowRegs + 2u * kRegClockSelect) & 1u) != 0u;
-                }
-                bool display_off = false;
-                if (mask_has(hi, lo, kRegDisplayControl)) {
-                    display_off = (c.mem_read16(kViStatic + kShadowRegs + 2u * kRegDisplayControl) & 1u) == 0u;
-                }
-                c.mem_write32(sda + kSdaShadowChangedHi, 0u);
-                c.mem_write32(sda + kSdaShadowChangedLo, 0u);
+                if ((staged_ & kStagedClock) != 0u) clock54_ = (staged_ & kStagedClock54) != 0u;
+                const bool display_off = (staged_ & kStagedDisplay) != 0u && (staged_ & kStagedDisplayOn) == 0u;
+                staged_ = 0u;
                 c.mem_write32(sda + kSdaChangeMode, 0u);
                 const u32 timing = c.mem_read32(kViStatic + kStaticTiming);
                 const u32 tv = c.mem_read32(kViStatic + kHorVerTv);
@@ -376,9 +379,14 @@ bool NativeVideo::retrace_handler(Cpu& c, u32 frame, u32 step) {
                 break;
             }
             case kPhaseWakeup:
-                c.mem_write32(phase_word, kPhaseDone);
+                c.mem_write32(phase_word, kPhaseTick);
                 interrupts_.call_guest(c, frame, kOsWakeupThread, sda + kSdaRetraceQueue, 0u);
                 return true;
+            case kPhaseTick:
+                // Work that ran right after the retrace's wakeup on the console (native_cri.h: CRI's servers).
+                if (retrace_tick_ && retrace_tick_(c, frame)) return true;
+                c.mem_write32(NativeInterrupts::scratch(frame, 0u), kPhaseDone);  // the frame may have moved
+                return false;
             default:
                 return false;
         }
@@ -412,10 +420,8 @@ void NativeVideo::vi_init(Cpu& c) {
     const u32 dcr = 0x0001u | (non_interlaced << 2) | (format << 8);
 
     c.mem_write32(sda + kSdaRetraceCount, 0u);
-    c.mem_write32(sda + kSdaChangedLo, 0u);
-    c.mem_write32(sda + kSdaChangedHi, 0u);
-    c.mem_write32(sda + kSdaShadowChangedLo, 0u);
-    c.mem_write32(sda + kSdaShadowChangedHi, 0u);
+    changed_ = 0u;
+    staged_ = 0u;
     c.mem_write32(sda + kSdaClearedByInit, 0u);
     c.mem_write32(sda + kSdaChangeMode, 0u);
     c.mem_write32(sda + kSdaFlushFlag, 0u);
@@ -517,6 +523,169 @@ void NativeVideo::vi_init(Cpu& c) {
     interrupts_.unmask_os_interrupts(c, 0x00000080u);  // PI_VI
 }
 
+// ---- the staging entry points. The SDK kept the VI registers in a RAM image (regs[], 16-bit words from the static
+// block's start), a 64-bit "changed" mask (index 0 = the most significant bit; two words in the small-data area)
+// naming the registers an operation wrote, and shdwRegs[] (+0x78), the copy VIFlush stages for the next retrace.
+// Nothing outside the VI library reads the registers the framebuffer and blanking calls would have written (the
+// frame buffer addresses, the vertical timing): the display here is the native present path, so VISetNextFrameBuffer
+// and VISetBlack keep only the words game code reads (docs/agents/vi.md); VIFlush stages only the two registers the
+// native retrace commit reads (display control and clock select, which VIConfigure writes).
+
+// VIFlush 0x8037FD38: stage the written registers for the next retrace.
+void NativeVideo::vi_flush(Cpu& c) {
+    static const bool trace = std::getenv("SHADOW_TRACE_VI_BLACK") != nullptr;
+    if (trace)
+        std::fprintf(stderr, "[vi-black] VIFlush black %u tick %llu field %llu\n", c.mem_read32(kViStatic + kStaticBlack),
+                     static_cast<unsigned long long>(c.game_clock().now()), static_cast<unsigned long long>(field_index_));
+    const u32 sda = c.gpr[13];
+    const u32 vi = kViStatic;
+    c.mem_write32(sda + kSdaChangeMode, c.mem_read32(sda + kSdaChangeMode) | c.mem_read32(sda + kSdaClearedByInit));
+    c.mem_write32(sda + kSdaClearedByInit, 0u);
+    // Only the two registers the retrace commit reads (display control, clock select) are staged; every other
+    // register the VI library keeps has no reader (docs/agents/vi.md).
+    if ((changed_ & kChangedDisplay) != 0u) {
+        staged_ = static_cast<u8>((staged_ & ~kStagedDisplayOn) | kStagedDisplay |
+                                  ((c.mem_read16(vi + 2u * kRegDisplayControl) & 1u) != 0u ? kStagedDisplayOn : 0u));
+    }
+    if ((changed_ & kChangedClock) != 0u) {
+        staged_ = static_cast<u8>((staged_ & ~kStagedClock54) | kStagedClock |
+                                  ((c.mem_read16(vi + 2u * kRegClockSelect) & 1u) != 0u ? kStagedClock54 : 0u));
+    }
+    changed_ = 0u;
+    c.mem_write32(sda + kSdaFlushFlag, 1u);
+    c.mem_write32(sda + kSdaNextBufAddr, c.mem_read32(vi + kStaticBufAddr));
+}
+
+// VISetNextFrameBuffer 0x8037FE68(fb): the next buffer VIFlush makes current, and the flag that a buffer was set.
+// Retired: setFramebuffer's four buffer-address words (static + 0x124 / 0x128 / 0x13C / 0x140), registers 0x1C-0x2B and
+// their changed bits - hardware-only state.
+void NativeVideo::vi_set_next_frame_buffer(Cpu& c) {
+    c.mem_write32(kViStatic + kStaticBufAddr, c.gpr[3]);
+    c.mem_write32(c.gpr[13] + kSdaFlushedBuffer, 1u);
+}
+
+// VISetBlack 0x8037FEDC(black): the black flag VIConfigure's vertical timing reads. Retired: setVerticalRegs' write of
+// registers 0x00 and 0x0C-0x13 and their changed bits (hardware-only state).
+void NativeVideo::vi_set_black(Cpu& c) {
+    c.mem_write32(kViStatic + kStaticBlack, c.gpr[3]);
+    static const bool trace = std::getenv("SHADOW_TRACE_VI_BLACK") != nullptr;
+    if (trace)
+        std::fprintf(stderr, "[vi-black] VISetBlack(%u) tick %llu field %llu from %08X\n", c.gpr[3],
+                     static_cast<unsigned long long>(c.game_clock().now()), static_cast<unsigned long long>(field_index_),
+                     c.lr);
+}
+
+bool NativeVideo::black_requested() const { return cpu_.mem_read32(kViStatic + kStaticBlack) != 0u; }
+
+// VISetPreRetraceCallback 0x8037E4F0(callback): installs the callback the retrace delivery calls first
+// (retrace_handler, kPhaseStart) and returns the previous one.
+void NativeVideo::vi_set_pre_retrace_callback(Cpu& c) {
+    const u32 sda = c.gpr[13];
+    const u32 previous = c.mem_read32(sda + kSdaPreCallback);
+    c.mem_write32(sda + kSdaPreCallback, c.gpr[3]);
+    c.gpr[3] = previous;
+}
+
+// VISetPostRetraceCallback 0x8037E534(callback): the twin of the pre callback - the callback the retrace delivery calls
+// last (retrace_handler, kPhasePostCallback) - returns the previous one. (The original brackets it in
+// OSDisableInterrupts / OSRestoreInterrupts; the owner runs atomically.)
+void NativeVideo::vi_set_post_retrace_callback(Cpu& c) {
+    const u32 sda = c.gpr[13];
+    const u32 previous = c.mem_read32(sda + kSdaPostCallback);
+    c.mem_write32(sda + kSdaPostCallback, c.gpr[3]);
+    c.gpr[3] = previous;
+}
+
+// VIConfigure 0x8037F19C(rmode): the game's display mode (a GXRenderModeObj) becomes the VI library's HorVer record, the
+// TV mode, the timing and the display-control / clock-select registers. Written here: exactly the words other code reads -
+// HorVer position / size / frame-buffer-mode / TV mode words (+0xF0..+0xF7, +0x106..+0x11B: the game reads them), the
+// timing (+0x144, the retrace commit), the mode-change flag, and the two registers (static + 2 and + 0x6C: the
+// RenderWare video-mode code reads them) with the native "changed" flags VIFlush stages from. Retired: the rest of the
+// register image the SDK programmed (horizontal / vertical timing, filter, frame-buffer registers; HorVer's adjusted
+// geometry, +0x11C-0x12F and +0x134) and the setFramebuffer / setVerticalRegs calls: hardware-only state, proven
+// unread by the guest watch (docs/agents/vi.md). OSDisableInterrupts / OSRestoreInterrupts bracket the original; the
+// owner runs atomically. The OSReport warning for an unsupported mode is a log only.
+void NativeVideo::vi_configure(Cpu& c) {
+    const u32 mode = c.gpr[3];
+    const u32 sda = c.gpr[13];
+    const u32 vi = kViStatic;
+    const u32 tv_field = c.mem_read32(mode) & 3u;
+    if (c.mem_read32(vi + kHorVerNonInter) != tv_field) {
+        c.mem_write32(sda + kSdaClearedByInit, 1u);
+        c.mem_write32(vi + kHorVerNonInter, tv_field);
+    }
+    const u32 kind = c.mem_read32(mode) >> 2;
+    const u32 os_tv = c.mem_read32(kOsTvMode);
+    if (kind == 4u && c.mem_read32(sda + kSdaConfigureWarned) == 0u) c.mem_write32(sda + kSdaConfigureWarned, 1u);
+    bool valid = false;
+    if (os_tv == 0u || os_tv == 2u || os_tv == 6u || os_tv == 7u) {
+        valid = kind == 0u || kind == 2u || kind == 6u || kind == 7u;
+    } else if (os_tv == 1u || os_tv == 5u) {
+        valid = kind == 1u || kind == 5u;
+    }
+    if (!valid) {
+        stop(c, "VIConfigure: render mode kind " + std::to_string(kind) + " does not match the console's TV mode " +
+                    std::to_string(os_tv) + " (the SDK's assert)");
+        return;
+    }
+    const u32 tv = (kind == 0u || kind == 2u) ? os_tv : kind;
+    c.mem_write32(vi + kHorVerTv, tv);
+
+    const u32 non_inter = c.mem_read32(vi + kHorVerNonInter);
+    c.mem_write16(vi + kHorVerDispPosX, c.mem_read16(mode + 0xAu));
+    c.mem_write16(vi + kHorVerDispPosY, non_inter == 1u ? static_cast<u16>((c.mem_read16(mode + 0xCu) << 1) & 0xFFFEu)
+                                                         : c.mem_read16(mode + 0xCu));
+    c.mem_write16(vi + kHorVerDispSizeX, c.mem_read16(mode + 0xEu));
+    const u32 fb_size_x = c.mem_read16(mode + 4u), fb_size_y = c.mem_read16(mode + 8u);
+    const u32 fb_mode = c.mem_read32(mode + 0x14u);
+    c.mem_write32(vi + kHorVerFbMode, fb_mode);
+    c.mem_write16(vi + kHorVerPanPosX, 0u);
+    c.mem_write16(vi + kHorVerPanPosY, 0u);
+    c.mem_write16(vi + kHorVerPanSizeX, static_cast<u16>(fb_size_x));
+    c.mem_write16(vi + kHorVerPanSizeY, static_cast<u16>(fb_size_y));
+    u32 size_y = fb_size_y;
+    if (non_inter != 2u && non_inter != 3u && fb_mode == 0u) size_y = (size_y << 1) & 0xFFFEu;
+    c.mem_write16(vi + kHorVerDispSizeY, static_cast<u16>(size_y));
+
+    const u32 timing = timing_address(c, tv * 4u + non_inter);
+    c.mem_write32(vi + kStaticTiming, timing);
+    if (timing == 0u) {
+        stop(c, "VIConfigure: getTiming has no timing for TV mode " + std::to_string(tv) + " / " + std::to_string(non_inter));
+        return;
+    }
+    if (c.mem_read32(sda + kSdaEncoderType) == 0u) c.mem_write32(vi + kHorVerTv, 3u);
+    const u32 final_tv = c.mem_read32(vi + kHorVerTv);
+
+    // Display control and clock select.
+    u32 dcr = c.mem_read16(vi + 2u * kRegDisplayControl);
+    u32 clock = c.mem_read16(vi + 2u * kRegClockSelect);
+    if (non_inter == 2u || non_inter == 3u) {
+        dcr |= 4u;
+        clock |= 1u;
+    } else {
+        dcr = (dcr & ~4u) | ((non_inter & 1u) << 2);
+        clock &= ~1u;
+    }
+    dcr = (dcr & ~8u) | ((non_inter == 3u ? 1u : 0u) << 3);
+    dcr &= ~0x300u;
+    if (final_tv >= 1u && final_tv <= 3u) dcr |= final_tv << 8;
+    c.mem_write16(vi + 2u * kRegDisplayControl, static_cast<u16>(dcr));
+    c.mem_write16(vi + 2u * kRegClockSelect, static_cast<u16>(clock));
+    changed_ |= kChangedDisplay | kChangedClock;
+}
+
+// VIGetTvFormat 0x80380138: the committed TV mode as the SDK's VI_NTSC / VI_PAL / VI_MPAL / VI_EURGB60 values
+// (a jump table over modes 0-7; the original returned its caller's r31 for a larger mode - none is ever committed).
+void NativeVideo::vi_get_tv_format(Cpu& c) {
+    const u32 mode = c.mem_read32(c.gpr[13] + kSdaCurrTvMode);
+    static constexpr s32 kFormat[8] = {0, 1, -1, 0, 1, -1, 0, 0};  // -1: the mode itself
+    if (mode > 7u) {
+        stop(c, "VIGetTvFormat: committed TV mode " + std::to_string(mode) + " is outside the SDK's table");
+        return;
+    }
+    c.gpr[3] = kFormat[mode] < 0 ? mode : static_cast<u32>(kFormat[mode]);
+}
+
 void NativeVideo::install() {
     Cpu& cpu = cpu_;
     const auto own = [&cpu](u32 address, const char* name, auto&& serve) {
@@ -541,6 +710,15 @@ void NativeVideo::install() {
     // VIGetCurrentLine: the line within the current field.
     own(kViGetCurrentLine, "VIGetCurrentLine",
         [this](Cpu& c) { c.gpr[3] = half_line_in_field(c.game_clock().now()) >> 1; });
+    own(kViFlush, "VIFlush", [this](Cpu& c) { vi_flush(c); });
+    own(kViSetNextFrameBuffer, "VISetNextFrameBuffer", [this](Cpu& c) { vi_set_next_frame_buffer(c); });
+    own(kViGetCurrentFrameBuffer, "VIGetCurrentFrameBuffer",
+        [](Cpu& c) { c.gpr[3] = c.mem_read32(c.gpr[13] + kSdaNextBufAddr); });
+    own(kViSetBlack, "VISetBlack", [this](Cpu& c) { vi_set_black(c); });
+    own(kViGetTvFormat, "VIGetTvFormat", [this](Cpu& c) { vi_get_tv_format(c); });
+    own(kViConfigure, "VIConfigure", [this](Cpu& c) { vi_configure(c); });
+    own(kViSetPreRetraceCallback, "VISetPreRetraceCallback", [this](Cpu& c) { vi_set_pre_retrace_callback(c); });
+    own(kViSetPostRetraceCallback, "VISetPostRetraceCallback", [this](Cpu& c) { vi_set_post_retrace_callback(c); });
     // The IPL's PAL display runs from boot, field 0 starting now: the PAL
     // interlaced standard - 625 half-lines per field, each 432 VI pixel
     // clocks (1,296 ticks) at 27 MHz, the SDK's own PAL record
@@ -562,10 +740,6 @@ u16 NativeVideo::platform_read16(Cpu& c, u32 site, u32 effective) {
     for (std::size_t i = 0; i < count; ++i) {
         if (sites[i].address != site) continue;
         const std::string kind = sites[i].kind;
-        if (kind == "video_encoder_status" && effective == kViEncoderStatus) {
-            // No Japanese video encoder, no component cable (VISEL 0).
-            return 0u;
-        }
         stop(c, "platform site " + hex(site) + " (" + kind + ") read " + hex(effective));
         return 0u;
     }
@@ -595,7 +769,7 @@ u32 NativeVideo::platform_value(Cpu& c, u32 site) {
 
 void NativeVideo::save_state(std::vector<u8>& out) const {
     state::put<u8>(out, enabled_ ? 1u : 0u);
-    state::put<u8>(out, clock54_ ? 1u : 0u);
+    state::put<u8>(out, static_cast<u8>((clock54_ ? 1u : 0u) | (staged_ << 1) | (changed_ << 5)));  // bit 0 clock54, 1-4 staged_, 5-6 changed_
     state::put<u8>(out, boot_pal_ ? 1u : 0u);
     state::put<u64>(out, field_index_);
     state::put<u64>(out, origin_ticks_);
@@ -618,7 +792,9 @@ bool NativeVideo::load_state(const u8*& cursor, const u8* end) {
     }
     if (num == 0u || den == 0u || nhlines == 0u || origin_fraction >= den) return false;
     enabled_ = enabled != 0u;
-    clock54_ = clock54 != 0u;
+    clock54_ = (clock54 & 1u) != 0u;
+    staged_ = static_cast<u8>((clock54 >> 1) & 0xFu);
+    changed_ = static_cast<u8>((clock54 >> 5) & 0x3u);
     boot_pal_ = boot_pal != 0u;
     field_index_ = field_index;
     origin_ticks_ = origin_ticks;

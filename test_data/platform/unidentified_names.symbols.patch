@@ -1,0 +1,363 @@
+--- a/config/symbols.txt
++++ b/config/symbols.txt
+@@ -9,2 +9,2 @@
+-fn_80003458 = .init:0x80003458; // type:function size:0x30
+-fn_80003488 = .init:0x80003488; // type:function size:0x24
++TRK_memset = .init:0x80003458; // type:function size:0x30
++TRK_memcpy = .init:0x80003488; // type:function size:0x24
+@@ -30844 +30844 @@
+-fn_803746B0 = .text:0x803746B0; // type:function size:0x1D8
++OSFatal = .text:0x803746B0; // type:function size:0x1D8
+@@ -30846,10 +30846,10 @@
+-fn_80374E68 = .text:0x80374E68; // type:function size:0x174
+-fn_80374FDC = .text:0x80374FDC; // type:function size:0x174
+-fn_80375150 = .text:0x80375150; // type:function size:0x64
+-fn_803751B4 = .text:0x803751B4; // type:function size:0x324
+-fn_803754D8 = .text:0x803754D8; // type:function size:0x140
+-fn_80375618 = .text:0x80375618; // type:function size:0x13C
+-fn_80375754 = .text:0x80375754; // type:function size:0x2A0
+-fn_803759F4 = .text:0x803759F4; // type:function size:0x3AC
+-fn_80375DA0 = .text:0x80375DA0; // type:function size:0x20C
+-fn_80375FAC = .text:0x80375FAC; // type:function size:0x170
++GetFontCode = .text:0x80374E68; // type:function size:0x174
++Decode = .text:0x80374FDC; // type:function size:0x174
++OSGetFontEncode = .text:0x80375150; // type:function size:0x64
++ReadFont = .text:0x803751B4; // type:function size:0x324
++OSLoadFont = .text:0x803754D8; // type:function size:0x140
++ParseStringS = .text:0x80375618; // type:function size:0x13C
++OSGetFontTexel = .text:0x80375754; // type:function size:0x2A0
++ExpandFontSheet = .text:0x803759F4; // type:function size:0x3AC
++OSInitFont = .text:0x80375DA0; // type:function size:0x20C
++OSGetFontTexture = .text:0x80375FAC; // type:function size:0x170
+@@ -31034 +31034 @@
+-cbForStateError__sub1 = .text:0x8037E00C; // type:function size:0x30
++__DVDPrintFatalMessage = .text:0x8037E00C; // type:function size:0x30
+@@ -31038,3 +31038,3 @@
+-fn_8037E4F0 = .text:0x8037E4F0; // type:function size:0x44
+-fn_8037E534 = .text:0x8037E534; // type:function size:0x44
+-fn_8037E578 = .text:0x8037E578; // type:function size:0xA8
++VISetPreRetraceCallback = .text:0x8037E4F0; // type:function size:0x44
++VISetPostRetraceCallback = .text:0x8037E534; // type:function size:0x44
++getTiming = .text:0x8037E578; // type:function size:0xA8
+@@ -31061,3 +31061,3 @@
+-fn_803801A0 = .text:0x803801A0; // type:function size:0x21C
+-fn_803803BC = .text:0x803803BC; // type:function size:0x60
+-fn_8038041C = .text:0x8038041C; // type:function size:0x1A4
++__VIDisplayPositionToXY = .text:0x803801A0; // type:function size:0x21C
++__VIGetCurrentPosition = .text:0x803803BC; // type:function size:0x60
++UpdateOrigin = .text:0x8038041C; // type:function size:0x1A4
+@@ -31069,4 +31069,4 @@
+-fn_80380C94 = .text:0x80380C94; // type:function size:0x110
+-fn_80380DA4 = .text:0x80380DA4; // type:function size:0x114
+-fn_80380EB8 = .text:0x80380EB8; // type:function size:0x150
+-PJSPeripheral__ManagerImpGc__vf3__sub0 = .text:0x80381008; // type:function size:0x300
++PADReset = .text:0x80380C94; // type:function size:0x110
++PADRecalibrate = .text:0x80380DA4; // type:function size:0x114
++PADInit = .text:0x80380EB8; // type:function size:0x150
++PADRead = .text:0x80381008; // type:function size:0x300
+@@ -31074,2 +31074,2 @@
+-Vibration__ServerGC__vf1__sub2 = .text:0x803813D4; // type:function size:0xB8
+-fn_8038148C = .text:0x8038148C; // type:function size:0x60
++PADControlMotor = .text:0x803813D4; // type:function size:0xB8
++PADSetSpec = .text:0x8038148C; // type:function size:0x60
+@@ -31078,4 +31078,4 @@
+-fn_803817D4 = .text:0x803817D4; // type:function size:0x470
+-fn_80381C44 = .text:0x80381C44; // type:function size:0xBC
+-fn_80381D00 = .text:0x80381D00; // type:function size:0x60
+-fn_80381D60 = .text:0x80381D60; // type:function size:0x54
++SPEC2_MakeStatus = .text:0x803817D4; // type:function size:0x470
++OnReset = .text:0x80381C44; // type:function size:0xBC
++SamplingHandler = .text:0x80381D00; // type:function size:0x60
++PADSetSamplingCallback = .text:0x80381D60; // type:function size:0x54
+@@ -31083 +31083 @@
+-AudioGCN__ctor__sub3__sub0__sub6__sub2 = .text:0x80381E30; // type:function size:0x44
++AIRegisterDMACallback = .text:0x80381E30; // type:function size:0x44
+@@ -31101,7 +31101,7 @@
+-fn_80382530 = .text:0x80382530; // type:function size:0x1E4
+-AudioGCN__ctor__sub1__sub1 = .text:0x80382714; // type:function size:0x44
+-fn_80382758 = .text:0x80382758; // type:function size:0x3C
+-fn_80382794 = .text:0x80382794; // type:function size:0xF0
+-fn_80382884 = .text:0x80382884; // type:function size:0x68
+-fn_803828EC = .text:0x803828EC; // type:function size:0x74
+-AudioGCN__ctor__sub0 = .text:0x80382960; // type:function size:0xC4
++__AI_SRC_INIT = .text:0x80382530; // type:function size:0x1E4
++ARRegisterDMACallback = .text:0x80382714; // type:function size:0x44
++ARGetDMAStatus = .text:0x80382758; // type:function size:0x3C
++ARStartDMA = .text:0x80382794; // type:function size:0xF0
++ARAlloc = .text:0x80382884; // type:function size:0x68
++ARFree = .text:0x803828EC; // type:function size:0x74
++ARInit = .text:0x80382960; // type:function size:0xC4
+@@ -31109,4 +31109,4 @@
+-fn_80382A9C = .text:0x80382A9C; // type:function size:0x20
+-fn_80382ABC = .text:0x80382ABC; // type:function size:0x10
+-AudioGCN__ctor__sub0__sub4 = .text:0x80382ACC; // type:function size:0x17F4
+-fn_803842C0 = .text:0x803842C0; // type:function size:0x100
++__ARClearInterrupt = .text:0x80382A9C; // type:function size:0x20
++__ARGetInterruptStatus = .text:0x80382ABC; // type:function size:0x10
++__ARChecksize = .text:0x80382ACC; // type:function size:0x17F4
++__ARQServiceQueueLo = .text:0x803842C0; // type:function size:0x100
+@@ -31115,26 +31115,26 @@
+-AudioGCN__ctor__sub1 = .text:0x80384490; // type:function size:0x70
+-fn_80384500 = .text:0x80384500; // type:function size:0x15C
+-AudioGCN__ctor__sub3 = .text:0x8038465C; // type:function size:0x24
+-AudioGCN__ctor__sub3__sub0 = .text:0x80384680; // type:function size:0x4C
+-AudioGCN__dtor__sub5 = .text:0x803846CC; // type:function size:0x34
+-fn_80384700 = .text:0x80384700; // type:function size:0x18
+-fn_80384718 = .text:0x80384718; // type:function size:0x74
+-AudioGCN__ctor__sub3__sub0__sub1 = .text:0x8038478C; // type:function size:0xB4
+-AudioGCN__dtor__sub5__sub0 = .text:0x80384840; // type:function size:0xB4
+-fn_803848F4 = .text:0x803848F4; // type:function size:0x20
+-fn_80384914 = .text:0x80384914; // type:function size:0x10
+-fn_80384924 = .text:0x80384924; // type:function size:0x1C
+-fn_80384940 = .text:0x80384940; // type:function size:0x94
+-fn_803849D4 = .text:0x803849D4; // type:function size:0x80
+-fn_80384A54 = .text:0x80384A54; // type:function size:0x174
+-AudioGCN__ctor__sub3__sub0__sub4 = .text:0x80384BC8; // type:function size:0xE4
+-AudioGCN__dtor__sub5__sub3 = .text:0x80384CAC; // type:function size:0x10
+-fn_80384CBC = .text:0x80384CBC; // type:function size:0x34
+-fn_80384CF0 = .text:0x80384CF0; // type:function size:0x20
+-fn_80384D10 = .text:0x80384D10; // type:function size:0x1C
+-fn_80384D2C = .text:0x80384D2C; // type:function size:0x20
+-fn_80384D4C = .text:0x80384D4C; // type:function size:0x20
+-fn_80384D6C = .text:0x80384D6C; // type:function size:0x20
+-fn_80384D8C = .text:0x80384D8C; // type:function size:0x34
+-fn_80384DC0 = .text:0x80384DC0; // type:function size:0x1C
+-fn_80384DDC = .text:0x80384DDC; // type:function size:0x1C
++ARQInit = .text:0x80384490; // type:function size:0x70
++ARQPostRequest = .text:0x80384500; // type:function size:0x15C
++AXInit = .text:0x8038465C; // type:function size:0x24
++AXInitEx = .text:0x80384680; // type:function size:0x4C
++AXQuit = .text:0x803846CC; // type:function size:0x34
++__AXGetStackHead = .text:0x80384700; // type:function size:0x18
++__AXServiceCallbackStack = .text:0x80384718; // type:function size:0x74
++__AXAllocInit = .text:0x8038478C; // type:function size:0xB4
++__AXAllocQuit = .text:0x80384840; // type:function size:0xB4
++__AXPushFreeStack = .text:0x803848F4; // type:function size:0x20
++__AXPushCallbackStack = .text:0x80384914; // type:function size:0x10
++__AXPopCallbackStack = .text:0x80384924; // type:function size:0x1C
++__AXRemoveFromStack = .text:0x80384940; // type:function size:0x94
++AXFreeVoice = .text:0x803849D4; // type:function size:0x80
++AXAcquireVoice = .text:0x80384A54; // type:function size:0x174
++__AXAuxInit = .text:0x80384BC8; // type:function size:0xE4
++__AXAuxQuit = .text:0x80384CAC; // type:function size:0x10
++__AXGetAuxAInput = .text:0x80384CBC; // type:function size:0x34
++__AXGetAuxAInputS = .text:0x80384CF0; // type:function size:0x20
++__AXGetAuxAOutput = .text:0x80384D10; // type:function size:0x1C
++__AXGetAuxAOutputR = .text:0x80384D2C; // type:function size:0x20
++__AXGetAuxAOutputS = .text:0x80384D4C; // type:function size:0x20
++__AXGetAuxBOutputS = .text:0x80384D6C; // type:function size:0x20
++__AXGetAuxBInput = .text:0x80384D8C; // type:function size:0x34
++__AXGetAuxBOutput = .text:0x80384DC0; // type:function size:0x1C
++__AXGetAuxBOutputR = .text:0x80384DDC; // type:function size:0x1C
+@@ -31142,11 +31142,11 @@
+-fn_80384E14 = .text:0x80384E14; // type:function size:0x23C
+-fn_80385050 = .text:0x80385050; // type:function size:0xC
+-fn_8038505C = .text:0x8038505C; // type:function size:0xC
+-fn_80385068 = .text:0x80385068; // type:function size:0x8
+-fn_80385070 = .text:0x80385070; // type:function size:0x3C
+-fn_803850AC = .text:0x803850AC; // type:function size:0x6B0
+-AudioGCN__ctor__sub3__sub0__sub5 = .text:0x8038575C; // type:function size:0x24
+-AudioGCN__dtor__sub5__sub4 = .text:0x80385780; // type:function size:0x4
+-fn_80385784 = .text:0x80385784; // type:function size:0x14
+-fn_80385798 = .text:0x80385798; // type:function size:0x1B8
+-fn_80385950 = .text:0x80385950; // type:function size:0xBC
++__AXProcessAux = .text:0x80384E14; // type:function size:0x23C
++AXRegisterAuxACallback = .text:0x80385050; // type:function size:0xC
++AXRegisterAuxBCallback = .text:0x8038505C; // type:function size:0xC
++__AXGetCommandListCycles = .text:0x80385068; // type:function size:0x8
++__AXGetCommandListAddress = .text:0x80385070; // type:function size:0x3C
++__AXNextFrame = .text:0x803850AC; // type:function size:0x6B0
++__AXClInit = .text:0x8038575C; // type:function size:0x24
++__AXClQuit = .text:0x80385780; // type:function size:0x4
++AXSetMode = .text:0x80385784; // type:function size:0x14
++__AXOutNewFrame = .text:0x80385798; // type:function size:0x1B8
++__AXOutAiCallback = .text:0x80385950; // type:function size:0xBC
+@@ -31154 +31154 @@
+-fn_80385A18 = .text:0x80385A18; // type:function size:0x58
++__AXOutSPCallback = .text:0x80385A18; // type:function size:0x58
+@@ -31156,5 +31156,5 @@
+-AudioGCN__ctor__sub3__sub0__sub6__sub1 = .text:0x80385A9C; // type:function size:0xCC
+-AudioGCN__ctor__sub3__sub0__sub6 = .text:0x80385B68; // type:function size:0x3A0
+-AudioGCN__dtor__sub5__sub5 = .text:0x80385F08; // type:function size:0x58
+-AudioGCN__ctor__sub5 = .text:0x80385F60; // type:function size:0x44
+-fn_80385FA4 = .text:0x80385FA4; // type:function size:0xC
++__AXOutInitDSP = .text:0x80385A9C; // type:function size:0xCC
++__AXOutInit = .text:0x80385B68; // type:function size:0x3A0
++__AXOutQuit = .text:0x80385F08; // type:function size:0x58
++AXRegisterCallback = .text:0x80385F60; // type:function size:0x44
++__AXGetStudio = .text:0x80385FA4; // type:function size:0xC
+@@ -31162,2 +31162,2 @@
+-AudioGCN__ctor__sub3__sub0__sub3 = .text:0x803863A8; // type:function size:0x2C
+-AudioGCN__dtor__sub5__sub2 = .text:0x803863D4; // type:function size:0x4
++__AXSPBInit = .text:0x803863A8; // type:function size:0x2C
++__AXSPBQuit = .text:0x803863D4; // type:function size:0x4
+@@ -31166,14 +31166,14 @@
+-fn_80386474 = .text:0x80386474; // type:function size:0x74C
+-fn_80386BC0 = .text:0x80386BC0; // type:function size:0x278
+-fn_80386E38 = .text:0x80386E38; // type:function size:0xC
+-fn_80386E44 = .text:0x80386E44; // type:function size:0x44
+-AudioGCN__ctor__sub3__sub0__sub2 = .text:0x80386E88; // type:function size:0x204
+-AudioGCN__dtor__sub5__sub1 = .text:0x8038708C; // type:function size:0x4
+-fn_80387090 = .text:0x80387090; // type:function size:0xC4
+-fn_80387154 = .text:0x80387154; // type:function size:0x5C
+-fn_803871B0 = .text:0x803871B0; // type:function size:0x254
+-fn_80387404 = .text:0x80387404; // type:function size:0x110
+-fn_80387514 = .text:0x80387514; // type:function size:0xA4
+-fn_803875B8 = .text:0x803875B8; // type:function size:0x98
+-fn_80387650 = .text:0x80387650; // type:function size:0x98
+-fn_803876E8 = .text:0x803876E8; // type:function size:0x6C
++__AXSyncPB = .text:0x80386474; // type:function size:0x74C
++__AXSyncPBs = .text:0x80386BC0; // type:function size:0x278
++__AXGetPBs = .text:0x80386E38; // type:function size:0xC
++__AXSetPBDefault = .text:0x80386E44; // type:function size:0x44
++__AXVPBInit = .text:0x80386E88; // type:function size:0x204
++__AXVPBQuit = .text:0x8038708C; // type:function size:0x4
++AXSetVoiceSrcType = .text:0x80387090; // type:function size:0xC4
++AXSetVoiceState = .text:0x80387154; // type:function size:0x5C
++AXSetVoiceMix = .text:0x803871B0; // type:function size:0x254
++AXSetVoiceAddr = .text:0x80387404; // type:function size:0x110
++AXSetVoiceAdpcm = .text:0x80387514; // type:function size:0xA4
++AXSetVoiceSrc = .text:0x803875B8; // type:function size:0x98
++AXSetVoiceSrcRatio = .text:0x80387650; // type:function size:0x98
++AXSetVoiceAdpcmLoop = .text:0x803876E8; // type:function size:0x6C
+@@ -31181 +31181 @@
+-AudioGCN__ctor__sub7__sub0__sub7__sub3__sub1 = .text:0x8038779C; // type:function size:0x588
++__ReverbHiCreate = .text:0x8038779C; // type:function size:0x588
+@@ -31188,6 +31188,6 @@
+-AudioGCN__ctor__sub7__sub0__sub7__sub2__sub1 = .text:0x803886A4; // type:function size:0x47C
+-fn_80388B20 = .text:0x80388B20; // type:function size:0x3B4
+-fn_80388ED4 = .text:0x80388ED4; // type:function size:0x124
+-AudioGCN__ctor__sub7__sub0__sub7__sub2 = .text:0x80388FF8; // type:function size:0x6C
+-AudioGCN__dtor__sub2__sub1__sub2 = .text:0x80389064; // type:function size:0x4C
+-fn_803890B0 = .text:0x803890B0; // type:function size:0x30
++__ReverbSTDCreate = .text:0x803886A4; // type:function size:0x47C
++__ReverbSTDCallback = .text:0x80388B20; // type:function size:0x3B4
++__ReverbSTDFree = .text:0x80388ED4; // type:function size:0x124
++AXFXReverbStdInit = .text:0x80388FF8; // type:function size:0x6C
++AXFXReverbStdShutdown = .text:0x80389064; // type:function size:0x4C
++AXFXReverbStdCallback = .text:0x803890B0; // type:function size:0x30
+@@ -31196,5 +31196,5 @@
+-AudioGCN__ctor__sub7__sub0__sub7__sub4 = .text:0x80389464; // type:function size:0x248
+-AudioGCN__dtor__sub2__sub1__sub4 = .text:0x803896AC; // type:function size:0x50
+-AudioGCN__ctor__sub7__sub0__sub7__sub4__sub2 = .text:0x803896FC; // type:function size:0x110
+-fn_8038980C = .text:0x8038980C; // type:function size:0x350
+-fn_80389B5C = .text:0x80389B5C; // type:function size:0x1D0
++AXFXChorusInit = .text:0x80389464; // type:function size:0x248
++AXFXChorusShutdown = .text:0x803896AC; // type:function size:0x50
++__ChorusInit = .text:0x803896FC; // type:function size:0x110
++AXFXChorusCallback = .text:0x8038980C; // type:function size:0x350
++AXFXDelayCallback = .text:0x80389B5C; // type:function size:0x1D0
+@@ -31202,5 +31202,5 @@
+-AudioGCN__ctor__sub7__sub0__sub7__sub5 = .text:0x80389FF4; // type:function size:0x48
+-fn_8038A03C = .text:0x8038A03C; // type:function size:0xA0
+-fn_8038A0DC = .text:0x8038A0DC; // type:function size:0x28
+-fn_8038A104 = .text:0x8038A104; // type:function size:0x28
+-AudioGCN__ctor__sub7__sub0__sub7__sub1 = .text:0x8038A12C; // type:function size:0xC
++AXFXDelayInit = .text:0x80389FF4; // type:function size:0x48
++AXFXDelayShutdown = .text:0x8038A03C; // type:function size:0xA0
++__AXFXAllocFunction = .text:0x8038A0DC; // type:function size:0x28
++__AXFXFreeFunction = .text:0x8038A104; // type:function size:0x28
++AXFXSetHooks = .text:0x8038A12C; // type:function size:0xC
+@@ -31208,8 +31208,8 @@
+-AudioGCN__ctor__sub4 = .text:0x8038A1F4; // type:function size:0xC8
+-AudioGCN__dtor__sub4 = .text:0x8038A2BC; // type:function size:0x4
+-AudioGCN__vf20__sub1 = .text:0x8038A2C0; // type:function size:0x8
+-fn_8038A2C8 = .text:0x8038A2C8; // type:function size:0xE7C
+-fn_8038B144 = .text:0x8038B144; // type:function size:0x20
+-adxt_SetOutVol__sub3__sub0__sub1 = .text:0x8038B164; // type:function size:0x28
+-fn_8038B18C = .text:0x8038B18C; // type:function size:0x6C
+-fn_8038B1F8 = .text:0x8038B1F8; // type:function size:0x107C
++MIXInit = .text:0x8038A1F4; // type:function size:0xC8
++MIXQuit = .text:0x8038A2BC; // type:function size:0x4
++MIXSetSoundMode = .text:0x8038A2C0; // type:function size:0x8
++MIXInitChannel = .text:0x8038A2C8; // type:function size:0xE7C
++MIXReleaseChannel = .text:0x8038B144; // type:function size:0x20
++MIXSetInput = .text:0x8038B164; // type:function size:0x28
++MIXSetPan = .text:0x8038B18C; // type:function size:0x6C
++MIXUpdateSettings = .text:0x8038B1F8; // type:function size:0x107C
+@@ -31230,2 +31230,2 @@
+-fn_8038CD44 = .text:0x8038CD44; // type:function size:0x94
+-fn_8038CDD8 = .text:0x8038CDD8; // type:function size:0x4
++__DSP_remove_task = .text:0x8038CD44; // type:function size:0x94
++__CARDDefaultApiCallback = .text:0x8038CDD8; // type:function size:0x4
+@@ -31236,2 +31236,2 @@
+-fn_8038D0F8 = .text:0x8038D0F8; // type:function size:0xC0
+-fn_8038D1B8 = .text:0x8038D1B8; // type:function size:0xF0
++__CARDEnableInterrupt = .text:0x8038D0F8; // type:function size:0xC0
++__CARDReadStatus = .text:0x8038D1B8; // type:function size:0xF0
+@@ -31239 +31239 @@
+-fn_8038D398 = .text:0x8038D398; // type:function size:0xAC
++__CARDClearStatus = .text:0x8038D398; // type:function size:0xAC
+@@ -31242 +31242 @@
+-fn_8038D788 = .text:0x8038D788; // type:function size:0x110
++UnlockedCallback = .text:0x8038D788; // type:function size:0x110
+@@ -31244 +31244 @@
+-fn_8038DABC = .text:0x8038DABC; // type:function size:0x134
++__CARDReadSegment = .text:0x8038DABC; // type:function size:0x134
+@@ -31290,10 +31290,10 @@
+-fn_80391780 = .text:0x80391780; // type:function size:0x144
+-fn_803918C4 = .text:0x803918C4; // type:function size:0x658
+-fn_80391F1C = .text:0x80391F1C; // type:function size:0x48
+-fn_80391F64 = .text:0x80391F64; // type:function size:0x68
+-fn_80391FCC = .text:0x80391FCC; // type:function size:0x94
+-fn_80392060 = .text:0x80392060; // type:function size:0x134
+-fn_80392194 = .text:0x80392194; // type:function size:0xF4
+-fn_80392288 = .text:0x80392288; // type:function size:0x150
+-fn_803923D8 = .text:0x803923D8; // type:function size:0x11C
+-fn_803924F4 = .text:0x803924F4; // type:function size:0x54
++FormatCallback = .text:0x80391780; // type:function size:0x144
++__CARDFormatRegionAsync = .text:0x803918C4; // type:function size:0x658
++CARDFormatAsync = .text:0x80391F1C; // type:function size:0x48
++__CARDCompareFileName = .text:0x80391F64; // type:function size:0x68
++__CARDAccess = .text:0x80391FCC; // type:function size:0x94
++__CARDIsWritable = .text:0x80392060; // type:function size:0x134
++__CARDIsReadable = .text:0x80392194; // type:function size:0xF4
++__CARDGetFileNo = .text:0x80392288; // type:function size:0x150
++CARDOpen = .text:0x803923D8; // type:function size:0x11C
++CARDClose = .text:0x803924F4; // type:function size:0x54
+@@ -31301,5 +31301,5 @@
+-fn_80392550 = .text:0x80392550; // type:function size:0x130
+-fn_80392680 = .text:0x80392680; // type:function size:0x220
+-fn_803928A0 = .text:0x803928A0; // type:function size:0x1B8
+-fn_80392A58 = .text:0x80392A58; // type:function size:0x130
+-fn_80392B88 = .text:0x80392B88; // type:function size:0x144
++CreateCallbackFat = .text:0x80392550; // type:function size:0x130
++CARDCreateAsync = .text:0x80392680; // type:function size:0x220
++__CARDSeek = .text:0x803928A0; // type:function size:0x1B8
++ReadCallback = .text:0x80392A58; // type:function size:0x130
++CARDReadAsync = .text:0x80392B88; // type:function size:0x144
+@@ -31308,6 +31308,6 @@
+-fn_80392EEC = .text:0x80392EEC; // type:function size:0x114
+-fn_80393000 = .text:0x80393000; // type:function size:0xA4
+-fn_803930A4 = .text:0x803930A4; // type:function size:0x110
+-fn_803931B4 = .text:0x803931B4; // type:function size:0x1F8
+-fn_803933AC = .text:0x803933AC; // type:function size:0x114
+-fn_803934C0 = .text:0x803934C0; // type:function size:0x174
++CARDWriteAsync = .text:0x80392EEC; // type:function size:0x114
++DeleteCallback = .text:0x80393000; // type:function size:0xA4
++CARDDeleteAsync = .text:0x803930A4; // type:function size:0x110
++UpdateIconOffsets = .text:0x803931B4; // type:function size:0x1F8
++CARDGetStatus = .text:0x803933AC; // type:function size:0x114
++CARDSetStatusAsync = .text:0x803934C0; // type:function size:0x174
+@@ -31904 +31904 @@
+-fn_803B2F50 = .text:0x803B2F50; // type:function size:0x24
++powf = .text:0x803B2F50; // type:function size:0x24
+@@ -31939 +31939 @@
+-fn_803B4414 = .text:0x803B4414; // type:function size:0x80
++EXIProbe = .text:0x803B4414; // type:function size:0x80
+@@ -31941,2 +31941,2 @@
+-fn_803B4548 = .text:0x803B4548; // type:function size:0x10C
+-fn_803B4654 = .text:0x803B4654; // type:function size:0xBC
++EXIAttach = .text:0x803B4548; // type:function size:0x10C
++EXIDetach = .text:0x803B4654; // type:function size:0xBC
+@@ -31956 +31956 @@
+-fn_803B57D8 = .text:0x803B57D8; // type:function size:0x70
++InitializeUART = .text:0x803B57D8; // type:function size:0x70
+@@ -31958,2 +31958,2 @@
+-fn_803B5A48 = .text:0x803B5A48; // type:function size:0x20
+-PJSPeripheral__ManagerImpGc__vf3__sub0__sub3 = .text:0x803B5A68; // type:function size:0x3C
++SIBusy = .text:0x803B5A48; // type:function size:0x20
++SIIsChanBusy = .text:0x803B5A68; // type:function size:0x3C
+@@ -31981 +31981 @@
+-fn_803B721C = .text:0x803B721C; // type:function size:0x24
++SIRefreshSamplingRate = .text:0x803B721C; // type:function size:0x24

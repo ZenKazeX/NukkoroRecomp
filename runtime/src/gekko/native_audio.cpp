@@ -36,14 +36,9 @@ constexpr u32 kAiGetStreamVolLeft = 0x80382208u;
 constexpr u32 kAiSetStreamVolRight = 0x80382218u;
 constexpr u32 kAiGetStreamVolRight = 0x80382234u;
 constexpr u32 kAiInit = 0x80382244u;
-constexpr u32 kDspCheckMailToDsp = 0x8038C274u;
-constexpr u32 kDspCheckMailFromDsp = 0x8038C284u;
-constexpr u32 kDspReadMailFromDsp = 0x8038C294u;
-constexpr u32 kDspSendMailToDsp = 0x8038C2ACu;
+// DSPInit: the one DSP function left. CARDInit (save_store.cpp, the card agent's) still serves it as "its one shared effect"; with the AX
+// frame native nothing else of the DSP library is reachable.
 constexpr u32 kDspInit = 0x8038C2C0u;
-constexpr u32 kDspAddTask = 0x8038C38Cu;
-constexpr u32 kDspAssertTask = 0x8038C43Cu;
-
 const NativeAudio::Address kAddresses[] = {
     {kInitAudioSystem, "__OSInitAudioSystem", false},
     {kStopAudioSystem, "__OSStopAudioSystem", false},
@@ -61,13 +56,7 @@ const NativeAudio::Address kAddresses[] = {
     {kAiSetStreamVolRight, "AISetStreamVolRight", false},
     {kAiGetStreamVolRight, "AIGetStreamVolRight", false},
     {kAiInit, "AIInit", false},
-    {kDspCheckMailToDsp, "DSPCheckMailToDSP", false},
-    {kDspCheckMailFromDsp, "DSPCheckMailFromDSP", false},
-    {kDspReadMailFromDsp, "DSPReadMailFromDSP", false},
-    {kDspSendMailToDsp, "DSPSendMailToDSP", false},
     {kDspInit, "DSPInit", false},
-    {kDspAddTask, "DSPAddTask", false},
-    {kDspAssertTask, "DSPAssertTask", false},
 };
 
 // ---- SDK state, r13-relative (the SDK's own small-data variables) ----------
@@ -78,46 +67,12 @@ constexpr u32 kSdaCallbackStack = 0x5C68u; // __CallbackStack
 constexpr u32 kSdaAiInitFlag = 0x5C70u;    // __AI_init_flag
 constexpr u32 kSdaAidActive = 0x5C74u;     // __AID_Active
 constexpr u32 kSdaAiBounds = 0x5C78u;      // bound_32KHz, bound_48KHz, min_wait, max_wait, buffer (OSTime)
-// dsp.c / dsp_task.c
+// dsp.c
 constexpr u32 kSdaDspInitFlag = 0x5DD0u;    // __DSP_init_flag
-constexpr u32 kSdaRudePending = 0x5DD8u;    // __DSP_rude_task_pending
-constexpr u32 kSdaRudeTask = 0x5DDCu;       // __DSP_rude_task
 constexpr u32 kSdaTmpTask = 0x5DE0u;        // __DSP_tmp_task
 constexpr u32 kSdaLastTask = 0x5DE4u;       // __DSP_last_task
 constexpr u32 kSdaFirstTask = 0x5DE8u;      // __DSP_first_task
 constexpr u32 kSdaCurrTask = 0x5DECu;       // __DSP_curr_task
-
-// DSPTaskInfo (dsp.h).
-constexpr u32 kTaskState = 0x00u;      // 0 INIT, 1 RUN, 2 YIELD, 3 DONE
-constexpr u32 kTaskPriority = 0x04u;
-constexpr u32 kTaskFlags = 0x08u;      // 1 ACTIVE, 2 CANCEL
-constexpr u32 kTaskIramMmem = 0x0Cu;
-constexpr u32 kTaskIramLength = 0x10u;
-constexpr u32 kTaskInitCallback = 0x28u;
-constexpr u32 kTaskResumeCallback = 0x2Cu;
-constexpr u32 kTaskDoneCallback = 0x30u;
-constexpr u32 kTaskRequestCallback = 0x34u;
-constexpr u32 kTaskNext = 0x38u;
-constexpr u32 kTaskPrev = 0x3Cu;
-constexpr u32 kTaskFlagCancel = 0x2u;
-
-// DSP <-> CPU mails of the SDK task protocol (dsp_task.c).
-constexpr u32 kMailInit = 0xDCD10000u;
-constexpr u32 kMailResume = 0xDCD10001u;
-constexpr u32 kMailYield = 0xDCD10002u;
-constexpr u32 kMailDone = 0xDCD10003u;
-constexpr u32 kMailRequest = 0xDCD10004u;
-constexpr u32 kMailSwitch = 0xCDD10001u;
-constexpr u32 kMailHalt = 0xCDD10002u;
-constexpr u32 kMailContinue = 0xCDD10003u;
-// The AX command protocol: 0xBABE | list size, then the list address.
-constexpr u32 kAxListHeader = 0xBABE0000u;
-
-// The one microcode the native DSP implements: the AX microcode this game
-// links (0x1F00 bytes at 0x80564E60), identified by content.
-constexpr u32 kAxMicrocodeLength = 0x1F00u;
-constexpr u64 kAxMicrocodeFnv1a = 0x7708BDFA41638A48ull;
-
 
 std::string hex(u32 value) {
     char text[16];
@@ -154,12 +109,7 @@ void NativeAudio::reset() noexcept {
     dsp_rate_32k_ = false;
     volume_left_ = 0;
     volume_right_ = 0;
-    task_running_ = false;
-    task_ = 0;
-    mail_valid_ = false;
-    mail_ = 0;
-    expect_list_address_ = false;
-    list_size_ = 0;
+    last_command_list_ = 0;
     completions_.clear();
     cpu_.game_clock().cancel(GameEvent::Audio);
 }
@@ -214,7 +164,20 @@ void NativeAudio::on_pass_end(u64 now) {
     interrupts_.raise(NativeInterrupts::Source::AiDma);
 }
 
-// __AIDHandler: the __AID_Active guard around the registered callback.
+// __AIDHandler: the __AID_Active guard around the registered callback. The AX engine's callback is the native frame (set_ax_frame).
+constexpr u32 kAxFrameTag = 0xA0A0F00Du;  // scratch word 3 of a delivery running the native frame (guest memory: a saved state resumes it)
+
+bool NativeAudio::ax_frame_step(Cpu& c, u32 frame, u32 step) {
+    u32 target = 0u, r3 = 0u, r4 = 0u;
+    if (ax_frame_(c, NativeInterrupts::scratch(frame, 0u), step, target, r3, r4)) {
+        interrupts_.call_guest(c, frame, target, r3, r4);
+        return true;
+    }
+    c.mem_write32(c.gpr[13] + kSdaAidActive, 0u);
+    c.mem_write32(NativeInterrupts::scratch(frame, 3u), 0u);
+    return false;
+}
+
 bool NativeAudio::ai_handler(Cpu& c, u32 frame, u32 step) {
     const u32 sda = c.gpr[13];
     if (step == 0u) {
@@ -228,9 +191,14 @@ bool NativeAudio::ai_handler(Cpu& c, u32 frame, u32 step) {
         }
         c.mem_write32(sda + kSdaAidActive, 1u);
         ++stats_.ai_callbacks;
+        if (ax_frame_ && callback == ax_frame_callback_) {
+            c.mem_write32(NativeInterrupts::scratch(frame, 3u), kAxFrameTag);
+            return ax_frame_step(c, frame, 0u);
+        }
         interrupts_.call_guest(c, frame, callback, callback, 0u);
         return true;
     }
+    if (ax_frame_ && c.mem_read32(NativeInterrupts::scratch(frame, 3u)) == kAxFrameTag) return ax_frame_step(c, frame, step);
     c.mem_write32(sda + kSdaAidActive, 0u);
     return false;
 }
@@ -281,211 +249,6 @@ void NativeAudio::dma_interrupt_init(Cpu& c) {
 }
 
 // ---------------------------------------------------------------------------
-// The DSP: the AX microcode's contract and the SDK task manager
-// ---------------------------------------------------------------------------
-
-void NativeAudio::post_mail(Cpu& c, u32 mail) {
-    if (mail_valid_) {
-        stop(c, "the DSP posted " + hex(mail) + " while " + hex(mail_) + " was still unread");
-        return;
-    }
-    mail_ = mail;
-    mail_valid_ = true;
-    ++stats_.dsp_mails;
-    interrupts_.raise(NativeInterrupts::Source::Dsp);
-}
-
-// A mail from the CPU, to the running task.
-void NativeAudio::receive_mail(Cpu& c, u32 mail) {
-    if (!task_running_) {
-        stop(c, "mail " + hex(mail) + " to the DSP while no task runs");
-        return;
-    }
-    if (expect_list_address_) {
-        expect_list_address_ = false;
-        last_command_list_ = mail;
-        ++stats_.command_lists;
-        // The microcode consumes the list (mixes the frame) and yields.
-        if (mixer_) mixer_(mail);
-        post_mail(c, kMailYield);
-        return;
-    }
-    if ((mail & 0xFFFF0000u) == kAxListHeader) {
-        list_size_ = mail & 0xFFFFu;
-        expect_list_address_ = true;
-        return;
-    }
-    stop(c, "mail " + hex(mail) + " is not part of the AX command protocol");
-}
-
-// __DSP_insert_task (0x8038CCA4): priority order, first/last/curr kept.
-void NativeAudio::insert_task(Cpu& c, u32 task) {
-    const u32 sda = c.gpr[13];
-    const u32 first = c.mem_read32(sda + kSdaFirstTask);
-    if (first == 0u) {
-        c.mem_write32(sda + kSdaCurrTask, task);
-        c.mem_write32(sda + kSdaLastTask, task);
-        c.mem_write32(sda + kSdaFirstTask, task);
-        c.mem_write32(task + kTaskPrev, 0u);
-        c.mem_write32(task + kTaskNext, 0u);
-        return;
-    }
-    for (u32 t = first; t != 0u; t = c.mem_read32(t + kTaskNext)) {
-        if (c.mem_read32(task + kTaskPriority) < c.mem_read32(t + kTaskPriority)) {
-            c.mem_write32(task + kTaskPrev, c.mem_read32(t + kTaskPrev));
-            c.mem_write32(t + kTaskPrev, task);
-            c.mem_write32(task + kTaskNext, t);
-            const u32 prev = c.mem_read32(task + kTaskPrev);
-            if (prev == 0u) {
-                c.mem_write32(sda + kSdaFirstTask, task);
-            } else {
-                c.mem_write32(prev + kTaskNext, task);
-            }
-            return;
-        }
-    }
-    const u32 last = c.mem_read32(sda + kSdaLastTask);
-    c.mem_write32(last + kTaskNext, task);
-    c.mem_write32(task + kTaskNext, 0u);
-    c.mem_write32(task + kTaskPrev, c.mem_read32(sda + kSdaLastTask));
-    c.mem_write32(sda + kSdaLastTask, task);
-}
-
-// __DSP_remove_task (0x8038CD44).
-void NativeAudio::remove_task(Cpu& c, u32 task) {
-    const u32 sda = c.gpr[13];
-    c.mem_write32(task + kTaskFlags, 0u);
-    c.mem_write32(task + kTaskState, 3u);
-    if (c.mem_read32(sda + kSdaFirstTask) == task) {
-        const u32 next = c.mem_read32(task + kTaskNext);
-        if (next != 0u) {
-            c.mem_write32(sda + kSdaFirstTask, next);
-            c.mem_write32(next + kTaskPrev, 0u);
-        } else {
-            c.mem_write32(sda + kSdaCurrTask, 0u);
-            c.mem_write32(sda + kSdaLastTask, 0u);
-            c.mem_write32(sda + kSdaFirstTask, 0u);
-        }
-        return;
-    }
-    if (c.mem_read32(sda + kSdaLastTask) == task) {
-        const u32 prev = c.mem_read32(task + kTaskPrev);
-        c.mem_write32(sda + kSdaLastTask, prev);
-        c.mem_write32(prev + kTaskNext, 0u);
-        c.mem_write32(sda + kSdaCurrTask, c.mem_read32(sda + kSdaFirstTask));
-        return;
-    }
-    const u32 prev = c.mem_read32(task + kTaskPrev);
-    const u32 next = c.mem_read32(task + kTaskNext);
-    c.mem_write32(sda + kSdaCurrTask, next);
-    c.mem_write32(prev + kTaskNext, next);
-    c.mem_write32(next + kTaskPrev, prev);
-}
-
-// __DSP_boot_task: the DSP loads the task's microcode and starts it. Only the
-// AX microcode has a native implementation.
-void NativeAudio::boot_task(Cpu& c, u32 task) {
-    const u32 code = c.mem_read32(task + kTaskIramMmem);
-    const u32 length = c.mem_read32(task + kTaskIramLength);
-    u64 hash = 0xcbf29ce484222325ull;
-    if (length == kAxMicrocodeLength) {
-        for (u32 i = 0; i < length; ++i) {
-            hash ^= c.mem_read8(code + i);
-            hash *= 0x100000001b3ull;
-        }
-    }
-    if (length != kAxMicrocodeLength || hash != kAxMicrocodeFnv1a) {
-        char text[96];
-        std::snprintf(text, sizeof(text), "%016llX", static_cast<unsigned long long>(hash));
-        stop(c, "DSP task " + hex(task) + " runs microcode " + hex(code) + " (" + hex(length) +
-                    " bytes, fnv1a " + text + "); only the AX microcode has a native implementation");
-        return;
-    }
-    task_running_ = true;
-    task_ = task;
-    expect_list_address_ = false;
-    post_mail(c, kMailInit);
-}
-
-// __DSPHandler (0x8038C554): one mail from the DSP per interrupt, the task's
-// callbacks in the SDK's order. Single-task paths only; a task switch has no
-// native path (one task exists: AX).
-bool NativeAudio::dsp_handler(Cpu& c, u32 frame, u32 step) {
-    const u32 sda = c.gpr[13];
-    const u32 curr = c.mem_read32(sda + kSdaCurrTask);
-    const auto call = [&](u32 offset) {
-        const u32 callback = c.mem_read32(curr + offset);
-        if (callback == 0u) return false;
-        ++stats_.dsp_callbacks;
-        interrupts_.call_guest(c, frame, callback, curr, 0u);
-        return true;
-    };
-    if (step != 0u) {
-        // The step after a callback: only DONE has work left (its scratch
-        // word 0 says which).
-        if (c.mem_read32(NativeInterrupts::scratch(frame, 0u)) == kMailDone) {
-            task_running_ = false;  // 0xCDD10002: the DSP halts the task
-            c.mem_write32(curr + kTaskState, 3u);
-            remove_task(c, curr);
-        }
-        return false;
-    }
-    if (!mail_valid_) {
-        // The original spins in DSPCheckMailFromDSP for ever.
-        stop(c, "DSP interrupt without a mail from the DSP");
-        return false;
-    }
-    u32 mail = mail_;
-    mail_valid_ = false;
-    if (curr == 0u) {
-        stop(c, "DSP mail " + hex(mail) + " with no current task");
-        return false;
-    }
-    if ((c.mem_read32(curr + kTaskFlags) & kTaskFlagCancel) != 0u && mail == kMailYield) mail = kMailDone;
-    const bool single = c.mem_read32(curr + kTaskNext) == 0u && curr == c.mem_read32(sda + kSdaFirstTask);
-    switch (mail) {
-        case kMailInit:
-            c.mem_write32(curr + kTaskState, 1u);
-            return call(kTaskInitCallback);
-        case kMailResume:
-            c.mem_write32(curr + kTaskState, 1u);
-            return call(kTaskResumeCallback);
-        case kMailYield:
-            if (c.mem_read32(sda + kSdaRudePending) != 0u) {
-                if (c.mem_read32(sda + kSdaRudeTask) != curr) {
-                    stop(c, "a DSP task switch (rude task " + hex(c.mem_read32(sda + kSdaRudeTask)) +
-                                ") has no native path");
-                    return false;
-                }
-                // kMailContinue: the task resumes where it yielded.
-                c.mem_write32(sda + kSdaRudeTask, 0u);
-                c.mem_write32(sda + kSdaRudePending, 0u);
-                return call(kTaskResumeCallback);
-            }
-            if (!single) {
-                stop(c, "a DSP task switch (" + hex(curr) + " yields to another task) has no native path");
-                return false;
-            }
-            return call(kTaskResumeCallback);  // after kMailContinue
-        case kMailDone:
-            if (c.mem_read32(sda + kSdaRudePending) != 0u || !single) {
-                stop(c, "a DSP task finishing into another task has no native path");
-                return false;
-            }
-            c.mem_write32(NativeInterrupts::scratch(frame, 0u), kMailDone);
-            if (call(kTaskDoneCallback)) return true;
-            task_running_ = false;
-            c.mem_write32(curr + kTaskState, 3u);
-            remove_task(c, curr);
-            return false;
-        case kMailRequest:
-            return call(kTaskRequestCallback);
-        default:
-            return false;
-    }
-}
-
-// ---------------------------------------------------------------------------
 // The owners
 // ---------------------------------------------------------------------------
 
@@ -506,8 +269,6 @@ void NativeAudio::install() {
                             [this](Cpu& c, u32 frame, u32 step) { return ai_handler(c, frame, step); });
     interrupts_.set_handler(NativeInterrupts::Source::DspDma,
                             [this](Cpu& c, u32 frame, u32 step) { return dsp_dma_handler(c, frame, step); });
-    interrupts_.set_handler(NativeInterrupts::Source::Dsp,
-                            [this](Cpu& c, u32 frame, u32 step) { return dsp_handler(c, frame, step); });
 
     // ---- the OS audio bring-up ------------------------------------------------
     // __OSInitAudioSystem saved 128 bytes from a fixed GameCube address below
@@ -519,9 +280,6 @@ void NativeAudio::install() {
     own(kStopAudioSystem, "__OSStopAudioSystem", [this](Cpu&) {
         dma_control_ = static_cast<u16>(dma_control_ & ~0x8000u);
         cpu_.game_clock().cancel(GameEvent::Audio);
-        task_running_ = false;
-        mail_valid_ = false;
-        expect_list_address_ = false;
         interrupts_.clear(NativeInterrupts::Source::AiDma);
         interrupts_.clear(NativeInterrupts::Source::DspDma);
         interrupts_.clear(NativeInterrupts::Source::Dsp);
@@ -608,18 +366,11 @@ void NativeAudio::install() {
         c.mem_write32(sda + kSdaAiInitFlag, 1u);
     });
 
-    // ---- the DSP -----------------------------------------------------------------
-    own(kDspCheckMailToDsp, "DSPCheckMailToDSP", [](Cpu& c) { c.gpr[3] = 0u; });  // consumed at once
-    own(kDspCheckMailFromDsp, "DSPCheckMailFromDSP", [this](Cpu& c) { c.gpr[3] = mail_valid_ ? 1u : 0u; });
-    own(kDspReadMailFromDsp, "DSPReadMailFromDSP", [this](Cpu& c) {
-        c.gpr[3] = mail_;
-        mail_valid_ = false;  // reading the mail empties the mailbox; DSPINT stays
-    });
-    own(kDspSendMailToDsp, "DSPSendMailToDSP", [this](Cpu& c) { receive_mail(c, c.gpr[3]); });
+    // ---- DSPInit (see kDspInit) ----------------------------------------------------
     own(kDspInit, "DSPInit", [this](Cpu& c) {
         const u32 sda = c.gpr[13];
         if (c.mem_read32(sda + kSdaDspInitFlag) == 1u) return;
-        // __DSPHandler is not registered: this layer delivers DSPINT itself.
+        // __DSPHandler is not registered and no DSP interrupt is raised any more; the unmask and the task words are as DSPInit left them.
         interrupts_.unmask_os_interrupts(c, 0x01000000u);  // DSP_DSP
         c.mem_write32(sda + kSdaTmpTask, 0u);
         c.mem_write32(sda + kSdaCurrTask, 0u);
@@ -627,34 +378,7 @@ void NativeAudio::install() {
         c.mem_write32(sda + kSdaFirstTask, 0u);
         c.mem_write32(sda + kSdaDspInitFlag, 1u);
     });
-    own(kDspAddTask, "DSPAddTask", [this](Cpu& c) {
-        const u32 task = c.gpr[3];
-        insert_task(c, task);
-        c.mem_write32(task + kTaskState, 0u);
-        c.mem_write32(task + kTaskFlags, 1u);
-        if (task == c.mem_read32(c.gpr[13] + kSdaFirstTask)) boot_task(c, task);
-        c.gpr[3] = task;
-    });
-    own(kDspAssertTask, "DSPAssertTask", [](Cpu& c) {
-        const u32 sda = c.gpr[13];
-        const u32 task = c.gpr[3];
-        const u32 curr = c.mem_read32(sda + kSdaCurrTask);
-        if (curr == task) {
-            c.mem_write32(sda + kSdaRudeTask, task);
-            c.mem_write32(sda + kSdaRudePending, 1u);
-            c.gpr[3] = task;
-            return;
-        }
-        if (c.mem_read32(task + kTaskPriority) < c.mem_read32(curr + kTaskPriority)) {
-            // The SDK also interrupts the running DSP (DSPCR PIINT) so it
-            // yields early; the native DSP is never mid-frame.
-            c.mem_write32(sda + kSdaRudeTask, task);
-            c.mem_write32(sda + kSdaRudePending, 1u);
-            c.gpr[3] = task;
-            return;
-        }
-        c.gpr[3] = 0u;
-    });
+
 }
 
 // ---------------------------------------------------------------------------
@@ -683,21 +407,22 @@ void NativeAudio::save_state(std::vector<u8>& out) const {
     put32(out, dma_control_);
     put32(out, pass_start_);
     put32(out, pass_blocks_);
-    put32(out, (stream_playing_ ? 1u : 0u) | (stream_rate_48k_ ? 2u : 0u) | (dsp_rate_32k_ ? 4u : 0u) |
-                   (task_running_ ? 8u : 0u) | (mail_valid_ ? 16u : 0u) | (expect_list_address_ ? 32u : 0u));
+    // The words of the former DSP task / mailbox model (task flags, task, mail, list size) are kept as zeros: the record's layout is
+    // unchanged and a state of any earlier version loads (their values are ignored).
+    put32(out, (stream_playing_ ? 1u : 0u) | (stream_rate_48k_ ? 2u : 0u) | (dsp_rate_32k_ ? 4u : 0u));
     put32(out, static_cast<u32>(volume_left_) | (static_cast<u32>(volume_right_) << 8));
-    put32(out, task_);
-    put32(out, mail_);
-    put32(out, list_size_);
+    put32(out, 0u);
+    put32(out, 0u);
+    put32(out, 0u);
     put32(out, last_command_list_);
 }
 
 bool NativeAudio::load_state(const u8*& cursor, const u8* end) {
-    u32 control = 0, flags = 0, volumes = 0;
+    u32 control = 0, flags = 0, volumes = 0, retired = 0;
     if (!get32(cursor, end, dma_start_) || !get32(cursor, end, control) ||
         !get32(cursor, end, pass_start_) || !get32(cursor, end, pass_blocks_) ||
-        !get32(cursor, end, flags) || !get32(cursor, end, volumes) || !get32(cursor, end, task_) ||
-        !get32(cursor, end, mail_) || !get32(cursor, end, list_size_) ||
+        !get32(cursor, end, flags) || !get32(cursor, end, volumes) || !get32(cursor, end, retired) ||
+        !get32(cursor, end, retired) || !get32(cursor, end, retired) ||
         !get32(cursor, end, last_command_list_)) {
         return false;
     }
@@ -705,9 +430,6 @@ bool NativeAudio::load_state(const u8*& cursor, const u8* end) {
     stream_playing_ = (flags & 1u) != 0u;
     stream_rate_48k_ = (flags & 2u) != 0u;
     dsp_rate_32k_ = (flags & 4u) != 0u;
-    task_running_ = (flags & 8u) != 0u;
-    mail_valid_ = (flags & 16u) != 0u;
-    expect_list_address_ = (flags & 32u) != 0u;
     volume_left_ = static_cast<u8>(volumes);
     volume_right_ = static_cast<u8>(volumes >> 8);
     // Native completions are never pending at a save (complete_transfer's contract).

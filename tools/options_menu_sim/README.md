@@ -37,9 +37,9 @@ A setting that belongs to an existing category is a new row in that category in 
 New subjects get their own category in `extraCategories`, like the example **Display** category
 (Resolution, Screen ratio). An extra category borrows a grid slot the PAL screen leaves empty
 (`cast`/`motion`: the voice-language slot, bottom right). Its tile is `art: { normal, selected }`, two
-82 x 82 images in `generated/tex`; Display's are made by `make_display_icon.py` from the game's tiles (clean steel
-taken from the six real tiles and rebuilt as a clean brushed plate, an old CRT television cut in the same
-engraved style, grey and red). `art: 'placeholder'`
+82 x 82 images in `generated/tex`; Display's are made by `make_display_icon.py` from the game's tiles (the Load
+tile's worn plate, its symbol filled from its own steel, an old CRT television cut and lit like the game's symbols,
+in their measured grey and red). `art: 'placeholder'`
 draws a labelled stand-in instead. Extra categories show when "PC settings" is ticked or the URL ends in `#extras`.
 
 `values` and `label` may be keys of the game's message table (`on`, `off`, `stereo`, `lang_en`,

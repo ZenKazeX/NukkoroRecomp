@@ -93,11 +93,6 @@ bool state_from_vpb(u32 flags) { return (flags & kSyncCopyAll) != 0u || (flags &
 enum class Kind : u8 {
     plain,
     show_raster,
-    ax_frame,
-    ax_sync_pbs,
-    pb_sync,
-    ax_force_drop,
-    ax_cb_service,
     ax_acquire,
     axrna_frame,
     sofdec_clock,
@@ -122,12 +117,6 @@ struct BuiltIn {
 // at 80384B3C by a prediction at AXAcquireVoice entry; the AXRNA refill block
 // 803CF4EC by an exact prediction at fn_803CF408 entry.
 constexpr BuiltIn kBuiltIns[] = {
-    {"r5", "ai_dma_cb", 0x80385950u, Kind::plain, {0u, 0u}},
-    {"r5", "ax_frame", 0x80385798u, Kind::ax_frame, {0x80385990u, 0x80385A54u}},  // idle, DSP-resume
-    {"r5", "ax_sync_pbs", 0x80386BC0u, Kind::ax_sync_pbs, {0x803857CCu, 0u}},
-    {"r5", "pb_sync", 0x80386474u, Kind::pb_sync, {0x80386CD4u, 0x80386D2Cu}},  // in budget, not running
-    {"r5", "ax_force_drop", 0x80384914u, Kind::ax_force_drop, {0x80386D20u, 0u}},
-    {"r5", "ax_cb_service", 0x80384718u, Kind::ax_cb_service, {0x80385808u, 0u}},
     {"r5", "ax_acquire", 0x80384A54u, Kind::ax_acquire, {0u, 0u}},
     {"r5", "reclaim_scan", 0x8043C64Cu, Kind::plain, {0x8043F620u, 0u}},
     {"r5", "voice_release", 0x8043CBA4u, Kind::plain, {0x8043C6F4u, 0u}},  // reclaim path
@@ -681,11 +670,6 @@ struct MeasureProbes::Impl {
         switch (probe.kind) {
             case Kind::plain:
             case Kind::show_raster: break;
-            case Kind::ax_frame: decode_ax_frame(cpu, x); break;
-            case Kind::ax_sync_pbs: sample_pbs(cpu, vi, x); break;
-            case Kind::pb_sync: decode_pb_sync(cpu, x); break;
-            case Kind::ax_force_drop: decode_force_drop(cpu, x); break;
-            case Kind::ax_cb_service: decode_cb_service(x); break;
             case Kind::ax_acquire: decode_acquire(cpu, x); break;
             case Kind::axrna_frame: decode_axrna(cpu, x); break;
             case Kind::sofdec_clock: decode_sofdec(cpu, vi, x); break;
@@ -700,78 +684,6 @@ struct MeasureProbes::Impl {
     }
 
     // --- decoders (all read-only) ----------------------------------------
-    // fn_80385798 (AX frame driver): r3 = lessDspCycles, non-zero only on the
-    // DSP-resume path (LR 80385A54).
-    void decode_ax_frame(const Cpu& cpu, std::array<u32, 4>& x) {
-        x[0] = cpu.gpr[3];
-        if (cpu.gpr[3] != 0u) {
-            ++ax.frame_r3_nonzero;
-        } else {
-            ++ax.frame_r3_zero;
-        }
-    }
-
-    // fn_80386474 (per-voice PB<->VPB sync): r3 = VPB.
-    void decode_pb_sync(const Cpu& cpu, std::array<u32, 4>& x) {
-        const u32 vpb = cpu.gpr[3];
-        if (!valid(vpb, kVpbStride)) {
-            ++ax.pbsync_bad;
-            return;
-        }
-        const u32 flags = peek32(vpb + kVpbSync);
-        x[0] = peek32(vpb + kVpbIndex);
-        x[1] = flags;
-        if (flags != 0u) ++ax.pbsync_flags_nonzero;
-        if (cur_from_vpb(flags)) ++ax.pbsync_cur_from_vpb;
-    }
-
-    // __AXPushCallbackStack, only reached from the over-budget drop in
-    // __AXSyncPBs (80386D1C): r3 = VPB, r28 = priority, r29 = cycles.
-    void decode_force_drop(const Cpu& cpu, std::array<u32, 4>& x) {
-        ++ax.drops;
-        if (cpu.lr != 0x80386D20u) ++ax.drop_lr_mismatch;
-        const u32 vpb = cpu.gpr[3];
-        const u32 index = valid(vpb, kVpbStride) ? peek32(vpb + kVpbIndex) : 0xFFFFFFFFu;
-        x[0] = cpu.gpr[29];
-        x[1] = cpu.gpr[28];
-        x[2] = index;
-        x[3] = peek32(kDspBudget);
-        if (index < kVoices) {
-            ax.drop_pending |= u64{1} << index;
-        } else {
-            ++ax.drop_bad_index;
-        }
-        if (cpu.gpr[28] < ax.drop_prio.size()) {
-            ++ax.drop_prio[cpu.gpr[28]];
-        } else {
-            ++ax.drop_prio_other;
-        }
-    }
-
-    // __AXServiceCallbackStack: length of the dropped-voice stack it drains
-    // (head at r13+0x5CE8, link VPB+8).
-    void decode_cb_service(std::array<u32, 4>& x) {
-        u32 node = peek32(kCallbackHead);
-        u32 length = 0;
-        while (node != 0u && length < kCallbackWalkCap) {
-            if (!valid(node, kVpbStride)) {
-                ++ax.cb_bad_link;
-                break;
-            }
-            ++length;
-            node = peek32(node + kVpbNext);
-        }
-        if (node != 0u && length == kCallbackWalkCap) ++ax.cb_capped;
-        x[0] = length;
-        if (length != 0u) ++ax.cb_nonempty;
-        ax.cb_total += length;
-        ax.cb_max = std::max<u64>(ax.cb_max, length);
-    }
-
-    // AXAcquireVoice fn_80384A54 (r3 = priority). Replicates the steal scan
-    // (80384A7C..80384B4C) to PREDICT the victim whose callback the blrl at
-    // 80384B3C calls. A prediction: an interrupt recognised at the
-    // OSDisableInterrupts call before the scan could change the stacks.
     void decode_acquire(const Cpu& cpu, std::array<u32, 4>& x) {
         ++acquire.calls;
         const u32 prio = cpu.gpr[3];
@@ -1303,33 +1215,6 @@ struct MeasureProbes::Impl {
         switch (probe.kind) {
             case Kind::plain: break;
             case Kind::show_raster: j.key("guest_frames").u(guest_frames); break;
-            case Kind::ax_frame:
-                j.key("r3_zero").u(ax.frame_r3_zero);
-                j.key("r3_nonzero").u(ax.frame_r3_nonzero);
-                break;
-            case Kind::ax_sync_pbs: j.key("section").str("ax"); break;
-            case Kind::pb_sync:
-                j.key("flags_nonzero").u(ax.pbsync_flags_nonzero);
-                j.key("cur_from_vpb").u(ax.pbsync_cur_from_vpb);
-                j.key("bad_vpb").u(ax.pbsync_bad);
-                break;
-            case Kind::ax_force_drop: {
-                j.key("drops").u(ax.drops);
-                j.key("bad_index").u(ax.drop_bad_index);
-                j.key("lr_mismatch").u(ax.drop_lr_mismatch);
-                j.key("by_priority").begin_array();
-                for (const u64 n : ax.drop_prio) j.u(n);
-                j.end_array();
-                j.key("priority_other").u(ax.drop_prio_other);
-                break;
-            }
-            case Kind::ax_cb_service:
-                j.key("nonempty").u(ax.cb_nonempty);
-                j.key("callbacks_total").u(ax.cb_total);
-                j.key("max_length").u(ax.cb_max);
-                j.key("capped").u(ax.cb_capped);
-                j.key("bad_link").u(ax.cb_bad_link);
-                break;
             case Kind::ax_acquire: {
                 j.key("calls").u(acquire.calls);
                 j.key("empty_free").u(acquire.empty_free);

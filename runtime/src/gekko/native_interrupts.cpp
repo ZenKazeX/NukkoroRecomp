@@ -4,9 +4,12 @@
 #include "gekko/native_interrupts.h"
 
 #include <cstdio>
+#include <cstring>
 #include <string>
 
 #include "gekko/cpu.h"
+#include "gekko/native_guest_call.h"
+#include "gekko/native_os_threads.h"
 
 namespace gekko {
 
@@ -15,6 +18,10 @@ namespace {
 // ---- the entry points the generator routes here (extract/native-owners.txt)
 constexpr u32 kInterruptInit = 0x80376198u;     // __OSInterruptInit (from OSInit)
 constexpr u32 kSetInterruptMask = 0x8037620Cu;  // SetInterruptMask (OS: apply one mask group)
+// The critical-section primitives every OS and game routine brackets its shared state with.
+constexpr u32 kOSDisableInterrupts = 0x8037611Cu;
+constexpr u32 kOSEnableInterrupts = 0x80376130u;
+constexpr u32 kOSRestoreInterrupts = 0x80376144u;
 // The OS handlers of interrupt sources this platform does not have: they stay
 // in the OS's handler table, which nothing dispatches through (stage 6).
 constexpr u32 kMemInterruptHandler = 0x803769DCu;   // MEMIntrruptHandler (OS interrupts 0-4)
@@ -28,10 +35,9 @@ constexpr u32 kProtectionReport = 0x803737F8u;
 // SelectThread returns when the delivery's reschedule switched nothing.
 constexpr u32 kDeliveryReturn = 0x80376210u;
 constexpr u32 kRescheduleReturn = 0x80376214u;
+// Where a thread-context upcall's guest call returns (request_upcall; same extent).
+constexpr u32 kUpcallReturn = 0x80376224u;
 
-// The OS functions the delivery hands control to.
-constexpr u32 kSelectThread = 0x803787B0u;   // SelectThread(yield = 0), as __OSReschedule calls it
-constexpr u32 kOSLoadContext = 0x80372C68u;  // OSLoadContext: the OS's restore and rfi
 
 // OS globals (low memory) and OSContext (the Dolphin SDK layout the OS uses).
 constexpr u32 kCurrentContextPhysical = 0x800000C0u;
@@ -53,6 +59,13 @@ constexpr u32 kSrr1Mask = 0x87C0FFFFu;     // what the processor keeps in SRR1 (
 // OS scheduler words, r13-relative (SelectThread 0x803787B0, OSDisableScheduler 0x803784CC).
 constexpr u32 kSdaReschedule = 0x5AE8u;     // Reschedule: > 0 disables thread switches
 constexpr u32 kSdaRunQueueHint = 0x5AE4u;   // RunQueueHint: a woken thread outranks the running one
+constexpr u32 kSdaRunQueueBits = 0x5AE0u;   // RunQueueBits: one bit per priority with a ready thread
+constexpr u32 kSdaSwitchCallback = 0x2710u; // the switch-thread callback pointer (the empty 0x80378320)
+constexpr u32 kEmptySwitchCallback = 0x80378320u;
+constexpr u32 kRunQueue = 0x80587038u;      // 32 x { head, tail } by priority
+constexpr u32 kCurrentThread = 0x800000E4u;
+constexpr u32 kActiveHead = 0x800000DCu, kActiveTail = 0x800000E0u;
+constexpr u32 kThreadState = 0x2C8u, kThreadPriority = 0x2D0u, kThreadQueue = 0x2DCu, kThreadLinkNext = 0x2E0u, kThreadLinkPrev = 0x2E4u;
 
 // The delivery's guest stack frames, below the interrupted thread's r1:
 //   r1 - 8           the vector stub's frame (stwu r1,-8(r1))
@@ -60,6 +73,7 @@ constexpr u32 kSdaRunQueueHint = 0x5AE4u;   // RunQueueHint: a woken thread outr
 //   handler frame    kHandlerSize: the exception OSContext the SDK handlers
 //                    make current, then tag, source, step, scratch, context
 constexpr u32 kStubSize = 8u;
+constexpr u32 kIdleDepth = 0x30u;  // OSSleepThread's and SelectThread's frames (0x18 each) under which the idle loop took its interrupts
 constexpr u32 kDispatchSize = 0x30u;
 constexpr u32 kDispatchTag = 0x4E495251u;  // 'NIRQ'
 constexpr u32 kDispatchTagOffset = 0x10u;
@@ -73,6 +87,45 @@ constexpr u32 kHandlerStepOffset = kHandlerTagOffset + 8u;
 constexpr u32 kHandlerScratchOffset = kHandlerTagOffset + 12u;  // four words
 constexpr u32 kHandlerContextOffset = kHandlerScratchOffset + 16u;
 static_assert(kHandlerContextOffset + 4u <= kHandlerSize, "handler frame overflow");
+// An upcall frame has the handler frame's layout (in its place, below the dispatch frame) with its own tag: the
+// upcall's OSContext at kHandlerExcOffset, the kind where the source was, and the reschedule's yield flag.
+constexpr u32 kUpcallTag = 0x4E495255u;  // 'NIRU'
+constexpr u32 kUpcallYieldOffset = kHandlerContextOffset + 4u;
+// The delivery's dispatch frame, in the frame header's free word (callees write only 0(r1) and 4(r1) of it).
+constexpr u32 kUpcallDispatchOffset = 8u;
+static_assert(kUpcallYieldOffset + 4u <= kHandlerSize, "upcall frame overflow");
+
+// OSDisableInterrupts / OSEnableInterrupts / OSRestoreInterrupts (0x8037611C / 0x80376130 / 0x80376144): the
+// original bodies read MSR, set or clear MSR[EE] with mtmsr and return the previous EE bit. They leave the
+// registers the way their instructions do - r3 = previous EE; r4 = the new MSR (Disable, Enable) or the old one
+// (Restore, with r5 = the new MSR); Restore's `cmpwi r3, 0` also sets CR0 - and the recognition point the mtmsr was
+// (cpu.h, R4): a condition already deliverable is taken BEFORE the write, handing back at the entry (the OS's
+// OSLoadContext rewrites an SRR0 inside the window to the function start for the same reason), and one that the
+// write makes deliverable (EE 0 -> 1) is taken before the next instruction, which is the caller's return here.
+enum class Gate : u8 { Disable, Enable, Restore };
+
+void interrupt_gate(Cpu& c, u32 entry, Gate gate) {
+    if (c.interrupt_pending()) {
+        c.leave_to_dispatcher(entry, FallbackReason::Yield, entry);
+        return;
+    }
+    const u32 previous = c.msr();
+    const u32 argument = c.gpr[3];
+    const bool enable = gate == Gate::Enable || (gate == Gate::Restore && argument != 0u);
+    const u32 next = enable ? (previous | kMsrEE) : (previous & ~kMsrEE);
+    if (gate == Gate::Restore) {
+        // cmpwi r3, 0: CR0 = LT / GT / EQ of the argument as a signed number, SO from XER.
+        const s32 value = static_cast<s32>(argument);
+        c.set_cr_field(0, (value < 0 ? 8u : value > 0 ? 4u : 2u) | ((c.xer & kXerSO) != 0u ? 1u : 0u));
+        c.gpr[4] = previous;
+        c.gpr[5] = next;
+    } else {
+        c.gpr[4] = next;
+    }
+    c.set_msr(next);
+    c.gpr[3] = (previous & kMsrEE) != 0u ? 1u : 0u;
+    if (c.interrupt_pending()) c.leave_to_dispatcher(c.lr, FallbackReason::Yield, entry);
+}
 
 const NativeInterrupts::Address kAddresses[] = {
     {kInterruptInit, "__OSInterruptInit", false},
@@ -80,8 +133,12 @@ const NativeInterrupts::Address kAddresses[] = {
     {kResetSwitchHandler, "__OSResetSWInterruptHandler", false},
     {kProtectionReport, "__OSUnhandledException: the protection-error report", false},
     {kSetInterruptMask, "SetInterruptMask", false},
+    {kOSDisableInterrupts, "OSDisableInterrupts", false},
+    {kOSEnableInterrupts, "OSEnableInterrupts", false},
+    {kOSRestoreInterrupts, "OSRestoreInterrupts", false},
     {kDeliveryReturn, "native interrupt: guest call return", true},
     {kRescheduleReturn, "native interrupt: reschedule return", true},
+    {kUpcallReturn, "native interrupt: thread-context upcall return", true},
 };
 
 // The OS's interrupt bookkeeping (__OSInterruptInit): the handler-table
@@ -147,7 +204,13 @@ void os_set_current_context(Cpu& c, u32 context) {
     // but it is the OS's own bookkeeping word, written as the OS writes it.
     c.mem_write32(kCurrentContextPhysical, context & 0x3FFFFFFFu);
     const u32 srr1 = c.mem_read32(context + kContextSrr1);
-    if (c.mem_read32(kFpuContext) == context) {
+    if (os_threads::single_thread_configuration()) {
+        // One thread: the floating-point registers are never switched to another thread's, so MSR[FP] stays set and the
+        // FP-unavailable exception never fires. What a delivery's callbacks do to the registers is undone by the host's save and
+        // restore around the delivery (Cpu::set_interrupt_fpr_shadow), not by the OS's lazy switch.
+        c.mem_write32(context + kContextSrr1, srr1 | kMsrFP);
+        c.set_msr(c.msr() | kMsrFP | kMsrRI);
+    } else if (c.mem_read32(kFpuContext) == context) {
         c.mem_write32(context + kContextSrr1, srr1 | kMsrFP);
         c.set_msr(c.msr() | kMsrRI);
     } else {
@@ -175,15 +238,32 @@ u32 NativeInterrupts::os_interrupt(Source source) noexcept {
 std::size_t NativeInterrupts::best_pending() const {
     std::size_t best = kSourceCount;
     u32 best_rank = ~0u;
+    // The rank only orders candidates: with one pending, unmasked OS source it wins outright (every rank is below
+    // ~0u), so the priority table - up to 32 guest reads per source - is read only when two compete. Exact: the table
+    // stays the game's own live data whenever an order is actually decided.
+    std::size_t candidates = 0, only = kSourceCount;
     for (std::size_t i = 0; i < kSourceCount; ++i) {
-        if (!status_[i] || !unmasked_[i]) continue;
+        if (i == index(Source::HostWork) || !status_[i] || !unmasked_[i]) continue;
+        ++candidates;
+        only = i;
+    }
+    if (candidates == 1u) return only;
+    for (std::size_t i = 0; candidates > 1u && i < kSourceCount; ++i) {
+        if (i == index(Source::HostWork) || !status_[i] || !unmasked_[i]) continue;
         const u32 rank = os_rank(cpu_.guest_memory(), os_interrupt(static_cast<Source>(i)));
         if (rank < best_rank) {
             best_rank = rank;
             best = i;
         }
     }
+    // HostWork ranks below every OS interrupt.
+    if (best == kSourceCount && status_[index(Source::HostWork)]) best = index(Source::HostWork);
     return best;
+}
+
+bool NativeInterrupts::other_pending(Source except) const {
+    const std::size_t found = best_pending();
+    return found != kSourceCount && found != index(except);
 }
 
 void NativeInterrupts::clear_exception_context(Cpu& c, u32 frame) {
@@ -261,7 +341,11 @@ void NativeInterrupts::update_line() noexcept {
 void NativeInterrupts::reset() noexcept {
     status_.fill(false);
     unmasked_.fill(false);
-    unmasked_[index(Source::Card)] = true;  // no OS mask group owns it
+    unmasked_[index(Source::Card)] = true;      // no OS mask group owns it
+    unmasked_[index(Source::HostWork)] = true;  // nor this one (native work, native_cri.h)
+    yield_on_finish_ = false;
+    upcall_kind_ = 0u;
+    upcall_stack_ = 0u;
     update_line();
 }
 
@@ -278,8 +362,12 @@ void NativeInterrupts::install() {
         ++stats_.mask_calls;
         c.gpr[3] = set_interrupt_mask(c.gpr[3], c.gpr[4]);
     });
+    own(kOSDisableInterrupts, "OSDisableInterrupts", [](Cpu& c) { interrupt_gate(c, kOSDisableInterrupts, Gate::Disable); });
+    own(kOSEnableInterrupts, "OSEnableInterrupts", [](Cpu& c) { interrupt_gate(c, kOSEnableInterrupts, Gate::Enable); });
+    own(kOSRestoreInterrupts, "OSRestoreInterrupts", [](Cpu& c) { interrupt_gate(c, kOSRestoreInterrupts, Gate::Restore); });
     own(kDeliveryReturn, "guest call return", [this](Cpu& c) { callback_return(c); });
     own(kRescheduleReturn, "reschedule return", [this](Cpu& c) { resume(c); });
+    own(kUpcallReturn, "thread-context upcall return", [this](Cpu& c) { upcall_return(c); });
     own(kMemInterruptHandler, "MEMIntrruptHandler", [](Cpu& c) {
         stop(c, "MEMIntrruptHandler (OS interrupt " + std::to_string(c.gpr[3]) +
                     ") was entered: a memory-protection interrupt does not exist on this platform (no memory "
@@ -439,11 +527,197 @@ void NativeInterrupts::deliver(Cpu& c) {
         stop(c, "source " + std::to_string(chosen) + " has no handler");
         return;
     }
-    if (!handler(c, frame, 0u) && !c.stopped()) finish(c, frame);
+    if (!handler(c, frame, 0u) && !c.stopped()) finish(c, c.gpr[1]);  // r1: the handler may have moved its frame
+}
+
+u32 NativeInterrupts::relocate_frame(Cpu& c, u32 frame, u32 stack_top) {
+    const u32 target = (((stack_top & ~7u) - 8u - kHandlerSize) & ~0xFu);
+    if (stack_top == 0u || !c.guest_memory().mapped(GcAddr(target), kHandlerSize) ||
+        (target < frame + kHandlerSize && frame < target + kHandlerSize)) {
+        stop(c, "a delivery frame cannot move to the stack at " + hex(stack_top));
+        return frame;
+    }
+    os_clear_context(c, frame + kHandlerExcOffset);  // the FPU belongs to no context of the old frame
+    for (u32 offset = 0; offset < kHandlerSize; offset += 4u) c.mem_write32(target + offset, c.mem_read32(frame + offset));
+    c.mem_write32(frame + kHandlerTagOffset, 0u);  // the old frame is dead
+    const u32 exception_context = target + kHandlerExcOffset;
+    os_clear_context(c, exception_context);
+    os_set_current_context(c, exception_context);
+    c.gpr[1] = target;
+    return target;
+}
+
+const char* NativeInterrupts::source_name(Source source) noexcept {
+    switch (source) {
+        case Source::Vi: return "VI retrace";
+        case Source::DspDma: return "DSP ARAM DMA";
+        case Source::Dsp: return "DSP mail";
+        case Source::AiDma: return "AI DMA";
+        case Source::PeFinish: return "PE finish";
+        case Source::GxBreakpoint: return "GX breakpoint";
+        case Source::Card: return "card completion";
+        case Source::HostWork: return "host work (CRI bridge)";
+        case Source::Count: break;
+    }
+    return "?";
+}
+
+bool NativeInterrupts::run_pending_event(Cpu& c) {
+    if (sync_) {
+        stop(c, "a native wait was entered from inside a native event");
+        return true;
+    }
+    const std::size_t chosen = best_pending();
+    if (chosen == kSourceCount) return false;
+    const Source source = static_cast<Source>(chosen);
+    if (!handlers_[chosen]) {
+        stop(c, std::string("the native wait found ") + source_name(source) + " latched with no handler");
+        return true;
+    }
+    const u32 caller_r1 = c.gpr[1];
+    constexpr u32 kFrames = kStubSize + kDispatchSize + kHandlerSize;
+    if (!ram_word(c.guest_memory(), caller_r1) || caller_r1 < kFrames + kIdleDepth ||
+        !c.guest_memory().mapped(GcAddr(caller_r1 - kFrames - kIdleDepth), kFrames + kIdleDepth)) {
+        stop(c, "the caller's stack pointer " + hex(caller_r1) + " cannot hold an event frame");
+        return true;
+    }
+    // Acknowledge first, as every original handler did.
+    status_[chosen] = false;
+    update_line();
+    ++stats_.delivered[chosen];
+
+    // The event runs where the original's did: the scheduler idled inside SelectThread, called by OSSleepThread, so the delivery
+    // frames sat below those two 0x18-byte frames. Same depth, same dead-stack contents (the game copies stack leftovers into
+    // heap records), no scheduler.
+    const u32 frame0 = caller_r1 - kIdleDepth - kStubSize - kDispatchSize - kHandlerSize;
+    c.mem_write32(frame0, caller_r1);
+    c.mem_write32(frame0 + kHandlerTagOffset, kHandlerTag);
+    c.mem_write32(frame0 + kHandlerSourceOffset, static_cast<u32>(chosen));
+    c.mem_write32(frame0 + kHandlerStepOffset, 0u);
+    for (u32 i = 0; i < 4u; ++i) c.mem_write32(scratch(frame0, i), 0u);
+    c.mem_write32(frame0 + kHandlerContextOffset, 0u);
+
+    const bool ok = drive_sync(c, handlers_[chosen], frame0, source_name(source));
+    if (upcall_kind_ != 0u) {
+        const u32 kind = upcall_kind_;
+        upcall_kind_ = 0u;
+        if (ok) stop(c, std::string(source_name(source)) + " asked for a thread-context upcall (kind " + std::to_string(kind) +
+                            "): only the native wait's own Idle pass may run one");
+    }
+    return true;
+}
+
+bool NativeInterrupts::drive_sync(Cpu& c, const std::function<bool(Cpu&, u32, u32)>& handler, u32 frame0, const char* what) {
+    const u32 caller_r1 = c.gpr[1];
+    const u32 msr = c.msr();
+    // The OS's current-context words: a handler that moves its frame (relocate_frame: the CRI tick on the Vsync thread's
+    // stack) or clears its exception context makes another context current. There is no interrupted thread context to
+    // return to here, so the words go back exactly as they were.
+    const u32 saved_context = c.mem_read32(kCurrentContext), saved_physical = c.mem_read32(kCurrentContextPhysical),
+              saved_fpu = c.mem_read32(kFpuContext);
+    // The FPU: the original's callbacks ran in a fresh exception context (the lazy-FPU switch loaded its cleared FPRs), so the
+    // prologues of the SDK and game code spill zeros, not the waiting thread's registers, into the stack the game later
+    // copies leftovers from. The waiting thread's FPRs come back after.
+    std::array<FpReg, 32> saved_fpr;
+    std::memcpy(saved_fpr.data(), c.fpr, sizeof(c.fpr));
+    for (auto& r : c.fpr) r = {};
+    c.set_msr(msr & ~kMsrEE);
+    sync_ = true;
+    sync_call_ = SyncCall{};
+    u32 frame = frame0;
+    bool ok = true;
+    for (u32 step = 0;; ++step) {
+        sync_call_.valid = false;
+        c.gpr[1] = frame;
+        const bool call_requested = handler(c, frame, step);
+        if (c.stopped()) { ok = false; break; }
+        if (!call_requested) break;
+        if (!sync_call_.valid) {
+            stop(c, std::string(what) + ": the handler reported a guest call it did not make");
+            ok = false;
+            break;
+        }
+        const SyncCall call = sync_call_;
+        frame = call.frame;
+        c.gpr[1] = frame;
+        // The FPU belongs to the waiting thread alone: no context switch will take it over, so the lazy-FPU protocol
+        // (MSR[FP] follows the current context's ownership; a first FP use traps to the OS to switch) is not in play.
+        c.set_msr(c.msr() | kMsrFP);
+        u32 result = 0;
+        u64 before[static_cast<std::size_t>(FallbackReason::Count)];
+        for (std::size_t r = 0; r < static_cast<std::size_t>(FallbackReason::Count); ++r)
+            before[r] = c.fallback_total(static_cast<FallbackReason>(r));
+        if (!guest_call(c, call.function, kDeliveryReturn, {call.r3, call.r4}, result)) {
+            for (std::size_t r = 1; r < static_cast<std::size_t>(FallbackReason::Count); ++r) {
+                const u64 now = c.fallback_total(static_cast<FallbackReason>(r));
+                if (now != before[r])
+                    std::fprintf(stderr, "[native event] hand-backs during the call: %s x%llu\n",
+                                 fallback_reason_name(static_cast<FallbackReason>(r)), static_cast<unsigned long long>(now - before[r]));
+            }
+            std::fprintf(stderr,
+                         "[native event] %s: the guest call to 0x%08X failed (pc 0x%08X, lr 0x%08X, exiting %d, needs_dispatch %d, "
+                         "msr 0x%08X, last hand-back site 0x%08X)\n",
+                         what, call.function, c.pc, c.lr, c.exiting() ? 1 : 0, c.needs_dispatch() ? 1 : 0, c.msr(),
+                         c.last_leave_site());
+            std::fprintf(stderr, "[native event] exit word 0x%02X, interrupt lines 0x%02X, stopped %d\n", c.exit_state(),
+                         c.interrupt_line_bits(), c.stopped() ? 1 : 0);
+            ok = false;
+            break;
+        }
+        c.gpr[3] = result;
+        c.mem_write32(frame + kHandlerStepOffset, step + 1u);
+    }
+    sync_ = false;
+    yield_on_finish_ = false;  // the reschedule it asked for does not exist here: nothing else is ready to run
+    c.gpr[1] = caller_r1;
+    c.mem_write32(kCurrentContext, saved_context);
+    c.mem_write32(kCurrentContextPhysical, saved_physical);
+    c.mem_write32(kFpuContext, saved_fpu);
+    std::memcpy(c.fpr, saved_fpr.data(), sizeof(c.fpr));
+    c.set_msr(msr);
+    return ok;
+}
+
+bool NativeInterrupts::run_upcall(Cpu& c, u32 kind, u32 stack_top) {
+    if (sync_) {
+        stop(c, "a native wait was entered from inside a native event");
+        return true;
+    }
+    if (!upcall_handler_) {
+        stop(c, "an upcall was requested with no upcall handler");
+        return true;
+    }
+    const u32 caller_r1 = c.gpr[1];
+    constexpr u32 kFrames = kStubSize + kDispatchSize + kHandlerSize;
+    const u32 frame = stack_top != 0u ? (((stack_top & ~7u) - 8u - kHandlerSize) & ~0xFu)
+                                      : caller_r1 - kIdleDepth - kStubSize - kDispatchSize - kHandlerSize;
+    if (stack_top == 0u && (!ram_word(c.guest_memory(), caller_r1) || caller_r1 < kFrames)) {
+        stop(c, "the caller's stack pointer " + hex(caller_r1) + " cannot hold an upcall frame");
+        return true;
+    }
+    if (!c.guest_memory().mapped(GcAddr(frame), kHandlerSize)) {
+        stop(c, "an upcall stack at " + hex(stack_top) + " cannot hold its frame");
+        return true;
+    }
+    ++stats_.upcalls;
+    c.mem_write32(frame, stack_top != 0u ? 0u : caller_r1);  // back chain
+    c.mem_write32(frame + kUpcallDispatchOffset, 0u);
+    c.mem_write32(frame + kHandlerTagOffset, kUpcallTag);
+    c.mem_write32(frame + kHandlerSourceOffset, kind);
+    c.mem_write32(frame + kHandlerStepOffset, 0u);
+    for (u32 i = 0; i < 4u; ++i) c.mem_write32(scratch(frame, i), 0u);
+    c.mem_write32(frame + kHandlerContextOffset, 0u);
+    c.mem_write32(frame + kUpcallYieldOffset, 0u);
+    (void)drive_sync(c, upcall_handler_, frame, "upcall");
+    return true;
 }
 
 void NativeInterrupts::call_guest(Cpu& c, u32 frame, u32 function, u32 r3, u32 r4) {
     ++stats_.guest_calls;
+    if (sync_) {  // a native wait runs this call itself (run_pending_event)
+        sync_call_ = SyncCall{true, frame, function, r3, r4};
+        return;
+    }
     c.gpr[1] = frame;
     c.gpr[3] = r3;
     c.gpr[4] = r4;
@@ -465,7 +739,8 @@ void NativeInterrupts::callback_return(Cpu& c) {
         return;
     }
     if (handlers_[source](c, frame, step)) return;
-    if (!c.stopped()) finish(c, frame);
+    // The handler may have moved its frame (relocate_frame): r1 names the frame the delivery continues on.
+    if (!c.stopped()) finish(c, c.gpr[1]);
 }
 
 void NativeInterrupts::finish(Cpu& c, u32 frame) {
@@ -480,17 +755,156 @@ void NativeInterrupts::finish(Cpu& c, u32 frame) {
     c.gpr[1] = dispatch;
     const u32 sda = c.gpr[13];
     c.mem_write32(sda + kSdaReschedule, c.mem_read32(sda + kSdaReschedule) - 1u);
+    const bool yield = yield_on_finish_;
+    yield_on_finish_ = false;
+    if (upcall_kind_ != 0u) {
+        const u32 kind = upcall_kind_;
+        upcall_kind_ = 0u;
+        begin_upcall(c, dispatch, kind, upcall_stack_, yield);
+        return;
+    }
+    reschedule(c, yield);
+}
+
+// SelectThread(yield = 1) with exactly one guest thread. The original returns without switching when switches are disabled
+// or the current context is not the thread's own (an upcall's context). Otherwise it puts the running thread at the tail of
+// its priority's queue, picks the highest ready one - the same thread - takes it off again, runs the (empty) switch callback
+// and OSSetCurrentContext(thread) + OSLoadContext(thread), which the delivery's return does anyway: on a thread that is the
+// only one, in state 2 (running), with an empty queue and no ready bits, the words end up as they began. Anything else
+// (another thread, a queued or non-running state, ready bits, a different callback, a context that was not saved by an
+// exception) is left to the guest SelectThread. No queue is modelled here: the conditions are asserted, not maintained.
+bool NativeInterrupts::yield_is_identity(Cpu& c) const {
+    const u32 sda = c.gpr[13];
+    if (static_cast<s32>(c.mem_read32(sda + kSdaReschedule)) > 0) return true;  // SelectThread returns 0 at once
+    const u32 thread = c.mem_read32(kCurrentThread);
+    if (c.mem_read32(kCurrentContext) != thread) return true;  // not the thread's own context: returns 0
+    if (thread == 0u || c.mem_read32(kActiveHead) != thread || c.mem_read32(kActiveTail) != thread) return false;
+    if (c.mem_read16(thread + kThreadState) != 2u) return false;
+    if (c.mem_read32(thread + kThreadQueue) != 0u || c.mem_read32(thread + kThreadLinkNext) != 0u ||
+        c.mem_read32(thread + kThreadLinkPrev) != 0u)
+        return false;
+    if ((c.mem_read16(thread + kContextState) & kContextStateExc) == 0u) return false;
+    if (c.mem_read32(sda + kSdaRunQueueBits) != 0u) return false;
+    const u32 priority = c.mem_read32(thread + kThreadPriority);
+    if (priority > 31u) return false;
+    if (c.mem_read32(kRunQueue + 8u * priority) != 0u || c.mem_read32(kRunQueue + 8u * priority + 4u) != 0u) return false;
+    return c.mem_read32(sda + kSdaSwitchCallback) == kEmptySwitchCallback;
+}
+
+void NativeInterrupts::reschedule(Cpu& c, bool yield) {
     // __OSReschedule: SelectThread only when a woken thread is waiting. It
     // switches straight to that thread (the interrupted one is saved in its
     // context, state EXC) or returns here having switched nothing.
-    if (c.mem_read32(sda + kSdaRunQueueHint) != 0u) {
+    const u32 sda = c.gpr[13];
+    if (yield && yield_is_identity(c)) {
+        ++stats_.yields_elided;
+        yield = false;
+        if (c.mem_read32(sda + kSdaRunQueueHint) == 0u) {
+            resume(c);
+            return;
+        }
+    }
+    if (yield || c.mem_read32(sda + kSdaRunQueueHint) != 0u) {
         ++stats_.reschedules;
-        c.gpr[3] = 0u;
-        c.lr = kRescheduleReturn;
-        c.leave_to_dispatcher(kSelectThread, FallbackReason::Yield, kRescheduleReturn);
+        if (guest_select_thread_) {  // the reference build, with guest threads: the OS's own SelectThread
+            guest_select_thread_(c, yield);
+            return;
+        }
+        // The lifted build has exactly one guest thread (the waits and the yield stop on a second); a delivery's end that would
+        // have the scheduler pick something is a state it never produces. Loud, with the words SelectThread would read.
+        char text[256];
+        std::snprintf(text, sizeof(text),
+                      "the delivery's end needs the scheduler (yield %u, RunQueueHint 0x%X, RunQueueBits 0x%X, Reschedule %d, "
+                      "current thread 0x%08X, current context 0x%08X, active list 0x%08X..0x%08X)",
+                      yield ? 1u : 0u, c.mem_read32(sda + kSdaRunQueueHint), c.mem_read32(sda + kSdaRunQueueBits),
+                      static_cast<int>(c.mem_read32(sda + kSdaReschedule)), c.mem_read32(kCurrentThread),
+                      c.mem_read32(kCurrentContext), c.mem_read32(kActiveHead), c.mem_read32(kActiveTail));
+        stop(c, text);
         return;
     }
     resume(c);
+}
+
+// The upcall frame is at the top of the stack it was given (the server thread's own: what runs there leaves its
+// garbage where the console's thread left it, not on a game stack), else in the handler frame's place below the
+// dispatch frame (the delivery's handler is done).
+void NativeInterrupts::begin_upcall(Cpu& c, u32 dispatch, u32 kind, u32 stack_top, bool yield) {
+    if (!upcall_handler_) {
+        stop(c, "an upcall was requested with no upcall handler");
+        return;
+    }
+    const u32 context = c.mem_read32(dispatch + kDispatchContextOffset);
+    if (c.mem_read32(context - kHandlerExcOffset + kHandlerTagOffset) == kUpcallTag) ++stats_.nested_upcalls;
+    ++stats_.upcalls;
+    // A thread's stack as OSCreateThread left it: 8-aligned top, an 8-byte terminal frame.
+    const u32 frame = stack_top != 0u ? (((stack_top & ~7u) - 8u - kHandlerSize) & ~0xFu) : dispatch - kHandlerSize;
+    if (!c.guest_memory().mapped(GcAddr(frame), kHandlerSize)) {
+        stop(c, "an upcall stack at " + hex(stack_top) + " cannot hold its frame");
+        return;
+    }
+    c.mem_write32(frame, stack_top != 0u ? 0u : dispatch);  // back chain
+    c.mem_write32(frame + kUpcallDispatchOffset, dispatch);
+    c.mem_write32(frame + kHandlerTagOffset, kUpcallTag);
+    c.mem_write32(frame + kHandlerSourceOffset, kind);
+    c.mem_write32(frame + kHandlerStepOffset, 0u);
+    for (u32 i = 0; i < 4u; ++i) c.mem_write32(scratch(frame, i), 0u);
+    c.mem_write32(frame + kHandlerContextOffset, context);
+    c.mem_write32(frame + kUpcallYieldOffset, yield ? 1u : 0u);
+    // Out of interrupt context as the OS's rfi into thread code leaves it: the interrupted MSR (EE set - it was taken),
+    // then the upcall's own context current (FP follows FPU ownership: the lazy FPU switch saves the interrupted
+    // thread's registers on the upcall's first FP use).
+    c.set_msr(c.mem_read32(context + kContextSrr1));
+    c.restore_interrupt_fpr();
+    const u32 own_context = frame + kHandlerExcOffset;
+    os_clear_context(c, own_context);
+    os_set_current_context(c, own_context);
+    c.gpr[1] = frame;
+    if (!upcall_handler_(c, frame, 0u) && !c.stopped()) end_upcall(c, frame);
+}
+
+void NativeInterrupts::upcall_call(Cpu& c, u32 frame, u32 function, u32 r3, u32 r4) {
+    ++stats_.upcall_calls;
+    if (sync_) {  // the native wait runs this call itself (run_upcall)
+        sync_call_ = SyncCall{true, frame, function, r3, r4};
+        return;
+    }
+    c.gpr[1] = frame;
+    c.gpr[3] = r3;
+    c.gpr[4] = r4;
+    c.lr = kUpcallReturn;
+    c.leave_to_dispatcher(function, FallbackReason::Yield, kUpcallReturn);
+}
+
+u32 NativeInterrupts::upcall_kind_word(u32 frame) noexcept { return frame + kHandlerSourceOffset; }
+
+void NativeInterrupts::upcall_return(Cpu& c) {
+    const u32 frame = c.gpr[1];
+    if (!ram_word(c.guest_memory(), frame) || c.mem_read32(frame + kHandlerTagOffset) != kUpcallTag) {
+        stop(c, "an upcall's guest call returned without its frame (r1 " + hex(frame) + ")");
+        return;
+    }
+    const u32 step = c.mem_read32(frame + kHandlerStepOffset) + 1u;
+    c.mem_write32(frame + kHandlerStepOffset, step);
+    if (upcall_handler_(c, frame, step)) return;
+    if (!c.stopped()) end_upcall(c, frame);
+}
+
+// The upcall slept: interrupts off (the switch back ran with them off), the interrupted context current again, and
+// the delivery's reschedule.
+void NativeInterrupts::end_upcall(Cpu& c, u32 frame) {
+    const u32 dispatch = c.mem_read32(frame + kUpcallDispatchOffset);
+    const u32 context = c.mem_read32(frame + kHandlerContextOffset);
+    const bool yield = c.mem_read32(frame + kUpcallYieldOffset) != 0u;
+    if (!ram_word(c.guest_memory(), dispatch) || c.mem_read32(dispatch + kDispatchTagOffset) != kDispatchTag) {
+        stop(c, "the upcall's dispatch frame is gone");
+        return;
+    }
+    c.mem_write32(frame + kHandlerTagOffset, 0u);
+    c.enter_native_interrupt();  // balanced by OSLoadContext's rfi
+    os_clear_context(c, frame + kHandlerExcOffset);
+    os_set_current_context(c, context);
+    c.gpr[1] = dispatch;
+    reschedule(c, yield);
 }
 
 void NativeInterrupts::resume(Cpu& c) {
@@ -499,8 +913,43 @@ void NativeInterrupts::resume(Cpu& c) {
         stop(c, "the reschedule returned without the delivery's dispatch frame (r1 " + hex(dispatch) + ")");
         return;
     }
-    c.gpr[3] = c.mem_read32(dispatch + kDispatchContextOffset);
-    c.leave_to_dispatcher(kOSLoadContext, FallbackReason::Yield, kRescheduleReturn);
+    const u32 context = c.mem_read32(dispatch + kDispatchContextOffset);
+    if (!restore_interrupted_context(c, context)) {  // the delivery saves every context by an exception
+        if (guest_load_context_)
+            guest_load_context_(c, context);  // the reference build: the OS's own restore
+        else
+            stop(c, "the delivery's context " + hex(context) + " was not saved by an exception (EXC flag clear)");
+    }
+}
+
+// OSLoadContext (0x80372C68) of a context saved by an exception, in host code: the same loads in the same order, then the
+// rfi. The SRR0 clamp (a context interrupted inside OSDisableInterrupts resumes at its start), the EXC flag cleared, r0-r2 and
+// r5-r31, GQR1-7, CR / LR / CTR / XER, MSR without EE and RI, SRR0 / SRR1, r4 and r3 last. A context without the EXC flag
+// (saved by OSSaveContext) restores r13-r31 only and goes through the guest function.
+bool NativeInterrupts::restore_interrupted_context(Cpu& c, u32 context) {
+    const u16 state = c.mem_read16(context + kContextState);
+    if ((state & kContextStateExc) == 0u) return false;
+    constexpr u32 kDisableInterruptsStart = 0x8037611Cu, kDisableInterruptsTail = kDisableInterruptsStart + 0xCu;  // the OSDisableInterrupts tail (not a root: only a comparison)
+    const u32 srr0 = c.mem_read32(context + kContextSrr0);
+    if (srr0 > kDisableInterruptsStart && srr0 < kDisableInterruptsTail) c.mem_write32(context + kContextSrr0, kDisableInterruptsStart);
+    c.gpr[0] = c.mem_read32(context);
+    c.gpr[1] = c.mem_read32(context + 4u);
+    c.gpr[2] = c.mem_read32(context + 8u);
+    c.mem_write16(context + kContextState, static_cast<u16>(state & ~kContextStateExc));
+    for (u32 r = 5; r < 32u; ++r) c.gpr[r] = c.mem_read32(context + 0x14u + 4u * (r - 5u));
+    for (u32 g = 1; g < 8u; ++g) c.spr[SPR_GQR0 + g] = c.mem_read32(context + kContextGqr + 4u * g);
+    c.cr = c.mem_read32(context + kContextCr);
+    c.lr = c.mem_read32(context + kContextLr);
+    c.ctr = c.mem_read32(context + kContextCtr);
+    c.xer = c.mem_read32(context + kContextXer);
+    c.set_msr(c.msr() & ~(kMsrEE | kMsrRI));
+    c.spr[SPR_SRR0] = c.mem_read32(context + kContextSrr0);
+    c.spr[SPR_SRR1] = c.mem_read32(context + kContextSrr1);
+    c.gpr[4] = c.mem_read32(context + 0x10u);
+    c.gpr[3] = c.mem_read32(context + 0xCu);
+    ++stats_.native_returns;
+    c.return_from_interrupt(0u);
+    return true;
 }
 
 void NativeInterrupts::save_state(std::vector<u8>& out) const {
@@ -512,12 +961,19 @@ void NativeInterrupts::save_state(std::vector<u8>& out) const {
 }
 
 bool NativeInterrupts::load_state(const u8*& cursor, const u8* end) {
-    if (static_cast<std::size_t>(end - cursor) < 1u + 2u * kSourceCount) return false;
-    if (*cursor != kSourceCount) return false;  // another build's source set
+    if (end == cursor) return false;
+    // A state saved before HostWork existed (7 sources) loads with no host work pending.
+    const std::size_t saved = *cursor;
+    if (saved != kSourceCount && saved != kSourceCount - 1u) return false;  // another build's source set
+    if (static_cast<std::size_t>(end - cursor) < 1u + 2u * saved) return false;
     ++cursor;
-    for (std::size_t i = 0; i < kSourceCount; ++i) {
+    for (std::size_t i = 0; i < saved; ++i) {
         status_[i] = *cursor++ != 0u;
         unmasked_[i] = *cursor++ != 0u;
+    }
+    if (saved < kSourceCount) {
+        status_[index(Source::HostWork)] = false;
+        unmasked_[index(Source::HostWork)] = true;
     }
     if (!unmasked_[index(Source::Card)]) return false;  // never saved masked
     update_line();

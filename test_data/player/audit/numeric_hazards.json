@@ -1,0 +1,23 @@
+{
+ "member_sites": {
+  "estimate": 0,
+  "single_mul": 263,
+  "fused": 0,
+  "paired": 402,
+  "fctiw": 7
+ },
+ "member_functions": {
+  "estimate": 0,
+  "single_mul": 106,
+  "fused": 0,
+  "paired": 124,
+  "fctiw": 7
+ },
+ "reachable_estimate_functions": [
+  [
+   "0x8000FF04",
+   "fn_8000FF04",
+   1
+  ]
+ ]
+}

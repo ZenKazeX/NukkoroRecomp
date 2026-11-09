@@ -130,6 +130,10 @@ struct World {
 // sectors (the RP2 worlds; collision worlds parse too, their sectors carry no draw meshes).
 bool import_world(ByteView bytes, const Chunk& world, World* out, std::string* error);
 
+// One atomic sector chunk of a GameCube world (prepared vertex data: one array per attribute, indexed draw lists) as
+// a native mesh; an empty sector gives an empty mesh. Used by import_world and by the offline stage converter.
+bool import_sector(ByteView bytes, const Chunk& sector, WorldSector* out, std::string* error);
+
 // The prepared vertex data of one sector, as described by its big-endian header: one array per attribute and one
 // draw list (triangle strips whose vertices name an index into every array) per mesh, all at offsets into `data`.
 // The disc stores the offsets relative to the data block; the game relocates them when it reads the block into

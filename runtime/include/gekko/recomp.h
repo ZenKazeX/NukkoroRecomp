@@ -24,6 +24,7 @@
 
 #include "gekko/cpu.h"
 #include "gekko/ppc_ops.h"
+#include "gekko/indirect_call_trace.h"
 
 namespace gekko {
 namespace recomp {
@@ -71,6 +72,7 @@ extern const u32 kLiftSiteWords[];
 // transfer. A linked call: the emitted site runs the callee's published
 // transfers after it (Cpu::finish_transfers).
 inline void call_indirect(Cpu& c, u32 target, u32 link) {
+    if (indirect_call_trace::enabled()) indirect_call_trace::record(link - 4u, target);   // observation only
     c.lr = link;
     if (const RecompiledCode* table = c.recompiled()) {
         if (const RecompiledCode::Fn native = table->lookup(target)) {

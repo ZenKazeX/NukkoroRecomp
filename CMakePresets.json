@@ -15,7 +15,7 @@
       "cacheVariables": {
         "SHADOW_RECOMP_DOL": "${sourceDir}/game/sys/main.dol",
         "SHADOW_RENDER_LIFTED": "ON",
-        "SHADOW_ENABLE_PLUME": "ON",
+        "SHADOW_ENABLE_PLUME": "OFF",
         "SHADOW_ENABLE_TRACY": "OFF",
         "SHADOW_SHIPPING": "ON",
         "SHADOW_BUILD_TESTS": "OFF",
@@ -23,6 +23,18 @@
         "SHADOW_RECOMP_SHARDS": "48",
         "SHADOW_RECOMP_COMPILE_JOBS": "2",
         "SHADOW_DEPLOY_DIR": ""
+      }
+    },
+    {
+      "name": "tests",
+      "displayName": "Runtime and recompiler regression tests",
+      "inherits": "release",
+      "binaryDir": "${sourceDir}/.build/${presetName}",
+      "cacheVariables": {
+        "SHADOW_RENDER_LIFTED": "OFF",
+        "SHADOW_SHIPPING": "OFF",
+        "SHADOW_BUILD_TESTS": "ON",
+        "SHADOW_RECOMP_SHARDS": "64"
       }
     },
     {
@@ -92,6 +104,16 @@
         "ShadowTheHedgehog"
       ],
       "jobs": 2
+    },
+    {
+      "name": "tests",
+      "configurePreset": "tests",
+      "configuration": "Release",
+      "jobs": 2,
+      "targets": [
+        "ALL_BUILD",
+        "ShadowTheHedgehogReference"
+      ]
     },
     {
       "name": "host-tools",

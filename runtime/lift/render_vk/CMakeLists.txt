@@ -116,7 +116,7 @@ add_library(shadow_render_vk_core STATIC
     swapchain.cpp
     vma.cpp)
 add_dependencies(shadow_render_vk_core shadow_render_vk_shaders)
-target_compile_features(shadow_render_vk_core PUBLIC cxx_std_17)
+target_compile_features(shadow_render_vk_core PUBLIC cxx_std_20)
 # "render_vk/x.h" (and "render/frame.h", the packet contract) from runtime/lift; the generated SPIR-V headers; VMA.
 target_include_directories(shadow_render_vk_core
     PUBLIC "${SHADOW_LIFT_DIR}"

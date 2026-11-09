@@ -1,0 +1,454 @@
+address,placement,usage,files,verdict
+0x8000001A,data/other,lr/return-like,native_one.cpp,data address: roots nothing
+0x80001200,data/other,constant; test,cache_range_owner_tests.cpp,data address: roots nothing
+0x8000540C,function-start,constant,native_expand_jobs.cpp,guest function the runtime hooks or tables (real entry)
+0x8001C4F8,function-start,constant,native_expand_jobs.cpp,guest function the runtime hooks or tables (real entry)
+0x80037200,function-start,constant,native_expand_jobs.cpp native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x80038148,function-start,constant,game_errata.h,guest function the runtime hooks or tables (real entry)
+0x80043C80,function-start,hook/own call,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x80043CB8,function-start,,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x80043CC0,function-start,,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x80043CD8,function-start,,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x80043D0C,function-start,hook/own call,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x80043D34,function-start,hook/own call,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x80043DB0,function-start,constant,native_expand_jobs.cpp,guest function the runtime hooks or tables (real entry)
+0x80043EA4,function-interior,constant; lr/return-like,native_expand_jobs.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x80043F60,function-start,constant,native_expand_jobs.cpp,guest function the runtime hooks or tables (real entry)
+0x80045014,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004506C,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x800450C4,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x800450E8,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x80045100,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x80045114,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x80045138,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x80045150,function-start,constant,native_rtgcnfs.cpp,guest function the runtime hooks or tables (real entry)
+0x80045188,function-interior,lr/return-like,native_rtgcnfs.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x800451C0,function-interior,lr/return-like,native_rtgcnfs.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x800451E8,function-interior,lr/return-like,native_rtgcnfs.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004521C,function-interior,lr/return-like,native_rtgcnfs.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x80045370,function-start,constant,native_expand_jobs.cpp,guest function the runtime hooks or tables (real entry)
+0x800453E0,function-start,constant,native_expand_jobs.cpp,guest function the runtime hooks or tables (real entry)
+0x8004544C,function-interior,lr/return-like,native_expand_jobs.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x80045458,function-interior,lr/return-like,native_expand_jobs.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x80045480,function-interior,,native_expand_jobs.cpp,guest code address named by the runtime (real entry or hook site)
+0x800454B8,function-interior,lr/return-like,native_expand_jobs.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x800454DC,function-interior,,native_expand_jobs.cpp,guest code address named by the runtime (real entry or hook site)
+0x80045508,function-interior,lr/return-like,native_expand_jobs.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x800458F0,function-start,constant,native_expand_jobs.cpp,guest function the runtime hooks or tables (real entry)
+0x80049B1C,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x80049B3C,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x80049C98,function-interior,constant; lr/return-like,system.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004A09C,function-start,,system.cpp,guest function the runtime hooks or tables (real entry)
+0x8004AD84,function-start,constant,native_expand_jobs.cpp,guest function the runtime hooks or tables (real entry)
+0x8004AE60,function-start,string-text,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004AEAC,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004AEB0,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004AEE0,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004AEF4,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004AF14,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004AF44,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004AF4C,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004AF5C,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004AF84,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004AFA8,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004AFE4,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B000,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B008,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B028,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B040,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B050,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B09C,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B0B8,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B0E4,function-start,,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004B12C,function-start,string-text,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004B13C,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004B164,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004B3A0,function-start,string-text,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004B3EC,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B3F0,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B420,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B434,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B454,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B484,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B48C,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B49C,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B4C4,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B4E8,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B524,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B540,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B548,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B568,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B584,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B594,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B59C,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B5E8,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B604,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B630,function-start,,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004B678,function-start,string-text,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004B7BC,function-start,string-text,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004B808,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B80C,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B83C,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B850,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B870,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B8A0,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B8A8,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B8B8,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B8E0,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B904,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B940,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B95C,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B964,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B984,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B99C,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004B9B4,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004BA00,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004BA1C,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004BA48,function-start,,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004BA90,function-start,string-text,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004BBD4,function-start,string-text,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004BC20,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004BC24,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004BC54,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004BC68,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004BC88,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004BCB8,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004BCC0,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004BCD0,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004BCF8,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004BD1C,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004BD58,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004BD74,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004BD7C,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004BD9C,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004BDB8,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004BDC8,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004BDD0,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004BE1C,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004BE38,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004BE64,function-start,,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004BEAC,function-start,string-text,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004BFF0,function-start,string-text,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004C03C,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C040,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C070,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C084,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C0A4,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C0D4,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C0DC,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C0EC,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C114,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C138,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C174,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C190,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C198,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C1B8,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C1D0,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C1E0,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C1EC,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C234,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C250,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C27C,function-start,,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004C2C4,function-start,string-text,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004C408,function-start,string-text,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004C454,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C458,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C488,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C49C,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C4BC,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C4EC,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C4F4,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C504,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C52C,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C550,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C58C,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C5A8,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C5B0,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C5D0,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C624,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C640,function-interior,,native_one.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C66C,function-start,,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004C6B4,function-start,string-text,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004C770,function-start,constant,native_expand_jobs.cpp native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004C80C,function-interior,,native_expand_jobs.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C828,function-interior,lr/return-like,native_expand_jobs.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004C840,function-interior,,native_expand_jobs.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C858,function-interior,,native_expand_jobs.cpp,guest code address named by the runtime (real entry or hook site)
+0x8004C878,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004C938,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004CA50,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004CAC0,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004CAE0,function-interior,constant; lr/return-like,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CB08,function-interior,constant; lr/return-like,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CB20,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004CB48,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004CBB8,between-functions,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CBC8,between-functions,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CBF8,between-functions,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CC28,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004CC54,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CC68,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CC6C,function-start,constant; lr/return-like,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CC94,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004CCD4,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CCFC,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CD08,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CD64,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CE8C,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CEB0,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CEB4,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CEBC,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CED4,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CEE0,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CF18,between-functions,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CF20,between-functions,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CF40,between-functions,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CF50,between-functions,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CF78,between-functions,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CF90,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004CFB0,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004CFC0,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004D014,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004D024,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004D044,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8004D424,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004D564,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8004F014,function-start,constant,native_expand_jobs.cpp,guest function the runtime hooks or tables (real entry)
+0x800514CC,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x800AAE18,function-start,constant,game_errata.h,guest function the runtime hooks or tables (real entry)
+0x80173C5C,function-start,constant,native_options_menu.cpp,guest function the runtime hooks or tables (real entry)
+0x8019F1D4,function-start,constant,game_errata.h,guest function the runtime hooks or tables (real entry)
+0x801D3CB4,function-interior,constant; lr/return-like,system.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x801D54D8,function-start,,system.cpp,guest function the runtime hooks or tables (real entry)
+0x801D690C,function-start,,system.cpp,guest function the runtime hooks or tables (real entry)
+0x801D84A4,function-interior,constant; lr/return-like,system.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x801D84C0,function-interior,constant; lr/return-like,system.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x801DFA98,function-start,constant,save_store.cpp,guest function the runtime hooks or tables (real entry)
+0x801E24D0,function-start,constant,native_expand_jobs.cpp,guest function the runtime hooks or tables (real entry)
+0x801E2794,function-interior,lr/return-like,system.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x801EB614,function-start,constant,native_expand_jobs.cpp,guest function the runtime hooks or tables (real entry)
+0x801EB790,function-start,constant,uv_anim_time.h,guest function the runtime hooks or tables (real entry)
+0x801F2B9C,function-start,constant,system.cpp,guest function the runtime hooks or tables (real entry)
+0x801F2BF0,function-start,,system.cpp,guest function the runtime hooks or tables (real entry)
+0x801F2C44,function-start,,system.cpp,guest function the runtime hooks or tables (real entry)
+0x801F2CE4,function-start,,system.cpp,guest function the runtime hooks or tables (real entry)
+0x801FB82C,function-interior,constant; lr/return-like,system.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x80264CF8,function-interior,constant; lr/return-like,system.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x802B8F64,function-interior,constant; lr/return-like,native_options_menu.h,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x802B9070,function-interior,constant,native_options_menu.h,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x802B90B0,function-start,constant,save_store.cpp,guest function the runtime hooks or tables (real entry)
+0x802B9980,function-interior,constant,native_options_menu.h,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x802BF228,function-start,constant,native_options_menu.h,guest function the runtime hooks or tables (real entry)
+0x802E0BB0,function-start,string-text,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8035A0BC,function-start,constant,native_expand_jobs.cpp,guest function the runtime hooks or tables (real entry)
+0x8035A0C8,function-start,,system.cpp,guest function the runtime hooks or tables (real entry)
+0x8035A15C,function-start,constant,native_expand_jobs.cpp,guest function the runtime hooks or tables (real entry)
+0x8035A2DC,function-start,constant,native_expand_jobs.cpp,guest function the runtime hooks or tables (real entry)
+0x8035A390,function-start,constant,native_expand_jobs.cpp,guest function the runtime hooks or tables (real entry)
+0x8035AA28,function-start,constant,save_store.cpp,guest function the runtime hooks or tables (real entry)
+0x8035B414,function-start,constant,save_store.cpp,guest function the runtime hooks or tables (real entry)
+0x80372508,owner-start,constant; native-owners:owner; test,game_memory.cpp cache_range_owner_tests.cpp,owner start: the thunk the runtime dispatches through
+0x80372524,owner-interior,constant; native-owners:entry; test,game_memory.cpp cache_range_owner_tests.cpp,declared owner entry (native-owners.txt entry:)
+0x80372594,owner-start,constant; native-owners:owner; test,game_memory.cpp cache_range_owner_tests.cpp,owner start: the thunk the runtime dispatches through
+0x803725B0,owner-interior,constant; native-owners:entry; test,game_memory.cpp cache_range_owner_tests.cpp,declared owner entry (native-owners.txt entry:)
+0x80376224,owner-interior,constant; lr/return-like; native-owners:entry,native_interrupts.cpp,declared owner entry (native-owners.txt entry:)
+0x80377DA0,owner-start,constant; native-owners:owner,native_os_settings.h,owner start: the thunk the runtime dispatches through
+0x80377E20,owner-start,constant; native-owners:owner,native_os_settings.h,owner start: the thunk the runtime dispatches through
+0x80377EC4,owner-start,constant; native-owners:owner,native_os_settings.h,owner start: the thunk the runtime dispatches through
+0x80377F30,owner-start,constant; native-owners:owner,native_os_settings.h,owner start: the thunk the runtime dispatches through
+0x80377FA0,owner-start,constant; native-owners:owner,native_os_settings.h,owner start: the thunk the runtime dispatches through
+0x803A12A4,function-start,constant,native_expand_jobs.cpp,guest function the runtime hooks or tables (real entry)
+0x803AC608,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x803C7B40,function-start,,system.cpp,guest function the runtime hooks or tables (real entry)
+0x803C9DE4,function-start,constant,native_sj.cpp,guest function the runtime hooks or tables (real entry)
+0x803C9E30,function-start,constant,native_sj.cpp,guest function the runtime hooks or tables (real entry)
+0x803C9E7C,owner-start,constant; native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803C9EAC,owner-start,constant; native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803C9EDC,owner-start,constant; native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803C9F88,owner-start,constant; native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CA09C,owner-start,constant; native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CA230,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CA334,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CA468,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CA55C,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CA608,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CA6C4,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CA770,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CA824,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CA9F0,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CA9F4,owner-interior,constant; lr/return-like; native-owners:entry,native_sj.h,declared owner entry (native-owners.txt entry:)
+0x803CAA44,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CAAA4,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CAACC,owner-start,constant; native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CABA0,owner-start,constant; native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CAC4C,owner-start,constant; native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CACF8,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CADA4,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CAF08,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CB120,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CB178,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CB320,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CB378,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CB580,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CB5E8,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CB6DC,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CB7A0,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CB85C,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CB908,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CB9BC,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CBB90,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CBBE4,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CBC44,owner-start,native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CBF98,owner-start,constant; native-owners:owner,native_sj.cpp,owner start: the thunk the runtime dispatches through
+0x803CBFB8,owner-start,constant; native-owners:owner,native_svm.cpp,owner start: the thunk the runtime dispatches through
+0x803CC0CC,owner-start,constant; native-owners:owner,native_svm.cpp,owner start: the thunk the runtime dispatches through
+0x803CC0D0,owner-interior,constant; lr/return-like; native-owners:entry,native_svm.h,declared owner entry (native-owners.txt entry:)
+0x803CC194,owner-start,constant; native-owners:owner,native_svm.cpp,owner start: the thunk the runtime dispatches through
+0x803CC2DC,owner-start,constant; native-owners:owner,native_svm.cpp,owner start: the thunk the runtime dispatches through
+0x803CC48C,owner-start,constant; native-owners:owner,native_svm.cpp,owner start: the thunk the runtime dispatches through
+0x803CC49C,owner-start,constant; native-owners:owner,native_svm.cpp,owner start: the thunk the runtime dispatches through
+0x803CC4AC,owner-start,constant; native-owners:owner,native_svm.cpp,owner start: the thunk the runtime dispatches through
+0x803CC4F0,owner-start,constant; native-owners:owner,native_svm.cpp,owner start: the thunk the runtime dispatches through
+0x803CC5F4,owner-start,constant; native-owners:owner,native_svm.cpp,owner start: the thunk the runtime dispatches through
+0x803CC7D0,owner-start,constant; native-owners:owner,native_svm.cpp,owner start: the thunk the runtime dispatches through
+0x803CC970,owner-start,constant; native-owners:owner,native_svm.cpp,owner start: the thunk the runtime dispatches through
+0x803CCB2C,owner-start,constant; native-owners:owner,native_svm.cpp,owner start: the thunk the runtime dispatches through
+0x803CCB84,owner-start,constant; native-owners:owner,native_svm.cpp,owner start: the thunk the runtime dispatches through
+0x803CCC5C,owner-start,constant; native-owners:owner,native_svm.cpp,owner start: the thunk the runtime dispatches through
+0x803CCCEC,owner-start,constant; native-owners:owner,native_svm.cpp,owner start: the thunk the runtime dispatches through
+0x803CEEB4,owner-start,constant; native-owners:owner,native_adx_output.cpp,owner start: the thunk the runtime dispatches through
+0x803CEF10,owner-start,constant; native-owners:owner,native_adx_output.cpp,owner start: the thunk the runtime dispatches through
+0x803CF070,function-interior,string-text,native_adx_output.cpp,"value-only (marked in source; lies inside the ADX output owner body, never entered)"
+0x803CF0D0,function-interior,test,lift_sites_reference_tests.cpp,"value-only (marked in source; lies inside the ADX output owner body, never entered)"
+0x803CF21C,function-interior,test,lift_sites_reference_tests.cpp,"value-only (marked in source; lies inside the ADX output owner body, never entered)"
+0x803CF260,owner-start,constant; native-owners:owner,native_adx_output.cpp,owner start: the thunk the runtime dispatches through
+0x803CF494,owner-interior,string-text,native_adx_output.cpp,"value-only (marked in source; lies inside the ADX output owner body, never entered)"
+0x80443C74,function-start,string-text,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x80456744,function-start,string-text,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x804586E8,function-start,string-text,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8047A2D4,function-start,string-text,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8047AFA0,function-start,constant,native_expand_jobs.cpp,guest function the runtime hooks or tables (real entry)
+0x8047B3D8,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8047B460,function-start,constant; lr/return-like,native_one.cpp native_rtgcnfs.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8047B6A0,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8047DFA0,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8047E9C4,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8047E9EC,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8047E9F8,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8047EBD4,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x80481DFC,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x80481E10,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x80481E2C,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x80481E38,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x80481E54,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x80481E60,function-interior,constant,native_one.cpp,guest continuation / call-site address the runtime enters or resumes at (real entry)
+0x8048229C,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x804823B8,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8048500C,function-start,string-text,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x8048E114,function-start,constant,native_one.cpp,guest function the runtime hooks or tables (real entry)
+0x804ACCB4,between-functions,constant,native_one.cpp,data address: roots nothing
+0x804D13E0,between-functions,constant,system.cpp,data address: roots nothing
+0x804D13F8,between-functions,constant,system.cpp,data address: roots nothing
+0x804D1410,between-functions,,system.cpp,data address: roots nothing
+0x804D1424,between-functions,,system.cpp,data address: roots nothing
+0x804D1438,between-functions,,system.cpp,data address: roots nothing
+0x804D1450,between-functions,,system.cpp,data address: roots nothing
+0x804D15D0,between-functions,constant,system.cpp,data address: roots nothing
+0x804D15E0,between-functions,constant,system.cpp,data address: roots nothing
+0x804D40B4,between-functions,constant,system.cpp,data address: roots nothing
+0x804D40E4,between-functions,,system.cpp,data address: roots nothing
+0x804D4114,between-functions,,system.cpp,data address: roots nothing
+0x80518238,data/other,constant,native_sj.cpp,data address: roots nothing
+0x805183A0,data/other,constant,native_sj.cpp,data address: roots nothing
+0x805186FC,data/other,constant,native_svm.cpp,data address: roots nothing
+0x8051E158,data/other,,native_one.cpp,data address: roots nothing
+0x8051E23C,data/other,constant,native_expand_jobs.cpp,data address: roots nothing
+0x8051E2F0,data/other,constant,native_expand_jobs.cpp,data address: roots nothing
+0x8051E78C,data/other,constant,game_errata.h,data address: roots nothing
+0x805608C8,data/other,constant,native_expand_jobs.cpp,data address: roots nothing
+0x80569D40,data/other,constant,native_sj.h,data address: roots nothing
+0x80569D70,data/other,constant,native_sj.h,data address: roots nothing
+0x8056AF2C,data/other,constant,sonicteam_heap.h,data address: roots nothing
+0x8056E808,data/other,string-text,native_one.cpp,data address: roots nothing
+0x8056EFA0,data/other,constant,native_one.cpp,data address: roots nothing
+0x80571C6C,data/other,constant,game_errata.h,data address: roots nothing
+0x80571CA4,data/other,,replay_check.h,data address: roots nothing
+0x805742A0,data/other,constant,native_expand_jobs.cpp,data address: roots nothing
+0x80576FBC,data/other,,replay_check.h,data address: roots nothing
+0x80577040,data/other,,replay_check.h,data address: roots nothing
+0x8057707C,data/other,,replay_check.h,data address: roots nothing
+0x80577788,data/other,,replay_check.h,data address: roots nothing
+0x805777A4,data/other,lr/return-like; test,replay_check.h input_tape_tests.cpp,data address: roots nothing
+0x80577A18,data/other,,system.cpp,data address: roots nothing
+0x8057E7B8,data/other,constant,save_store.cpp system.cpp,data address: roots nothing
+0x8057E7BC,data/other,constant; lr/return-like,save_store.cpp system.cpp,data address: roots nothing
+0x8057E7DD,data/other,constant,save_store.cpp,data address: roots nothing
+0x8057E7F0,data/other,,replay_check.h,data address: roots nothing
+0x8057E800,data/other,,replay_check.h,data address: roots nothing
+0x8057E808,data/other,,replay_check.h,data address: roots nothing
+0x8057E82C,data/other,constant,system.cpp,data address: roots nothing
+0x8057E89C,data/other,,system.cpp,data address: roots nothing
+0x8057E8A0,data/other,,system.cpp,data address: roots nothing
+0x80580C0C,data/other,,replay_check.h,data address: roots nothing
+0x80585794,data/other,,system.cpp,data address: roots nothing
+0x80585798,data/other,,system.cpp,data address: roots nothing
+0x805857A8,data/other,,system.cpp,data address: roots nothing
+0x805BBD78,data/other,constant,native_sj.cpp,data address: roots nothing
+0x805BBD80,data/other,constant,native_sj.cpp,data address: roots nothing
+0x805BBD88,data/other,constant,native_sj.cpp,data address: roots nothing
+0x805BBD8C,data/other,constant,native_sj.cpp,data address: roots nothing
+0x805BC210,data/other,constant,native_sj.cpp,data address: roots nothing
+0x805BC214,data/other,constant,native_sj.cpp,data address: roots nothing
+0x805C0E20,data/other,constant,native_svm.h,data address: roots nothing
+0x805C0EF8,data/other,constant,native_svm.cpp,data address: roots nothing
+0x805C2D7C,data/other,constant,native_adx_output.cpp,data address: roots nothing
+0x805C2D88,data/other,constant,native_adx_output.cpp,data address: roots nothing
+0x805C2D8C,data/other,constant,native_adx_output.cpp,data address: roots nothing
+0x805C3E4C,data/other,constant; test,native_adx_output.cpp options_audio_mix_tests.cpp,data address: roots nothing
+0x805E1894,data/other,,replay_check.h,data address: roots nothing
+0x805E4918,data/other,constant,native_expand_jobs.cpp,data address: roots nothing
+0x805E4990,data/other,constant; string-text,native_one.cpp,data address: roots nothing
+0x805E4998,data/other,string-text,native_one.cpp,data address: roots nothing
+0x805E49A0,data/other,string-text,native_one.cpp,data address: roots nothing
+0x805E49A8,data/other,string-text,native_one.cpp,data address: roots nothing
+0x805E49B0,data/other,string-text,native_one.cpp,data address: roots nothing
+0x805E49B8,data/other,string-text,native_one.cpp,data address: roots nothing
+0x805E9BC0,data/other,constant,audio_categories.h,data address: roots nothing
+0x805E9BD0,data/other,constant,audio_categories.h,data address: roots nothing
+0x805EF064,data/other,constant,native_expand_jobs.cpp,data address: roots nothing
+0x805EF1D8,data/other,constant,native_expand_jobs.cpp,data address: roots nothing
+0x805EF1DC,data/other,constant,native_expand_jobs.cpp,data address: roots nothing
+0x805EF234,data/other,constant,native_one.cpp,data address: roots nothing
+0x805F03C0,data/other,,pipelines.cpp,data address: roots nothing
+0x805F2C38,data/other,constant,native_one.cpp,data address: roots nothing
+0x805F2D88,data/other,constant,native_one.cpp,data address: roots nothing
+0x80700100,data/other,test,options_audio_mix_tests.cpp,data address: roots nothing
+0x80700200,data/other,test,options_audio_mix_tests.cpp,data address: roots nothing
+0x80710000,data/other,test,options_audio_mix_tests.cpp,data address: roots nothing
+0x80710100,data/other,test,options_audio_mix_tests.cpp,data address: roots nothing
+0x80710200,data/other,test,options_audio_mix_tests.cpp,data address: roots nothing
+0x80800000,data/other,test,options_audio_mix_tests.cpp,data address: roots nothing
+0x80800200,data/other,test,options_audio_mix_tests.cpp,data address: roots nothing
+0x80800400,data/other,test,options_audio_mix_tests.cpp,data address: roots nothing
+0x80800600,data/other,test,options_audio_mix_tests.cpp,data address: roots nothing
+0x80808080,data/other,,native_one.cpp,data address: roots nothing
+0x80A00000,data/other,test,options_audio_mix_tests.cpp,data address: roots nothing
+0x80A00200,data/other,test,options_audio_mix_tests.cpp,data address: roots nothing
+0x80A00400,data/other,test,options_audio_mix_tests.cpp,data address: roots nothing
+0x80A00600,data/other,test,options_audio_mix_tests.cpp,data address: roots nothing
+0x80A00800,data/other,test,options_audio_mix_tests.cpp,data address: roots nothing
+0x80A00A00,data/other,test,options_audio_mix_tests.cpp,data address: roots nothing
+0x80A00C00,data/other,test,options_audio_mix_tests.cpp,data address: roots nothing
+0x80A00E00,data/other,test,options_audio_mix_tests.cpp,data address: roots nothing
+0x80A01000,data/other,test,options_audio_mix_tests.cpp,data address: roots nothing
+0x80A01200,data/other,test,options_audio_mix_tests.cpp,data address: roots nothing
+0x80B00000,data/other,test,options_audio_mix_tests.cpp,data address: roots nothing
+0x80F503D8,data/other,constant; test,player_view_tests.cpp,data address: roots nothing
+0x80FFFFF0,data/other,lr/return-like; test,options_audio_mix_tests.cpp,data address: roots nothing
+0x81004100,data/other,constant; test,gekko_core_tests.cpp,data address: roots nothing
+0x85845DD1,data/other,,save_file.cpp,data address: roots nothing
+0x8771F681,data/other,,save_file.cpp,data address: roots nothing
+0x895CD7BE,data/other,,save_file.cpp,data address: roots nothing
+0x8B44F7AF,data/other,,save_file.cpp,data address: roots nothing
+0x8D2A4C8A,data/other,,save_file.cpp,data address: roots nothing
+0x8F0CCC92,data/other,,save_file.cpp,data address: roots nothing

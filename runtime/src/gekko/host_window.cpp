@@ -10,7 +10,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
+#include <string>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -51,10 +53,122 @@ bool take_fresh(int key) noexcept {
     return fresh;
 }
 
-// The picture's aspect (width / height) when the game renders an exact size (docs/RESOLUTION_AUDIT.md): a windowed
-// client keeps this shape - when created and while its edges are dragged - so the picture fills it without bars.
-// 0: any shape (the render size follows the window).
+// The display resolution's shape (gekko/display_geometry.h): a windowed client that must shrink into the work area keeps
+// it, and keeps it while its edges are dragged. The picture's own aspect is boxed inside the client by the renderer.
+// 0: any shape.
 double g_content_aspect = 0.0;
+
+// Alt+Enter presses since the last take_fullscreen_toggle().
+unsigned g_fullscreen_toggles = 0;
+// The player is dragging an edge or the title bar (WM_ENTERSIZEMOVE .. WM_EXITSIZEMOVE): the size is not final yet.
+bool g_sizing = false;
+
+// Exclusive fullscreen (gekko/display_geometry.h): the display mode this process set on the window's monitor. It is
+// temporary (CDS_FULLSCREEN): undone when the game leaves exclusive fullscreen, while it is in the background
+// (Alt+Tab), when the window is destroyed, and by Windows when the process ends.
+struct ExclusiveMode {
+    bool wanted = false;     // the window mode asks for it
+    bool active = false;     // the monitor is in the mode now
+    bool suspended = false;  // undone for focus loss; put back on activation
+    std::wstring device;     // \\.\DISPLAYn
+    int width = 0, height = 0;
+    DWORD refresh = 0;
+};
+ExclusiveMode g_exclusive;
+std::string g_exclusive_note;
+
+void restore_display_mode() noexcept {
+    if (!g_exclusive.active) return;
+    ChangeDisplaySettingsExW(g_exclusive.device.c_str(), nullptr, nullptr, 0, nullptr);
+    g_exclusive.active = false;
+}
+
+std::string narrow(const std::wstring& w) {
+    std::string s;
+    for (const wchar_t c : w) s.push_back(c < 0x80 ? static_cast<char>(c) : '?');
+    return s;
+}
+
+// Sets the window's monitor to a mode of exactly width x height (its current colour depth; its current refresh when
+// the mode has it, else the highest). False with the reason, the monitor untouched, when the monitor does not list
+// such a mode or refuses it.
+bool apply_display_mode(HWND window, int width, int height) {
+    MONITORINFOEXW monitor{};
+    monitor.cbSize = sizeof(monitor);
+    if (!GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitor)) {
+        g_exclusive_note = "exclusive fullscreen: the window's monitor is unknown";
+        return false;
+    }
+    const std::wstring device = monitor.szDevice;
+    DEVMODEW current{};
+    current.dmSize = sizeof(current);
+    EnumDisplaySettingsExW(device.c_str(), ENUM_REGISTRY_SETTINGS, &current, 0);
+    if (width <= 0 || height <= 0) {
+        // 0 x 0: the desktop's own mode (display.cfg fullscreen_width / fullscreen_height unset).
+        width = static_cast<int>(current.dmPelsWidth);
+        height = static_cast<int>(current.dmPelsHeight);
+    }
+    if (g_exclusive.active && g_exclusive.device == device && g_exclusive.width == width && g_exclusive.height == height)
+        return true;
+    restore_display_mode();
+    DEVMODEW best{};
+    bool found = false;
+    DEVMODEW mode{};
+    mode.dmSize = sizeof(mode);
+    for (DWORD i = 0; EnumDisplaySettingsExW(device.c_str(), i, &mode, 0); ++i) {
+        if (static_cast<int>(mode.dmPelsWidth) != width || static_cast<int>(mode.dmPelsHeight) != height) continue;
+        if (current.dmBitsPerPel != 0 && mode.dmBitsPerPel != current.dmBitsPerPel) continue;
+        const bool better = !found || (mode.dmDisplayFrequency == current.dmDisplayFrequency &&
+                                       best.dmDisplayFrequency != current.dmDisplayFrequency) ||
+                            (best.dmDisplayFrequency != current.dmDisplayFrequency &&
+                             mode.dmDisplayFrequency > best.dmDisplayFrequency);
+        if (better) best = mode, found = true;
+    }
+    if (!found) {
+        g_exclusive_note = "exclusive fullscreen: " + narrow(device) + " lists no " + std::to_string(width) + "x" +
+                           std::to_string(height) + " mode; showing borderless at the desktop's size";
+        return false;
+    }
+    best.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT | DM_BITSPERPEL | DM_DISPLAYFREQUENCY;
+    const LONG result = ChangeDisplaySettingsExW(device.c_str(), &best, nullptr, CDS_FULLSCREEN, nullptr);
+    if (result != DISP_CHANGE_SUCCESSFUL) {
+        g_exclusive_note = "exclusive fullscreen: " + narrow(device) + " refused " + std::to_string(width) + "x" +
+                           std::to_string(height) + " (ChangeDisplaySettingsEx " + std::to_string(result) +
+                           "); showing borderless at the desktop's size";
+        return false;
+    }
+    g_exclusive.active = true;
+    g_exclusive.device = device;
+    g_exclusive.width = width;
+    g_exclusive.height = height;
+    g_exclusive.refresh = best.dmDisplayFrequency;
+    g_exclusive_note = "exclusive fullscreen: " + narrow(device) + " at " + std::to_string(width) + "x" +
+                       std::to_string(height) + " @ " + std::to_string(best.dmDisplayFrequency) + " Hz";
+    return true;
+}
+
+// The window as a borderless popup over its monitor (in the mode set now, if any).
+void cover_monitor(HWND window) {
+    MONITORINFO monitor{};
+    monitor.cbSize = sizeof(monitor);
+    if (!GetMonitorInfoW(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST), &monitor)) return;
+    const RECT& r = monitor.rcMonitor;
+    SetWindowPos(window, HWND_TOP, r.left, r.top, r.right - r.left, r.bottom - r.top,
+                 SWP_FRAMECHANGED | SWP_NOOWNERZORDER | SWP_SHOWWINDOW);
+}
+
+// Per-monitor DPI awareness (v2), before the first window: every size the game asks for and reads - the client, the
+// monitor, the swap chain - is then physical pixels on any display scaling. Windows 10 1703+; older: unchanged.
+void enable_dpi_awareness() noexcept {
+    static bool done = false;
+    if (done) return;
+    done = true;
+    using SetContext = BOOL(WINAPI*)(HANDLE);
+    if (HMODULE user32 = GetModuleHandleW(L"user32.dll")) {
+        if (const auto set = reinterpret_cast<SetContext>(GetProcAddress(user32, "SetProcessDpiAwarenessContext")))
+            set(reinterpret_cast<HANDLE>(static_cast<INT_PTR>(-4)));  // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+    }
+}
 
 // The frame around a client area of this window's style.
 SIZE frame_size(HWND window) noexcept {
@@ -63,26 +177,49 @@ SIZE frame_size(HWND window) noexcept {
     return SIZE{frame.right - frame.left, frame.bottom - frame.top};
 }
 
-// A windowed client of the asked size. An exact render size: the client takes the picture's shape - the largest of
-// that aspect inside the asked window and inside the work area (less the frame) - so it shows the picture without
-// bars.
+// A windowed client of the asked size: exactly that when the work area (less the frame) holds it, else the largest
+// of its own shape inside it (docs/DISPLAY_SETTINGS_AUDIT.md section 6: the window is the player's; the picture is
+// letterboxed inside whatever shape it has). g_content_aspect, when set, is the shape to keep instead.
 SIZE windowed_client_size(int width, int height, DWORD style, const RECT& work) noexcept {
     SIZE client{width, height};
-    if (g_content_aspect <= 0.0) return client;
+    const double shape = g_content_aspect > 0.0 ? g_content_aspect
+                         : height > 0           ? static_cast<double>(width) / height
+                                                : 0.0;
+    if (shape <= 0.0) return client;
     RECT frame{0, 0, 0, 0};
     AdjustWindowRect(&frame, style & ~WS_VISIBLE, FALSE);
     const double max_w = std::min<double>(width, (work.right - work.left) - (frame.right - frame.left));
     const double max_h = std::min<double>(height, (work.bottom - work.top) - (frame.bottom - frame.top));
     if (max_w >= 1.0 && max_h >= 1.0) {
-        const double fit = std::min(max_w / g_content_aspect, max_h);  // the client height that fits both
+        const double fit = std::min(max_w / shape, max_h);  // the client height that fits both
         client.cy = std::max(1, static_cast<int>(std::floor(fit)));
-        client.cx = std::max(1, static_cast<int>(std::lround(fit * g_content_aspect)));
+        client.cx = std::max(1, static_cast<int>(std::lround(fit * shape)));
+        if (client.cx == width - 1 && max_w >= width) client.cx = width;  // a rounding pixel, not a shrink
     }
     return client;
 }
 
 LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
+        case WM_ENTERSIZEMOVE:
+            g_sizing = true;
+            break;
+        case WM_EXITSIZEMOVE:
+            g_sizing = false;
+            break;
+        case WM_GETMINMAXINFO: {
+            // The smallest client a window takes: 320 x 240 (the picture never collapses).
+            const DWORD style = static_cast<DWORD>(GetWindowLongW(window, GWL_STYLE));
+            if ((style & WS_POPUP) == 0) {
+                RECT frame{0, 0, 320, 240};
+                AdjustWindowRect(&frame, style & ~WS_VISIBLE, FALSE);
+                MINMAXINFO* info = reinterpret_cast<MINMAXINFO*>(lparam);
+                info->ptMinTrackSize.x = frame.right - frame.left;
+                info->ptMinTrackSize.y = frame.bottom - frame.top;
+                return 0;
+            }
+            break;
+        }
         case WM_SIZING:
             if (g_content_aspect > 0.0) {
                 RECT* r = reinterpret_cast<RECT*>(lparam);
@@ -104,9 +241,36 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
         case WM_KEYDOWN:
         case WM_SYSKEYDOWN: {
             const unsigned key = static_cast<unsigned>(wparam) & 0xFFu;
+            // Alt+Enter: switch windowed <-> fullscreen (the UI loop applies it through the display settings).
+            if (message == WM_SYSKEYDOWN && key == VK_RETURN && (lparam & (1 << 29)) != 0) {
+                if ((lparam & (1 << 30)) == 0) ++g_fullscreen_toggles;
+                return 0;
+            }
             if ((lparam & (1 << 30)) == 0 && !g_key_held[key]) ++g_key_fresh[key];
             g_key_held[key] = true;
             break;  // WM_SYSKEYDOWN still reaches DefWindowProc (Alt+F4, the system menu)
+        }
+        case WM_SYSCHAR:
+            if (wparam == VK_RETURN) return 0;  // no "ding" for Alt+Enter
+            break;
+        case WM_DPICHANGED: {
+            // A move to a monitor of another scaling: a windowed client keeps its size in pixels (the display
+            // resolution); fullscreen covers the monitor (set_mode / cover_monitor).
+            const DWORD style = static_cast<DWORD>(GetWindowLongW(window, GWL_STYLE));
+            if ((style & WS_POPUP) == 0) {
+                RECT client{};
+                GetClientRect(window, &client);
+                RECT bounds = client;
+                using AdjustForDpi = BOOL(WINAPI*)(LPRECT, DWORD, BOOL, DWORD, UINT);
+                static const auto adjust = reinterpret_cast<AdjustForDpi>(
+                    GetProcAddress(GetModuleHandleW(L"user32.dll"), "AdjustWindowRectExForDpi"));
+                if (adjust != nullptr) adjust(&bounds, style & ~WS_VISIBLE, FALSE, 0, HIWORD(wparam));
+                else AdjustWindowRect(&bounds, style & ~WS_VISIBLE, FALSE);
+                const RECT* suggested = reinterpret_cast<const RECT*>(lparam);
+                SetWindowPos(window, nullptr, suggested->left, suggested->top, bounds.right - bounds.left,
+                             bounds.bottom - bounds.top, SWP_NOZORDER | SWP_NOACTIVATE);
+            }
+            return 0;
         }
         case WM_KEYUP:
         case WM_SYSKEYUP:
@@ -122,6 +286,17 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
             break;
         case WM_ACTIVATEAPP:
             if (wparam == FALSE) release_all_keys();
+            // Exclusive fullscreen in the background (Alt+Tab): the desktop's mode back and the game minimised; on
+            // return the mode again over the monitor.
+            if (wparam == FALSE && g_exclusive.active) {
+                restore_display_mode();
+                g_exclusive.suspended = true;
+                ShowWindow(window, SW_MINIMIZE);
+            } else if (wparam != FALSE && g_exclusive.suspended && g_exclusive.wanted) {
+                g_exclusive.suspended = false;
+                ShowWindow(window, SW_RESTORE);
+                if (apply_display_mode(window, g_exclusive.width, g_exclusive.height)) cover_monitor(window);
+            }
             break;
         case WM_CLOSE:
             g_close_requested = true;
@@ -244,8 +419,9 @@ void HostWindow::set_content_aspect(double aspect) noexcept {
 #endif
 }
 
-bool HostWindow::create(int width, int height, const std::string& title, bool fullscreen) {
+bool HostWindow::create(int width, int height, const std::string& title, bool fullscreen, bool exclusive) {
     if (plume_failed()) return false; // terminal owner, no implicit device restart
+    enable_dpi_awareness();
     // One event for the whole of host startup's window half: the class
     // registration, CreateWindowExW, and - the large part - PlumePresenter's
     // create, which builds or adopts the D3D12 device, the swap chain and the
@@ -257,12 +433,6 @@ bool HostWindow::create(int width, int height, const std::string& title, bool fu
     window_class.lpfnWndProc = window_proc;
     window_class.hInstance = GetModuleHandleW(nullptr);
     window_class.hCursor = LoadCursorW(nullptr, reinterpret_cast<LPCWSTR>(IDC_ARROW));
-    // The executable's icon (resource 1, linked from installer/art/app.ico when the art pack is present;
-    // CMakeLists.txt). Without it both stay null and Windows draws its default icon.
-    window_class.hIcon = static_cast<HICON>(LoadImageW(window_class.hInstance, MAKEINTRESOURCEW(1), IMAGE_ICON,
-        GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), LR_SHARED));
-    window_class.hIconSm = static_cast<HICON>(LoadImageW(window_class.hInstance, MAKEINTRESOURCEW(1), IMAGE_ICON,
-        GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_SHARED));
     window_class.hbrBackground = reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
     window_class.lpszClassName = kWindowClass;
     RegisterClassExW(&window_class);
@@ -281,7 +451,7 @@ bool HostWindow::create(int width, int height, const std::string& title, bool fu
         create_height = monitor_h;
         pos_x = 0;
         pos_y = 0;
-    } else if (g_content_aspect > 0.0) {
+    } else {
         RECT work{0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN)};
         SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
         const SIZE client = windowed_client_size(width, height, style, work);
@@ -297,6 +467,12 @@ bool HostWindow::create(int width, int height, const std::string& title, bool fu
                                   nullptr, window_class.hInstance, nullptr);
     if (window == nullptr) {
         return false;
+    }
+    // Exclusive fullscreen: the monitor's mode, then the popup over it (a refused mode stays borderless).
+    if (fullscreen && exclusive) {
+        g_exclusive.wanted = true;
+        if (apply_display_mode(window, width, height)) cover_monitor(window);
+        std::fprintf(stderr, "[window] %s\n", g_exclusive_note.c_str());
     }
     // Boot validation has to be watched on screen. Restore and raise even when
     // this process was started from a background agent that does not hold the
@@ -341,9 +517,20 @@ bool HostWindow::create(int width, int height, const std::string& title, bool fu
     return true;
 }
 
-bool HostWindow::set_mode(bool fullscreen, int width, int height) {
+bool HostWindow::set_mode(bool fullscreen, int width, int height, bool exclusive) {
     if (handle_ == nullptr) return false;
     HWND window = static_cast<HWND>(handle_);
+    // Exclusive fullscreen: the monitor's mode width x height first (a refused mode leaves the desktop's mode and the
+    // window borderless over it - reported, the settings untouched); any other mode gives the desktop's mode back.
+    g_exclusive.wanted = fullscreen && exclusive;
+    g_exclusive.suspended = false;
+    if (g_exclusive.wanted) {
+        apply_display_mode(window, width, height);
+        std::fprintf(stderr, "[window] %s\n", g_exclusive_note.c_str());
+    } else {
+        restore_display_mode();
+        g_exclusive_note.clear();
+    }
     // The monitor the window is on now: a borderless window covers it, a windowed one is centred in its work area.
     MONITORINFO monitor{};
     monitor.cbSize = sizeof(monitor);
@@ -376,7 +563,42 @@ bool HostWindow::set_mode(bool fullscreen, int width, int height) {
     return true;
 }
 
+bool HostWindow::sizing() const noexcept { return g_sizing; }
+
+bool HostWindow::minimized() const noexcept {
+    return handle_ != nullptr && IsIconic(static_cast<HWND>(handle_)) != FALSE;
+}
+
+bool HostWindow::work_area_client(int& width, int& height) const noexcept {
+    width = 0;
+    height = 0;
+    if (handle_ == nullptr) return false;
+    MONITORINFO monitor{};
+    monitor.cbSize = sizeof(monitor);
+    if (!GetMonitorInfoW(MonitorFromWindow(static_cast<HWND>(handle_), MONITOR_DEFAULTTONEAREST), &monitor))
+        return false;
+    RECT frame{0, 0, 0, 0};
+    AdjustWindowRect(&frame, WS_OVERLAPPEDWINDOW, FALSE);
+    width = (monitor.rcWork.right - monitor.rcWork.left) - (frame.right - frame.left);
+    height = (monitor.rcWork.bottom - monitor.rcWork.top) - (frame.bottom - frame.top);
+    return width > 0 && height > 0;
+}
+
+bool HostWindow::take_fullscreen_toggle() noexcept {
+    const bool pressed = g_fullscreen_toggles != 0u;
+    g_fullscreen_toggles = 0u;
+    return pressed;
+}
+
+bool HostWindow::exclusive_active() const noexcept { return g_exclusive.active; }
+
+std::string HostWindow::exclusive_note() const { return g_exclusive_note; }
+
 void HostWindow::destroy() {
+    // The desktop's display mode back before the window goes (exclusive fullscreen).
+    g_exclusive.wanted = false;
+    g_exclusive.suspended = false;
+    restore_display_mode();
     // Retire the presentation owner's native leases while its source renderer
     // and HWND still exist. Preserve terminal shutdown errors for the process.
     if (presenter_ != nullptr) {
@@ -402,6 +624,19 @@ void HostWindow::client_size(int& width, int& height) const noexcept {
     GetClientRect(static_cast<HWND>(handle_), &client);
     width = client.right - client.left;
     height = client.bottom - client.top;
+}
+
+bool HostWindow::monitor_size(int& width, int& height) const noexcept {
+    width = 0;
+    height = 0;
+    if (handle_ == nullptr) return false;
+    MONITORINFO monitor{};
+    monitor.cbSize = sizeof(monitor);
+    if (!GetMonitorInfoW(MonitorFromWindow(static_cast<HWND>(handle_), MONITOR_DEFAULTTONEAREST), &monitor))
+        return false;
+    width = monitor.rcMonitor.right - monitor.rcMonitor.left;
+    height = monitor.rcMonitor.bottom - monitor.rcMonitor.top;
+    return width > 0 && height > 0;
 }
 
 bool HostWindow::pump() {
@@ -581,25 +816,41 @@ shadow::peripheral::ControllerSample HostWindow::controller() const {
     // multi-hundred-microsecond call - this is the site that decides whether
     // the refusal-spin corner described on pump() is cheap or expensive.
     GEKKO_PROFILE_ZONE("host/pad-sample");
+    const shadow::peripheral::ControllerSample gamepad =
+        xinput_enabled_ ? poll_xinput_controller(0) : shadow::peripheral::ControllerSample{};
+    return shadow::peripheral::combine(keyboard_controller(), gamepad);
+}
+
+shadow::peripheral::ControllerSample HostWindow::keyboard_controller() const {
     // Key messages reach only the focused window. Still ignore keyboard input while
     // another application owns focus so ordinary typing cannot steer the game
-    // or contaminate an unattended benchmark. XInput remains available below.
+    // or contaminate an unattended benchmark.
     bool keyboard_active = handle_ != nullptr && GetForegroundWindow() == static_cast<HWND>(handle_);
-    const shadow::peripheral::ControllerSample keyboard = shadow::peripheral::sample_from_keyboard(
+    return shadow::peripheral::sample_from_keyboard(
         [](int key, void* context) {
             // ES-W3: the level from the window's key messages (pump() ran first in this UI iteration).
             return *static_cast<const bool*>(context) && g_key_held[key & 0xFF];
         },
         &keyboard_active);
-    const shadow::peripheral::ControllerSample gamepad =
-        xinput_enabled_ ? poll_xinput_controller(0) : shadow::peripheral::ControllerSample{};
-    return shadow::peripheral::combine(keyboard, gamepad);
 }
 
 #else
 
-bool HostWindow::create(int, int, const std::string&, bool) { return false; }
-bool HostWindow::set_mode(bool, int, int) { return false; }
+bool HostWindow::create(int, int, const std::string&, bool, bool) { return false; }
+bool HostWindow::set_mode(bool, int, int, bool) { return false; }
+bool HostWindow::monitor_size(int& width, int& height) const noexcept {
+    width = height = 0;
+    return false;
+}
+bool HostWindow::take_fullscreen_toggle() noexcept { return false; }
+bool HostWindow::work_area_client(int& width, int& height) const noexcept {
+    width = height = 0;
+    return false;
+}
+bool HostWindow::sizing() const noexcept { return false; }
+bool HostWindow::minimized() const noexcept { return false; }
+bool HostWindow::exclusive_active() const noexcept { return false; }
+std::string HostWindow::exclusive_note() const { return {}; }
 void HostWindow::destroy() {}
 void HostWindow::client_size(int& width, int& height) const noexcept {
     width = 0;
@@ -613,6 +864,7 @@ bool HostWindow::present_native(void*, void*, float, int, int, float,
     return false;
 }
 shadow::peripheral::ControllerSample HostWindow::controller() const { return {}; }
+shadow::peripheral::ControllerSample HostWindow::keyboard_controller() const { return {}; }
 
 #endif  // _WIN32
 

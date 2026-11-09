@@ -29,7 +29,6 @@ site 0x8005126C 0x482DCFE9 nothing
 # Game init (0x80051684): PADInit() - nothing to initialise
 site 0x800517C4 0x4832F6F5 return_true
 # OSInit (0x80370E68): SIInit() - there is no serial interface
-site 0x8037101C 0x48045321 nothing
 # 0x80306888: SISetSamplingRate(rate) - there is no serial-interface poll grid
 site 0x80306A84 0x480B06B5 nothing
 # (The VI retrace handler's SIRefreshSamplingRate call, 0x8037E49C, is not listed: that handler is already

@@ -48,6 +48,8 @@ public:
     virtual shadow::render::CanvasRect shown_screen(const ScreenRect& r) const = 0;
     // The output's width / height (the window's client area, else the captures').
     virtual float presented_aspect() const = 0;
+    // How every view's picture frames the camera (render/view.h: square pixels unless --framing game).
+    virtual shadow::render::Framing framing() const noexcept = 0;
     // The frame being built (diagnostics).
     virtual u64 frame_number() const = 0;
 };

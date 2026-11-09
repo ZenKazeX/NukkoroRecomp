@@ -9,6 +9,7 @@
 #include <cstring>
 
 #include "gekko/cpu_diag.h"
+#include "gekko/indirect_call_trace.h"
 #include "gekko/audio_audit.h"
 #include "gekko/ppc_instruction_traits.h"
 #include <limits>
@@ -252,7 +253,87 @@ double reference_round_single(double v, bool exact, const Direction& direction) 
     return std::copysign(static_cast<double>(static_cast<float>(upward ? high : low)), v);
 }
 
+// fres / frsqrte as the hardware tests state them: fres built as a single
+// (23-bit fraction, single exponent 253 - e, denormal by shifting when NI is
+// clear), frsqrte as a double with the exponent's oddness choosing the table
+// half. Written apart from ppc::estimate's arithmetic; only the segment
+// values (ppc::estimate::kReciprocal / kReciprocalRoot) are shared.
+u64 reference_estimate(u32 fpscr, RefFp kind, bool single, u64 b_bits) {
+    const double b = bits_to_double(b_bits);
+    const bool negative = (b_bits >> 63) != 0u;
+    const u32 biased = static_cast<u32>(b_bits >> 52) & 0x7ffu;
+    if (kind == RefFp::Res) {
+        const bool non_ieee = (fpscr & kFpscrNI) != 0u;
+        if (biased <= 0x37eu) {
+            if ((b_bits << 1) == 0u) return double_to_bits(negative ? -HUGE_VAL : HUGE_VAL);
+            const double largest = static_cast<double>(std::numeric_limits<float>::max());
+            return double_to_bits(negative ? -largest : largest);
+        }
+        if (biased >= (non_ieee ? 0x47du : 0x494u)) {
+            if (std::isnan(b)) return b_bits | 0x0008000000000000ull;
+            return negative ? 0x8000000000000000ull : 0u;
+        }
+        const u32 fraction = static_cast<u32>((b_bits & 0x000fffffffffffffull) >> 29);
+        const u32 key = fraction >> 18;
+        const s64 doubled_base = 2 * ppc::estimate::kReciprocal[key].base;
+        const s64 doubled_dec = -ppc::estimate::kReciprocal[key].slope;
+        const u32 mantissa = static_cast<u32>(doubled_base + doubled_dec * static_cast<s64>((fraction >> 8) & 0x3ffu)) >> 1;
+        const int exponent = 253 - (static_cast<int>(biased) - 0x380);
+        u32 single_bits = negative ? 0x80000000u : 0u;
+        if (exponent > 0) {
+            single_bits |= (static_cast<u32>(exponent) << 23) | mantissa;
+        } else if (!non_ieee) {
+            single_bits |= ((1u << 23) | mantissa) >> (1u + static_cast<u32>(-exponent));
+        }
+        float result;
+        std::memcpy(&result, &single_bits, sizeof(result));
+        return double_to_bits(static_cast<double>(result));
+    }
+    // frsqrte
+    u64 result_bits;
+    if ((b_bits << 1) == 0u) {
+        result_bits = double_to_bits(negative ? -HUGE_VAL : HUGE_VAL);
+    } else if (std::isinf(b)) {
+        result_bits = negative ? 0x7ff8000000000000ull : 0u;
+    } else if (std::isnan(b)) {
+        result_bits = b_bits | 0x0008000000000000ull;
+    } else if (negative) {
+        result_bits = 0x7ff8000000000000ull;
+    } else {
+        // b = m * 2^p with m in [1, 2); a denormal is renormalised.
+        int p = 0;
+        const double m = std::frexp(b, &p) * 2.0;
+        p -= 1;
+        const u64 mantissa_bits = double_to_bits(m) & 0x000fffffffffffffull;
+        const bool even_p = (p & 1) == 0;  // biased exponent odd
+        const int i = static_cast<int>(mantissa_bits >> 37);
+        const ppc::estimate::Segment& segment = ppc::estimate::kReciprocalRoot[i / 2048 + (even_p ? 16 : 0)];
+        const s64 estimate = segment.base + segment.slope * (i % 2048);
+        // 1/sqrt(2^p) = 2^(-p/2): result exponent floor(-p/2) - 1 when the
+        // fraction comes from the 2^26-scaled segment of the odd half.
+        const int result_exponent = even_p ? -(p / 2) - 1 : -((p + 1) / 2);
+        result_bits = (static_cast<u64>(result_exponent + 1023) << 52) | (static_cast<u64>(estimate) << 26);
+    }
+    if (!single || std::isnan(bits_to_double(result_bits))) {
+        return single ? double_to_bits(static_cast<double>(static_cast<float>(bits_to_double(result_bits))))
+                      : result_bits;
+    }
+    const double rounded = static_cast<double>(static_cast<float>(bits_to_double(result_bits)));
+    if ((fpscr & kFpscrNI) != 0u && rounded != 0.0 && std::fabs(rounded) < 0x1p-126) {
+        return double_to_bits(std::copysign(0.0, rounded));
+    }
+    return double_to_bits(rounded);
+}
+
 u64 reference_fp(u32 fpscr, RefFp kind, bool single, u64 a_bits, u64 b_bits, u64 c_bits) {
+    if (kind == RefFp::Res || kind == RefFp::Rsqrte) {
+        if (std::isnan(bits_to_double(b_bits))) {
+            const u64 quiet = b_bits | 0x0008000000000000ull;
+            return single ? double_to_bits(static_cast<double>(static_cast<float>(bits_to_double(quiet))))
+                          : quiet;
+        }
+        return reference_estimate(fpscr, kind, single, b_bits);
+    }
     const bool fused = kind == RefFp::MAdd || kind == RefFp::MSub || kind == RefFp::NMAdd ||
                        kind == RefFp::NMSub;
     const bool has_a = fused || kind == RefFp::Add || kind == RefFp::Sub || kind == RefFp::Mul ||
@@ -291,8 +372,6 @@ u64 reference_fp(u32 fpscr, RefFp kind, bool single, u64 a_bits, u64 b_bits, u64
         case RefFp::Mul: v = va * vc; break;
         case RefFp::Div: v = va / vb; break;
         case RefFp::Sqrt: v = std::sqrt(vb); break;
-        case RefFp::Res: v = 1.0 / vb; break;
-        case RefFp::Rsqrte: v = 1.0 / std::sqrt(vb); break;
         case RefFp::Round: v = vb; break;
         default: v = std::fma(va, vc, addend); break;
     }
@@ -500,12 +579,30 @@ void Cpu::rebuild_hle_slots() noexcept {
     // while a data-access fault is latched, every call must unwind. Both fill
     // every slot with kHleSlotAll, so the inline test needs no extra flag.
     const bool all = verifying_ || memory_fault_.latched;
+    hle_slots_all_ = all;
+    hle_shared_.clear();
     std::fill(std::begin(hle_slots_), std::end(hle_slots_), all ? kHleSlotAll : kHleSlotEmpty);
     if (all) return;
-    for (const HleEntry& entry : hle_) {
-        u32& slot = hle_slots_[(entry.address >> 2) & kHleSlotMask];
+    for (std::size_t i = 0; i < hle_.size(); ++i) {
+        const HleEntry& entry = hle_[i];
+        const u32 index = (entry.address >> 2) & kHleSlotMask;
+        u32& slot = hle_slots_[index];
         const bool reserved_value = entry.address == kHleSlotEmpty || entry.address == kHleSlotAll;
         slot = (slot == kHleSlotEmpty && !reserved_value) ? entry.address : kHleSlotAll;
+        hle_slot_entry_[index] = static_cast<u32>(i);  // read only while the slot names this address
+    }
+    // Each shared slot's hooks, listed together: one pass over the hooks, then grouped by slot (install_hle rebuilds
+    // per hook, so this stays linear in the hook count).
+    std::vector<std::pair<u32, u32>> shared;  // (slot, hle_ index)
+    for (std::size_t i = 0; i < hle_.size(); ++i) {
+        const u32 index = (hle_[i].address >> 2) & kHleSlotMask;
+        if (hle_slots_[index] == kHleSlotAll) shared.emplace_back(index, static_cast<u32>(i));
+    }
+    std::sort(shared.begin(), shared.end());
+    for (std::size_t k = 0; k < shared.size();) {
+        const u32 index = shared[k].first, first = static_cast<u32>(hle_shared_.size());
+        for (; k < shared.size() && shared[k].first == index; ++k) hle_shared_.push_back(shared[k].second);
+        hle_slot_entry_[index] = (first << 8) | (static_cast<u32>(hle_shared_.size()) - first);
     }
 }
 
@@ -525,11 +622,38 @@ void Cpu::install_hle(u32 address, HleHandler handler, std::string name) {
 }
 
 const Cpu::HleEntry* Cpu::find_hle(u32 address) const {
+    // A slot that names exactly this address holds its entry index (rebuild_hle_slots); any other slot value - empty,
+    // another address, kHleSlotAll - leaves the answer to the exact map.
+    const u32 slot = (address >> 2) & kHleSlotMask;
+    const u32 named = hle_slots_[slot];
+    // The sentinels (1, 3) are not word-aligned and never name an address: a pc equal to one goes to the map.
+    if (named == address && named > kHleSlotAll) {
+        return &hle_[hle_slot_entry_[slot]];
+    }
+    // Any slot but kHleSlotAll is exact (rebuild_hle_slots): empty, or naming the one OTHER hooked address of this
+    // slot, proves this address is not hooked. The dispatcher asks for every pc it enters, so the common unhooked
+    // answer must not pay the hash (2026-11-04: find_hle 0.074 ms/frame). Verification and a latched fault fill every
+    // slot with kHleSlotAll, so both still take the exact map below.
+    if (named != kHleSlotAll) {
+        return nullptr;
+    }
+    // A shared slot: its few hooks, exactly (rebuild_hle_slots); the verify / fault fill has no lists - the map.
+    if (!hle_slots_all_) {
+        const u32 packed = hle_slot_entry_[slot];
+        for (u32 k = packed >> 8, end = (packed >> 8) + (packed & 0xFFu); k < end; ++k)
+            if (hle_[hle_shared_[k]].address == address) return &hle_[hle_shared_[k]];
+        return nullptr;
+    }
     const auto it = hle_index_.find(address);
     if (it == hle_index_.end()) {
         return nullptr;
     }
     return &hle_[it->second];
+}
+
+bool Cpu::serve_owner(u32 address) {
+    const HleEntry* entry = find_hle(address);
+    return entry != nullptr && entry->handler(*this);
 }
 
 bool Cpu::has_hle(u32 address) const { return find_hle(address) != nullptr; }
@@ -574,19 +698,39 @@ bool Cpu::try_hle_slow(u32 address) {
         return true;
     }
 #if defined(SHADOW_CPU_REFERENCE_BUILD)
-    if (verifying_ && !verify_replaying_) {
+    if (verifying_ && !verify_replaying_ && handler_depth_ == 0u) {
         if (verify_armed_entry_ == address && address != 0u &&
             (hle_.empty() || find_hle(address) == nullptr)) {
             verify_armed_entry_ = 0u;
             return false;
         }
-        leave_to_dispatcher(address, FallbackReason::VerifyCut, address);
-        return true;
+        // Fast mode outside a checked pass: cut only a call that is sampled; every other call runs as it would
+        // without the verifier (its hook below included - no pass will be discarded or replayed around it).
+        if (!verify_sampling_.enabled || verify_in_pass_) {
+            leave_to_dispatcher(address, FallbackReason::VerifyCut, address);
+            return true;
+        }
+        // A hook outside the scope is never a checked pass (the dispatcher serves it), so it is no arrival.
+        const bool hooked = !hle_.empty() && find_hle(address) != nullptr;
+        if ((!hooked || in_verify_scope(address)) && verify_sample_arrival(address)) {
+            verify_sampled_entry_ = address;
+            leave_to_dispatcher(address, FallbackReason::VerifyCut, address);
+            return true;
+        }
     }
 #endif
     if (!hle_.empty()) {
         const HleEntry* entry = find_hle(address);
-        if (entry != nullptr && entry->handler(*this)) {
+#if defined(SHADOW_CPU_REFERENCE_BUILD)
+        // Fast verification serves unsampled owners here, inline: the guest calls the handler makes are part of its
+        // effect and must not be sampled and cut away from it (the dispatcher's hook path has the same guard).
+        ++handler_depth_;
+        const bool served = entry != nullptr && entry->handler(*this);
+        --handler_depth_;
+#else
+        const bool served = entry != nullptr && entry->handler(*this);
+#endif
+        if (served) {
             ++const_cast<HleEntry*>(entry)->hits;
             // Same contract as the interpreter: a handler that fully served the
             // call has left results in architected state and execution resumes
@@ -616,7 +760,7 @@ bool Cpu::lift_site_cut_slow(u32 site) {
         return true;
     }
 #if defined(SHADOW_CPU_REFERENCE_BUILD)
-    if (verifying_ && !verify_replaying_) {
+    if (verifying_ && !verify_replaying_ && handler_depth_ == 0u && (!verify_sampling_.enabled || verify_in_pass_)) {
         leave_to_dispatcher(site, FallbackReason::VerifyCut, site);
         return true;
     }
@@ -627,7 +771,7 @@ bool Cpu::lift_site_cut_slow(u32 site) {
 }
 
 bool Cpu::run_lift_site_at_pc() {
-    if (lift_site_count_ == 0u) return false;
+    if (lift_site_count_ == 0u || !maybe_lift_site(pc)) return false;
     const LiftSiteRecord* const site = find_lift_site(pc);
     if (site == nullptr) return false;
     ++lift_sites_dispatched_;
@@ -638,7 +782,28 @@ bool Cpu::run_lift_site_at_pc() {
 }
 
 void Cpu::serve_native_owner(u32 address) {
-    if (try_hle(address)) return;
+    // The owner's slot names exactly this address (rebuild_hle_slots; verification and a latched fault fill every slot
+    // with kHleSlotAll, so neither reaches here): call the handler straight from the flat slot table - no find_hle,
+    // no second filter, no try_hle_slow frame. The accounting is try_hle_slow's, in the same order.
+    const u32 slot = (address >> 2) & kHleSlotMask;
+    if (hle_slots_[slot] == address && address > kHleSlotAll && !hle_slots_all_) {
+        HleEntry& entry = hle_[hle_slot_entry_[slot]];
+        ++hle_slow_calls_;
+#if defined(SHADOW_CPU_REFERENCE_BUILD)
+        ++handler_depth_;
+        const bool served = entry.handler(*this);
+        --handler_depth_;
+#else
+        const bool served = entry.handler(*this);
+#endif
+        if (served) {
+            ++entry.hits;
+            if ((exit_pending_ & kExitLeave) == 0u && !stopped()) pc = lr;
+            return;
+        }
+    } else if (try_hle(address)) {
+        return;
+    }
     char detail[192];
     std::snprintf(detail, sizeof(detail),
                   "native owner of 0x%08X is missing or declined; the original body is not in this image",
@@ -1241,6 +1406,14 @@ std::string Cpu::read_guest_string(u32 effective, u32 limit) {
 // Exceptions and timers
 // ---------------------------------------------------------------------------
 
+void Cpu::return_from_interrupt(u32 site) noexcept {
+    const u32 saved = spr[SPR_SRR1];  // the same steps as the rfi instruction (case 50 of the interpreter)
+    set_msr(((msr_ & ~0x87c0ff73u) | (saved & 0x87c0ff73u)) & ~kMsrPOW);
+    restore_interrupt_fpr();
+    recognise_interrupt_ = true;
+    leave_to_dispatcher(spr[SPR_SRR0] & ~3u, FallbackReason::ReturnFromInterrupt, site);
+}
+
 void Cpu::note_exception_resume(u32 srr0) noexcept {
     if (interrupt_fpr_depth_ == 1u) {
         interrupt_fpr_resume_ = srr0 & ~3u;
@@ -1430,11 +1603,16 @@ void Cpu::set_decrementer(u32 value) noexcept {
 void Cpu::latch_decrementer() noexcept {
     CpuDiagCounters& diag = cpu_diag();
     ++diag.dec_edge_total;
-    interrupt_lines_ = static_cast<u8>(interrupt_lines_ | kInterruptDecrementer);
-    if ((msr_ & kMsrEE) != 0u) {
-        exit_pending_ = static_cast<u8>(exit_pending_ | kExitInterrupt);
+    if (!dec_delivery_) {
+        // No consumer (set_decrementer_delivery): the edge is counted and dropped.
+        ++diag.dec_edge_dropped_no_consumer;
     } else {
-        ++diag.dec_edge_suppressed_ee_clear;
+        interrupt_lines_ = static_cast<u8>(interrupt_lines_ | kInterruptDecrementer);
+        if ((msr_ & kMsrEE) != 0u) {
+            exit_pending_ = static_cast<u8>(exit_pending_ | kExitInterrupt);
+        } else {
+            ++diag.dec_edge_suppressed_ee_clear;
+        }
     }
     // The register keeps counting; its next 0 -> 1 edge is a full wrap later.
     const u64 edge = clock_.deadline(GameEvent::Decrementer);
@@ -1781,7 +1959,6 @@ void Cpu::set_verify_recompiled(bool enabled, std::size_t max_messages, u64 max_
     rebuild_hle_slots();
 }
 
-#if defined(SHADOW_CPU_REFERENCE_BUILD)
 namespace {
 
 // Dispatcher entry for an address that has no declared entry point: run the
@@ -1807,6 +1984,7 @@ public:
           exceptions_total_(diag.exceptions_total),
           dec_edge_total_(diag.dec_edge_total),
           dec_edge_suppressed_ee_clear_(diag.dec_edge_suppressed_ee_clear),
+          dec_edge_dropped_no_consumer_(diag.dec_edge_dropped_no_consumer),
           dec_pending_dropped_ee_clear_(diag.dec_pending_dropped_ee_clear),
           dec_pending_taken_(diag.dec_pending_taken),
           fpr_restore_performed_(diag.fpr_restore_performed),
@@ -1819,6 +1997,7 @@ public:
         diag.exceptions_total = exceptions_total_;
         diag.dec_edge_total = dec_edge_total_;
         diag.dec_edge_suppressed_ee_clear = dec_edge_suppressed_ee_clear_;
+        diag.dec_edge_dropped_no_consumer = dec_edge_dropped_no_consumer_;
         diag.dec_pending_dropped_ee_clear = dec_pending_dropped_ee_clear_;
         diag.dec_pending_taken = dec_pending_taken_;
         diag.fpr_restore_performed = fpr_restore_performed_;
@@ -1833,6 +2012,7 @@ private:
     u64 exceptions_total_;
     u64 dec_edge_total_;
     u64 dec_edge_suppressed_ee_clear_;
+    u64 dec_edge_dropped_no_consumer_;
     u64 dec_pending_dropped_ee_clear_;
     u64 dec_pending_taken_;
     u64 fpr_restore_performed_;
@@ -1842,6 +2022,245 @@ private:
 };
 
 }  // namespace
+
+
+bool Cpu::serve_hle_for_verify(u32 address) {
+    const HleEntry* entry = find_hle(address);
+    if (entry == nullptr) return false;
+    const u32 entry_pc = pc;
+    ++handler_depth_;
+    const bool served = entry->handler(*this);
+    --handler_depth_;
+    if (!served) return false;
+    ++const_cast<HleEntry*>(entry)->hits;
+    // A native owner leaves pc at the entry: the call resumes at the LR it was entered with. A handler that ran
+    // translated code ends where that code ended - at the return address when it returned, mid-body when an interrupt
+    // was recognised inside it (pc is where it resumes; the pass is skipped as one that did not return).
+    if (!stopped() && pc == entry_pc) pc = lr;
+    return true;
+}
+
+void Cpu::set_verify_scope(std::vector<u32> entries, bool all_segments) {
+    verify_all_segments_ = all_segments;
+    std::sort(entries.begin(), entries.end());
+    entries.erase(std::unique(entries.begin(), entries.end()), entries.end());
+    verify_scope_ = std::move(entries);
+    verify_entry_stats_.clear();
+    verify_coverage_.assign(verify_scope_.empty() ? 0u : (kVerifyCoverageEnd - kVerifyCoverageBase) / 4u / 64u, 0u);
+}
+
+bool Cpu::in_verify_scope(u32 entry) const noexcept {
+    return std::binary_search(verify_scope_.begin(), verify_scope_.end(), entry);
+}
+
+void Cpu::set_verify_r4_dead(std::vector<u32> entries) {
+    std::sort(entries.begin(), entries.end());
+    verify_r4_dead_ = std::move(entries);
+}
+
+void Cpu::set_verify_ranges(std::vector<std::pair<u32, u32>> ranges) {
+    std::sort(ranges.begin(), ranges.end());
+    verify_ranges_ = std::move(ranges);
+}
+
+// A segment the oracle checks: any (all segments), a scoped entry, or one that starts inside a scoped function's range
+// (its post-call continuations - what entry scoping cannot reach - without the rest of the game's segments).
+bool Cpu::verify_candidate(u32 pc) const noexcept {
+    if (verify_all_segments_ || in_verify_scope(pc)) return true;
+    auto it = std::upper_bound(verify_ranges_.begin(), verify_ranges_.end(), std::pair<u32, u32>{pc, ~0u});
+    return it != verify_ranges_.begin() && pc < std::prev(it)->second;
+}
+
+void Cpu::set_verify_sampling(const VerifySampling& sampling, const std::vector<u32>& known) {
+    verify_sampling_ = sampling;
+    // Sampling decides at the cut whether a call becomes a segment; without a scope (--verify-recomp) every
+    // dispatch is a segment and there is nothing to sample.
+    verify_sampling_.enabled = sampling.enabled && !verify_scope_.empty();
+    verify_sampling_counts_ = {};
+    const std::size_t slots = verify_sampling_.enabled ? (kVerifyCoverageEnd - kVerifyCoverageBase) / 4u : 0u;
+    verify_arrivals_.assign(slots, 0u);
+    verify_sampled_n_.assign(slots, 0u);
+    verify_known_.assign(slots, 0u);
+    for (const u32 entry : known) {
+        if (slots == 0u || entry < kVerifyCoverageBase || entry >= kVerifyCoverageEnd || (entry & 3u) != 0u) continue;
+        u8& flag = verify_known_[(entry - kVerifyCoverageBase) >> 2];
+        verify_sampling_counts_.known_entries += flag == 0u;
+        flag = 1u;
+    }
+    verify_tokens_ = 0.0;
+    verify_refill_at_ = verify_started_at_ = std::chrono::steady_clock::now();
+    if (verify_sampling_.enabled) verify_call_limit_ = ~0ull;
+}
+
+Cpu::VerifySamplingReport Cpu::verify_sampling_report() const {
+    VerifySamplingReport report = verify_sampling_counts_;
+    report.wall_seconds =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - verify_started_at_).count();
+    return report;
+}
+
+u32 Cpu::verify_arrivals(u32 address) const noexcept {
+    if (verify_arrivals_.empty() || address < kVerifyCoverageBase || address >= kVerifyCoverageEnd) return 0u;
+    return verify_arrivals_[(address - kVerifyCoverageBase) >> 2];
+}
+
+// Single-precision multiply family (fmuls, fmadds.., ps_mul*, ps_madd*..): frC must be a single-precision operand
+// (Gekko manual PAGE 82). Counts, per instruction, the executions whose frC was not exactly a single, and of those the
+// ones where rounding frC to a 25-bit significand (24 fraction bits, ties up - the rule Dolphin applies, unproven
+// here) would change the operand. Observation only: no result is altered.
+void Cpu::note_single_multiply_frc(u64 c) {
+    if (!frc_probe_) return;
+    const u64 exponent = (c >> 52) & 0x7FFu, fraction = c & 0x000FFFFFFFFFFFFFull;
+    if (exponent == 0x7FFu || (exponent == 0u && fraction == 0u)) return;  // inf / NaN / zero: no significand
+    double value;
+    std::memcpy(&value, &c, sizeof value);
+    const bool single = static_cast<double>(static_cast<float>(value)) == value;
+    if (single) return;
+    // Significand bits below the 24th fraction bit, with the subnormal shift: a normal double keeps bits 51..28.
+    u64 low_mask = 0x0FFFFFFFull;
+    if (exponent == 0u) {
+        unsigned shift = 0u;  // leading zeros of the 52-bit fraction (subnormal: rare)
+        while (((fraction << shift) & (1ull << 51)) == 0u) ++shift;
+        ++shift;  // the normalising shift moves the leading 1 into the implicit bit
+        low_mask = (shift >= 28u) ? 0ull : (low_mask >> shift);
+    }
+    FrcProbe& p = frc_probe_sites_[pc];
+    ++p.wide;
+    if ((fraction & low_mask) != 0u) ++p.rounding_changes;
+}
+
+u32 Cpu::verify_checks(u32 address) const noexcept {
+    if (verify_sampled_n_.empty() || address < kVerifyCoverageBase || address >= kVerifyCoverageEnd) return 0u;
+    return verify_sampled_n_[(address - kVerifyCoverageBase) >> 2];
+}
+
+// One arrival at a candidate entry: whether to check it. Counters first (no clock read for the arrivals that are
+// sampled out - nearly all of them), then the CPU budget.
+bool Cpu::verify_sample_arrival(u32 entry) {
+    if (entry < kVerifyCoverageBase || entry >= kVerifyCoverageEnd || (entry & 3u) != 0u) return false;
+    if (!verify_candidate(entry)) return false;
+    const u32 slot = (entry - kVerifyCoverageBase) >> 2;
+    u32& arrivals = verify_arrivals_[slot];
+    verify_sampling_counts_.entries_seen += arrivals == 0u;
+    if (arrivals != ~0u) ++arrivals;
+    ++verify_sampling_counts_.arrivals;
+    u8& taken = verify_sampled_n_[slot];
+    const VerifySampling& s = verify_sampling_;
+    const bool want = verify_known_[slot] != 0u
+                          ? s.known_period != 0u && arrivals % s.known_period == 0u
+                          : taken < s.first_per_entry || (s.period != 0u && arrivals % s.period == 0u);
+    if (!want) {
+        ++verify_sampling_counts_.sampled_out;
+        return false;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    verify_tokens_ = std::min(s.burst_seconds * s.cpu_share,
+                              verify_tokens_ + std::chrono::duration<double>(now - verify_refill_at_).count() *
+                                                   s.cpu_share);
+    verify_refill_at_ = now;
+    if (verify_tokens_ <= 0.0) {
+        // An entry still owed its first checks keeps them: `taken` did not advance.
+        ++verify_sampling_counts_.over_budget;
+        return false;
+    }
+    if (taken != 0xFFu) ++taken;
+    ++verify_sampling_counts_.sampled;
+    return true;
+}
+
+// The dispatcher's decision for a candidate entry: strict checks everything; fast checks a call try_hle_slow already
+// sampled (and cut for), or samples this arrival.
+bool Cpu::verify_take_sample(u32 entry) {
+    if (!verify_sampling_.enabled) return true;
+    if (verify_sampled_entry_ != 0u) {
+        const bool cut_for_it = verify_sampled_entry_ == entry;
+        verify_sampled_entry_ = 0u;
+        if (cut_for_it) return true;
+    }
+    return verify_sample_arrival(entry);
+}
+
+void Cpu::set_verify_owner_fixture(u32 address, int mode) {
+#if defined(SHADOW_CPU_REFERENCE_BUILD)
+    install_hle(
+        address,
+        [mode](Cpu& c) {
+            enter_translated_range(c);
+            if (mode == 2) {
+                // The last byte written outside the dead stack (an observable byte), or r3.
+                const auto& journal = c.guest_memory().journal();
+                const u32 sp = c.gpr[1];
+                bool flipped = false;
+                for (auto it = journal.rbegin(); it != journal.rend() && !flipped; ++it) {
+                    const u32 at = it->address + it->size - 1u;
+                    if (at < sp && sp - at <= 0x10000u) continue;
+                    if (u8* p = c.guest_memory().host_pointer(at, 1u)) {
+                        *p ^= 1u;
+                        flipped = true;
+                    }
+                }
+                if (!flipped) c.gpr[3] ^= 1u;
+            }
+            return true;
+        },
+        mode == 2 ? "verify-player fixture owner (corrupt)" : "verify-player fixture owner (exact)");
+#else
+    (void)address;
+    (void)mode;
+    request_stop(StopReason::ExecutionFault, "the verify-player fixture is a reference-runner tool");
+#endif
+}
+
+#if defined(SHADOW_CPU_REFERENCE_BUILD)
+namespace {
+// The native pass of a hooked scoped entry: the hook as try_hle runs it, or - declined - the translated body.
+void run_owner_pass(Cpu& c) {
+    const u32 entry = c.pc;
+    if (c.serve_hle_for_verify(entry)) return;
+    c.pc = entry;
+    if (c.recompiled()->find_range(entry) == nullptr) {
+        c.request_stop(StopReason::ExecutionFault, "native owner declined; the original body is not in this image");
+        return;
+    }
+    enter_translated_range(c);
+}
+}  // namespace
+#endif
+
+void Cpu::verify_scoped_dispatch(RecompiledCode::Fn native, u32 entry, bool owner) {
+#if defined(SHADOW_CPU_REFERENCE_BUILD)
+    const u64 verified0 = verify_.verified, mismatches0 = verify_.mismatches, device0 = verify_.skipped_device,
+              exit0 = verify_.skipped_exit, instructions0 = verify_.verified_instructions;
+    const auto began = verify_sampling_.enabled ? std::chrono::steady_clock::now()
+                                                : std::chrono::steady_clock::time_point{};
+    verify_owner_pass_ = owner;
+    verify_dispatch(owner ? &run_owner_pass : native, entry);
+    verify_owner_pass_ = false;
+    if (verify_sampling_.enabled) {
+        const double spent = std::chrono::duration<double>(std::chrono::steady_clock::now() - began).count();
+        verify_tokens_ -= spent;
+        verify_sampling_counts_.verifier_seconds += spent;
+    }
+    VerifyEntryStats& s = verify_entry_stats_[entry];
+    const u64 mismatches = verify_.mismatches - mismatches0, verified = verify_.verified - verified0;
+    s.verified += verified;
+    s.mismatches += mismatches;
+    s.skipped_device += verify_.skipped_device - device0;
+    s.skipped_exit += verify_.skipped_exit - exit0;
+    s.instructions += verify_.verified_instructions - instructions0;
+    if (owner) {
+        s.owner_verified += verified;
+        s.owner_mismatches += mismatches;
+    }
+    if (mismatches != 0u && s.first_mismatch_tick == 0u) s.first_mismatch_tick = clock_.now();
+#else
+    (void)native;
+    (void)entry;
+    (void)owner;
+#endif
+}
+
+#if defined(SHADOW_CPU_REFERENCE_BUILD)
 
 void Cpu::verify_dispatch(RecompiledCode::Fn native, u32 entry) {
     // A segment that reached a live GX site noted a host effect (gx_site_enter)
@@ -1860,8 +2279,10 @@ void Cpu::verify_dispatch(RecompiledCode::Fn native, u32 entry) {
     // points, which run outside the oracle), so neither pass can see an event.
     memory_.journal_begin();
     exit_pending_ = native_entry_exit_state();
+    verify_in_pass_ = true;
     native(*this);
     finish_transfers();  // R12: the published chain is part of this segment, as its tail calls were
+    verify_in_pass_ = false;
     // An interior entry has no try_hle and never consumes the arm; clear it so
     // it cannot outlive this pass.
     verify_armed_entry_ = 0u;
@@ -1995,11 +2416,23 @@ void Cpu::verify_dispatch(RecompiledCode::Fn native, u32 entry) {
                           what, static_cast<unsigned long long>(a), static_cast<unsigned long long>(b));
             text += detail;
         };
+        // A native owner's pass is held to the call's contract, not to the original's scratch registers: r1-r4,
+        // r13-r31, f1, f14-f31, LR, MSR, CR2-CR4, FPSCR's control byte (RN NI XE ZE UE OE VE; no game code reads
+        // the status bits, docs/NATIVE_MSL_MATH.md) and where the call ends. Translated passes compare everything.
+        const bool owner = verify_owner_pass_;
+        // r4 is a return register only for a 64-bit result: an entry whose every caller overwrites r4 before reading
+        // it (set_verify_r4_dead, proven from the binary) is not held to it.
+        const bool r4_dead = owner && std::binary_search(verify_r4_dead_.begin(), verify_r4_dead_.end(), entry);
+        const auto volatile_gpr = [owner, r4_dead](int r) {
+            return owner && (r == 0 || (r >= 5 && r <= 12) || (r == 4 && r4_dead));
+        };
+        const auto volatile_fpr = [owner](int r) { return owner && (r == 0 || (r >= 2 && r <= 13)); };
         for (int index = 0; index < 32; ++index) {
-            if (interpreter.gpr[index] != after_native.gpr[index]) {
+            if (!volatile_gpr(index) && interpreter.gpr[index] != after_native.gpr[index]) {
                 std::snprintf(buffer, sizeof(buffer), "r%d", index);
                 note(buffer, interpreter.gpr[index], after_native.gpr[index]);
             }
+            if (volatile_fpr(index)) continue;
             if (interpreter.fpr[index].bits[0] != after_native.fpr[index].bits[0]) {
                 std::snprintf(buffer, sizeof(buffer), "f%d ps0", index);
                 note(buffer, interpreter.fpr[index].bits[0], after_native.fpr[index].bits[0]);
@@ -2011,11 +2444,13 @@ void Cpu::verify_dispatch(RecompiledCode::Fn native, u32 entry) {
         }
         if (interpreter.pc != after_native.pc) note("pc", interpreter.pc, after_native.pc);
         if (interpreter.lr != after_native.lr) note("lr", interpreter.lr, after_native.lr);
-        if (interpreter.ctr != after_native.ctr) note("ctr", interpreter.ctr, after_native.ctr);
-        if (interpreter.cr != after_native.cr) note("cr", interpreter.cr, after_native.cr);
-        if (interpreter.xer != after_native.xer) note("xer", interpreter.xer, after_native.xer);
+        if (!owner && interpreter.ctr != after_native.ctr) note("ctr", interpreter.ctr, after_native.ctr);
+        if ((owner ? (interpreter.cr ^ after_native.cr) & 0x00FFF000u : interpreter.cr ^ after_native.cr) != 0u)
+            note("cr", interpreter.cr, after_native.cr);
+        if (!owner && interpreter.xer != after_native.xer) note("xer", interpreter.xer, after_native.xer);
         if (interpreter.msr != after_native.msr) note("msr", interpreter.msr, after_native.msr);
-        if (interpreter.fpscr != after_native.fpscr) note("fpscr", interpreter.fpscr, after_native.fpscr);
+        if ((owner ? (interpreter.fpscr ^ after_native.fpscr) & 0xFFu : interpreter.fpscr ^ after_native.fpscr) != 0u)
+            note("fpscr", interpreter.fpscr, after_native.fpscr);
         for (std::size_t index = 0; index < interpreter.spr.size(); ++index) {
             if (interpreter.spr[index] != after_native.spr[index]) {
                 std::snprintf(buffer, sizeof(buffer), "spr%zu", index);
@@ -2072,9 +2507,17 @@ void Cpu::verify_dispatch(RecompiledCode::Fn native, u32 entry) {
     // Every byte the native pass wrote must hold the native value now, and
     // every byte the interpreter wrote must be among them (a narrower native
     // store would otherwise verify whenever the leading bytes agreed).
+    // --verify-player owner passes: a native owner's subtree runs other native owners where the replay runs their
+    // original words, and those leave different scratch in the dead stack below the r1 the call returns with - bytes
+    // nothing can read (the CharaColli verify and the savestate A/B exclude the same window). Translated passes keep
+    // the every-byte comparison.
+    const auto dead_stack = [&](u32 address) {
+        return verify_owner_pass_ && address < native_end_sp && native_end_sp - address <= 0x10000u;
+    };
     const auto memory_differences = [&](const std::vector<GuestMemory::JournalEntry>& interpreter_writes) {
         char buffer[192];
         for (const auto& touched : native_bytes) {
+            if (dead_stack(touched.first)) continue;
             const u8 current = memory_.peek8(touched.first);
             if (current != touched.second) {
                 std::snprintf(buffer, sizeof(buffer), "memory 0x%08X: interpreter 0x%02X native 0x%02X",
@@ -2083,12 +2526,29 @@ void Cpu::verify_dispatch(RecompiledCode::Fn native, u32 entry) {
             }
         }
         for (const GuestMemory::JournalEntry& write : interpreter_writes) {
-            auto covered = std::lower_bound(
-                native_bytes.begin(), native_bytes.end(), write.address,
-                [](const auto& byte, u32 address) { return byte.first < address; });
-            for (u32 index = 0; index < write.size; ++index, ++covered) {
+            for (u32 index = 0; index < write.size; ++index) {
                 const u32 address = write.address + index;
+                if (dead_stack(address)) continue;
+                const auto covered = std::lower_bound(
+                    native_bytes.begin(), native_bytes.end(), address,
+                    [](const auto& byte, u32 at) { return byte.first < at; });
                 if (covered == native_bytes.end() || covered->first != address) {
+                    // An owner pass that left a byte alone matches an original that stored the value it already held
+                    // (a memoised native owner skips the store): the byte's value before the call - the interpreter
+                    // journal's first `previous` for it - must equal its value now.
+                    if (verify_owner_pass_) {
+                        u8 before = 0u;
+                        bool found = false;
+                        for (const GuestMemory::JournalEntry& first : interpreter_writes) {
+                            if (address >= first.address && address < first.address + first.size) {
+                                const u32 shift = 8u * (first.size - 1u - (address - first.address));
+                                before = static_cast<u8>(first.previous >> shift);
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (found && before == memory_.peek8(address)) continue;
+                    }
                     std::snprintf(buffer, sizeof(buffer), "memory 0x%08X written by the interpreter only",
                                   address);
                     return std::string(buffer);
@@ -2159,6 +2619,10 @@ void Cpu::verify_dispatch(RecompiledCode::Fn native, u32 entry) {
         u32 fetch = 0;
         const bool at_return = returned && translate(at, false, true, fetch) &&
                                (memory_.peek32(fetch) & 0xFC0007FEu) == 0x4C000020u;
+        if (!verify_coverage_.empty() && at >= kVerifyCoverageBase && at < kVerifyCoverageEnd) {
+            const u32 bit = (at - kVerifyCoverageBase) >> 2;
+            verify_coverage_[bit >> 6] |= u64{1} << (bit & 63u);
+        }
         step();
         ++replayed;
         if (returned) {
@@ -2286,6 +2750,7 @@ void Cpu::idle_wait() {
     // delivers it. The generated loop then re-reads what it polls (or its
     // needs_dispatch() check takes a now-deliverable interrupt).
     end_poll_tracking();
+    if (idle_work_hook_ && idle_work_hook_(*this) && needs_dispatch()) return;  // the loop dispatches into the work
     wait_for_event();
 }
 
@@ -2596,7 +3061,13 @@ void Cpu::run() {
                 // an unarmed entry thunk would cut to the dispatcher with
                 // nothing retired and spin.
                 verify_armed_entry_ = verifying_ ? pc : 0u;
-                if (verifying_ && (hooked_range != nullptr || hooked_owner)) {
+                if (verifying_ && (hooked_range != nullptr || hooked_owner) && !verify_scope_.empty() &&
+                    in_verify_scope(pc) && checked < verify_call_limit_ && verify_take_sample(pc)) {
+                    // --verify-player: a native owner at a scoped entry is what the oracle is for - its pass is
+                    // compared with the original words, not skipped as an HLE call.
+                    verify_armed_entry_ = 0u;
+                    verify_scoped_dispatch(nullptr, pc, true);
+                } else if (verifying_ && (hooked_range != nullptr || hooked_owner)) {
                     // A hooked translated address. Handlers keep host state the
                     // journal cannot roll back (the AX mixer's voice fractions,
                     // probe counters), and a served call contains no translated
@@ -2610,10 +3081,14 @@ void Cpu::run() {
                     const HleEntry* const hook = find_hle(pc);
                     exit_pending_ = native_entry_exit_state();
                     npc = pc + 4u;
-                    if (hook->handler(*this)) {
+                    ++handler_depth_;
+                    const bool served = hook->handler(*this);
+                    --handler_depth_;
+                    if (served) {
                         ++const_cast<HleEntry*>(hook)->hits;
                         if ((exit_pending_ & kExitLeave) == 0u && !stopped()) pc = lr;
-                        if (checked < verify_call_limit_) {
+                        // Fast mode: a served call is either an owner sampled out (counted there) or out of scope.
+                        if (checked < verify_call_limit_ && !verify_sampling_.enabled) {
                             ++verify_.skipped_hle;
                             if (verify_.messages.size() < verify_message_limit_) {
                                 char row[224];
@@ -2632,13 +3107,20 @@ void Cpu::run() {
                         // at() has no try_hle, so nested calls must cut on
                         // their own.
                         verify_armed_entry_ = 0u;
-                        if (checked < verify_call_limit_) {
+                        if (checked < verify_call_limit_ && verify_scope_.empty()) {
                             verify_dispatch(&enter_translated_range, pc);
+                        } else if (checked < verify_call_limit_ && verify_candidate(pc) &&
+                                   verify_take_sample(pc)) {
+                            verify_scoped_dispatch(&enter_translated_range, pc, false);
                         } else {
                             enter_translated_range(*this);
                         }
                     }
-                } else if (verifying_ && checked < verify_call_limit_) {
+                } else if (verifying_ && checked < verify_call_limit_ && !verify_scope_.empty() &&
+                           verify_candidate(pc) && verify_take_sample(pc)) {
+                    if (native == nullptr) ++dispatch_entered_mid_function;
+                    verify_scoped_dispatch(native != nullptr ? native : &enter_translated_range, pc, false);
+                } else if (verifying_ && checked < verify_call_limit_ && verify_scope_.empty()) {
                     // A dispatch with no declared entry is verified like any
                     // other: its cold mid-block entry and resumed suffix are
                     // exactly what the oracle exists to
@@ -3381,6 +3863,7 @@ void Cpu::op_group19(u32 instruction) {
             const u32 target = ctr & ~3u;
             if ((instruction & 1u) != 0u) {
                 lr = pc + 4u;
+                if (condition_ok && indirect_call_trace::enabled()) indirect_call_trace::record(pc, target);   // observation only
             }
             if (condition_ok) {
                 npc = target;
@@ -3866,7 +4349,10 @@ void Cpu::op_group31(u32 instruction) {
                     set_time_base((time_base() & 0x00000000ffffffffull) |
                                   (static_cast<u64>(gpr[d]) << 32));
                     break;
-                case SPR_DEC: set_decrementer(gpr[d]); break;
+                case SPR_DEC:
+                    set_decrementer(gpr[d]);
+                    set_decrementer_delivery(true);  // the guest arms the decrementer (see cpu.h)
+                    break;
                 case SPR_HID2: write_hid2(gpr[d]); break;
                 default:
                     spr[number] = gpr[d];
@@ -4099,6 +4585,10 @@ void Cpu::op_group59(u32 instruction) {
         default:
             unimplemented(instruction, "group-59");
             return;
+    }
+    if (kind == RefFp::Mul || kind == RefFp::MAdd || kind == RefFp::MSub || kind == RefFp::NMAdd ||
+        kind == RefFp::NMSub) {
+        note_single_multiply_frc(fpr[c].bits[0]);
     }
     // One single-precision result, in ps0 and duplicated into ps1 (PAGE 83).
     const u64 result =
@@ -4411,6 +4901,15 @@ void Cpu::op_group4(u32 instruction) {
     const u64 a0 = fpr[a].bits[0], a1 = fpr[a].bits[1];
     const u64 b0 = fpr[b].bits[0], b1 = fpr[b].bits[1];
     const u64 c0 = fpr[c].bits[0], c1 = fpr[c].bits[1];
+    switch (short_extended) {  // the multiplies: what frC held (observation only)
+        case 12: case 14: note_single_multiply_frc(c0); break;
+        case 13: case 15: note_single_multiply_frc(c1); break;
+        case 25: case 28: case 29: case 30: case 31:
+            note_single_multiply_frc(c0);
+            note_single_multiply_frc(c1);
+            break;
+        default: break;
+    }
 
     switch (short_extended) {
         case 10: {  // ps_sum0: frC(ps1) "is placed into" frD(ps1), unrounded (PAGE 530)

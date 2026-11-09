@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 // A MODEL OF THE GAMECUBE VIDEO INTERFACE'S FIELD TIMING (not native video; NATIVE_AUDIT.md C10, lies list 8).
 // It keeps the VI's field clock (half-lines of the committed VITiming, 1,296 time-base ticks each in PAL), the
 // beam position the VI library reads back, and the retrace interrupt that drives the translated VI SDK's
@@ -106,6 +108,14 @@ public:
     u64 field_index() const noexcept { return field_index_; }
     u32 half_lines_per_field() const noexcept { return nhlines_; }
     bool progressive_clock() const noexcept { return clock54_; }
+    // What VIFlush staged for the next retrace commit (bit 0/1 display control staged / enabled, bit 2/3 clock select
+    // staged / 54 MHz): the native replacement of the SDK's shdwRegs / shdwChanged words.
+    u8 staged() const noexcept { return staged_; }
+    // VISetBlack(TRUE) is in force: the VI shows black from the next flush on; the presenter shows the frames finished
+    // meanwhile as black (rw_driver submit_frame). The flag is the guest word VISetBlack set. Game thread only.
+    bool black_requested() const;
+    // Registers VIConfigure wrote since the last VIFlush (bit 0 display control, bit 1 clock select).
+    u8 changed() const noexcept { return changed_; }
     // Field period in time-base ticks (rounded down; the clock keeps the
     // fraction exactly).
     u64 field_ticks() const noexcept;
@@ -120,9 +130,26 @@ public:
     bool load_state(const u8*& cursor, const u8* end);
     void reset() noexcept;
 
+    // Work due right after the retrace delivery's wakeup (native_cri.h: CRI's Vsync / svtype 4 servers, which ran there
+    // on the console as threads of higher priority). Called once, then again after each guest call it started, with
+    // the delivery's frame (it may move it: NativeInterrupts::relocate_frame); true while it has just started a guest
+    // call (NativeInterrupts::call_guest), false when it is done.
+    using RetraceTick = std::function<bool(Cpu& c, u32& frame)>;
+    void set_retrace_tick(RetraceTick tick) { retrace_tick_ = std::move(tick); }
+
 private:
     bool retrace_handler(Cpu& c, u32 frame, u32 step);
+    RetraceTick retrace_tick_;
     void vi_init(Cpu& c);
+    // The staging entry points (VIFlush, VISetNextFrameBuffer, VISetBlack, VISetPreRetraceCallback, VIGetTvFormat):
+    // the guest words game code reads, nothing of the VI register image (docs/agents/vi.md).
+    void vi_flush(Cpu& c);
+    void vi_set_next_frame_buffer(Cpu& c);
+    void vi_set_black(Cpu& c);
+    void vi_set_pre_retrace_callback(Cpu& c);
+    void vi_set_post_retrace_callback(Cpu& c);
+    void vi_get_tv_format(Cpu& c);
+    void vi_configure(Cpu& c);
     // The SDK's getTiming(index): the VITiming the SDK keeps in the DOL.
     static u32 timing_address(Cpu& c, u32 index);
     // Starts the field clock at `now` (field 0) with the timing given.
@@ -138,6 +165,12 @@ private:
     bool boot_pal_ = true;
     bool enabled_ = false;
     bool clock54_ = false;
+    // What VIFlush staged for the next retrace commit: the display-control and clock-select registers (the only VI
+    // registers anything reads). Native state: no VI register image remains in guest memory. Bit 0/1: display control
+    // staged / enabled; bit 2/3: clock select staged / 54 MHz.
+    u8 staged_ = 0;
+    // VIConfigure wrote the display-control (bit 0) / clock-select (bit 1) register since the last VIFlush.
+    u8 changed_ = 0;
     u64 field_index_ = 0;
     // The current field began at origin_ticks_ + origin_fraction_ / den.
     u64 origin_ticks_ = 0;

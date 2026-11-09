@@ -34,6 +34,39 @@ enum class Ev : std::uint8_t {
                        // (a = ~0: GetFrameStatistics failed, b its HRESULT)
     RenderEnd = 10,    // a tick, b 1 rendered and presented
     DropOnClose = 11,  // a the queued packet discarded when rendering stops
+    // Per-frame telemetry (docs/FRAME_TELEMETRY.md, 2026-10-31):
+    PacerSleep = 12,      // the game thread's pacing sleep, recorded as it wakes: a its start, b its deadline (steady
+                          // ns), c the game ticks it paces
+    InputLatch = 13,      // the host service latched the controller samples: a game ticks, b 1 when any port's sample
+                          // differs from the previous latch, c port 0's controls
+    PacketWait = 14,      // the present thread's packet wait returned: a 1 a packet came, 0 it timed out, b its start
+    PresentMode = 15,     // after Stats, IDXGISwapChainMedia::GetFrameStatisticsMedia: a DXGI_FRAME_PRESENTATION_MODE,
+                          // b ApprovedPresentDuration, c those statistics' PresentCount (a = ~0: unavailable, b HRESULT)
+    GpuCalibration = 16,  // the GPU timer's clock calibration: a GPU timestamp, b its frequency, c the same instant in
+                          // steady ns (QPC)
+    ThreadCpu = 17,       // the 1 Hz thread sampler: a thread id, b user + kernel time (100 ns), c context switches,
+                          // d cycles (QueryThreadCycleTime; 0 unavailable)
+    AudioClock = 18,      // the audio device thread, ~1 Hz: a IAudioClock position, b its frequency (units per second),
+                          // c the game->device ring's fill (source frames), d the position's QPC time in steady ns
+    AudioTrim = 19,       // SHADOW_AUDIO_RATE_TRIM, ~1 Hz: a the resampler trim in milli-ppm (two's complement), b the
+                          // fill target, c the smoothed fill (source frames)
+    PhaseLock = 20,       // SHADOW_PHASE_LOCK, ~1 Hz on the game thread: a the filtered hold (ns), b the pacer's total
+                          // anchor shift (ns, two's complement), c the target hold (ns), d the shared controller's
+                          // target shift (ns, two's complement; INT64_MIN: none yet)
+    JitWait = 21,         // SHADOW_R2_JIT (render/jit_pacer.h), per frame before the pop: a the time slept (ns), b the
+                          // risk lead (ns), c the vblank aimed at (steady ns; 0 = no vblank grid yet, nothing slept),
+                          // d the uncovered demand (ns: requested lead the frame did not get)
+    FrameSpan = 22,       // SHADOW_R2_JIT: a frame's GPU completion seen by the fence watcher: a frame start (steady
+                          // ns), b span start -> GPU complete (ns), c the fence value
+    LiveInput = 23,       // port 0's live controls changed where they are published (before a tape replaces them):
+                          // a the controls, b 1 input thread (GEKKO_INPUT_THREAD) / 0 UI thread, c 1 raw keyboard
+    FrameFeatures = 24,   // per rendered packet, before recording (render/particle_fill.h): a the packet tick, b the
+                          // particles drawn, c the estimated particle fill in pixels (overdraw included), d the draws
+                          // in the packet
+    JitPredict = 25,      // SHADOW_R2_JIT_ASSIST=predict, per frame: a the predicted span (ns), b the allowance (ns),
+                          // c 1 alarm (started at once) / 0, d the fill (pixels)
+    BurstAhead = 26,      // render/burst_ahead.h, on a switch: a 1 entered (two frames in flight) / 0 left (2 left
+                          // without the spans: a new or resized swap chain), b the span that decided (ns)
 };
 
 struct Row {
@@ -46,6 +79,7 @@ struct State {
     std::atomic<int> mode{-1};  // -1 not decided yet, 0 off, 1 on
     std::mutex mutex;           // a leaf lock: nothing is called while holding it
     std::vector<Row> rows;
+    std::vector<std::pair<std::uint64_t, std::string>> thread_names;  // ThreadCpu's thread ids, written as comments
     std::string path;
     bool flushed = false;
 };
@@ -95,6 +129,18 @@ inline void record(Ev ev, std::uint64_t a = 0, std::uint64_t b = 0, std::uint64_
     s.rows.push_back(Row{t, a, b, c, d, static_cast<std::uint8_t>(ev)});
 }
 
+// A thread's name for the ThreadCpu rows (once per thread id).
+inline void name_thread(std::uint64_t id, const std::string& name) {
+    if (!enabled())
+        return;
+    State& s = state();
+    std::lock_guard<std::mutex> lock(s.mutex);
+    for (const auto& n : s.thread_names)
+        if (n.first == id)
+            return;
+    s.thread_names.emplace_back(id, name);
+}
+
 // Writes the rows (once). Called by whoever stops the renderer; harmless when off or when called again.
 inline void flush() {
     if (!enabled())
@@ -107,7 +153,10 @@ inline void flush() {
     std::FILE* out = std::fopen(s.path.c_str(), "wb");
     if (out == nullptr)
         return;
-    std::fputs("# shadow present trace 1, time in steady_clock ns\nns,ev,a,b,c,d\n", out);
+    std::fputs("# shadow present trace 1, time in steady_clock ns\n", out);
+    for (const auto& n : s.thread_names)
+        std::fprintf(out, "# thread %llu %s\n", static_cast<unsigned long long>(n.first), n.second.c_str());
+    std::fputs("ns,ev,a,b,c,d\n", out);
     for (const Row& r : s.rows)
         std::fprintf(out, "%lld,%u,%llu,%llu,%llu,%llu\n", static_cast<long long>(r.ns), static_cast<unsigned>(r.ev),
                      static_cast<unsigned long long>(r.a), static_cast<unsigned long long>(r.b),

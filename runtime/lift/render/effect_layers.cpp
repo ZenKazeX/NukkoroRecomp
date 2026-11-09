@@ -54,7 +54,8 @@ bool carries(const DrawRecord& draw, EffectLayer layer) noexcept {
         case EffectLayer::Fog:
             return draw.recipe.fog;
         case EffectLayer::EnvironmentMaps:
-            return draw.material.extra.kind == ExtraPass::Kind::Environment;
+            return draw.material.extra.kind == ExtraPass::Kind::Environment ||
+                   draw.material.extra.kind == ExtraPass::Kind::BumpEnvironment;
         case EffectLayer::DualTextures:
             return draw.material.extra.kind == ExtraPass::Kind::Dual;
         case EffectLayer::AppearFade:
@@ -211,7 +212,8 @@ void apply_effect_layers(FramePacket& packet, const EffectLayerState& state) {
             if (!state.drawn(EffectLayer::Fog))
                 draw.recipe.fog = false;
             if ((!state.drawn(EffectLayer::EnvironmentMaps) &&
-                 draw.material.extra.kind == ExtraPass::Kind::Environment) ||
+                 (draw.material.extra.kind == ExtraPass::Kind::Environment ||
+                  draw.material.extra.kind == ExtraPass::Kind::BumpEnvironment)) ||
                 (!state.drawn(EffectLayer::DualTextures) && draw.material.extra.kind == ExtraPass::Kind::Dual))
                 draw.material.extra.kind = ExtraPass::Kind::None;
             if (!state.drawn(EffectLayer::AppearFade))

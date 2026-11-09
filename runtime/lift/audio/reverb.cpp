@@ -20,6 +20,17 @@ constexpr auto offsets() noexcept {
 constexpr auto kOffset = offsets();
 static_assert(kOffset.back() == Reverb::kDelaySamples);
 constexpr float kMinNormal = 0x1p-126f;
+using Mode = math::SubnormalMode;
+constexpr Mode kFlush = Mode::Flush;
+// The arithmetic helpers run a few dozen times per sample (18 lines x 160 frames x 3 channels per 5 ms frame). As
+// out-of-line calls each testing the mode they were 0.12 ms of the game thread per frame (2026-11-04 profile: fused
+// 0.055, nearest 0.011, add/mul 0.011 beside process 0.043); with the mode a template argument and the helpers
+// inlined, every operation is the same arithmetic, written once, with no call and no mode test.
+#if defined(_MSC_VER)
+#define SHADOW_REVERB_INLINE __forceinline
+#else
+#define SHADOW_REVERB_INLINE inline __attribute__((always_inline))
+#endif
 
 bool valid(const Reverb::Parameters& p) noexcept {
     return std::isfinite(p.color) && std::isfinite(p.level) && std::isfinite(p.time) &&
@@ -31,28 +42,31 @@ bool valid(const Reverb::Parameters& p) noexcept {
 
 // Single-precision arithmetic. Parameters/history reject nonfinite values.
 // Flush mode handles operands and exact underflow before the final rounding.
-float operand(float value, math::SubnormalMode mode) noexcept {
-    return mode == math::SubnormalMode::Flush && std::fabs(value) < kMinNormal ?
-        std::copysign(0.0f, value) : value;
+template <Mode M>
+SHADOW_REVERB_INLINE float operand(float value) noexcept {
+    return M == kFlush && std::fabs(value) < kMinNormal ? std::copysign(0.0f, value) : value;
 }
-float rounded(double value, math::SubnormalMode mode) noexcept {
-    return mode == math::SubnormalMode::Flush && std::fabs(value) < kMinNormal ?
-        std::copysign(0.0f, float(value)) : float(value);
+template <Mode M>
+SHADOW_REVERB_INLINE float rounded(double value) noexcept {
+    return M == kFlush && std::fabs(value) < kMinNormal ? std::copysign(0.0f, float(value)) : float(value);
 }
-float add(float a, float b, math::SubnormalMode mode) noexcept {
-    return rounded(double(operand(a, mode)) + double(operand(b, mode)), mode);
+template <Mode M>
+SHADOW_REVERB_INLINE float add(float a, float b) noexcept {
+    return rounded<M>(double(operand<M>(a)) + double(operand<M>(b)));
 }
-float mul(float a, float b, math::SubnormalMode mode) noexcept {
-    return rounded(double(operand(a, mode)) * double(operand(b, mode)), mode);
+template <Mode M>
+SHADOW_REVERB_INLINE float mul(float a, float b) noexcept {
+    return rounded<M>(double(operand<M>(a)) * double(operand<M>(b)));
 }
-float fused(float a, float b, float c, math::SubnormalMode mode) noexcept {
-    a = operand(a, mode); b = operand(b, mode); c = operand(c, mode);
+template <Mode M>
+SHADOW_REVERB_INLINE float fused(float a, float b, float c) noexcept {
+    a = operand<M>(a); b = operand<M>(b); c = operand<M>(c);
 #if defined(__AVX2__) || defined(__FMA__)
     const float value = _mm_cvtss_f32(_mm_fmadd_ss(_mm_set_ss(a), _mm_set_ss(b), _mm_set_ss(c)));
 #else
     const float value = std::fma(a, b, c);
 #endif
-    if (mode != math::SubnormalMode::Flush) return value;
+    if constexpr (M != kFlush) return value;
     // Zero and subnormal rounded results already have the required sign.
     // Only the normal-boundary result needs the exact residual calculation.
     if (std::fabs(value) < kMinNormal) return std::copysign(0.0f, value);
@@ -69,15 +83,17 @@ float fused(float a, float b, float c, math::SubnormalMode mode) noexcept {
 // The authored flush mode also maps every invalid integer conversion to
 // INT32_MIN. Standard mode saturates positive overflow. Test the signal
 // after conversion: +2^31 must not silently acquire the opposite sign.
-std::int32_t truncate(float value, math::SubnormalMode mode) noexcept {
+template <Mode M>
+SHADOW_REVERB_INLINE std::int32_t truncate(float value) noexcept {
     if (std::isnan(value)) return INT32_MIN;
-    if (value >= 0x1p31f) return mode == math::SubnormalMode::Flush ? INT32_MIN : INT32_MAX;
+    if (value >= 0x1p31f) return M == kFlush ? INT32_MIN : INT32_MAX;
     if (value <= -0x1p31f) return INT32_MIN;
     return static_cast<std::int32_t>(value);
 }
-std::int32_t nearest(float value, math::SubnormalMode mode) noexcept {
+template <Mode M>
+SHADOW_REVERB_INLINE std::int32_t nearest(float value) noexcept {
     if (std::isnan(value)) return INT32_MIN;
-    if (value >= 0x1p31f) return mode == math::SubnormalMode::Flush ? INT32_MIN : INT32_MAX;
+    if (value >= 0x1p31f) return M == kFlush ? INT32_MIN : INT32_MAX;
     if (value <= -0x1p31f) return INT32_MIN;
     const auto integer = static_cast<std::int32_t>(value);
     const float fraction = value - float(integer);
@@ -124,7 +140,7 @@ bool Reverb::restore(const History& saved) noexcept {
     history_ = saved; coefficients(); return true;
 }
 
-float Reverb::exchange(std::size_t line, float input) noexcept {
+SHADOW_REVERB_INLINE float Reverb::exchange(std::size_t line, float input) noexcept {
     auto& position = history_.positions[line];
     float& cell = history_.samples[kOffset[line] + position];
     const float output = cell;
@@ -135,11 +151,19 @@ float Reverb::exchange(std::size_t line, float input) noexcept {
 
 void Reverb::process(const std::array<std::int32_t*, 3>& channels, std::size_t frames,
                      math::SubnormalMode mode) noexcept {
+    if (mode == kFlush)
+        run<kFlush>(channels, frames);
+    else
+        run<Mode::Preserve>(channels, frames);
+}
+
+template <math::SubnormalMode M>
+void Reverb::run(const std::array<std::int32_t*, 3>& channels, std::size_t frames) noexcept {
     if (cross_ != 0) for (std::size_t i = 0; i < frames; ++i) {
         const float left = float(channels[0][i]), right = float(channels[1][i]);
         // Paired crossfeed uses separately rounded products, not a fused sum.
-        channels[0][i] = nearest(add(mul(left, direct_, mode), mul(right, cross_, mode), mode), mode);
-        channels[1][i] = nearest(add(mul(left, cross_, mode), mul(right, direct_, mode), mode), mode);
+        channels[0][i] = nearest<M>(add<M>(mul<M>(left, direct_), mul<M>(right, cross_)));
+        channels[1][i] = nearest<M>(add<M>(mul<M>(left, cross_), mul<M>(right, direct_)));
     }
     const float color = history_.parameters.color;
     for (std::size_t channel = 0; channel < 3; ++channel) {
@@ -154,22 +178,22 @@ void Reverb::process(const std::array<std::int32_t*, 3>& channels, std::size_t f
             std::array<float, 3> combined{};
             for (std::size_t line = 0; line < 3; ++line) {
                 const auto index = first + line;
-                const float feedback = fused(comb_[line], history_.delayed[index], delayed_input, mode);
+                const float feedback = fused<M>(comb_[line], history_.delayed[index], delayed_input);
                 combined[line] = history_.delayed[index] = exchange(index, feedback);
             }
-            float signal = add(add(combined[0], combined[1], mode), combined[2], mode);
+            float signal = add<M>(add<M>(combined[0], combined[1]), combined[2]);
             for (std::size_t pass = 0; pass < 3; ++pass) {
                 if (pass == 2) {
-                    signal = fused(damping_, history_.low_pass[channel], mul(signal, 0.3f, mode), mode);
+                    signal = fused<M>(damping_, history_.low_pass[channel], mul<M>(signal, 0.3f));
                     history_.low_pass[channel] = signal;
                 }
                 const auto index = first + 3 + pass;
                 const float old = history_.delayed[index];
-                const float feedback = fused(color, old, signal, mode);
-                signal = -fused(color, feedback, -old, mode);
+                const float feedback = fused<M>(color, old, signal);
+                signal = -fused<M>(color, feedback, -old);
                 history_.delayed[index] = exchange(index, feedback);
             }
-            channels[channel][i] = truncate(fused(wet_, signal, mul(dry_, input, mode), mode), mode);
+            channels[channel][i] = truncate<M>(fused<M>(wet_, signal, mul<M>(dry_, input)));
         }
     }
 }

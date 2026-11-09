@@ -47,7 +47,6 @@
 // file), any 32-bit limit on the host side, any sector or alignment rule.
 
 #include <cstddef>
-#include <filesystem>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -80,12 +79,8 @@ public:
         std::vector<Node> children;
     };
 
-    // The production source: a host directory tree. Every regular file is an
-    // entry with its host size; every directory is an entry. Names must be
-    // printable ASCII without '/' (the game's names are; anything else is
-    // refused rather than transcoded).
-    static bool from_directory(const std::filesystem::path& root, AssetNamespace& out,
-                               std::string& error);
+    // A host directory tree is enumerated by the host-directory storage backend
+    // (shadow::backends::namespace_from_host_directory, shadow/backends/storage_backends.h).
 
     // A tree description (tests; any future packed index).
     static bool from_tree(const Node& root, AssetNamespace& out, std::string& error);

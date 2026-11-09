@@ -27,6 +27,7 @@
 #endif
 
 #include "gekko/cpu.h"
+#include "gekko/gekko_estimate.h"
 #include "gekko/types.h"
 
 namespace gekko {
@@ -522,8 +523,13 @@ inline u64 fctiw(const Cpu& c, u64 bits, bool truncate) noexcept {
 //
 // Unchanged and still unmodelled: the FPSCR status and exception bits these
 // instructions affect (FPRF FR FI FX OX UX ZX XX VX*), FPSCR[RN], and the
-// VE = 1 / ZE = 1 "no result" rules. fres and frsqrte remain 1/b and
-// 1/sqrt(b), inside the permitted estimate.
+// VE = 1 / ZE = 1 "no result" rules.
+//
+// fres, ps_res, frsqrte and ps_rsqrte are not part of the rules above: they
+// return the hardware's table estimate (gekko/gekko_estimate.h, fp_estimate
+// below), not 1/b or 1/sqrt(b). Only the NaN rule (1) is shared; FPSCR[NI]
+// enters fres through its own denormal-result rule, and the single forms of
+// frsqrte round the estimate to single and flush a denormal under NI.
 //
 // Cost. Each helper is the host operation, a test on the value classes that
 // is false for finite operands and results away from zero, and one
@@ -548,8 +554,8 @@ enum FpOp : u32 {
     kFpMul = 2u,     // frA * frC
     kFpDiv = 3u,     // frA / frB
     kFpSqrt = 4u,    // sqrt(frB)
-    kFpRes = 5u,     // 1 / frB (fres, ps_res)
-    kFpRsqrte = 6u,  // 1 / sqrt(frB) (frsqrte, ps_rsqrte)
+    kFpRes = 5u,     // estimate of 1 / frB (fres, ps_res)
+    kFpRsqrte = 6u,  // estimate of 1 / sqrt(frB) (frsqrte, ps_rsqrte)
     kFpRound = 7u,   // frB (frsp: single rounding only)
     kFpMAdd = 8u,    // frA * frC + frB
     kFpMSub = 9u,    // frA * frC - frB
@@ -651,6 +657,24 @@ GEKKO_NOINLINE inline int exact_sign_product_sum(double x, double y, double z, d
 
 }  // namespace fp_detail
 
+// fres/ps_res (kFpRes, always single) and frsqrte/ps_rsqrte (kFpRsqrte,
+// single for ps_rsqrte) as the hardware computes them.
+GEKKO_NOINLINE inline u64 fp_estimate(u32 fpscr, u32 op, u64 b_bits) noexcept {
+    const bool non_ieee = (fpscr & kFpscrNI) != 0u;
+    if ((b_bits << 1) > 0xffe0000000000000ull) {  // NaN: quieted, single rounding as rule 1
+        const u64 nan = b_bits | kFpQuietBit;
+        return (op & kFpSingle) != 0u ? double_to_bits(round_to_single(bits_to_double(nan))) : nan;
+    }
+    if ((op & 0xfu) == kFpRes) return estimate::reciprocal(b_bits, non_ieee);
+    const u64 root = estimate::reciprocal_root(b_bits);
+    if ((op & kFpSingle) == 0u) return root;
+    const double rounded = round_to_single(bits_to_double(root));
+    if (non_ieee && rounded != 0.0 && std::fabs(rounded) < 0x1p-126) {
+        return double_to_bits(rounded) & kFpSignBit;
+    }
+    return double_to_bits(rounded);
+}
+
 // Every case the inline helpers below do not finish: NaN operands or results,
 // tiny operands or results, single-precision midpoints of the fused forms.
 // a/b/c are frA/frB/frC (0 when the operation has no such operand).
@@ -658,6 +682,7 @@ GEKKO_NOINLINE inline u64 fp_arith_slow(u32 fpscr, u32 op, u64 a_bits, u64 b_bit
                                         u64 c_bits) noexcept {
     const bool single = (op & kFpSingle) != 0u;
     const u32 kind = op & 0xfu;
+    if (kind == kFpRes || kind == kFpRsqrte) return fp_estimate(fpscr, op, b_bits);
     const bool fused = kind >= kFpMAdd;
     const bool uses_a = kind <= kFpDiv || fused;
     const bool uses_b = kind != kFpMul;
@@ -701,8 +726,6 @@ GEKKO_NOINLINE inline u64 fp_arith_slow(u32 fpscr, u32 op, u64 a_bits, u64 b_bit
         case kFpMul: r = va * vc; break;
         case kFpDiv: r = va / vb; break;
         case kFpSqrt: r = std::sqrt(vb); break;
-        case kFpRes: r = 1.0 / vb; break;
-        case kFpRsqrte: r = 1.0 / std::sqrt(vb); break;
         case kFpRound: r = vb; break;
         default: r = fused_multiply_add(va, vc, addend); break;
     }
@@ -804,13 +827,10 @@ GEKKO_ALWAYS_INLINE u64 fp_sqrt(Cpu& c, u64 b) noexcept {
     return double_to_bits(r);
 }
 
-// 1/sqrt(b) is never below 2^-1021 for a finite b.
+// The table estimate; NaN operands take fp_estimate's rule-1 path.
 GEKKO_ALWAYS_INLINE u64 fp_rsqrte(Cpu& c, u64 b) noexcept {
-    const double r = 1.0 / std::sqrt(bits_to_double(b));
-    if ((fp_detail::tiny_key(b) >> 53) < fp_detail::kTinyDouble || r != r) {
-        return fp_arith_slow(c.fpscr, kFpRsqrte, 0u, b, 0u);
-    }
-    return double_to_bits(r);
+    if ((b << 1) > 0xffe0000000000000ull) return fp_estimate(c.fpscr, kFpRsqrte, b);
+    return estimate::reciprocal_root(b);
 }
 
 // fmadd/fmsub/fnmadd/fnmsub frD,frA,frC,frB.
@@ -877,22 +897,14 @@ GEKKO_ALWAYS_INLINE u64 fps_sqrt(Cpu& c, u64 b) noexcept {
     return fp_detail::to_single(r);
 }
 
+// fres / ps_res: the estimate is already a single-format value.
 GEKKO_ALWAYS_INLINE u64 fps_res(Cpu& c, u64 b) noexcept {
-    const double r = 1.0 / bits_to_double(b);
-    const u64 key = fp_detail::lower(fp_detail::tiny_key(b), fp_detail::tiny_key(double_to_bits(r)));
-    if ((key >> 53) < fp_detail::kTinySingle || r != r) {
-        return fp_arith_slow(c.fpscr, kFpRes | kFpSingle, 0u, b, 0u);
-    }
-    return fp_detail::to_single(r);
+    if ((b << 1) > 0xffe0000000000000ull) return fp_estimate(c.fpscr, kFpRes | kFpSingle, b);
+    return estimate::reciprocal(b, (c.fpscr & kFpscrNI) != 0u);
 }
 
 GEKKO_ALWAYS_INLINE u64 fps_rsqrte(Cpu& c, u64 b) noexcept {
-    const double r = 1.0 / std::sqrt(bits_to_double(b));
-    const u64 key = fp_detail::lower(fp_detail::tiny_key(b), fp_detail::tiny_key(double_to_bits(r)));
-    if ((key >> 53) < fp_detail::kTinySingle || r != r) {
-        return fp_arith_slow(c.fpscr, kFpRsqrte | kFpSingle, 0u, b, 0u);
-    }
-    return fp_detail::to_single(r);
+    return fp_estimate(c.fpscr, kFpRsqrte | kFpSingle, b);
 }
 
 // frsp. A NaN needs nothing extra: the host keeps the sign and frB[0-34] and
@@ -1187,7 +1199,10 @@ inline void write_spr(Cpu& c, u32 number, u32 value) noexcept {
         case SPR_TBU_WRITE:
             c.set_time_base((c.time_base() & 0x00000000ffffffffull) | (static_cast<u64>(value) << 32));
             break;
-        case SPR_DEC: c.set_decrementer(value); break;
+        case SPR_DEC:
+            c.set_decrementer(value);
+            c.set_decrementer_delivery(true);  // the guest arms the decrementer: its handler is part of the program
+            break;
         case SPR_HID2: c.write_hid2(value); break;
         default:
             // The BATs are plain storage here: GuestMemory's views decide
