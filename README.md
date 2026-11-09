@@ -1,18 +1,16 @@
 # Nukkoro Recompiled
 
-An unofficial PC version of **Shadow the Hedgehog** (GameCube, PAL), built from your own copy of the game.
-
-> **This is not a native port.** It is a static recompilation made with GekkoForge, and it is still under development.
-> Expect bugs and unfinished features.
+A static recompilation of **Shadow the Hedgehog** (GameCube, PAL) for PC, made with GekkoForge and built from your own
+copy of the game. It is still under development, so expect bugs and unfinished features.
 
 ## How it works
 
 When you install it, GekkoForge translates the game's executable from your disc into C++ and compiles it for Windows.
-The result runs on a runtime that replaces the console's systems with PC ones, one part at a time. Much of the GameCube
-architecture is still emulated, which is why this is not a native port.
+The result runs on a runtime that replaces the console's systems with PC ones, one part at a time, and much of the
+GameCube architecture is still emulated.
 
-The repository does not contain the game's executable or disc files. You provide those from your own legally dumped
-disc. The install contains code built from your disc, so please do not share it.
+You provide the game's executable and files from your own legally dumped disc. The install contains code built from
+your disc, so please keep it to yourself.
 
 ## What you need
 
@@ -78,5 +76,5 @@ See [docs/BUILDING.md](docs/BUILDING.md) for presets, tests and what is and is n
 
 ## Legal
 
-This is an unofficial fan project and is not affiliated with or endorsed by SEGA or Nintendo. Shadow the Hedgehog is a
-trademark of SEGA. You must own the game to use this project.
+Unofficial fan project, unaffiliated with SEGA and Nintendo. Shadow the Hedgehog is a trademark of SEGA. You must own
+the game to use this project.
