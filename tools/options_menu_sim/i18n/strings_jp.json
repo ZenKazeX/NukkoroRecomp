@@ -11,6 +11,8 @@
   "display.resolution.help": "ウィンドウの大きさ、または\nエクスクルーシブの解像度。",
   "display.aspect.label": "画面の形",
   "display.aspect.help": "画面の形です。自動は全画面で表示し、\n形を決めると黒い帯が入ります。",
+  "display.resolution.label": "解像度",
+  "display.resolution.help": "画面の大きさを選びます。選んだ\nアスペクトに合う大きさだけ選べます。",
   "display.vsync.label": "V-Sync",
   "display.vsync.help": "映像を画面の更新に合わせて表示し、\n映像のずれをなくします。",
   "display.fps_counter.label": "FPSカウンター",

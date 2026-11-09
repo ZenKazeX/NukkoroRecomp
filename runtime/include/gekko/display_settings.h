@@ -42,7 +42,7 @@ struct DisplaySettings {
     // its desktop mode), never offered in the menu.
     bool fullscreen = false;
     bool exclusive = false;
-    // The window's client size: whatever the player dragged it to, remembered (no list, no typed size).
+    // The window's client size: the Resolution row's choice or whatever the player dragged it to, remembered.
     int window_width = 1280;
     int window_height = 720;
     int fullscreen_width = 0;

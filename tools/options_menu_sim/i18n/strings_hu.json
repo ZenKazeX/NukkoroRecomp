@@ -11,6 +11,8 @@
   "display.resolution.help": "Az ablak mérete, vagy a monitor módja\nexkluzív teljes képernyőn.",
   "display.aspect.label": "Képarány",
   "display.aspect.help": "A kép alakja. Az automatikus kitölti a\nképernyőt, a rögzített sávokat adhat.",
+  "display.resolution.label": "Felbontás",
+  "display.resolution.help": "A kép mérete. Csak a választott képaránynak\nmegfelelő méretek érhetők el.",
   "display.vsync.label": "Függőleges szinkron",
   "display.vsync.help": "A monitor frissítéséhez igazítja\na képet, így megelőzi a képtörést.",
   "display.fps_counter.label": "FPS-számláló",

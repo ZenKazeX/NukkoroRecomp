@@ -12,6 +12,8 @@
   "display.resolution.help": "The window's size, or the monitor's mode\nin exclusive fullscreen.",
   "display.aspect.label": "Screen ratio",
   "display.aspect.help": "The shape of the picture. Auto fills the\nscreen, a fixed ratio may add black bars.",
+  "display.resolution.label": "Resolution",
+  "display.resolution.help": "The size of the game's picture. Only sizes\nthat fit the screen ratio are offered.",
   "display.vsync.label": "V-Sync",
   "display.vsync.help": "Show each frame in step with the display's\nrefresh, which prevents tearing.",
   "display.fps_counter.label": "FPS counter",

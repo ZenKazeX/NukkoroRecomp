@@ -21,10 +21,11 @@ struct RowId {
     od::Row row;
 };
 
-// Four settings in all (docs/DISPLAY_SETTINGS_AUDIT.md section 6): Display - the mode, the ratio and V-Sync;
-// Graphics - the resolution scale.
+// Five settings in all (docs/DISPLAY_SETTINGS_AUDIT.md section 6): Display - the mode, the ratio, the resolution and
+// V-Sync; Graphics - the resolution scale.
 constexpr RowId kDisplayRows[] = {{"display.mode", od::kDisplayMode},
                                   {"display.aspect", od::kScreenRatio},
+                                  {"display.resolution", od::kResolution},
                                   {"display.vsync", od::kVsync}};
 constexpr RowId kGraphicsRows[] = {{"graphics.render_scale", od::kRenderResolution}};
 
@@ -76,19 +77,32 @@ public:
     void sync() override {
         if (display_settings().generation() == generation_) return;
         const DisplaySettings pending = model_.settings(base_), applied = applied_.settings(base_);
+        const od::Model::Size pending_window = model_.window, applied_window = applied_.window;
+        const bool ratio_picked = ratio_picked_, resolution_picked = resolution_picked_;
         take();
         DisplaySettings merged = base_;
         keep_edits(merged, pending, applied);
         model_ = od::Model::from(merged);
+        ratio_picked_ = ratio_picked;
+        resolution_picked_ = resolution_picked;
+        if (pending_window.width != applied_window.width || pending_window.height != applied_window.height)
+            model_.window = pending_window;  // the player's pending size, not the size the window was dragged to
     }
 
     bool step(std::string_view id, int delta) override {
         const RowId* r = find(id);
         if (r == nullptr || delta == 0) return false;
         const DisplaySettings before = model_.settings(base_);
+        const od::Model::Size window_before = model_.window;
         model_.step(r->row, r->row == od::kVsync ? -delta : delta);
-        if (r->row == od::kScreenRatio) ratio_picked_ = true;
-        return model_.settings(base_) != before;
+        if (r->row == od::kScreenRatio) {
+            ratio_picked_ = true;
+            resolution_picked_ = false;  // a new ratio decides the size again
+        }
+        if (r->row == od::kResolution) resolution_picked_ = true;
+        if (r->row == od::kScreenRatio || r->row == od::kDisplayMode) shape_window();
+        return model_.settings(base_) != before || model_.window.width != window_before.width ||
+               model_.window.height != window_before.height;
     }
 
     bool set(std::string_view id, int value) override {
@@ -118,6 +132,19 @@ protected:
         model_ = od::Model::from(base_);
         applied_ = model_;
         ratio_picked_ = false;
+        resolution_picked_ = false;
+    }
+
+    // A fixed ratio picked on the page while windowed gives the window its shape, once (gekko/display_geometry.h
+    // window_for_ratio), from the size it had when the page opened, and the Resolution row follows at once. Afterwards
+    // the window is free again and the picture is letterboxed in whatever size the player drags it to.
+    void shape_window() {
+        if (resolution_picked_ || !ratio_picked_) return;
+        model_.window = applied_.window;
+        if (model_.value[od::kDisplayMode] != 0u || !(model_.aspect > 0.0)) return;
+        const PixelSize shaped = window_for_ratio({applied_.window.width, applied_.window.height}, model_.aspect,
+                                                  {model_.work.width, model_.work.height});
+        model_.window = {std::max(kMinPictureWidth, shaped.width), std::max(kMinPictureHeight, shaped.height)};
     }
 
     static int index_of(const RowId& r, const od::Model& m) {
@@ -154,6 +181,20 @@ protected:
                 if (v.choices[i].key == aspect_key(applied_.aspect)) v.applied = static_cast<int>(i);
             break;
         }
+        case od::kResolution: {
+            v.english_label = "Resolution";
+            v.english_help = "The size of the game's picture. Only sizes\nthat fit the screen ratio are offered.";
+            for (const od::Model::Size s : model_.resolutions()) {
+                const std::string text = std::to_string(s.width) + "x" + std::to_string(s.height);
+                v.choices.push_back({text, text});
+            }
+            // The applied size by its key: the list is the pending ratio's, and may not hold it.
+            const std::string applied_key = text_of(applied_, od::kResolution);
+            v.applied = -1;
+            for (std::size_t i = 0; i < v.choices.size(); ++i)
+                if (v.choices[i].key == applied_key) v.applied = static_cast<int>(i);
+            break;
+        }
         case od::kVsync:
             v.kind = Kind::Toggle;
             v.english_label = "V-Sync";
@@ -185,6 +226,7 @@ protected:
     od::Model applied_{};
     std::uint64_t generation_ = 0;
     bool ratio_picked_ = false;  // the ratio row was changed on the page since it opened (a window takes its shape)
+    bool resolution_picked_ = false;  // the player chose a size after that: a mode change must not undo it
 };
 
 class DisplayProvider final : public ModelProvider {
@@ -207,7 +249,7 @@ public:
             return ApplyResult::Nothing;
         }
         // Only a mode change can leave the screen showing nothing: it is tried out. A ratio, V-Sync or a window
-        // taking the ratio's shape are committed at once.
+        // size are committed at once.
         const bool risky = want.fullscreen != now.fullscreen;
         if (!display_settings().apply(want, error, risky)) return ApplyResult::Failed;
         take();
@@ -218,7 +260,10 @@ public:
         DisplaySettings d = display_settings().current();
         copy_display_fields(d, default_display_settings());
         model_ = od::Model::from(d);
+        const DisplaySettings defaults = default_display_settings();
+        model_.window = {static_cast<u32>(defaults.window_width), static_cast<u32>(defaults.window_height)};
         ratio_picked_ = true;  // Auto: no reshaping, but a fixed default would be applied as picked
+        resolution_picked_ = true;  // the default size stands
     }
 
     void trial_keep() override {
@@ -242,20 +287,15 @@ protected:
     }
 
 private:
-    // The settings the page asks for. A fixed ratio picked on the page while windowed (picked again counts too: step
-    // away and back) also gives the window its shape, once (gekko/display_geometry.h window_for_ratio); afterwards
-    // the window is free again and the picture is letterboxed in whatever size the player drags it to.
+    // The settings the page asks for: its rows, and the window's size when the Resolution row or a ratio changed it.
     DisplaySettings wanted() const {
         const DisplaySettings now = display_settings().current();
         DisplaySettings want = now;
         copy_display_fields(want, model_.settings(now));
-        if (ratio_picked_ && !want.fullscreen && want.aspect > 0.0) {
-            const od::Model::Size work = od::work_area();
-            const PixelSize shaped = window_for_ratio(
-                {static_cast<u32>(now.window_width), static_cast<u32>(now.window_height)}, want.aspect,
-                {work.width, work.height});
-            want.window_width = std::max(static_cast<int>(kMinPictureWidth), static_cast<int>(shaped.width));
-            want.window_height = std::max(static_cast<int>(kMinPictureHeight), static_cast<int>(shaped.height));
+        if (!want.fullscreen &&
+            (model_.window.width != applied_.window.width || model_.window.height != applied_.window.height)) {
+            want.window_width = static_cast<int>(model_.window.width);
+            want.window_height = static_cast<int>(model_.window.height);
         }
         return want;
     }

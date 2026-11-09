@@ -11,6 +11,8 @@
   "display.resolution.help": "Tamaño de la ventana, o modo del monitor\nen pantalla completa exclusiva.",
   "display.aspect.label": "Relación de aspecto",
   "display.aspect.help": "La forma de la imagen. Auto llena la\npantalla, una fija puede añadir bordes.",
+  "display.resolution.label": "Resolución",
+  "display.resolution.help": "El tamaño de la imagen. Solo se ofrecen los\nque encajan en la proporción elegida.",
   "display.vsync.label": "V-Sync",
   "display.vsync.help": "Mostrar cada fotograma sincronizado con\nla pantalla para evitar cortes.",
   "display.fps_counter.label": "Contador de FPS",

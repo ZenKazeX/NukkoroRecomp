@@ -11,6 +11,8 @@
   "display.resolution.help": "Die Fenstergröße oder der Bildschirmmodus\nim exklusiven Vollbild.",
   "display.aspect.label": "Bildformat",
   "display.aspect.help": "Die Form des Bildes. Auto füllt den Bild-\nschirm, feste Formate zeigen ggf. Balken.",
+  "display.resolution.label": "Auflösung",
+  "display.resolution.help": "Die Größe des Bildes. Nur Größen, die zum\ngewählten Format passen, stehen zur Wahl.",
   "display.vsync.label": "V-Sync",
   "display.vsync.help": "Zeige Bilder synchron zur Bildwiederhol-\nrate an. Das verhindert Bildrisse.",
   "display.fps_counter.label": "FPS-Anzeige",

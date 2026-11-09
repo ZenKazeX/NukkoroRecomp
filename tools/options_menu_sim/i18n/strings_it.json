@@ -11,6 +11,8 @@
   "display.resolution.help": "Dimensione della finestra, o modalità\ndello schermo in esclusiva.",
   "display.aspect.label": "Proporzioni schermo",
   "display.aspect.help": "La forma dell'immagine. Auto riempie lo\nschermo, un formato fisso può avere bande.",
+  "display.resolution.label": "Risoluzione",
+  "display.resolution.help": "La dimensione dell'immagine. Disponibili\nsolo quelle adatte alle proporzioni scelte.",
   "display.vsync.label": "V-Sync",
   "display.vsync.help": "Sincronizza ogni fotogramma con lo schermo\nper evitare le lacerazioni dell'immagine.",
   "display.fps_counter.label": "Contatore FPS",

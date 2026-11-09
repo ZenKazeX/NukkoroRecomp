@@ -78,10 +78,10 @@ constexpr u32 kVisibleRows = 7u;  // the page's text slots above the select butt
 // The rows the page shows. Frame rate and frame blending are not offered: the release present loop shows every game
 // frame as it comes and applies neither (display_settings.h), and a row must change what it names. Draw distance is
 // withheld from the first release (user 2026-10-30: early alpha); display.cfg and --draw-distance still set it.
-// The rows the page shows (docs/DISPLAY_SETTINGS_AUDIT.md section 6): four, each with one job. The others are
+// The rows the page shows (docs/DISPLAY_SETTINGS_AUDIT.md section 6): five, each with one job. The others are
 // display.cfg / command-line keys for tests (MSAA, filtering, the FPS counter, exclusive mode) or withheld (frame rate
 // and frame blending: the release present loop applies neither; draw distance: user 2026-10-30, early alpha).
-constexpr Row kShownRows[] = {kDisplayMode, kScreenRatio, kRenderResolution, kVsync};
+constexpr Row kShownRows[] = {kDisplayMode, kScreenRatio, kResolution, kRenderResolution, kVsync};
 constexpr u32 kShownCount = static_cast<u32>(sizeof(kShownRows) / sizeof(kShownRows[0]));
 
 // The six languages of the front-end (Advertise_<lang>), in this order.
@@ -115,6 +115,7 @@ void set_msaa_supported(u32 mask) noexcept;
 // right step goes; a value no list holds is shown as itself and kept). No row changes another row's value:
 //   mode          Windowed / Fullscreen
 //   ratio         Auto or a fixed ratio: the picture's shape
+//   resolution    the window's size, from the sizes that fit the ratio (fullscreen: the one picture the screen shows)
 //   scale         25..200 % per side of the picture (the resolution scale)
 //   V-Sync        On / Off
 struct Model {
@@ -128,6 +129,9 @@ struct Model {
     std::u16string value_text(u32 row, const Texts& t, const std::u16string& on, const std::u16string& off) const;
     std::vector<double> aspects() const;      // 0 (Auto), the named ratios, a custom one in effect
     std::vector<double> scales() const;       // percent per side; the scale in effect included
+    // Smallest first. Windowed: the standard sizes the desktop holds that fit the ratio (Auto: all of them), plus the
+    // window's own size, so the row always says what is in effect. Fullscreen: only the picture the screen shows.
+    std::vector<Size> resolutions() const;
     std::vector<u32> msaa_values() const;        // supported sample counts, the one in effect included
     std::vector<u32> anisotropy_values() const;  // 1 (Off), 2, 4, 8, 16
     PixelSize output() const;                 // what the window owner shows the picture in: the window or the screen

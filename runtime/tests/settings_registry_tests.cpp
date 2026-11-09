@@ -178,8 +178,9 @@ void display_and_graphics(const std::filesystem::path& cfg) {
 
     r.begin(gs::Category::Display);
     std::vector<gs::SettingView> d = r.list(gs::Category::Display);
-    check(d.size() == 3u && find(d, "display.mode") && find(d, "display.aspect") && find(d, "display.vsync"),
-          "Display lists the mode, the ratio and V-Sync");
+    check(d.size() == 4u && find(d, "display.mode") && find(d, "display.aspect") && find(d, "display.resolution") &&
+              find(d, "display.vsync"),
+          "Display lists the mode, the ratio, the resolution and V-Sync");
     std::vector<gs::SettingView> g = r.list(gs::Category::Graphics);
     check(g.size() == 1u && find(g, "graphics.render_scale") != nullptr, "Graphics lists the resolution scale");
     const gs::SettingView* mode = find(d, "display.mode");
@@ -232,6 +233,33 @@ void display_and_graphics(const std::filesystem::path& cfg) {
               gekko::display_settings().current().window_width == 1000 &&
               gekko::display_settings().current().window_height == 313,
           "re-picked 32:10: the 1000x1000 window becomes 1000x313");
+    // The Resolution row: only sizes of the chosen ratio, the ratio's shape shown at once, the pick applied and saved.
+    r.begin(gs::Category::Display);
+    d = r.list(gs::Category::Display);
+    r.set("display.aspect", index_of(*find(d, "display.aspect"), "16:9"));
+    d = r.list(gs::Category::Display);
+    {
+        const gs::SettingView* res = find(d, "display.resolution");
+        check(index_of(*res, "1600x900") >= 0 && index_of(*res, "1024x768") < 0 && index_of(*res, "1920x1080") < 0,
+              "16:9 offers 1600x900, not a 4:3 size nor one larger than the desktop");
+        check(res->choices[static_cast<std::size_t>(res->pending)].key == "1000x563", "the row shows the shaped window at once");
+        r.set("display.resolution", index_of(*res, "1600x900"));
+    }
+    check(r.apply_pending(gs::Category::Display) == gs::ApplyResult::Applied && gekko::display_settings().current().window_width == 1600 &&
+              gekko::display_settings().current().window_height == 900 && std::abs(gekko::display_settings().current().aspect - 16.0 / 9.0) < 1e-12,
+          "the chosen size and ratio are applied at once");
+    check(read_file(cfg).find("width=1600") != std::string::npos && read_file(cfg).find("height=900") != std::string::npos, "and saved");
+    // Back to the shape the Auto test below starts from.
+    r.begin(gs::Category::Display);
+    d = r.list(gs::Category::Display);
+    r.set("display.aspect", index_of(*find(d, "display.aspect"), "32:10"));
+    r.apply_pending(gs::Category::Display);
+    {
+        gekko::DisplaySettings restored = gekko::display_settings().current();
+        restored.window_width = 1000;
+        restored.window_height = 313;
+        check(gekko::display_settings().apply(restored), "the window restored for the next step");
+    }
     // Auto picked: the window stays as it is.
     r.begin(gs::Category::Display);
     r.set("display.aspect", 0);

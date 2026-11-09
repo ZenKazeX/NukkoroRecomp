@@ -3,6 +3,7 @@
 // the help line in every language's front-end table.
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -135,11 +136,69 @@ void model() {
         check(od::Model::from(q).settings(q) == q, "MSAA / filtering values are kept");
     }
 
-    // The page shows four rows, each changing what it names.
-    check(od::kShownCount == 4u, "four rows");
+    // The page shows five rows, each changing what it names.
+    check(od::kShownCount == 5u, "five rows");
     for (const od::Row row : od::kShownRows)
-        check(row == od::kDisplayMode || row == od::kScreenRatio || row == od::kRenderResolution || row == od::kVsync,
-              "mode, ratio, resolution scale, V-Sync");
+        check(row == od::kDisplayMode || row == od::kScreenRatio || row == od::kResolution ||
+                  row == od::kRenderResolution || row == od::kVsync,
+              "mode, ratio, resolution, resolution scale, V-Sync");
+}
+
+// The Resolution row offers only sizes that fit the chosen ratio.
+void resolution_row() {
+    gekko::DisplaySettings s;
+    s.window_width = 1280;
+    s.window_height = 720;
+    od::set_work_area(3840u, 2160u);
+    od::set_screen_size(3840u, 2160u);
+    od::Model m = od::Model::from(s);
+    const auto has = [](const std::vector<od::Model::Size>& list, unsigned w, unsigned h) {
+        return std::any_of(list.begin(), list.end(), [&](const od::Model::Size& e) { return e.width == w && e.height == h; });
+    };
+    check(has(m.resolutions(), 1920u, 1080u) && has(m.resolutions(), 1600u, 1200u) && has(m.resolutions(), 1920u, 1200u),
+          "Auto lists every shape");
+    check(!has(m.resolutions(), 5120u, 2880u), "a size the desktop cannot hold is not offered");
+    for (const double ratio : {4.0 / 3.0, 5.0 / 4.0, 16.0 / 10.0, 16.0 / 9.0, 21.0 / 9.0, 32.0 / 10.0, 32.0 / 9.0}) {
+        s.aspect = ratio;
+        s.window_width = 1280;
+        s.window_height = static_cast<int>(std::lround(1280.0 / ratio));
+        m = od::Model::from(s);
+        const std::vector<od::Model::Size> list = m.resolutions();
+        check(list.size() >= 2u, "each ratio has sizes to choose from");
+        for (const od::Model::Size& e : list)
+            check(std::fabs(static_cast<double>(e.width) / e.height / ratio - 1.0) <= 0.03, "only sizes of the ratio are listed");
+    }
+    s.aspect = 16.0 / 9.0;
+    s.window_width = 1280;
+    s.window_height = 720;
+    m = od::Model::from(s);
+    check(!has(m.resolutions(), 1600u, 1200u) && has(m.resolutions(), 1366u, 768u), "16:9 lists 16:9 sizes, 1366x768 among them");
+    m.step(od::kResolution, 1);
+    check(m.window.width == 1366u && m.window.height == 768u, "a step moves to the next size");
+    m.step(od::kResolution, 1000);
+    check(m.window.width == 3840u && m.window.height == 2160u, "the list stops at the largest that fits the desktop");
+    m.step(od::kResolution, -1000);
+    check(m.window.width == 854u && m.window.height == 480u, "and at the smallest of the ratio");
+    // A dragged window of another shape is shown as itself; a step leaves it for a size of the ratio.
+    s.window_width = 1000;
+    s.window_height = 1000;
+    m = od::Model::from(s);
+    check(has(m.resolutions(), 1000u, 1000u), "the window in effect is listed");
+    m.step(od::kResolution, 1);
+    check(std::fabs(static_cast<double>(m.window.width) / m.window.height - 16.0 / 9.0) < 0.03, "a step takes a size of the ratio");
+    check(!has(m.resolutions(), 1000u, 1000u), "and the dragged size is gone from the list");
+    // Fullscreen shows one picture: no choice, and the window's size is untouched.
+    s.fullscreen = true;
+    s.aspect = 4.0 / 3.0;
+    s.window_width = 1280;
+    s.window_height = 720;
+    m = od::Model::from(s);
+    check(m.count(od::kResolution) == 1u && m.resolutions()[0].width == 2880u && m.resolutions()[0].height == 2160u,
+          "fullscreen 4:3 on a 16:9 desktop: the one picture it shows");
+    m.step(od::kResolution, 1);
+    check(m.window.width == 1280u && m.window.height == 720u, "a step changes nothing in fullscreen");
+    od::set_work_area(0u, 0u);
+    od::set_screen_size(0u, 0u);
 }
 
 // Fullscreen shows the picture in the desktop's size; windowed in the window's (the work area limits an oversize one).
@@ -297,6 +356,7 @@ void help_line(const std::filesystem::path& files) {
 int main(int argc, char** argv) {
     model();
     fullscreen_screen();
+    resolution_row();
     frame_history();
     utf8();
     if (argc > 1) {

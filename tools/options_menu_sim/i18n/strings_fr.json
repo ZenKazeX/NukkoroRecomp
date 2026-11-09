@@ -11,6 +11,8 @@
   "display.resolution.help": "Taille de la fenêtre, ou mode de l'écran\nen plein écran exclusif.",
   "display.aspect.label": "Format d'écran",
   "display.aspect.help": "La forme de l'image. Auto remplit l'écran,\nun format fixe peut ajouter des bandes.",
+  "display.resolution.label": "Résolution",
+  "display.resolution.help": "La taille de l'image. Seules les tailles\nadaptées au format d'écran sont proposées.",
   "display.vsync.label": "V-Sync",
   "display.vsync.help": "Afficher chaque image au rythme de l'écran,\nce qui évite les déchirures.",
   "display.fps_counter.label": "Compteur FPS",

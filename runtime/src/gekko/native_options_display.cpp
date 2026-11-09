@@ -220,6 +220,18 @@ std::atomic<u64>& work_area_size() {
 // The resolution scales offered (percent per side of the picture, gekko/display_geometry.h, 25..200). A scale in
 // effect that is not one of them is listed as itself.
 constexpr double kScales[] = {25.0, 33.0, 50.0, 67.0, 75.0, 100.0, 125.0, 150.0, 175.0, 200.0};
+
+// The window sizes offered. Which of them a ratio may use is decided by shape (kRatioSnap), so a monitor size a little
+// off its named ratio (1366 x 768 for 16:9, 3440 x 1440 for 21:9) is still listed under it.
+constexpr Model::Size kResolutions[] = {
+    {640, 480},   {800, 600},   {1024, 768},  {1152, 864},  {1280, 960},  {1400, 1050}, {1600, 1200}, {1920, 1440}, {2048, 1536},  // 4:3
+    {1280, 1024}, {1800, 1440},                                                                                                  // 5:4
+    {1280, 800},  {1440, 900},  {1680, 1050}, {1920, 1200}, {2560, 1600}, {3840, 2400},                                          // 16:10
+    {854, 480},   {1280, 720},  {1366, 768},  {1600, 900},  {1920, 1080}, {2560, 1440}, {3200, 1800}, {3840, 2160}, {5120, 2880},  // 16:9
+    {2560, 1080}, {3440, 1440}, {3840, 1600}, {5120, 2160},                                                                      // 21:9
+    {1920, 600},  {2560, 800},  {3840, 1200}, {5120, 1600},                                                                      // 32:10
+    {3840, 1080}, {5120, 1440},                                                                                                  // 32:9
+};
 }  // namespace
 
 void set_screen_size(u32 width, u32 height) noexcept {
@@ -305,6 +317,29 @@ std::vector<double> Model::scales() const {
     return out;
 }
 
+std::vector<Model::Size> Model::resolutions() const {
+    std::vector<Size> out;
+    if (value[kDisplayMode] != 0u) {  // borderless fullscreen shows at the desktop's size: one picture, not a choice
+        const PixelSize picture = geometry().picture;
+        out.push_back({picture.width, picture.height});
+        return out;
+    }
+    const auto listed = [&](const Size& s) {
+        return std::any_of(out.begin(), out.end(), [&](const Size& o) { return o.width == s.width && o.height == s.height; });
+    };
+    for (const Size& s : kResolutions) {
+        if (work.width != 0u && (s.width > work.width || s.height > work.height)) continue;
+        if (aspect > 0.0 && std::fabs(static_cast<double>(s.width) / s.height / aspect - 1.0) > kRatioSnap) continue;
+        out.push_back(s);
+    }
+    if (!listed(window)) out.push_back(window);
+    std::sort(out.begin(), out.end(), [](const Size& a, const Size& b) {
+        const u64 aa = static_cast<u64>(a.width) * a.height, bb = static_cast<u64>(b.width) * b.height;
+        return aa != bb ? aa < bb : a.width < b.width;
+    });
+    return out;
+}
+
 PixelSize Model::output() const {
     if (value[kDisplayMode] != 0u && screen.width != 0u) return {screen.width, screen.height};
     Size s = window;
@@ -327,6 +362,7 @@ u32 Model::count(u32 row) const {
     switch (row) {
     case kDisplayMode: return 2u;  // windowed, fullscreen
     case kScreenRatio: return static_cast<u32>(aspects().size());
+    case kResolution: return static_cast<u32>(resolutions().size());
     case kRenderResolution: return static_cast<u32>(scales().size());
     case kFrameRate: return static_cast<u32>(rates.size());
     case kVsync: case kFrameBlending: case kFpsCounter: return 2u;
@@ -342,6 +378,13 @@ u32 Model::index(u32 row) const {
     case kScreenRatio: {
         const std::vector<double> list = aspects();
         return static_cast<u32>(std::find(list.begin(), list.end(), aspect) - list.begin());
+    }
+    case kResolution: {
+        if (value[kDisplayMode] != 0u) return 0u;
+        const std::vector<Size> list = resolutions();
+        for (u32 i = 0; i < list.size(); ++i)
+            if (list[i].width == window.width && list[i].height == window.height) return i;
+        return 0u;
     }
     case kRenderResolution: {
         const std::vector<double> list = scales();
@@ -394,6 +437,13 @@ void Model::step(u32 row, int delta) {
         aspect = list[static_cast<std::size_t>(std::clamp(at, 0, static_cast<int>(list.size()) - 1))];
         return;
     }
+    case kResolution: {
+        if (value[kDisplayMode] != 0u) return;  // fullscreen has one picture: nothing to move to
+        const std::vector<Size> list = resolutions();
+        const int at = static_cast<int>(index(kResolution)) + delta;
+        window = list[static_cast<std::size_t>(std::clamp(at, 0, static_cast<int>(list.size()) - 1))];
+        return;
+    }
     case kRenderResolution: {
         const std::vector<double> list = scales();
         const int at = static_cast<int>(index(kRenderResolution)) + delta;
@@ -416,6 +466,11 @@ std::u16string Model::value_text(u32 row, const Texts& t, const std::u16string& 
     case kScreenRatio:
         if (!(aspect > 0.0)) return utf16(t.automatic);
         return ascii16(aspect_label(aspect));
+    case kResolution: {
+        const std::vector<Size> list = resolutions();
+        const Size s = list[std::min<std::size_t>(index(kResolution), list.size() - 1)];
+        return ascii16(std::to_string(s.width) + "x" + std::to_string(s.height));
+    }
     case kRenderResolution: {
         char text[48];
         std::snprintf(text, sizeof(text), scale == std::floor(scale) ? "%.0f%%" : "%.1f%%", scale);

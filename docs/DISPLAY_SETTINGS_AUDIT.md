@@ -529,3 +529,9 @@ Not run:
 - Alt+Enter;
 - fullscreen at 32:10;
 - the 5K baseline.
+
+## 7. Resolution row restored (2026-11-09, user request)
+
+The Display page has a Resolution row again, after Screen ratio. Windowed, it lists the standard sizes the desktop
+holds. A fixed ratio limits the list to sizes of that ratio (kRatioSnap); the window's own size is listed while it is in
+effect. Picking a fixed ratio still shapes the window once. Fullscreen is borderless, so the row shows its one picture.
