@@ -15,9 +15,8 @@ rebuilds the game. A different icon file can be given with `-DSHADOW_GAME_ICON=<
 | `art/eggman.png` | Eggman, sidebar (faded at the bottom) |
 | `art/commander.png` | G.U.N. Commander, sidebar bottom |
 | `art/dooms_eye.png` | Doom's Eye, top right |
-| `branding/logo.png` | "Shadow the Hedgehog" logo (560 x 118 in the layout) |
-| `branding/emblem.png` | Shadow emblem next to the logo |
-| `branding/recompiled.png` | "RECOMPILED" wordmark (the source sheet; the page crops it) |
+| `branding/logo.png` | Nukkoro Recompiled logo (492 x 164 in the layout), `branding/Nukkoro_recomp.png` with its white border replaced by a soft glow, like the game's own logo |
+| `branding/emblem.png` | Shadow emblem, behind the end of the logo as on the game's title screen |
 | `window/main_background.png` | Main background, stretched to the window |
 | `window/sidebar_background.svg` | Sidebar background, stretched to the window height |
 | `audio/music.mp3` | Looping music (starts at 25% volume; the window shows a toggle and slider) |

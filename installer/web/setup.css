@@ -34,10 +34,8 @@ button:disabled { cursor: default; }
 .art.missing { display: none; }
 #art-dooms-eye { left: 931.79px; top: -104.55px; width: 392.13px; height: 392.13px; z-index: 5; }
 #logo { position: absolute; inset: 0; z-index: 20; pointer-events: none; }
-#art-logo { left: 227px; top: 44px; width: 560px; height: 118px; }
-#art-emblem { left: 749px; top: 11px; width: 157px; height: 196px; }
-#art-recompiled { position: absolute; left: 429px; top: 164px; width: 313px; height: 55.58px; overflow: hidden; }
-#art-recompiled img { position: absolute; left: 0; top: -57.08px; width: 313.94px; height: auto; }
+#art-logo { left: 266px; top: 27px; width: 492px; height: 164px; z-index: 2; }
+#art-emblem { left: 684px; top: 2px; width: 176px; height: 220px; z-index: 1; }
 #art-eggman { left: -76.93px; top: 271.67px; width: 367.79px; height: 551.68px; z-index: 30;
   filter: contrast(1.08) brightness(1.04) saturate(1.18);
   -webkit-mask-image: linear-gradient(to bottom, #000 22.7%, transparent 34.1%); mask-image: linear-gradient(to bottom, #000 22.7%, transparent 34.1%); }
@@ -50,8 +48,6 @@ button:disabled { cursor: default; }
   font-style: italic; color: #e9e1dc; text-shadow: 0 2px 0 #000, 0 0 18px #c2281a66; line-height: 1; }
 #text-logo .t1 { display: block; font-size: 92px; font-weight: 900; letter-spacing: 2px; }
 #text-logo .t2 { display: block; font-size: 34px; font-weight: 800; letter-spacing: 6px; margin-top: 2px; }
-#text-logo .t3 { display: block; font-size: 30px; font-weight: 800; letter-spacing: 9px; margin-top: 12px; color: #e0473a;
-  text-shadow: 0 0 10px #ff3b2a88, 0 2px 0 #000; }
 body:not(.has-logo) #text-logo { display: block; }
 
 /* ---- sidebar steps ----------------------------------------------------------------- */
