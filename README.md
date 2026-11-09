@@ -1,68 +1,82 @@
-# Nukkoro Recompiled: Shadow the Hedgehog for PC
+# Nukkoro Recompiled
 
-**This is not a native port.** It is a static recompilation of Shadow the Hedgehog (GameCube, PAL), made with GekkoForge,
-and it is still under development. Expect bugs and missing features.
+An unofficial PC version of **Shadow the Hedgehog** (GameCube, PAL), built from your own copy of the game.
 
-At build time, GekkoForge translates the game's executable from your own disc into C++. That code runs on a runtime in
-which console mechanisms are being replaced with PC implementations one part at a time. Much of the GameCube
-architecture is still emulated.
+> **This is not a native port.** It is a static recompilation made with GekkoForge, and it is still under development.
+> Expect bugs and unfinished features.
 
-**This repository contains no game code or data.** You need your own legally dumped **PAL** disc (game ID **GUPP8P**).
-The installer builds the game from your disc, so do not share the installed game: it contains code built from that disc.
+## How it works
 
-## Requirements
+When you install it, GekkoForge translates the game's executable from your disc into C++ and compiles it for Windows.
+The result runs on a runtime that replaces the console's systems with PC ones, one part at a time. Much of the GameCube
+architecture is still emulated, which is why this is not a native port.
 
-- Windows 10/11 x64 with a Direct3D 12 graphics card
+The repository does not contain the game's executable or disc files. You provide those from your own legally dumped
+disc. The install contains code built from your disc, so please do not share it.
+
+## What you need
+
+- Windows 10 or 11, 64-bit, with a Direct3D 12 graphics card
+- Shadow the Hedgehog for GameCube, the **PAL** release (game ID **GUPP8P**), extracted with [Dolphin](https://dolphin-emu.org/)
 - [Visual Studio 2026](https://visualstudio.microsoft.com/downloads/) with the *Desktop development with C++* workload
-- [CMake](https://cmake.org/download/) 3.25 or newer, and [Python 3](https://www.python.org/downloads/)
-- [Dolphin](https://dolphin-emu.org/), to extract your disc
-- The Microsoft Edge WebView2 Runtime for the setup window (part of Windows 11; on Windows 10 the setup offers the download)
+- [CMake](https://cmake.org/download/) 3.25 or newer
+- [Python 3](https://www.python.org/downloads/)
+- The Microsoft Edge WebView2 Runtime (included in Windows 11; on Windows 10 the setup offers the download)
 
 ## Install
 
-1. **Extract the disc with Dolphin.** In the game list, right-click Shadow the Hedgehog and choose *Properties*.
-   On the *Filesystem* tab, right-click the disc (the top entry) and choose *Extract Entire Disc...*.
-   Dolphin writes `sys/` and `files/` into the folder you pick.
-2. **Run `Install.cmd`.** It builds the small setup program on first use (a few seconds), then opens the setup window.
-3. **Welcome:** choose the extracted disc folder with **Browse...**. The setup checks that it is the unmodified PAL release.
-4. **Install Location:** choose where to install with **Browse...**, and whether to start the game afterwards.
-5. **Components:** choose the desktop and Start menu shortcuts. The page also checks that the build tools are installed.
-6. **Install:** the game is built from your disc (the first build takes 10-30 minutes). The game and a copy of the disc's
-   `files/` folder are then copied to the install folder.
+1. In Dolphin, right-click the game and choose *Properties*. On the *Filesystem* tab, right-click the disc at the top and
+   choose *Extract Entire Disc...*.
+2. Run `Install.cmd`.
+3. Choose the extracted disc folder, the install location and the shortcuts you want, then start the install.
 
-To change which controller buttons do what, run `ShadowPadConfig.exe` in the install folder or use the Start menu's
-Controller Buttons shortcut. Click a row, press the button you want, then Save. The game uses it the next time it starts.
+The first build takes about 10 to 30 minutes. Afterwards the extracted disc folder is no longer needed. Running the setup
+again on the same folder updates the game and keeps your saves.
 
-To remove the game, run `Uninstall.cmd` in the install folder or use the Start menu's uninstall shortcut. It removes only
-what setup installed and keeps your saves and settings; `Uninstall.cmd -RemoveSaves` deletes those too.
-
-Settings, saves and the memory card are kept in the install folder. After installing, the extracted disc folder is no
-longer needed. If you run the setup again on the same folder, it updates the game and keeps your saves.
-
-The setup window's artwork, music and icon are in `installer/art/`; see [installer/ART_PACK.md](installer/ART_PACK.md).
-The same icon is compiled into the game. If a file is missing, the window hides that layer, and without any art it uses
-a plain dark theme.
-
-To install from the console instead, run:
+To install from a console instead:
 
 ```powershell
 .\Install.cmd -DiscPath "D:\Dumps\Shadow PAL" -InstallPath "D:\Games\Shadow the Hedgehog Recompiled"
 ```
 
+## Controller
+
+Run `ShadowPadConfig.exe` in the install folder, or use the *Controller Buttons* shortcut in the Start menu. Click a
+button on the picture, press the button you want on your controller, then Save. The game uses the new mapping the next
+time it starts.
+
+By default the face buttons follow their position on a modern controller. The GameCube pad's B is on the left button
+(X on an Xbox controller) and its X is on the right button (B). Keyboard keys cannot be changed yet.
+
+## Saves
+
+Your settings and saves stay in the install folder. Existing GameCube saves from the PAL, North American and Japanese
+releases can be imported with `--memory-card <file>` the first time you start the game.
+
+## Uninstall
+
+Run `Uninstall.cmd` in the install folder, or use the uninstall shortcut in the Start menu. It removes only what the
+setup installed and keeps your saves and settings. `Uninstall.cmd -RemoveSaves` deletes those as well.
+
+## Known limitations
+
+- The game is still partly emulated, and some features are unfinished.
+- Only the PAL release can be installed.
+- The Hungarian language is switched off for now.
+
 ## For developers
 
-`Build.cmd` builds from the repository after each edit. The first run asks for the extracted disc folder and remembers
-it; later runs only rebuild what changed.
+`Build.cmd` builds from the repository after each edit. The first run asks for the extracted disc folder.
 
 ```powershell
-.\Build.cmd                                   # build
-.\Build.cmd -Run --boot-stage stg0100         # build, then start the game (other options go to the game)
+.\Build.cmd                             # build
+.\Build.cmd -Run --boot-stage stg0100   # build, then start the game
 ```
 
-The game is `.build\release\bin\Release\ShadowTheHedgehog.exe`. See [docs/BUILDING.md](docs/BUILDING.md) for all options.
+See [docs/BUILDING.md](docs/BUILDING.md) for presets, tests and what is and is not in this repository, and
+[docs/RELEASE_VALIDATION.md](docs/RELEASE_VALIDATION.md) for what was tested in this release.
 
-## More
+## Legal
 
-- [docs/BUILDING.md](docs/BUILDING.md) covers building by hand, the CMake presets, and what is and is not in this repository.
-- `installer/` holds the setup window (`src/main.cpp` hosts `web/` in WebView2), its PowerShell backend
-  (`Backend.ps1`, `InstallCore.psm1`) and the console installer (`Install.ps1`).
+This is an unofficial fan project and is not affiliated with or endorsed by SEGA or Nintendo. Shadow the Hedgehog is a
+trademark of SEGA. You must own the game to use this project.
