@@ -1,4 +1,8 @@
-# Nukkoro Recompiled
+<p align="center">
+    <img src="docs/assets/logo.png" alt="Nukkoro Recompiled" width="512"/>
+</p>
+
+---
 
 A static recompilation of **Shadow the Hedgehog** (GameCube, PAL) for PC, made with GekkoForge and built from your own
 copy of the game. It is still under development, so expect bugs and unfinished features.

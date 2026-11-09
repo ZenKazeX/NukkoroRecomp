@@ -51,6 +51,7 @@ session-report.json
 !installer/art/**
 # So is the configurator's art.
 !tools/padconfig/art/**
+!docs/assets/**
 
 # Logs and local tool settings
 *.log
