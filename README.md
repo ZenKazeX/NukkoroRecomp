@@ -6,8 +6,7 @@ copy of the game. It is still under development, so expect bugs and unfinished f
 ## How it works
 
 When you install it, GekkoForge translates the game's executable from your disc into C++ and compiles it for Windows.
-The result runs on a runtime that replaces the console's systems with PC ones, one part at a time, and much of the
-GameCube architecture is still emulated.
+Parts of the game have been replaced with PC code, one part at a time, and the rest is still static recompiled code.
 
 You provide the game's executable and files from your own legally dumped disc. The install contains code built from
 your disc, so please keep it to yourself.
@@ -58,7 +57,7 @@ setup installed and keeps your saves and settings. `Uninstall.cmd -RemoveSaves` 
 
 ## Known limitations
 
-- The game is still partly emulated, and some features are unfinished.
+- The game is still partly static recompiled code, and some features are unfinished.
 - Only the PAL release can be installed.
 - The Hungarian language is switched off for now.
 
