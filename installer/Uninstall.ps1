@@ -30,6 +30,8 @@ $ManifestName = 'install-manifest.json'
 # The player's own data: never removed unless -RemoveSaves names it.
 $PlayerFolders = @('save-data', 'snapshots')
 $PlayerFiles = @('options.cfg', 'display.cfg', 'pad.cfg')
+# What the game writes for itself and rewrites on every run: not the player's data, so it goes with the game.
+$GeneratedFiles = @('session-report.json')
 
 function Stop-Uninstall([string]$message) {
     Write-Host "ERROR: $message" -ForegroundColor Red
@@ -150,6 +152,11 @@ if ($failed.Count -gt 0) {
     $failed | ForEach-Object { Write-Host "  $_" }
     Write-Host "Close whatever is using them and run the uninstaller again. $ManifestName was kept so it can."
     exit 1
+}
+
+foreach ($name in $GeneratedFiles) {
+    $path = Join-Path $root $name
+    if (Test-Path -LiteralPath $path -PathType Leaf) { Remove-One $path }
 }
 
 foreach ($name in @($ManifestName, 'install-info.json', 'install.log')) {

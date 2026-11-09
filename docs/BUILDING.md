@@ -73,3 +73,21 @@ Not included:
 - **Research material and session notes.**
 - **`tools/options_menu_sim/generated/`**: the Options menu simulator's textures and data, extracted from the disc.
   `python tools/options_menu_sim/build_sim_data.py` rebuilds them from your own copy.
+
+## Regression tests
+
+Two presets build the tests. Both need the PAL `main.dol`, and the test inputs that cannot be published (RAM images of
+the game) come from the folder named by `SHADOW_PRIVATE_TEST_DATA`. Tests that need those inputs are not usable without them.
+
+```
+cmake --preset tests -DSHADOW_RECOMP_DOL=<disc>/sys/main.dol -DSHADOW_PRIVATE_TEST_DATA=<folder>
+cmake --build .build/tests --config Release --target ALL_BUILD ShadowTheHedgehogReference
+ctest --test-dir .build/tests -C Release -j 4
+```
+
+`shipping-tests` runs the same suite against the Shipping configuration. Tests of code Shipping does not compile (the
+older renderer, the removed loader modes) cannot build or pass there; docs/RELEASE_VALIDATION.md lists them.
+
+Every configure with a preset must repeat `-DSHADOW_RECOMP_DOL`, because the preset's value otherwise replaces the cached one.
+
+`powershell -File installer/tests/Test-Uninstall.ps1` tests the uninstaller on fake installs under `.build/installer-test`.

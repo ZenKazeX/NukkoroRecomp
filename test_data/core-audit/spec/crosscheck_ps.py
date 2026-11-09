@@ -11,7 +11,7 @@ Last results (2026-09-14, seed 20260914):
         (D1-D16 in ps.py); both models corrected in place ("[crosscheck fix]")
     ps_A vs ps_B : decode 4,608 + edge 244,058 + random 240,000 = 488,666 vectors, 0 disagreements
     ps   vs ps_B : decode 4,608 + edge 244,058 + random 220,000 = 468,666 vectors, 0 disagreements
-    --mutants    : 60 of 60 detected by the edge sweep AND by the random sweep (32,000)
+    --mutants    : 58 of 58 detected by the edge sweep AND by the random sweep (32,000)
 
 Draws N random execution vectors plus a deterministic edge sweep for every paired-single
 instruction (29 ps_* arithmetic/move/compare instructions, 8 psq_* quantized loads/stores and

@@ -33,6 +33,7 @@ function New-FakeInstall([string]$name) {
     Put (Join-Path $root 'options.cfg') 'language=1'
     Put (Join-Path $root 'files\mine.txt') 'a file the player added'
     Put (Join-Path $root 'notes.txt') 'unrelated'
+    Put (Join-Path $root 'session-report.json') '{}'
     $root
 }
 function Write-Manifest([string]$root, $files, $shortcuts = @(), $folders = @()) {
@@ -65,6 +66,7 @@ Check (Test-Path (Join-Path $r 'files\mine.txt')) 'default: a file the installer
 Check (Test-Path (Join-Path $r 'notes.txt')) 'default: an unrelated file stays'
 Check ((Get-Content -Raw (Join-Path $r 'save-data\card.gci')) -eq 'my save') 'default: the save stays, unchanged'
 Check (Test-Path (Join-Path $r 'options.cfg')) 'default: settings stay'
+Check (-not (Test-Path (Join-Path $r 'session-report.json'))) 'default: the report the game writes for itself is gone'
 Check (-not (Test-Path (Join-Path $r 'install-manifest.json'))) 'default: the manifest is gone'
 Check (-not (Test-Path (Join-Path $r 'Uninstall.ps1'))) 'default: the uninstaller removed itself'
 Check (-not (Test-Path $lnk)) 'default: its shortcut is gone'
