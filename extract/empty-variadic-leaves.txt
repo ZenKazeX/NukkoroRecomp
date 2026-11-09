@@ -1,0 +1,6 @@
+# Reconstructed empty variadic callees. Complete body templates and entry
+# populations are checked by ppcrecomp. See docs/EMPTY_VARIADIC_CONTRACT.md;
+# the post-link gate also checks original direct edges and removed symbols.
+0x8000D374
+0x8001C574
+0x8047EC78

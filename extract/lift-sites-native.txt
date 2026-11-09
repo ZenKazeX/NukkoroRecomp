@@ -1,0 +1,38 @@
+# Lowered call sites of native subsystems that are not lifts of a whole caller (ppcrecomp --lift-sites).
+# Each site is pinned by its DOL instruction word; `call` sites call ::gekko::scaffold::<function>.
+
+# ---- GCAX sound banks without ARAM (docs/ARAM.md step 2, gekko/native_sound_banks.h)
+# The GCAX init 0x8043F744: its one ARAM block and the zero block's upload. The bank upload 0x8043BACC is an owner
+# (extract/native-owners.txt); the zero-block upload 0x8043BBBC has no other caller and goes with this site.
+site 0x8043F7A4 0x4BF430E1 call sound_banks_reserve 1           # ARAlloc(0x800000) -> the banks' sound address
+site 0x8043F818 0x4BFFC3A5 call sound_banks_zero_block 5 void   # 0x8043BBBC(zeros, block, 0x500, 0, 0)
+
+# ---- CRI's audio stream ring without ARAM (docs/ARAM.md step 3, gekko/native_stream_ring.h)
+# The ring setup fn_803D069C and finalize fn_803D0530 (never reached in play), and the stream server's two transfers
+# into the ring (in 0x803CEEE8). Each transfer's completion callback runs at the DSP DMA interrupt, as ARQ ran it.
+site 0x803D06E0 0x4BFB21A5 call stream_ring_reserve 1           # ARAlloc(0x40000) -> the ring's sound address
+site 0x803D0658 0x4BFB2295 call stream_ring_release 1           # ARFree(&size)
+site 0x803CF0D0 0x4BFB5431 call stream_ring_post 8 void         # ARQPostRequest: the ring's feed
+site 0x803CF21C 0x4BFB52E5 call stream_ring_post 8 void         # ARQPostRequest: the 0x2000-byte start-up fill
+# The GCAX shutdown 0x8043F674 (AudioGCN destructor; never reached in play): its ARFree of the banks' block.
+site 0x8043F730 0x4BF431BD call sound_banks_release 1           # ARFree(&size)
+
+# ---- No ARAM at all (docs/ARAM.md step 5)
+# The game constructor 0x801F2E58 brings ARAM and its DMA queue up. ARInit keeps only what outlives ARAM: the DSP DMA
+# interrupt unmasked (the native stores' transfer completions run there). ARQInit has nothing left to queue.
+site 0x801F2EA0 0x4818FAC1 call dsp_dma_interrupt_init 2 void   # ARInit(0x8053F2B0, 4)
+site 0x801F2EA4 0x481915ED nothing                              # ARQInit()
+
+# ---- The OS bring-up's disc calls (docs/DISC_SYSTEM_MAP.md cut 5): there is no drive to bring up.
+# OSInit 0x80370E68 and game init 0x80051028: DVDInit (the native file API's owner did nothing).
+site 0x803712E8 0x4800A01D nothing                              # OSInit: DVDInit()
+site 0x80051044 0x4832A2C1 nothing                              # game init: DVDInit()
+# OSInit: DVDInquiryAsync(block, info, 0x80370E2C) - the drive's revision record, whose callback set the OS device
+# code word 0x800030E6. Its only reader (0x803B419C, in 0x803B3F90) is pruned and the info buffer is read by nothing
+# else: nothing observable remains.
+site 0x80371328 0x4800BF55 nothing                              # OSInit: DVDInquiryAsync(...)
+# Game main 0x800510C0: DVDSetAutoFatalMessaging(TRUE) - no fatal screen exists (the owner only kept a flag).
+site 0x800510DC 0x4832CEC1 nothing                              # main: DVDSetAutoFatalMessaging(1)
+# The alarm module's OS reset record {OnReset 0x80371E64, priority -1, next, prev}: only OSResetSystem walks the
+# reset queue, and it is a native owner that ends the program. OnReset (and its __DVDTestAlarm call) has no caller.
+retire 0x805612F0 0x80371E64

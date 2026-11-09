@@ -1,0 +1,366 @@
+{
+  "schema": "register_transfer_leaf_references_v1",
+  "dol_sha256": "fde4fa6f81a60313b710161c196dc51c2260be62251ee02775d5eee06f9d55af",
+  "manual": "IBM Gekko RISC Microprocessor User's Manual v1.2: mfspr Table 12-10 pp.463-465, mftb Table 12-11 p.468, mtspr Table 12-13 pp.477-479, mfmsr p.461, mtmsr p.475",
+  "role_note": "Training entries were reviewed to write the recognizer. Held-out entries were seen in the whole-image survey but are not used as synthetic design fixtures; their expected identities are transcribed from the manual tables, never copied from recognizer output.",
+  "full_semantic_or_native_proof": false,
+  "references": [
+    {
+      "entry": "0x80370aec",
+      "role": "training",
+      "original_words": [
+        "0x7c70faa6",
+        "0x4e800020"
+      ],
+      "file_offset": 3580844,
+      "expected": {
+        "operation": "mfspr",
+        "direction": "read",
+        "register": "HID0",
+        "register_number": 1008,
+        "gpr": 3,
+        "classification": "PROVEN"
+      }
+    },
+    {
+      "entry": "0x80370af4",
+      "role": "training",
+      "original_words": [
+        "0x7c70fba6",
+        "0x4e800020"
+      ],
+      "file_offset": 3580852,
+      "expected": {
+        "operation": "mtspr",
+        "direction": "write",
+        "register": "HID0",
+        "register_number": 1008,
+        "gpr": 3,
+        "classification": "PROVEN"
+      }
+    },
+    {
+      "entry": "0x80370adc",
+      "role": "held-out",
+      "original_words": [
+        "0x7c6000a6",
+        "0x4e800020"
+      ],
+      "file_offset": 3580828,
+      "expected": {
+        "operation": "mfmsr",
+        "direction": "read",
+        "register": "MSR",
+        "register_number": null,
+        "gpr": 3,
+        "classification": "PROVEN"
+      }
+    },
+    {
+      "entry": "0x80370ae4",
+      "role": "held-out",
+      "original_words": [
+        "0x7c600124",
+        "0x4e800020"
+      ],
+      "file_offset": 3580836,
+      "expected": {
+        "operation": "mtmsr",
+        "direction": "write",
+        "register": "MSR",
+        "register_number": null,
+        "gpr": 3,
+        "classification": "STRONGLY SUPPORTED"
+      }
+    },
+    {
+      "entry": "0x80370afc",
+      "role": "held-out",
+      "original_words": [
+        "0x7c79faa6",
+        "0x4e800020"
+      ],
+      "file_offset": 3580860,
+      "expected": {
+        "operation": "mfspr",
+        "direction": "read",
+        "register": "L2CR",
+        "register_number": 1017,
+        "gpr": 3,
+        "classification": "PROVEN"
+      }
+    },
+    {
+      "entry": "0x80370b04",
+      "role": "held-out",
+      "original_words": [
+        "0x7c79fba6",
+        "0x4e800020"
+      ],
+      "file_offset": 3580868,
+      "expected": {
+        "operation": "mtspr",
+        "direction": "write",
+        "register": "L2CR",
+        "register_number": 1017,
+        "gpr": 3,
+        "classification": "PROVEN"
+      }
+    },
+    {
+      "entry": "0x80370b0c",
+      "role": "held-out",
+      "original_words": [
+        "0x7c7603a6",
+        "0x4e800020"
+      ],
+      "file_offset": 3580876,
+      "expected": {
+        "operation": "mtspr",
+        "direction": "write",
+        "register": "DEC",
+        "register_number": 22,
+        "gpr": 3,
+        "classification": "PROVEN"
+      }
+    },
+    {
+      "entry": "0x80370b30",
+      "role": "held-out",
+      "original_words": [
+        "0x7c78eba6",
+        "0x4e800020"
+      ],
+      "file_offset": 3580912,
+      "expected": {
+        "operation": "mtspr",
+        "direction": "write",
+        "register": "MMCR0",
+        "register_number": 952,
+        "gpr": 3,
+        "classification": "PROVEN"
+      }
+    },
+    {
+      "entry": "0x80370b38",
+      "role": "held-out",
+      "original_words": [
+        "0x7c7ceba6",
+        "0x4e800020"
+      ],
+      "file_offset": 3580920,
+      "expected": {
+        "operation": "mtspr",
+        "direction": "write",
+        "register": "MMCR1",
+        "register_number": 956,
+        "gpr": 3,
+        "classification": "PROVEN"
+      }
+    },
+    {
+      "entry": "0x80370b40",
+      "role": "held-out",
+      "original_words": [
+        "0x7c79eba6",
+        "0x4e800020"
+      ],
+      "file_offset": 3580928,
+      "expected": {
+        "operation": "mtspr",
+        "direction": "write",
+        "register": "PMC1",
+        "register_number": 953,
+        "gpr": 3,
+        "classification": "PROVEN"
+      }
+    },
+    {
+      "entry": "0x80370b48",
+      "role": "held-out",
+      "original_words": [
+        "0x7c7aeba6",
+        "0x4e800020"
+      ],
+      "file_offset": 3580936,
+      "expected": {
+        "operation": "mtspr",
+        "direction": "write",
+        "register": "PMC2",
+        "register_number": 954,
+        "gpr": 3,
+        "classification": "PROVEN"
+      }
+    },
+    {
+      "entry": "0x80370b50",
+      "role": "held-out",
+      "original_words": [
+        "0x7c7deba6",
+        "0x4e800020"
+      ],
+      "file_offset": 3580944,
+      "expected": {
+        "operation": "mtspr",
+        "direction": "write",
+        "register": "PMC3",
+        "register_number": 957,
+        "gpr": 3,
+        "classification": "PROVEN"
+      }
+    },
+    {
+      "entry": "0x80370b58",
+      "role": "held-out",
+      "original_words": [
+        "0x7c7eeba6",
+        "0x4e800020"
+      ],
+      "file_offset": 3580952,
+      "expected": {
+        "operation": "mtspr",
+        "direction": "write",
+        "register": "PMC4",
+        "register_number": 958,
+        "gpr": 3,
+        "classification": "PROVEN"
+      }
+    },
+    {
+      "entry": "0x80370ba8",
+      "role": "held-out",
+      "original_words": [
+        "0x7c78e2a6",
+        "0x4e800020"
+      ],
+      "file_offset": 3581032,
+      "expected": {
+        "operation": "mfspr",
+        "direction": "read",
+        "register": "HID2",
+        "register_number": 920,
+        "gpr": 3,
+        "classification": "PROVEN"
+      }
+    },
+    {
+      "entry": "0x80370bb0",
+      "role": "held-out",
+      "original_words": [
+        "0x7c78e3a6",
+        "0x4e800020"
+      ],
+      "file_offset": 3581040,
+      "expected": {
+        "operation": "mtspr",
+        "direction": "write",
+        "register": "HID2",
+        "register_number": 920,
+        "gpr": 3,
+        "classification": "PROVEN"
+      }
+    },
+    {
+      "entry": "0x80370bb8",
+      "role": "held-out",
+      "original_words": [
+        "0x7c79e3a6",
+        "0x4e800020"
+      ],
+      "file_offset": 3581048,
+      "expected": {
+        "operation": "mtspr",
+        "direction": "write",
+        "register": "WPAR",
+        "register_number": 921,
+        "gpr": 3,
+        "classification": "PROVEN"
+      }
+    },
+    {
+      "entry": "0x80379640",
+      "role": "held-out",
+      "original_words": [
+        "0x7c6c42e6",
+        "0x4e800020"
+      ],
+      "file_offset": 3616512,
+      "expected": {
+        "operation": "mftb",
+        "direction": "read",
+        "register": "TBL",
+        "register_number": 268,
+        "gpr": 3,
+        "classification": "PROVEN"
+      }
+    },
+    {
+      "entry": "0x8039d9b8",
+      "role": "held-out",
+      "original_words": [
+        "0x7c6000a6",
+        "0x4e800020"
+      ],
+      "file_offset": 3764856,
+      "expected": {
+        "operation": "mfmsr",
+        "direction": "read",
+        "register": "MSR",
+        "register_number": null,
+        "gpr": 3,
+        "classification": "PROVEN"
+      }
+    },
+    {
+      "entry": "0x8039d9c0",
+      "role": "held-out",
+      "original_words": [
+        "0x7c600124",
+        "0x4e800020"
+      ],
+      "file_offset": 3764864,
+      "expected": {
+        "operation": "mtmsr",
+        "direction": "write",
+        "register": "MSR",
+        "register_number": null,
+        "gpr": 3,
+        "classification": "STRONGLY SUPPORTED"
+      }
+    },
+    {
+      "entry": "0x80372500",
+      "role": "held-out-suffix",
+      "original_words": [
+        "0x7c70fba6",
+        "0x4e800020"
+      ],
+      "file_offset": 3587520,
+      "expected": {
+        "operation": "mtspr",
+        "direction": "write",
+        "register": "HID0",
+        "register_number": 1008,
+        "gpr": 3,
+        "classification": "STRUCTURAL MATCH"
+      }
+    },
+    {
+      "entry": "0x803d4124",
+      "role": "held-out-suffix",
+      "original_words": [
+        "0x7c17e3a6",
+        "0x4e800020"
+      ],
+      "file_offset": 3987940,
+      "expected": {
+        "operation": "mtspr",
+        "direction": "write",
+        "register": "GQR7",
+        "register_number": 919,
+        "gpr": 0,
+        "classification": "STRUCTURAL MATCH"
+      }
+    }
+  ]
+}

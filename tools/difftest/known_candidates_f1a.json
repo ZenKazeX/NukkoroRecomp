@@ -1,0 +1,20 @@
+{
+  "comment": "Exact-fingerprint ledger of candidate divergences found by the F1a harness and recorded, not fixed, in docs/recompiler-core-audit-2026-09-13/infrastructure/DIFFTEST_F1A.md. Applied only for this seed/scale. Every run prints each entry as KNOWN; any change to a group (new vector, different value) or a group that stops reproducing fails ctest. Deleting this file makes ctest difftest_f1a fail on these candidates. Regenerated 2026-10-06 (native time): the same 7 candidates over the same vectors. The 5 DT-F1A-C2 fingerprints changed because native lanes have no instruction count (the 'generated' value of the retired field is null) and, for lmw ls1-00350, because TB/DEC no longer advance per retired instruction in either the spec or the engines (the dec/tb fields no longer differ). Regenerated 2026-10-06 (M1, docs/memory-architecture-20261006): the same 7 candidates over the same vectors; the 5 DT-F1A-C2 fingerprints changed only because the harness names data-window bytes by their window address (0x803xxxxx) where it named them by the physical alias (0x003xxxxx) - scratch/memory-20261006/scripts/verify_f1a_ledger_m1.py maps the window addresses back and reproduces every old fingerprint exactly.",
+  "config": {"seed": 20260914, "scale": 1.0},
+  "candidates": [
+    {"candidate": "DT-F1A-C1 lwarx RESERVE_ADDR is EA&~31 (effective), manual PAGE 450 says physical_addr(EA)",
+     "fingerprint": "59b76d97392becf3048dbb2498ab02f21ae0fd15"},
+    {"candidate": "DT-F1A-C3 mtspr PVR/HID1 in supervisor mode writes the SPR, manual PAGE 90 says no-op",
+     "fingerprint": "f3b5c693efe2ad908aa25744b7ca15c66159c967"},
+    {"candidate": "DT-F1A-C2 lwarx with non-word-aligned EA takes no alignment exception (PAGE 175 4.5.6)",
+     "fingerprint": "a24010ad1b442ac77208848c2483a100db3f9ab4"},
+    {"candidate": "DT-F1A-C2 stmw with non-word-aligned EA takes no alignment exception (PAGE 175 4.5.6)",
+     "fingerprint": "19433fb1faa7313d10a6d316fdcbe5a06a6f984e"},
+    {"candidate": "DT-F1A-C2 lwarx (prefix vector) with non-word-aligned EA takes no alignment exception",
+     "fingerprint": "85112109c0306b8e1626c47482e8070e1d304ee5"},
+    {"candidate": "DT-F1A-C2 stwcx. (mid-block entry) with non-word-aligned EA takes no alignment exception",
+     "fingerprint": "05a5d1cc741d54d5f20a281846c4c19a5cca1ec9"},
+    {"candidate": "DT-F1A-C2 lmw with non-word-aligned EA takes no alignment exception (PAGE 175 4.5.6)",
+     "fingerprint": "4cabc7e608371385ee1aa9ac8633b7fb31549a63"}
+  ]
+}

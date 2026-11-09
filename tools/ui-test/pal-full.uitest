@@ -1,0 +1,10 @@
+# Full PAL boot with NO PLAYEND forgery: answer the 50/60 Hz selector, clear the
+# autosave dialog, then touch nothing and let Op.sfd play to its own end.
+label hz-select
+wait 120
+press A 8
+label boot-dialog
+wait 400
+press A 8
+label let-the-movie-run
+wait 7000

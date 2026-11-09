@@ -1,0 +1,27 @@
+#include <winres.h>
+#include "resource.h"
+
+// IDI_APP comes from the art pack (installer/art/app.ico) when it is present; empty otherwise.
+@SETUP_ICON_LINE@
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION 1,0,0,0
+PRODUCTVERSION 1,0,0,0
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "FileDescription", "Shadow the Hedgehog Recompiled setup"
+            VALUE "ProductName", "Shadow the Hedgehog Recompiled (work in progress)"
+            VALUE "FileVersion", "1.0.0"
+            VALUE "ProductVersion", "1.0.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

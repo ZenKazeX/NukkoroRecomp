@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Shadow the Hedgehog Recompiled Setup</title>
+<link rel="stylesheet" href="setup.css">
+</head>
+<body>
+<!-- Stretched backgrounds behind the fixed-size stage (art pack, or CSS gradients without it). -->
+<div id="backdrop" aria-hidden="true">
+  <div id="bg-sidebar"><img data-art="window/sidebar_background.svg" alt=""></div>
+  <div id="bg-main"><img data-art="window/main_background.png" alt=""></div>
+</div>
+
+<!-- The 1265 x 648 design stage, scaled uniformly to the window. -->
+<div id="stage">
+  <img class="art" id="art-dooms-eye" data-art="art/dooms_eye.png" alt="">
+  <div id="logo" aria-label="Shadow the Hedgehog Recompiled">
+    <img class="art" id="art-logo" data-art="branding/logo.png" alt="">
+    <img class="art" id="art-emblem" data-art="branding/emblem.png" alt="">
+    <div id="art-recompiled"><img class="art" data-art="branding/recompiled.png" alt=""></div>
+    <div id="text-logo"><span class="t1">SHADOW</span><span class="t2">THE HEDGEHOG</span><span class="t3">RECOMPILED</span></div>
+  </div>
+  <img class="art" id="art-eggman" data-art="art/eggman.png" alt="">
+  <img class="art" id="art-commander" data-art="art/commander.png" alt="">
+  <img class="art" id="art-shadow" data-art="art/shadow.png" alt="">
+
+  <nav id="steps" aria-label="Setup steps">
+    <button class="step" data-step="1"><span class="ring">1</span><span class="name">Welcome</span></button>
+    <button class="step" data-step="2"><span class="ring">2</span><span class="name">Install Location</span></button>
+    <button class="step" data-step="3"><span class="ring">3</span><span class="name">Components</span></button>
+    <button class="step" data-step="4"><span class="ring">4</span><span class="name">Install</span></button>
+  </nav>
+
+  <div id="panel"></div>
+  <section id="content" aria-live="polite"></section>
+
+  <div id="music" hidden>
+    <label class="check small"><input type="checkbox" id="music-on" checked><span class="box"></span><span>Music</span></label>
+    <svg class="speaker" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z"/><path d="M16 9.5a4 4 0 0 1 0 5"/></svg>
+    <input type="range" id="music-volume" min="0" max="100" value="25" aria-label="Music volume">
+    <span id="music-value">25%</span>
+  </div>
+
+  <button id="back" class="button">Back</button>
+  <button id="next" class="button">Next</button>
+</div>
+
+<div id="modal" hidden></div>
+<audio id="music-audio" loop preload="auto"></audio>
+<script src="setup.js"></script>
+</body>
+</html>

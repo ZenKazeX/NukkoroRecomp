@@ -1,0 +1,8 @@
+# Native MSL math sites that exist only without the lifted renderer (SHADOW_RENDER_LIFTED off, e.g. the tests
+# tree). The game's world-to-screen projection fn_8000F654 calls tanf four times; under the lifted renderer its
+# one caller (the Sprite3D functor 0x802B4A8C, extract/lift-sites-r2.txt) is lowered and fn_8000F654 is pruned, so
+# these sites are emitted by no translation there and must not be listed. Contract: docs/NATIVE_MSL_MATH.md.
+site 0x8000F6F0 0x4BFFFCE5 msl_tanf
+site 0x8000F720 0x4BFFFCB5 msl_tanf
+site 0x8000F884 0x4BFFFB51 msl_tanf
+site 0x8000F898 0x4BFFFB3D msl_tanf

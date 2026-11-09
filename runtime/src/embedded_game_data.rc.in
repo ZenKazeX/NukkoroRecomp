@@ -1,0 +1,5 @@
+// Generated at configure time. The resource compiler copies the exact binary
+// inputs into the PE image; these paths are never consulted by the runtime.
+101 RCDATA "@SHADOW_EMBED_BOOT@"
+@SHADOW_EMBED_BI2_LINE@
+105 RCDATA "@SHADOW_EMBED_DOL@"

@@ -1,0 +1,109 @@
+vector_hex,name,source0_hex,count0,source1_hex,count1,patch_offset_hex,patch_word_hex
+# Documentation since 2026-10-06 (docs/memory-architecture-20261006/README.md
+# 2.2): the build no longer translates these vectors - no guest code runs in
+# real mode and the OS exception entry is native
+# (runtime/src/gekko/os_exception_entry.cpp), which performs the vector's work
+# and checks, on every entry, that the guest installed exactly the construction
+# below (__OSExceptionVector with the index patched at +0x68; the system-call
+# vector's PPCSync head). The real-mode aliases and the real-mode BAT routine
+# (OSInitBATs_Real) are history: nothing executes at a physical address.
+# PowerPC exception vectors as this game installs them.
+#
+# The vector page is not part of main.dol at the addresses where it executes:
+# the game's own OS copies __OSExceptionVector there during initialisation and
+# patches one instruction with the SDK exception index. A static recompiler
+# therefore has nothing to translate at 0x80000500 unless it is told how the
+# page is built - and without that, every exception, every system call and every
+# interrupt return falls out of native code.
+#
+# The construction is fully derivable from main.dol, not observed:
+#
+#   source0 = 0x80371620  __OSExceptionVector, 38 instructions, ends in rfi
+#   source1 = 0x8037829C  the system-call vector head, 7 instructions, which is
+#                         followed by __OSExceptionVector's instructions 7..37
+#   patch   = the word at +0x68 becomes `li r3, <SDK exception index>`
+#
+# The indices are the SDK's OS_EXCEPTION_* ordering: SYSTEM_RESET 0,
+# MACHINE_CHECK 1, DSI 2, ISI 3, EXTERNAL_INTERRUPT 4, ALIGNMENT 5, PROGRAM 6,
+# FLOATING_POINT 7, DECREMENTER 8, SYSTEM_CALL 9, TRACE 10, PERFORMANCE_MONITOR
+# 11, IABR 12, RESERVED 13, THERMAL 14.
+#
+# Reconstructing all fifteen vectors this way and comparing them against the
+# page the running game actually installs matches byte for byte. The runtime
+# re-checks that at execution time and stops with a diagnostic rather than
+# running a translation of bytes the guest did not install.
+#
+# The check is Cpu::validate_native_code (runtime/src/gekko/cpu.cpp, declared in
+# runtime/include/gekko/cpu.h). Search for THAT name: the 2026-09-05 audit looked
+# for "OSExceptionVector" / "vectors_match" / the literal 0x80371620, found only
+# comments, and wrongly reported this check as missing - twice, through three
+# independent reviewers. It is emitted by tools/ppcrecomp into every vector body
+# (absorbed forwarder, cold body and hot body, so interior and direct native
+# entries are all covered) and it ships: see the expected[] array and the guard
+# call at the top of fn_00000800_body in the generated tree.
+#
+# What the guard actually proves, stated precisely because the sentence above
+# invites a stronger reading: on EVERY entry to a vector, the guest's bytes at
+# that address equal the static translation, or the machine stops with
+# StopReason::ExecutionFault. Success is deliberately not cached, so a later CPU
+# store, DMA or savestate restore that replaces the bytes is caught on the next
+# entry. It does NOT assert that __OSExceptionInit ran before the first
+# exception - it cannot, because it only runs when a vector is entered. In
+# practice that is equivalent (an exception taken against the bare rfi that
+# System::start writes finds 4C000064 where expected[0] is 7C9043A6 and aborts),
+# but "the guest installed this page" is a claim the guard does not make.
+#
+# One inconsistency to be aware of before "fixing" it: extract/functions.csv
+# declares fn_80371620 as 88 bytes / 22 instructions, while the recipe below
+# copies 38 instructions (152 bytes). The template really is 152 bytes - the
+# terminating rfi is at 0x803716B4 - so the recipe is right and the function
+# table row is short. This recipe is therefore NOT derivable from functions.csv
+# and is independently hand-authored, which is the part of the audit finding
+# that stands.
+#
+# Vectors 0xA00, 0xB00, 0xE00, 0x1000-0x1200 and 0x1500-0x1600 are left empty by
+# this game and are deliberately absent here: translating zeroes would invent
+# code the guest never runs.
+0x80000100,OSExceptionVector_SystemReset,0x80371620,38,,,0x68,0x38600000
+0x80000200,OSExceptionVector_MachineCheck,0x80371620,38,,,0x68,0x38600001
+0x80000300,OSExceptionVector_Dsi,0x80371620,38,,,0x68,0x38600002
+0x80000400,OSExceptionVector_Isi,0x80371620,38,,,0x68,0x38600003
+0x80000500,OSExceptionVector_ExternalInterrupt,0x80371620,38,,,0x68,0x38600004
+0x80000600,OSExceptionVector_Alignment,0x80371620,38,,,0x68,0x38600005
+0x80000700,OSExceptionVector_Program,0x80371620,38,,,0x68,0x38600006
+0x80000800,OSExceptionVector_FloatingPoint,0x80371620,38,,,0x68,0x38600007
+0x80000900,OSExceptionVector_Decrementer,0x80371620,38,,,0x68,0x38600008
+0x80000C00,OSExceptionVector_SystemCall,0x8037829C,7,0x8037163C,31,0x68,0x38600009
+0x80000D00,OSExceptionVector_Trace,0x80371620,38,,,0x68,0x3860000A
+0x80000F00,OSExceptionVector_PerformanceMonitor,0x80371620,38,,,0x68,0x3860000B
+0x80001300,OSExceptionVector_Iabr,0x80371620,38,,,0x68,0x3860000C
+0x80001400,OSExceptionVector_Reserved,0x80371620,38,,,0x68,0x3860000D
+0x80001700,OSExceptionVector_Thermal,0x80371620,38,,,0x68,0x3860000E
+
+# Real-mode aliases. raise_exception clears MSR[IR], so the machine fetches the
+# vector with translation off and the architected pc is the physical address,
+# not the 0x8000_0000 effective one. Same bytes, same construction; the branch
+# inside the template is pc-relative and the exit is through SRR0, so a copy
+# translated at the real address is correct on its own terms.
+0x00000100,OSExceptionVector_SystemReset_Real,0x80371620,38,,,0x68,0x38600000
+0x00000200,OSExceptionVector_MachineCheck_Real,0x80371620,38,,,0x68,0x38600001
+0x00000300,OSExceptionVector_Dsi_Real,0x80371620,38,,,0x68,0x38600002
+0x00000400,OSExceptionVector_Isi_Real,0x80371620,38,,,0x68,0x38600003
+0x00000500,OSExceptionVector_ExternalInterrupt_Real,0x80371620,38,,,0x68,0x38600004
+0x00000600,OSExceptionVector_Alignment_Real,0x80371620,38,,,0x68,0x38600005
+0x00000700,OSExceptionVector_Program_Real,0x80371620,38,,,0x68,0x38600006
+0x00000800,OSExceptionVector_FloatingPoint_Real,0x80371620,38,,,0x68,0x38600007
+0x00000900,OSExceptionVector_Decrementer_Real,0x80371620,38,,,0x68,0x38600008
+0x00000C00,OSExceptionVector_SystemCall_Real,0x8037829C,7,0x8037163C,31,0x68,0x38600009
+0x00000D00,OSExceptionVector_Trace_Real,0x80371620,38,,,0x68,0x3860000A
+0x00000F00,OSExceptionVector_PerformanceMonitor_Real,0x80371620,38,,,0x68,0x3860000B
+0x00001300,OSExceptionVector_Iabr_Real,0x80371620,38,,,0x68,0x3860000C
+0x00001400,OSExceptionVector_Reserved_Real,0x80371620,38,,,0x68,0x3860000D
+0x00001700,OSExceptionVector_Thermal_Real,0x80371620,38,,,0x68,0x3860000E
+
+# Real-mode BAT programming. __OSInitBATs runs with MSR[IR]/[DR] clear so it can
+# rewrite the block translations it is standing on, which means the machine
+# executes DOL code at its physical address. Thirty-two instructions ending in
+# rfi, which restores translation and returns through LR to native code.
+# Translated at the real address so its own relative control flow is correct.
+0x00376A48,OSInitBATs_Real,0x80376A48,32,,,,

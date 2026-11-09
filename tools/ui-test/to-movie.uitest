@@ -1,0 +1,20 @@
+# Route to the first in-game movie: boot dialog -> title -> main menu -> STORY,
+# then confirm through the story entry so the opening event movie is requested.
+label boot-and-dialog
+wait 260
+press A 8
+label logos-and-title
+wait 640
+press START 8
+label main-menu
+wait 200
+press A 8
+label story-menu
+wait 600
+press A 8
+wait 400
+press A 8
+wait 400
+press A 8
+label let-it-play
+wait 4000

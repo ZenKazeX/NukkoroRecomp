@@ -1,0 +1,42 @@
+{
+  "comment": "Known GameCube releases of Shadow the Hedgehog (tools/ppcrecomp/disc_map.py identify). game_id and revision from sys/boot.bin (0x0, 0x7); bi2_region from sys/bi2.bin 0x18 (0 NTSC-J, 1 NTSC-U, 2 PAL). All addresses in this tree are canonical (PAL GUPP8P) addresses; address_map maps them to the release.",
+  "canonical": "GUPP8P",
+  "discs": [
+    {
+      "game_id": "GUPP8P",
+      "region": "PAL",
+      "bi2_region": 2,
+      "revision": 0,
+      "main_dol": {
+        "size": 5773024,
+        "sha1": "6ff04994371e93d6ba1015644f4e7467713b9363",
+        "sha256": "fde4fa6f81a60313b710161c196dc51c2260be62251ee02775d5eee06f9d55af"
+      },
+      "address_map": null
+    },
+    {
+      "game_id": "GUPE8P",
+      "region": "NTSC-U",
+      "bi2_region": 1,
+      "revision": 0,
+      "main_dol": {
+        "size": 5768800,
+        "sha1": "118ef49ebd45b371b6f514e0e1b6d1ba7cf12904",
+        "sha256": "c4ab471c654fea354658477a11601274b9de259fa4820eb56bd677a53cdd5d0f"
+      },
+      "address_map": "address-maps/GUPE8P.map"
+    },
+    {
+      "game_id": "GUPJ8P",
+      "region": "NTSC-J",
+      "bi2_region": 0,
+      "revision": 0,
+      "main_dol": {
+        "size": 5770464,
+        "sha1": "72f47bca7b72ec385a6fa30e123a96cc0fd19bab",
+        "sha256": "bb124abb6dda1f7464f6f7ac95f646cf171359ae839c1a0f86bc304baa9823b3"
+      },
+      "address_map": "address-maps/GUPJ8P.map"
+    }
+  ]
+}

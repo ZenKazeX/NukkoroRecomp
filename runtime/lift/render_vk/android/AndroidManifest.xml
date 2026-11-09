@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Vulkan renderer on Android (docs/VULKAN_RENDERER.md, stage V5): a NativeActivity, no Java code. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          package="com.shadow.vk"
+          android:versionCode="1"
+          android:versionName="0.1">
+    <!-- Vulkan 1.3 (docs/VULKAN_RENDERER.md 3.1): 0x403000 = 1.3.0 in the feature's encoding. -->
+    <uses-feature android:name="android.hardware.vulkan.version" android:version="0x403000" android:required="true" />
+    <uses-feature android:name="android.hardware.vulkan.level" android:version="0" android:required="true" />
+    <application android:label="Shadow Vulkan"
+                 android:hasCode="false"
+                 android:extractNativeLibs="true">
+        <!-- Every configuration change is the game's to handle (APP_CMD_CONFIG_CHANGED): a recreated activity would
+             rebuild the GPU device. Seen: the SIM's mcc/mnc arriving after launch recreated it (2026-10-26). -->
+        <activity android:name="android.app.NativeActivity"
+                  android:exported="true"
+                  android:screenOrientation="sensorLandscape"
+                  android:configChanges="mcc|mnc|locale|touchscreen|keyboard|keyboardHidden|navigation|screenLayout|fontScale|uiMode|orientation|density|screenSize|smallestScreenSize|layoutDirection|colorMode|fontWeightAdjustment"
+                  android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+            <meta-data android:name="android.app.lib_name" android:value="shadow_vk" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

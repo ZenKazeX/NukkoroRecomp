@@ -1,0 +1,735 @@
+# R2 milestone 1 - the RenderWare GameCube driver's draw-facing entries lowered into the scaffolding
+# (runtime/scaffold/rw_driver) on the native renderer. docs/lift-20261006/R2_DRIVER.md 4.3.
+#
+# Read by the SHADOW_RENDER_LIFTED build only (ppcrecomp --lift-sites, given after extract/lift-sites.txt).
+# Assembled by scratch/lift-20261006/scripts/assemble_r2_sites.py from the device-surface proposal of
+# r2/SITES_DEVICE.md (every dispatch site of the render states, Im2D and the camera standard functions, every
+# game call of the direct entries) plus the pipeline, texture, present and reset sites of R2_DRIVER.md 4.3;
+# every word re-read from the DOL. Kept translated in this milestone, so absent: fpSystem, the raster /
+# texture / image standard functions, the native texture read (except its LOD call), HINTRENDERF2B.
+#
+#   site <address> <DOL word> call <scaffold function> <argument count> [fpr <n>] [void]
+
+# ---- render states: RwRenderStateSet dispatches (RwGlobals+0x20; r2/SITES_DEVICE.md 1.2): 434 site(s)
+site 0x800366D0 0x4E800421 call rw_render_state_set 2    # 0x80036570 ZTESTENABLE FALSE
+site 0x800366E8 0x4E800421 call rw_render_state_set 2    # 0x80036570 ZWRITEENABLE FALSE
+site 0x80036700 0x4E800421 call rw_render_state_set 2    # 0x80036570 VERTEXALPHAENABLE FALSE
+site 0x80036718 0x4E800421 call rw_render_state_set 2    # 0x80036570 TEXTUREFILTER LINEAR
+site 0x80036730 0x4E800421 call rw_render_state_set 2    # 0x80036570 CULLMODE CULLNONE
+site 0x80036748 0x4E800421 call rw_render_state_set 2    # 0x80036570 TEXTURERASTER
+site 0x80039740 0x4E800421 call rw_render_state_set 2    # 0x800396F8 TEXTURERASTER
+site 0x80039758 0x4E800421 call rw_render_state_set 2    # 0x800396F8 VERTEXALPHAENABLE TRUE
+site 0x80039930 0x4E800421 call rw_render_state_set 2    # 0x800396F8 VERTEXALPHAENABLE
+site 0x800399BC 0x4E800421 call rw_render_state_set 2    # 0x80039948 CULLMODE CULLNONE
+site 0x800399D4 0x4E800421 call rw_render_state_set 2    # 0x80039948 ZWRITEENABLE FALSE
+site 0x800399EC 0x4E800421 call rw_render_state_set 2    # 0x80039948 FOGENABLE FALSE
+site 0x80039A04 0x4E800421 call rw_render_state_set 2    # 0x80039948 SRCBLEND SRCALPHA
+site 0x80039A1C 0x4E800421 call rw_render_state_set 2    # 0x80039948 DESTBLEND ONE
+site 0x80039A34 0x4E800421 call rw_render_state_set 2    # 0x80039948 VERTEXALPHAENABLE TRUE
+site 0x80039A4C 0x4E800421 call rw_render_state_set 2    # 0x80039948 TEXTURERASTER NULL (untextured)
+site 0x80039B40 0x4E800421 call rw_render_state_set 2    # 0x80039948 CULLMODE
+site 0x80039B58 0x4E800421 call rw_render_state_set 2    # 0x80039948 ZWRITEENABLE
+site 0x80039B70 0x4E800421 call rw_render_state_set 2    # 0x80039948 FOGENABLE
+site 0x80044954 0x4E800421 call rw_render_state_set 2    # 0x800448C8 VERTEXALPHAENABLE TRUE
+site 0x8004496C 0x4E800421 call rw_render_state_set 2    # 0x800448C8 ZTESTENABLE FALSE
+site 0x80044984 0x4E800421 call rw_render_state_set 2    # 0x800448C8 ZWRITEENABLE FALSE
+site 0x8004499C 0x4E800421 call rw_render_state_set 2    # 0x800448C8 CULLMODE CULLNONE
+site 0x800449B4 0x4E800421 call rw_render_state_set 2    # 0x800448C8 TEXTURERASTER NULL (untextured)
+site 0x80044A6C 0x4E800421 call rw_render_state_set 2    # 0x800448C8 TEXTURERASTER
+site 0x80044AA0 0x4E800421 call rw_render_state_set 2    # 0x800448C8 VERTEXALPHAENABLE
+site 0x80044AB8 0x4E800421 call rw_render_state_set 2    # 0x800448C8 ZTESTENABLE
+site 0x80044AD0 0x4E800421 call rw_render_state_set 2    # 0x800448C8 ZWRITEENABLE
+site 0x80044AE8 0x4E800421 call rw_render_state_set 2    # 0x800448C8 CULLMODE
+site 0x80046DF4 0x4E800421 call rw_render_state_set 2    # 0x80046D80 SRCBLEND SRCALPHA
+site 0x80046E0C 0x4E800421 call rw_render_state_set 2    # 0x80046D80 DESTBLEND INVSRCALPHA
+site 0x80046E24 0x4E800421 call rw_render_state_set 2    # 0x80046D80 ZTESTENABLE TRUE
+site 0x80046E3C 0x4E800421 call rw_render_state_set 2    # 0x80046D80 ZWRITEENABLE FALSE
+site 0x80046E80 0x4E800421 call rw_render_state_set 2    # 0x80046D80 SRCBLEND SRCALPHA
+site 0x80046E98 0x4E800421 call rw_render_state_set 2    # 0x80046D80 DESTBLEND ONE
+site 0x80046EB0 0x4E800421 call rw_render_state_set 2    # 0x80046D80 ZTESTENABLE TRUE
+site 0x80046EC8 0x4E800421 call rw_render_state_set 2    # 0x80046D80 ZWRITEENABLE FALSE
+site 0x80046F0C 0x4E800421 call rw_render_state_set 2    # 0x80046D80 SRCBLEND INVDESTCOLOR
+site 0x80046F24 0x4E800421 call rw_render_state_set 2    # 0x80046D80 DESTBLEND ZERO
+site 0x80046F68 0x4E800421 call rw_render_state_set 2    # 0x80046D80 SRCBLEND SRCALPHA
+site 0x80046F80 0x4E800421 call rw_render_state_set 2    # 0x80046D80 DESTBLEND INVSRCALPHA
+site 0x80046F98 0x4E800421 call rw_render_state_set 2    # 0x80046D80 ZWRITEENABLE TRUE
+site 0x80046FB0 0x4E800421 call rw_render_state_set 2    # 0x80046D80 ZTESTENABLE TRUE
+site 0x80046FFC 0x4E800421 call rw_render_state_set 2    # 0x80046D80 SRCBLEND SRCALPHA
+site 0x80047014 0x4E800421 call rw_render_state_set 2    # 0x80046D80 DESTBLEND INVSRCALPHA
+site 0x8004702C 0x4E800421 call rw_render_state_set 2    # 0x80046D80 ZTESTENABLE FALSE
+site 0x80047044 0x4E800421 call rw_render_state_set 2    # 0x80046D80 ZWRITEENABLE FALSE
+site 0x80047080 0x4E800421 call rw_render_state_set 2    # 0x80046D80 SRCBLEND SRCALPHA
+site 0x80047098 0x4E800421 call rw_render_state_set 2    # 0x80046D80 DESTBLEND INVSRCALPHA
+site 0x800470B0 0x4E800421 call rw_render_state_set 2    # 0x80046D80 ZTESTENABLE TRUE
+site 0x800470C8 0x4E800421 call rw_render_state_set 2    # 0x80046D80 ZWRITEENABLE TRUE
+site 0x80047110 0x4E800421 call rw_render_state_set 2    # 0x80046D80 TEXTUREFILTER LINEAR
+site 0x8004712C 0x4E800421 call rw_render_state_set 2    # 0x80046D80 TEXTUREFILTER NAFILTER(=NEAREST)
+site 0x8004714C 0x4E800421 call rw_render_state_set 2    # 0x80046D80 CULLMODE CULLNONE
+site 0x80047168 0x4E800421 call rw_render_state_set 2    # 0x80046D80 CULLMODE CULLBACK
+site 0x80047188 0x4E800421 call rw_render_state_set 2    # 0x80046D80 FOGENABLE
+site 0x800471A4 0x4E800421 call rw_render_state_set 2    # 0x80046D80 FOGENABLE FALSE
+site 0x8004A32C 0x4E800421 call rw_render_state_set 2    # 0x8004A09C SRCBLEND ZERO
+site 0x8004A344 0x4E800421 call rw_render_state_set 2    # 0x8004A09C DESTBLEND INVSRCCOLOR
+site 0x8004A3AC 0x4E800421 call rw_render_state_set 2    # 0x8004A09C SRCBLEND ONE
+site 0x8004A3C4 0x4E800421 call rw_render_state_set 2    # 0x8004A09C DESTBLEND ONE
+site 0x8004A444 0x4E800421 call rw_render_state_set 2    # 0x8004A09C SRCBLEND
+site 0x8004A45C 0x4E800421 call rw_render_state_set 2    # 0x8004A09C DESTBLEND
+site 0x8004A474 0x4E800421 call rw_render_state_set 2    # 0x8004A09C CULLMODE
+site 0x800BCD38 0x4E800421 call rw_render_state_set 2    # 0x800BCBA4 CULLMODE CULLNONE
+site 0x800BCD50 0x4E800421 call rw_render_state_set 2    # 0x800BCBA4 TEXTUREFILTER LINEAR
+site 0x800BCD68 0x4E800421 call rw_render_state_set 2    # 0x800BCBA4 ZTESTENABLE FALSE
+site 0x800BCD80 0x4E800421 call rw_render_state_set 2    # 0x800BCBA4 ZWRITEENABLE FALSE
+site 0x800BCD98 0x4E800421 call rw_render_state_set 2    # 0x800BCBA4 TEXTURERASTER
+site 0x800BCE70 0x4E800421 call rw_render_state_set 2    # 0x800BCBA4 TEXTURERASTER NULL (untextured)
+site 0x800BCE88 0x4E800421 call rw_render_state_set 2    # 0x800BCBA4 CULLMODE
+site 0x800BCEA0 0x4E800421 call rw_render_state_set 2    # 0x800BCBA4 TEXTUREFILTER
+site 0x800BCEB8 0x4E800421 call rw_render_state_set 2    # 0x800BCBA4 ZTESTENABLE
+site 0x800BCED0 0x4E800421 call rw_render_state_set 2    # 0x800BCBA4 ZWRITEENABLE
+site 0x8015397C 0x4E800421 call rw_render_state_set 2    # 0x8015390C CULLMODE CULLNONE
+site 0x80153994 0x4E800421 call rw_render_state_set 2    # 0x8015390C ZWRITEENABLE FALSE
+site 0x801539AC 0x4E800421 call rw_render_state_set 2    # 0x8015390C FOGENABLE FALSE
+site 0x801539C4 0x4E800421 call rw_render_state_set 2    # 0x8015390C SRCBLEND SRCALPHA
+site 0x801539DC 0x4E800421 call rw_render_state_set 2    # 0x8015390C DESTBLEND ONE
+site 0x801539F4 0x4E800421 call rw_render_state_set 2    # 0x8015390C VERTEXALPHAENABLE TRUE
+site 0x80153A0C 0x4E800421 call rw_render_state_set 2    # 0x8015390C TEXTURERASTER NULL (untextured)
+site 0x80153A94 0x4E800421 call rw_render_state_set 2    # 0x8015390C CULLMODE
+site 0x80153AAC 0x4E800421 call rw_render_state_set 2    # 0x8015390C ZWRITEENABLE
+site 0x80153AC4 0x4E800421 call rw_render_state_set 2    # 0x8015390C FOGENABLE
+site 0x8016AC34 0x4E800421 call rw_render_state_set 2    # 0x8016A904 FOGCOLOR
+site 0x8016AC4C 0x4E800421 call rw_render_state_set 2    # 0x8016A904 FOGTYPE
+site 0x802663F4 0x4E800421 call rw_render_state_set 2    # 0x802662A4 CULLMODE CULLNONE
+site 0x80266414 0x4E800421 call rw_render_state_set 2    # 0x802662A4 CULLMODE CULLBACK
+site 0x802BEAB4 0x4E800421 call rw_render_state_set 2    # 0x802BE9D4 VERTEXALPHAENABLE FALSE
+site 0x802BEACC 0x4E800421 call rw_render_state_set 2    # 0x802BE9D4 ZTESTENABLE FALSE
+site 0x802BEAE4 0x4E800421 call rw_render_state_set 2    # 0x802BE9D4 ZWRITEENABLE FALSE
+site 0x802BEAFC 0x4E800421 call rw_render_state_set 2    # 0x802BE9D4 CULLMODE CULLNONE
+site 0x802BEB14 0x4E800421 call rw_render_state_set 2    # 0x802BE9D4 TEXTURERASTER NULL (untextured)
+site 0x802BEB4C 0x4E800421 call rw_render_state_set 2    # 0x802BE9D4 VERTEXALPHAENABLE
+site 0x802BEB64 0x4E800421 call rw_render_state_set 2    # 0x802BE9D4 ZTESTENABLE
+site 0x802BEB7C 0x4E800421 call rw_render_state_set 2    # 0x802BE9D4 ZWRITEENABLE
+site 0x802BEB94 0x4E800421 call rw_render_state_set 2    # 0x802BE9D4 CULLMODE
+site 0x802DE594 0x4E800421 call rw_render_state_set 2    # 0x802DE4BC SRCBLEND SRCALPHA
+site 0x802DE5AC 0x4E800421 call rw_render_state_set 2    # 0x802DE4BC DESTBLEND ONE
+site 0x802DE5C4 0x4E800421 call rw_render_state_set 2    # 0x802DE4BC CULLMODE CULLNONE
+site 0x802DE5DC 0x4E800421 call rw_render_state_set 2    # 0x802DE4BC TEXTURERASTER NULL (untextured)
+site 0x802DE5F4 0x4E800421 call rw_render_state_set 2    # 0x802DE4BC VERTEXALPHAENABLE TRUE
+site 0x802DE60C 0x4E800421 call rw_render_state_set 2    # 0x802DE4BC FOGENABLE FALSE
+site 0x802DE7F4 0x4E800421 call rw_render_state_set 2    # 0x802DE4BC FOGENABLE
+site 0x802DE80C 0x4E800421 call rw_render_state_set 2    # 0x802DE4BC VERTEXALPHAENABLE
+site 0x802DE824 0x4E800421 call rw_render_state_set 2    # 0x802DE4BC CULLMODE
+site 0x802DE83C 0x4E800421 call rw_render_state_set 2    # 0x802DE4BC SRCBLEND
+site 0x802DE854 0x4E800421 call rw_render_state_set 2    # 0x802DE4BC DESTBLEND
+site 0x802DF200 0x4E800421 call rw_render_state_set 2    # 0x802DF140 SRCBLEND SRCALPHA
+site 0x802DF218 0x4E800421 call rw_render_state_set 2    # 0x802DF140 DESTBLEND ONE
+site 0x802DF230 0x4E800421 call rw_render_state_set 2    # 0x802DF140 CULLMODE CULLNONE
+site 0x802DF248 0x4E800421 call rw_render_state_set 2    # 0x802DF140 TEXTURERASTER NULL (untextured)
+site 0x802DF260 0x4E800421 call rw_render_state_set 2    # 0x802DF140 VERTEXALPHAENABLE TRUE
+site 0x802DF278 0x4E800421 call rw_render_state_set 2    # 0x802DF140 FOGENABLE FALSE
+site 0x802DF3A4 0x4E800421 call rw_render_state_set 2    # 0x802DF140 FOGENABLE
+site 0x802DF3BC 0x4E800421 call rw_render_state_set 2    # 0x802DF140 VERTEXALPHAENABLE
+site 0x802DF3D4 0x4E800421 call rw_render_state_set 2    # 0x802DF140 CULLMODE
+site 0x802DF3EC 0x4E800421 call rw_render_state_set 2    # 0x802DF140 SRCBLEND
+site 0x802DF404 0x4E800421 call rw_render_state_set 2    # 0x802DF140 DESTBLEND
+site 0x80306384 0x4E800421 call rw_render_state_set 2    # 0x80306354 TEXTURERASTER
+site 0x80306E48 0x4E800421 call rw_render_state_set 2    # 0x80306D80 VERTEXALPHAENABLE FALSE
+site 0x80306E60 0x4E800421 call rw_render_state_set 2    # 0x80306D80 ZTESTENABLE FALSE
+site 0x80306E78 0x4E800421 call rw_render_state_set 2    # 0x80306D80 ZWRITEENABLE FALSE
+site 0x80306E90 0x4E800421 call rw_render_state_set 2    # 0x80306D80 CULLMODE CULLNONE
+site 0x80306EA8 0x4E800421 call rw_render_state_set 2    # 0x80306D80 TEXTURERASTER NULL (untextured)
+site 0x80306F94 0x4E800421 call rw_render_state_set 2    # 0x80306D80 VERTEXALPHAENABLE
+site 0x80306FAC 0x4E800421 call rw_render_state_set 2    # 0x80306D80 ZTESTENABLE
+site 0x80306FC4 0x4E800421 call rw_render_state_set 2    # 0x80306D80 ZWRITEENABLE
+site 0x80306FDC 0x4E800421 call rw_render_state_set 2    # 0x80306D80 CULLMODE
+site 0x803436FC 0x4E800421 call rw_render_state_set 2    # 0x8034359C TEXTURERASTER
+site 0x80343730 0x4E800421 call rw_render_state_set 2    # 0x8034359C TEXTURERASTER
+site 0x80343B6C 0x4E800421 call rw_render_state_set 2    # 0x80343AE4 TEXTURERASTER
+site 0x80343FDC 0x4E800421 call rw_render_state_set 2    # 0x80343E74 TEXTURERASTER NULL (untextured)
+site 0x8034414C 0x4E800421 call rw_render_state_set 2    # 0x80344030 TEXTURERASTER NULL (untextured)
+site 0x803448E0 0x4E800421 call rw_render_state_set 2    # 0x803447D8 VERTEXALPHAENABLE TRUE
+site 0x803448F8 0x4E800421 call rw_render_state_set 2    # 0x803447D8 ZTESTENABLE FALSE
+site 0x80344910 0x4E800421 call rw_render_state_set 2    # 0x803447D8 ZWRITEENABLE FALSE
+site 0x80344928 0x4E800421 call rw_render_state_set 2    # 0x803447D8 CULLMODE CULLNONE
+site 0x80344940 0x4E800421 call rw_render_state_set 2    # 0x803447D8 TEXTURERASTER NULL (untextured)
+site 0x80344A44 0x4E800421 call rw_render_state_set 2    # 0x803447D8 VERTEXALPHAENABLE
+site 0x80344A5C 0x4E800421 call rw_render_state_set 2    # 0x803447D8 ZTESTENABLE
+site 0x80344A74 0x4E800421 call rw_render_state_set 2    # 0x803447D8 ZWRITEENABLE
+site 0x80344A8C 0x4E800421 call rw_render_state_set 2    # 0x803447D8 CULLMODE
+site 0x80346A90 0x4E800421 call rw_render_state_set 2    # 0x80346908 SRCBLEND SRCALPHA
+site 0x80346AA8 0x4E800421 call rw_render_state_set 2    # 0x80346908 DESTBLEND INVSRCALPHA
+site 0x80346AC0 0x4E800421 call rw_render_state_set 2    # 0x80346908 VERTEXALPHAENABLE TRUE
+site 0x80346AF8 0x4E800421 call rw_render_state_set 2    # 0x80346908 TEXTURERASTER
+site 0x80346B10 0x4E800421 call rw_render_state_set 2    # 0x80346908 TEXTUREFILTER LINEAR
+site 0x80363CF8 0x4E800421 call rw_render_state_set 2    # 0x80363CC8 SRCBLEND
+site 0x80363D18 0x4E800421 call rw_render_state_set 2    # 0x80363CC8 DESTBLEND
+site 0x80363D38 0x4E800421 call rw_render_state_set 2    # 0x80363CC8 VERTEXALPHAENABLE
+site 0x80363D58 0x4E800421 call rw_render_state_set 2    # 0x80363CC8 ZWRITEENABLE
+site 0x80363D78 0x4E800421 call rw_render_state_set 2    # 0x80363CC8 ZTESTENABLE
+site 0x80363D98 0x4E800421 call rw_render_state_set 2    # 0x80363CC8 CULLMODE
+site 0x80363EAC 0x4E800421 call rw_render_state_set 2    # 0x80363DB8 ZWRITEENABLE FALSE
+site 0x80363ECC 0x4E800421 call rw_render_state_set 2    # 0x80363DB8 ZTESTENABLE FALSE
+site 0x80363EEC 0x4E800421 call rw_render_state_set 2    # 0x80363DB8 CULLMODE CULLNONE
+site 0x80363F44 0x4E800421 call rw_render_state_set 2    # 0x80363F10 TEXTURERASTER NULL (untextured)
+site 0x80364010 0x4E800421 call rw_render_state_set 2    # 0x80363FE0 VERTEXALPHAENABLE
+site 0x80364118 0x4E800421 call rw_render_state_set 2    # 0x803640E8 VERTEXALPHAENABLE
+site 0x80364180 0x4E800421 call rw_render_state_set 2    # 0x8036412C SRCBLEND
+site 0x803641A0 0x4E800421 call rw_render_state_set 2    # 0x8036412C DESTBLEND
+site 0x80364558 0x4E800421 call rw_render_state_set 2    # 0x80364510 TEXTUREFILTER
+site 0x803645DC 0x4E800421 call rw_render_state_set 2    # 0x8036456C TEXTUREADDRESSU
+site 0x803645FC 0x4E800421 call rw_render_state_set 2    # 0x8036456C TEXTUREADDRESSV
+site 0x8036464C 0x4E800421 call rw_render_state_set 2    # 0x80364614 TEXTURERASTER NULL (untextured)
+site 0x803646B0 0x4E800421 call rw_render_state_set 2    # 0x80364614 TEXTURERASTER
+site 0x8042DF48 0x4E800421 call rw_render_state_set 2    # 0x8042D870 CULLMODE CULLNONE
+site 0x8042DF68 0x4E800421 call rw_render_state_set 2    # 0x8042D870 VERTEXALPHAENABLE TRUE
+site 0x8042DF88 0x4E800421 call rw_render_state_set 2    # 0x8042D870 TEXTURERASTER NULL (untextured)
+site 0x8042DFB4 0x4E800421 call rw_render_state_set 2    # 0x8042D870 FOGENABLE FALSE
+site 0x8042DFD8 0x4E800421 call rw_render_state_set 2    # 0x8042D870 FOGENABLE TRUE
+site 0x8042E054 0x4E800421 call rw_render_state_set 2    # 0x8042D870 FOGENABLE
+site 0x8042E074 0x4E800421 call rw_render_state_set 2    # 0x8042D870 VERTEXALPHAENABLE
+site 0x8042E094 0x4E800421 call rw_render_state_set 2    # 0x8042D870 CULLMODE
+site 0x8042E0B4 0x4E800421 call rw_render_state_set 2    # 0x8042D870 TEXTURERASTER
+site 0x8042E634 0x4E800421 call rw_render_state_set 2    # 0x8042E254 TEXTURERASTER
+site 0x8042E654 0x4E800421 call rw_render_state_set 2    # 0x8042E254 SRCBLEND SRCALPHA
+site 0x8042E674 0x4E800421 call rw_render_state_set 2    # 0x8042E254 DESTBLEND INVSRCALPHA
+site 0x8042E694 0x4E800421 call rw_render_state_set 2    # 0x8042E254 VERTEXALPHAENABLE TRUE
+site 0x8042E6B4 0x4E800421 call rw_render_state_set 2    # 0x8042E254 ZTESTENABLE FALSE
+site 0x8042E6D4 0x4E800421 call rw_render_state_set 2    # 0x8042E254 ZWRITEENABLE FALSE
+site 0x8042E6F4 0x4E800421 call rw_render_state_set 2    # 0x8042E254 FOGENABLE FALSE
+site 0x8042E714 0x4E800421 call rw_render_state_set 2    # 0x8042E254 TEXTUREFILTER NEAREST
+site 0x8042E758 0x4E800421 call rw_render_state_set 2    # 0x8042E254 SRCBLEND
+site 0x8042E778 0x4E800421 call rw_render_state_set 2    # 0x8042E254 DESTBLEND
+site 0x8042E798 0x4E800421 call rw_render_state_set 2    # 0x8042E254 VERTEXALPHAENABLE
+site 0x8042E7B8 0x4E800421 call rw_render_state_set 2    # 0x8042E254 ZTESTENABLE
+site 0x8042E7D8 0x4E800421 call rw_render_state_set 2    # 0x8042E254 ZWRITEENABLE
+site 0x8042E7F8 0x4E800421 call rw_render_state_set 2    # 0x8042E254 FOGENABLE
+site 0x8042E818 0x4E800421 call rw_render_state_set 2    # 0x8042E254 TEXTUREFILTER
+site 0x8042E8F0 0x4E800421 call rw_render_state_set 2    # 0x8042E838 TEXTURERASTER
+site 0x8042E910 0x4E800421 call rw_render_state_set 2    # 0x8042E838 SRCBLEND ONE
+site 0x8042E930 0x4E800421 call rw_render_state_set 2    # 0x8042E838 DESTBLEND ZERO
+site 0x8042F330 0x4E800421 call rw_render_state_set 2    # 0x8042F258 TEXTURERASTER
+site 0x8042F350 0x4E800421 call rw_render_state_set 2    # 0x8042F258 SRCBLEND ONE
+site 0x8042F370 0x4E800421 call rw_render_state_set 2    # 0x8042F258 DESTBLEND ZERO
+site 0x8042F544 0x4E800421 call rw_render_state_set 2    # 0x8042F258 TEXTURERASTER
+site 0x8042F564 0x4E800421 call rw_render_state_set 2    # 0x8042F258 SRCBLEND ONE
+site 0x8042F584 0x4E800421 call rw_render_state_set 2    # 0x8042F258 DESTBLEND ZERO
+site 0x8042F6FC 0x4E800421 call rw_render_state_set 2    # 0x8042F258 TEXTURERASTER
+site 0x8042F71C 0x4E800421 call rw_render_state_set 2    # 0x8042F258 SRCBLEND ONE
+site 0x8042F73C 0x4E800421 call rw_render_state_set 2    # 0x8042F258 DESTBLEND ZERO
+site 0x8042F8D8 0x4E800421 call rw_render_state_set 2    # 0x8042F258 TEXTURERASTER
+site 0x8042F8F8 0x4E800421 call rw_render_state_set 2    # 0x8042F258 SRCBLEND ONE
+site 0x8042F918 0x4E800421 call rw_render_state_set 2    # 0x8042F258 DESTBLEND ZERO
+site 0x8042FB08 0x4E800421 call rw_render_state_set 2    # 0x8042F258 TEXTURERASTER
+site 0x8042FB28 0x4E800421 call rw_render_state_set 2    # 0x8042F258 SRCBLEND ONE
+site 0x8042FB48 0x4E800421 call rw_render_state_set 2    # 0x8042F258 DESTBLEND ONE
+site 0x8042FC40 0x4E800421 call rw_render_state_set 2    # 0x8042F258 TEXTURERASTER
+site 0x8042FC60 0x4E800421 call rw_render_state_set 2    # 0x8042F258 SRCBLEND ONE
+site 0x8042FC80 0x4E800421 call rw_render_state_set 2    # 0x8042F258 DESTBLEND ONE
+site 0x8042FD84 0x4E800421 call rw_render_state_set 2    # 0x8042F258 TEXTURERASTER
+site 0x8042FDA4 0x4E800421 call rw_render_state_set 2    # 0x8042F258 SRCBLEND ONE
+site 0x8042FDC4 0x4E800421 call rw_render_state_set 2    # 0x8042F258 DESTBLEND ONE
+site 0x8042FEBC 0x4E800421 call rw_render_state_set 2    # 0x8042F258 TEXTURERASTER
+site 0x8042FEDC 0x4E800421 call rw_render_state_set 2    # 0x8042F258 SRCBLEND ONE
+site 0x8042FEFC 0x4E800421 call rw_render_state_set 2    # 0x8042F258 DESTBLEND ONE
+site 0x80430014 0x4E800421 call rw_render_state_set 2    # 0x8042F258 TEXTURERASTER
+site 0x80430034 0x4E800421 call rw_render_state_set 2    # 0x8042F258 SRCBLEND ONE
+site 0x80430054 0x4E800421 call rw_render_state_set 2    # 0x8042F258 DESTBLEND ONE
+site 0x8043014C 0x4E800421 call rw_render_state_set 2    # 0x8042F258 TEXTURERASTER
+site 0x8043016C 0x4E800421 call rw_render_state_set 2    # 0x8042F258 SRCBLEND ONE
+site 0x8043018C 0x4E800421 call rw_render_state_set 2    # 0x8042F258 DESTBLEND ONE
+site 0x80430268 0x4E800421 call rw_render_state_set 2    # 0x8042F258 TEXTURERASTER
+site 0x80430288 0x4E800421 call rw_render_state_set 2    # 0x8042F258 SRCBLEND ONE
+site 0x804302A8 0x4E800421 call rw_render_state_set 2    # 0x8042F258 DESTBLEND ONE
+site 0x80430388 0x4E800421 call rw_render_state_set 2    # 0x804302EC SRCBLEND ONE
+site 0x804303A8 0x4E800421 call rw_render_state_set 2    # 0x804302EC DESTBLEND ONE
+site 0x804303D4 0x4E800421 call rw_render_state_set 2    # 0x804302EC TEXTURERASTER
+site 0x804305F0 0x4E800421 call rw_render_state_set 2    # 0x804302EC SRCBLEND ONE
+site 0x80430610 0x4E800421 call rw_render_state_set 2    # 0x804302EC DESTBLEND ONE
+site 0x8043063C 0x4E800421 call rw_render_state_set 2    # 0x804302EC TEXTURERASTER
+site 0x80430AC4 0x4E800421 call rw_render_state_set 2    # 0x80430904 ZTESTENABLE FALSE
+site 0x80430AE4 0x4E800421 call rw_render_state_set 2    # 0x80430904 ZWRITEENABLE FALSE
+site 0x80430B04 0x4E800421 call rw_render_state_set 2    # 0x80430904 TEXTUREADDRESS CLAMP
+site 0x80430B24 0x4E800421 call rw_render_state_set 2    # 0x80430904 SHADEMODE GOURAUD
+site 0x80430B44 0x4E800421 call rw_render_state_set 2    # 0x80430904 TEXTUREFILTER LINEAR
+site 0x80430BFC 0x4E800421 call rw_render_state_set 2    # 0x80430904 SRCBLEND ONE
+site 0x80430C1C 0x4E800421 call rw_render_state_set 2    # 0x80430904 DESTBLEND ONE
+site 0x80430C40 0x4E800421 call rw_render_state_set 2    # 0x80430904 TEXTURERASTER
+site 0x80430C84 0x4E800421 call rw_render_state_set 2    # 0x80430904 SRCBLEND
+site 0x80430CA4 0x4E800421 call rw_render_state_set 2    # 0x80430904 DESTBLEND
+site 0x80430CC4 0x4E800421 call rw_render_state_set 2    # 0x80430904 ZTESTENABLE
+site 0x80430CE4 0x4E800421 call rw_render_state_set 2    # 0x80430904 TEXTUREADDRESS
+site 0x80430D04 0x4E800421 call rw_render_state_set 2    # 0x80430904 VERTEXALPHAENABLE
+site 0x80430D24 0x4E800421 call rw_render_state_set 2    # 0x80430904 SHADEMODE
+site 0x80430D44 0x4E800421 call rw_render_state_set 2    # 0x80430904 TEXTUREFILTER
+site 0x80431FC0 0x4E800421 call rw_render_state_set 2    # 0x80431E38 SRCBLEND SRCALPHA
+site 0x80431FE0 0x4E800421 call rw_render_state_set 2    # 0x80431E38 DESTBLEND ONE
+site 0x80432000 0x4E800421 call rw_render_state_set 2    # 0x80431E38 VERTEXALPHAENABLE TRUE
+site 0x80432020 0x4E800421 call rw_render_state_set 2    # 0x80431E38 ZWRITEENABLE FALSE
+site 0x80432040 0x4E800421 call rw_render_state_set 2    # 0x80431E38 FOGENABLE FALSE
+site 0x80432060 0x4E800421 call rw_render_state_set 2    # 0x80431E38 TEXTUREFILTER NEAREST
+site 0x804320A0 0x4E800421 call rw_render_state_set 2    # 0x80431E38 ZTESTENABLE TRUE
+site 0x804320C8 0x4E800421 call rw_render_state_set 2    # 0x80431E38 TEXTURERASTER
+site 0x80432118 0x4E800421 call rw_render_state_set 2    # 0x80431E38 ZTESTENABLE FALSE
+site 0x8043216C 0x4E800421 call rw_render_state_set 2    # 0x80431E38 TEXTURERASTER
+site 0x804321FC 0x4E800421 call rw_render_state_set 2    # 0x80431E38 SRCBLEND ONE
+site 0x8043221C 0x4E800421 call rw_render_state_set 2    # 0x80431E38 DESTBLEND ONE
+site 0x8043223C 0x4E800421 call rw_render_state_set 2    # 0x80431E38 TEXTURERASTER NULL (untextured)
+site 0x80432280 0x4E800421 call rw_render_state_set 2    # 0x80431E38 SRCBLEND
+site 0x804322A0 0x4E800421 call rw_render_state_set 2    # 0x80431E38 DESTBLEND
+site 0x804322C0 0x4E800421 call rw_render_state_set 2    # 0x80431E38 VERTEXALPHAENABLE
+site 0x804322E0 0x4E800421 call rw_render_state_set 2    # 0x80431E38 ZTESTENABLE
+site 0x80432300 0x4E800421 call rw_render_state_set 2    # 0x80431E38 ZWRITEENABLE
+site 0x80432320 0x4E800421 call rw_render_state_set 2    # 0x80431E38 FOGENABLE
+site 0x80432340 0x4E800421 call rw_render_state_set 2    # 0x80431E38 TEXTUREFILTER
+site 0x80433FDC 0x4E800421 call rw_render_state_set 2    # 0x80433DA8 CULLMODE CULLNONE
+site 0x80433FFC 0x4E800421 call rw_render_state_set 2    # 0x80433DA8 TEXTUREFILTER LINEAR
+site 0x8043401C 0x4E800421 call rw_render_state_set 2    # 0x80433DA8 VERTEXALPHAENABLE TRUE
+site 0x80434048 0x4E800421 call rw_render_state_set 2    # 0x80433DA8 FOGENABLE FALSE
+site 0x8043406C 0x4E800421 call rw_render_state_set 2    # 0x80433DA8 FOGENABLE TRUE
+site 0x80434098 0x4E800421 call rw_render_state_set 2    # 0x80433DA8 TEXTURERASTER
+site 0x804340BC 0x4E800421 call rw_render_state_set 2    # 0x80433DA8 TEXTURERASTER NULL (untextured)
+site 0x80434138 0x4E800421 call rw_render_state_set 2    # 0x80433DA8 FOGENABLE
+site 0x80434158 0x4E800421 call rw_render_state_set 2    # 0x80433DA8 VERTEXALPHAENABLE
+site 0x80434178 0x4E800421 call rw_render_state_set 2    # 0x80433DA8 CULLMODE
+site 0x80434198 0x4E800421 call rw_render_state_set 2    # 0x80433DA8 TEXTURERASTER
+site 0x804341B8 0x4E800421 call rw_render_state_set 2    # 0x80433DA8 TEXTUREFILTER
+site 0x80434B00 0x4E800421 call rw_render_state_set 2    # 0x80434824 FOGENABLE FALSE
+site 0x80434B24 0x4E800421 call rw_render_state_set 2    # 0x80434824 FOGENABLE TRUE
+site 0x80434B54 0x4E800421 call rw_render_state_set 2    # 0x80434824 FOGENABLE
+site 0x80435FD4 0x4E800421 call rw_render_state_set 2    # 0x8043531C TEXTURERASTER
+site 0x80435FF4 0x4E800421 call rw_render_state_set 2    # 0x8043531C SRCBLEND SRCALPHA
+site 0x80436014 0x4E800421 call rw_render_state_set 2    # 0x8043531C DESTBLEND INVSRCALPHA
+site 0x80436034 0x4E800421 call rw_render_state_set 2    # 0x8043531C VERTEXALPHAENABLE TRUE
+site 0x80436054 0x4E800421 call rw_render_state_set 2    # 0x8043531C ZTESTENABLE TRUE
+site 0x80436074 0x4E800421 call rw_render_state_set 2    # 0x8043531C ZWRITEENABLE FALSE
+site 0x80436094 0x4E800421 call rw_render_state_set 2    # 0x8043531C FOGENABLE FALSE
+site 0x804360B4 0x4E800421 call rw_render_state_set 2    # 0x8043531C TEXTUREFILTER NEAREST
+site 0x80436F20 0x4E800421 call rw_render_state_set 2    # 0x804369CC TEXTURERASTER
+site 0x80436F40 0x4E800421 call rw_render_state_set 2    # 0x804369CC SRCBLEND SRCALPHA
+site 0x80436F60 0x4E800421 call rw_render_state_set 2    # 0x804369CC DESTBLEND INVSRCALPHA
+site 0x80436F80 0x4E800421 call rw_render_state_set 2    # 0x804369CC VERTEXALPHAENABLE TRUE
+site 0x80436FA0 0x4E800421 call rw_render_state_set 2    # 0x804369CC ZTESTENABLE FALSE
+site 0x80436FC0 0x4E800421 call rw_render_state_set 2    # 0x804369CC ZWRITEENABLE FALSE
+site 0x80436FE0 0x4E800421 call rw_render_state_set 2    # 0x804369CC FOGENABLE FALSE
+site 0x80437000 0x4E800421 call rw_render_state_set 2    # 0x804369CC TEXTUREFILTER NEAREST
+site 0x80437020 0x4E800421 call rw_render_state_set 2    # 0x804369CC CULLMODE CULLNONE
+site 0x80437078 0x4E800421 call rw_render_state_set 2    # 0x804369CC SRCBLEND
+site 0x80437098 0x4E800421 call rw_render_state_set 2    # 0x804369CC DESTBLEND
+site 0x804370B8 0x4E800421 call rw_render_state_set 2    # 0x804369CC VERTEXALPHAENABLE
+site 0x804370D8 0x4E800421 call rw_render_state_set 2    # 0x804369CC ZTESTENABLE
+site 0x804370F8 0x4E800421 call rw_render_state_set 2    # 0x804369CC ZWRITEENABLE
+site 0x80437118 0x4E800421 call rw_render_state_set 2    # 0x804369CC FOGENABLE
+site 0x80437138 0x4E800421 call rw_render_state_set 2    # 0x804369CC TEXTUREFILTER
+site 0x80437158 0x4E800421 call rw_render_state_set 2    # 0x804369CC CULLMODE
+site 0x80438240 0x4E800421 call rw_render_state_set 2    # 0x80438168 CULLMODE CULLFRONT
+site 0x8043826C 0x4E800421 call rw_render_state_set 2    # 0x80438168 SRCBLEND ZERO
+site 0x8043828C 0x4E800421 call rw_render_state_set 2    # 0x80438168 DESTBLEND ONE
+site 0x804383A0 0x4E800421 call rw_render_state_set 2    # 0x804382F8 CULLMODE CULLNONE
+site 0x804383C4 0x4E800421 call rw_render_state_set 2    # 0x804382F8 TEXTURERASTER
+site 0x804383E4 0x4E800421 call rw_render_state_set 2    # 0x804382F8 SRCBLEND ONE
+site 0x80438404 0x4E800421 call rw_render_state_set 2    # 0x804382F8 DESTBLEND ONE
+site 0x80438490 0x4E800421 call rw_render_state_set 2    # 0x804382F8 SRCBLEND ONE
+site 0x804384B0 0x4E800421 call rw_render_state_set 2    # 0x804382F8 DESTBLEND ZERO
+site 0x804384D4 0x4E800421 call rw_render_state_set 2    # 0x804382F8 TEXTURERASTER
+site 0x8043856C 0x4E800421 call rw_render_state_set 2    # 0x804382F8 TEXTURERASTER
+site 0x804385A0 0x4E800421 call rw_render_state_set 2    # 0x804382F8 SRCBLEND ONE
+site 0x804385C0 0x4E800421 call rw_render_state_set 2    # 0x804382F8 DESTBLEND ONE
+site 0x8043861C 0x4E800421 call rw_render_state_set 2    # 0x804382F8 SRCBLEND
+site 0x8043863C 0x4E800421 call rw_render_state_set 2    # 0x804382F8 DESTBLEND
+site 0x8043865C 0x4E800421 call rw_render_state_set 2    # 0x804382F8 VERTEXALPHAENABLE
+site 0x8043867C 0x4E800421 call rw_render_state_set 2    # 0x804382F8 ZTESTENABLE
+site 0x8043869C 0x4E800421 call rw_render_state_set 2    # 0x804382F8 ZWRITEENABLE
+site 0x804386BC 0x4E800421 call rw_render_state_set 2    # 0x804382F8 FOGENABLE
+site 0x804386DC 0x4E800421 call rw_render_state_set 2    # 0x804382F8 TEXTUREFILTER
+site 0x804386FC 0x4E800421 call rw_render_state_set 2    # 0x804382F8 SHADEMODE
+site 0x8043871C 0x4E800421 call rw_render_state_set 2    # 0x804382F8 CULLMODE
+site 0x80438B64 0x4E800421 call rw_render_state_set 2    # 0x8043873C TEXTUREFILTER NEAREST
+site 0x80438B84 0x4E800421 call rw_render_state_set 2    # 0x8043873C SHADEMODE FLAT
+site 0x80438BA4 0x4E800421 call rw_render_state_set 2    # 0x8043873C ZWRITEENABLE FALSE
+site 0x80438BC4 0x4E800421 call rw_render_state_set 2    # 0x8043873C VERTEXALPHAENABLE FALSE
+site 0x80438BE4 0x4E800421 call rw_render_state_set 2    # 0x8043873C FOGENABLE FALSE
+site 0x80438C04 0x4E800421 call rw_render_state_set 2    # 0x8043873C CULLMODE CULLBACK
+site 0x80438C24 0x4E800421 call rw_render_state_set 2    # 0x8043873C SRCBLEND ONE
+site 0x80438C44 0x4E800421 call rw_render_state_set 2    # 0x8043873C DESTBLEND ONE
+site 0x8043906C 0x4E800421 call rw_render_state_set 2    # 0x80438C90 VERTEXALPHAENABLE TRUE
+site 0x8043908C 0x4E800421 call rw_render_state_set 2    # 0x80438C90 ZTESTENABLE FALSE
+site 0x804390AC 0x4E800421 call rw_render_state_set 2    # 0x80438C90 ZWRITEENABLE FALSE
+site 0x804390CC 0x4E800421 call rw_render_state_set 2    # 0x80438C90 FOGENABLE FALSE
+site 0x804390EC 0x4E800421 call rw_render_state_set 2    # 0x80438C90 TEXTUREFILTER NEAREST
+site 0x804391D8 0x4E800421 call rw_render_state_set 2    # 0x80438C90 TEXTURERASTER
+site 0x804391F8 0x4E800421 call rw_render_state_set 2    # 0x80438C90 SRCBLEND ONE
+site 0x80439218 0x4E800421 call rw_render_state_set 2    # 0x80438C90 DESTBLEND ZERO
+site 0x80439238 0x4E800421 call rw_render_state_set 2    # 0x80438C90 VERTEXALPHAENABLE TRUE
+site 0x80439258 0x4E800421 call rw_render_state_set 2    # 0x80438C90 ZTESTENABLE FALSE
+site 0x80439278 0x4E800421 call rw_render_state_set 2    # 0x80438C90 ZWRITEENABLE FALSE
+site 0x80439298 0x4E800421 call rw_render_state_set 2    # 0x80438C90 FOGENABLE FALSE
+site 0x804392B8 0x4E800421 call rw_render_state_set 2    # 0x80438C90 TEXTUREFILTER NEAREST
+site 0x804393A0 0x4E800421 call rw_render_state_set 2    # 0x80438C90 TEXTURERASTER NULL (untextured)
+site 0x804393C0 0x4E800421 call rw_render_state_set 2    # 0x80438C90 SRCBLEND SRCALPHA
+site 0x804393E0 0x4E800421 call rw_render_state_set 2    # 0x80438C90 DESTBLEND INVSRCALPHA
+site 0x8043948C 0x4E800421 call rw_render_state_set 2    # 0x80438C90 TEXTURERASTER NULL (untextured)
+site 0x804394AC 0x4E800421 call rw_render_state_set 2    # 0x80438C90 SRCBLEND INVDESTCOLOR
+site 0x804394CC 0x4E800421 call rw_render_state_set 2    # 0x80438C90 DESTBLEND ZERO
+site 0x804394EC 0x4E800421 call rw_render_state_set 2    # 0x80438C90 VERTEXALPHAENABLE TRUE
+site 0x8043950C 0x4E800421 call rw_render_state_set 2    # 0x80438C90 ZTESTENABLE FALSE
+site 0x8043952C 0x4E800421 call rw_render_state_set 2    # 0x80438C90 ZWRITEENABLE FALSE
+site 0x8043954C 0x4E800421 call rw_render_state_set 2    # 0x80438C90 FOGENABLE FALSE
+site 0x8043956C 0x4E800421 call rw_render_state_set 2    # 0x80438C90 TEXTUREFILTER NEAREST
+site 0x804395C8 0x4E800421 call rw_render_state_set 2    # 0x80438C90 SRCBLEND
+site 0x804395E8 0x4E800421 call rw_render_state_set 2    # 0x80438C90 DESTBLEND
+site 0x80439608 0x4E800421 call rw_render_state_set 2    # 0x80438C90 VERTEXALPHAENABLE
+site 0x80439628 0x4E800421 call rw_render_state_set 2    # 0x80438C90 ZTESTENABLE
+site 0x80439648 0x4E800421 call rw_render_state_set 2    # 0x80438C90 ZWRITEENABLE
+site 0x80439668 0x4E800421 call rw_render_state_set 2    # 0x80438C90 FOGENABLE
+site 0x80439688 0x4E800421 call rw_render_state_set 2    # 0x80438C90 TEXTUREFILTER
+site 0x8043B704 0x4E800421 call rw_render_state_set 2    # 0x8043B618 CULLMODE CULLNONE
+site 0x8043B724 0x4E800421 call rw_render_state_set 2    # 0x8043B618 VERTEXALPHAENABLE TRUE
+site 0x8043B744 0x4E800421 call rw_render_state_set 2    # 0x8043B618 TEXTURERASTER NULL (untextured)
+site 0x8043B770 0x4E800421 call rw_render_state_set 2    # 0x8043B618 FOGENABLE FALSE
+site 0x8043B794 0x4E800421 call rw_render_state_set 2    # 0x8043B618 FOGENABLE TRUE
+site 0x8043B874 0x4E800421 call rw_render_state_set 2    # 0x8043B618 FOGENABLE
+site 0x8043B894 0x4E800421 call rw_render_state_set 2    # 0x8043B618 VERTEXALPHAENABLE
+site 0x8043B8B4 0x4E800421 call rw_render_state_set 2    # 0x8043B618 CULLMODE
+site 0x8043B8D4 0x4E800421 call rw_render_state_set 2    # 0x8043B618 TEXTURERASTER
+site 0x80449C24 0x4E800421 call rw_render_state_set 2    # 0x80449A74 SRCBLEND  [driver module: drop if the module is lifted in the same step]
+site 0x80449C54 0x4E800421 call rw_render_state_set 2    # 0x80449A74 DESTBLEND  [driver module: drop if the module is lifted in the same step]
+site 0x80449C6C 0x4E800421 call rw_render_state_set 2    # 0x80449A74 VERTEXALPHAENABLE TRUE [driver module: drop if the module is lifted in the same step]
+site 0x80449C88 0x4E800421 call rw_render_state_set 2    # 0x80449A74 VERTEXALPHAENABLE FALSE [driver module: drop if the module is lifted in the same step]
+site 0x80449CBC 0x4E800421 call rw_render_state_set 2    # 0x80449A74 SRCBLEND  [driver module: drop if the module is lifted in the same step]
+site 0x80449CD4 0x4E800421 call rw_render_state_set 2    # 0x80449A74 DESTBLEND  [driver module: drop if the module is lifted in the same step]
+site 0x80471EB4 0x4E800421 call rw_render_state_set 2    # 0x80471CA4 TEXTUREFILTER
+site 0x80471ED0 0x4E800421 call rw_render_state_set 2    # 0x80471CA4 TEXTURERASTER
+site 0x80477E3C 0x4E800421 call rw_render_state_set 2    # 0x80477D48 TEXTURERASTER
+site 0x80477E54 0x4E800421 call rw_render_state_set 2    # 0x80477D48 TEXTUREFILTER
+site 0x80477E6C 0x4E800421 call rw_render_state_set 2    # 0x80477D48 TEXTUREADDRESS
+site 0x80477E88 0x4E800421 call rw_render_state_set 2    # 0x80477D48 TEXTURERASTER NULL (untextured)
+site 0x80479974 0x4E800421 call rw_render_state_set 2    # 0x80479750 ZTESTENABLE FALSE
+site 0x8047998C 0x4E800421 call rw_render_state_set 2    # 0x80479750 ZWRITEENABLE FALSE
+site 0x804799A4 0x4E800421 call rw_render_state_set 2    # 0x80479750 TEXTUREFILTER NEAREST
+site 0x804799BC 0x4E800421 call rw_render_state_set 2    # 0x80479750 TEXTURERASTER
+site 0x804799D4 0x4E800421 call rw_render_state_set 2    # 0x80479750 SRCBLEND SRCALPHA
+site 0x804799EC 0x4E800421 call rw_render_state_set 2    # 0x80479750 DESTBLEND INVSRCALPHA
+site 0x80479A04 0x4E800421 call rw_render_state_set 2    # 0x80479750 CULLMODE CULLNONE
+site 0x80479A40 0x4E800421 call rw_render_state_set 2    # 0x80479750 ZTESTENABLE
+site 0x80479A58 0x4E800421 call rw_render_state_set 2    # 0x80479750 ZWRITEENABLE
+site 0x80479A70 0x4E800421 call rw_render_state_set 2    # 0x80479750 SRCBLEND
+site 0x80479A88 0x4E800421 call rw_render_state_set 2    # 0x80479750 DESTBLEND
+site 0x80479AA0 0x4E800421 call rw_render_state_set 2    # 0x80479750 TEXTURERASTER
+site 0x80479AB8 0x4E800421 call rw_render_state_set 2    # 0x80479750 TEXTUREFILTER
+site 0x80479AD0 0x4E800421 call rw_render_state_set 2    # 0x80479750 CULLMODE
+site 0x804A426C 0x4E800421 call rw_render_state_set 2    # 0x804A3F74 SRCBLEND  [driver module: drop if the module is lifted in the same step]
+site 0x804A4284 0x4E800421 call rw_render_state_set 2    # 0x804A3F74 DESTBLEND  [driver module: drop if the module is lifted in the same step]
+site 0x804A4324 0x4E800421 call rw_render_state_set 2    # 0x804A3F74 SRCBLEND  [driver module: drop if the module is lifted in the same step]
+site 0x804A433C 0x4E800421 call rw_render_state_set 2    # 0x804A3F74 DESTBLEND  [driver module: drop if the module is lifted in the same step]
+site 0x804A4820 0x4E800421 call rw_render_state_set 2    # 0x804A4358 SRCBLEND  [driver module: drop if the module is lifted in the same step]
+site 0x804A4838 0x4E800421 call rw_render_state_set 2    # 0x804A4358 DESTBLEND  [driver module: drop if the module is lifted in the same step]
+site 0x804A48A8 0x4E800421 call rw_render_state_set 2    # 0x804A4358 SRCBLEND  [driver module: drop if the module is lifted in the same step]
+site 0x804A48C0 0x4E800421 call rw_render_state_set 2    # 0x804A4358 DESTBLEND  [driver module: drop if the module is lifted in the same step]
+site 0x804A4BB8 0x4E800421 call rw_render_state_set 2    # 0x804A48DC SRCBLEND  [driver module: drop if the module is lifted in the same step]
+site 0x804A4BD0 0x4E800421 call rw_render_state_set 2    # 0x804A48DC DESTBLEND ONE [driver module: drop if the module is lifted in the same step]
+site 0x804A4DCC 0x4E800421 call rw_render_state_set 2    # 0x804A48DC SRCBLEND  [driver module: drop if the module is lifted in the same step]
+site 0x804A4DE4 0x4E800421 call rw_render_state_set 2    # 0x804A48DC DESTBLEND  [driver module: drop if the module is lifted in the same step]
+site 0x804A7A20 0x4E800421 call rw_render_state_set 2    # 0x804A7334 SRCBLEND  [driver module: drop if the module is lifted in the same step]
+site 0x804A7A38 0x4E800421 call rw_render_state_set 2    # 0x804A7334 DESTBLEND  [driver module: drop if the module is lifted in the same step]
+site 0x804A7C4C 0x4E800421 call rw_render_state_set 2    # 0x804A7A58 SRCBLEND  [driver module: drop if the module is lifted in the same step]
+site 0x804A7C64 0x4E800421 call rw_render_state_set 2    # 0x804A7A58 DESTBLEND  [driver module: drop if the module is lifted in the same step]
+
+# ---- render states: RwRenderStateGet dispatches (RwGlobals+0x24; r2/SITES_DEVICE.md 1.3): 133 site(s)
+site 0x80039728 0x4E800421 call rw_render_state_get 2    # 0x800396F8 VERTEXALPHAENABLE read@0x80039924
+site 0x80039974 0x4E800421 call rw_render_state_get 2    # 0x80039948 ZWRITEENABLE read@0x80039B4C
+site 0x8003998C 0x4E800421 call rw_render_state_get 2    # 0x80039948 FOGENABLE read@0x80039B64
+site 0x800399A4 0x4E800421 call rw_render_state_get 2    # 0x80039948 CULLMODE read@0x80039B34
+site 0x800448F4 0x4E800421 call rw_render_state_get 2    # 0x800448C8 VERTEXALPHAENABLE read@0x80044A94
+site 0x8004490C 0x4E800421 call rw_render_state_get 2    # 0x800448C8 ZTESTENABLE read@0x80044AAC
+site 0x80044924 0x4E800421 call rw_render_state_get 2    # 0x800448C8 ZWRITEENABLE read@0x80044AC4
+site 0x8004493C 0x4E800421 call rw_render_state_get 2    # 0x800448C8 CULLMODE read@0x80044ADC
+site 0x8004A244 0x4E800421 call rw_render_state_get 2    # 0x8004A09C SRCBLEND n/a
+site 0x8004A25C 0x4E800421 call rw_render_state_get 2    # 0x8004A09C DESTBLEND n/a
+site 0x8004A274 0x4E800421 call rw_render_state_get 2    # 0x8004A09C CULLMODE n/a
+site 0x800BCCD8 0x4E800421 call rw_render_state_get 2    # 0x800BCBA4 CULLMODE read@0x800BCE7C
+site 0x800BCCF0 0x4E800421 call rw_render_state_get 2    # 0x800BCBA4 TEXTUREFILTER read@0x800BCE94
+site 0x800BCD08 0x4E800421 call rw_render_state_get 2    # 0x800BCBA4 ZTESTENABLE read@0x800BCEAC
+site 0x800BCD20 0x4E800421 call rw_render_state_get 2    # 0x800BCBA4 ZWRITEENABLE read@0x800BCEC4
+site 0x80153934 0x4E800421 call rw_render_state_get 2    # 0x8015390C ZWRITEENABLE read@0x80153AA0
+site 0x8015394C 0x4E800421 call rw_render_state_get 2    # 0x8015390C FOGENABLE read@0x80153AB8
+site 0x80153964 0x4E800421 call rw_render_state_get 2    # 0x8015390C CULLMODE read@0x80153A88
+site 0x8016A9B4 0x4E800421 call rw_render_state_get 2    # 0x8016A904 FOGCOLOR read@0x8016A9DC
+site 0x802BEA54 0x4E800421 call rw_render_state_get 2    # 0x802BE9D4 VERTEXALPHAENABLE read@0x802BEB40
+site 0x802BEA6C 0x4E800421 call rw_render_state_get 2    # 0x802BE9D4 ZTESTENABLE read@0x802BEB58
+site 0x802BEA84 0x4E800421 call rw_render_state_get 2    # 0x802BE9D4 ZWRITEENABLE read@0x802BEB70
+site 0x802BEA9C 0x4E800421 call rw_render_state_get 2    # 0x802BE9D4 CULLMODE read@0x802BEB88
+site 0x802DE51C 0x4E800421 call rw_render_state_get 2    # 0x802DE4BC SRCBLEND read@0x802DE830
+site 0x802DE534 0x4E800421 call rw_render_state_get 2    # 0x802DE4BC DESTBLEND read@0x802DE848
+site 0x802DE54C 0x4E800421 call rw_render_state_get 2    # 0x802DE4BC CULLMODE read@0x802DE818
+site 0x802DE564 0x4E800421 call rw_render_state_get 2    # 0x802DE4BC VERTEXALPHAENABLE read@0x802DE800
+site 0x802DE57C 0x4E800421 call rw_render_state_get 2    # 0x802DE4BC FOGENABLE read@0x802DE7E8
+site 0x802DF188 0x4E800421 call rw_render_state_get 2    # 0x802DF140 SRCBLEND read@0x802DF3E0
+site 0x802DF1A0 0x4E800421 call rw_render_state_get 2    # 0x802DF140 DESTBLEND read@0x802DF3F8
+site 0x802DF1B8 0x4E800421 call rw_render_state_get 2    # 0x802DF140 CULLMODE read@0x802DF3C8
+site 0x802DF1D0 0x4E800421 call rw_render_state_get 2    # 0x802DF140 VERTEXALPHAENABLE read@0x802DF3B0
+site 0x802DF1E8 0x4E800421 call rw_render_state_get 2    # 0x802DF140 FOGENABLE read@0x802DF398
+site 0x80306DE8 0x4E800421 call rw_render_state_get 2    # 0x80306D80 VERTEXALPHAENABLE read@0x80306F88
+site 0x80306E00 0x4E800421 call rw_render_state_get 2    # 0x80306D80 ZTESTENABLE read@0x80306FA0
+site 0x80306E18 0x4E800421 call rw_render_state_get 2    # 0x80306D80 ZWRITEENABLE read@0x80306FB8
+site 0x80306E30 0x4E800421 call rw_render_state_get 2    # 0x80306D80 CULLMODE read@0x80306FD0
+site 0x8034369C 0x4E800421 call rw_render_state_get 2    # 0x8034359C TEXTURERASTER read@0x80343724
+site 0x80344880 0x4E800421 call rw_render_state_get 2    # 0x803447D8 VERTEXALPHAENABLE read@0x80344A38
+site 0x80344898 0x4E800421 call rw_render_state_get 2    # 0x803447D8 ZTESTENABLE read@0x80344A50
+site 0x803448B0 0x4E800421 call rw_render_state_get 2    # 0x803447D8 ZWRITEENABLE read@0x80344A68
+site 0x803448C8 0x4E800421 call rw_render_state_get 2    # 0x803447D8 CULLMODE read@0x80344A80
+site 0x80363DE4 0x4E800421 call rw_render_state_get 2    # 0x80363DB8 SRCBLEND n/a
+site 0x80363E04 0x4E800421 call rw_render_state_get 2    # 0x80363DB8 DESTBLEND n/a
+site 0x80363E24 0x4E800421 call rw_render_state_get 2    # 0x80363DB8 VERTEXALPHAENABLE n/a
+site 0x80363E44 0x4E800421 call rw_render_state_get 2    # 0x80363DB8 ZWRITEENABLE n/a
+site 0x80363E64 0x4E800421 call rw_render_state_get 2    # 0x80363DB8 ZTESTENABLE n/a
+site 0x80363E84 0x4E800421 call rw_render_state_get 2    # 0x80363DB8 CULLMODE n/a
+site 0x8042DEC8 0x4E800421 call rw_render_state_get 2    # 0x8042D870 CULLMODE read@0x8042E07C
+site 0x8042DEE8 0x4E800421 call rw_render_state_get 2    # 0x8042D870 VERTEXALPHAENABLE read@0x8042E05C
+site 0x8042DF08 0x4E800421 call rw_render_state_get 2    # 0x8042D870 FOGENABLE read@0x8042E03C
+site 0x8042DF28 0x4E800421 call rw_render_state_get 2    # 0x8042D870 TEXTURERASTER read@0x8042E09C
+site 0x8042E2E8 0x4E800421 call rw_render_state_get 2    # 0x8042E254 SRCBLEND read@0x8042E740
+site 0x8042E308 0x4E800421 call rw_render_state_get 2    # 0x8042E254 DESTBLEND read@0x8042E760
+site 0x8042E328 0x4E800421 call rw_render_state_get 2    # 0x8042E254 VERTEXALPHAENABLE read@0x8042E780
+site 0x8042E348 0x4E800421 call rw_render_state_get 2    # 0x8042E254 ZTESTENABLE read@0x8042E7A0
+site 0x8042E368 0x4E800421 call rw_render_state_get 2    # 0x8042E254 ZWRITEENABLE read@0x8042E7C0
+site 0x8042E388 0x4E800421 call rw_render_state_get 2    # 0x8042E254 FOGENABLE read@0x8042E7E0
+site 0x8042E3A8 0x4E800421 call rw_render_state_get 2    # 0x8042E254 TEXTUREFILTER read@0x8042E800
+site 0x804309A8 0x4E800421 call rw_render_state_get 2    # 0x80430904 SRCBLEND read@0x80430C6C
+site 0x804309C8 0x4E800421 call rw_render_state_get 2    # 0x80430904 DESTBLEND read@0x80430C8C
+site 0x804309E8 0x4E800421 call rw_render_state_get 2    # 0x80430904 ZTESTENABLE read@0x80430CAC
+site 0x80430A08 0x4E800421 call rw_render_state_get 2    # 0x80430904 ZWRITEENABLE not read
+site 0x80430A28 0x4E800421 call rw_render_state_get 2    # 0x80430904 TEXTUREADDRESS read@0x80430CCC
+site 0x80430A48 0x4E800421 call rw_render_state_get 2    # 0x80430904 VERTEXALPHAENABLE read@0x80430CEC
+site 0x80430A68 0x4E800421 call rw_render_state_get 2    # 0x80430904 SHADEMODE read@0x80430D0C
+site 0x80430A88 0x4E800421 call rw_render_state_get 2    # 0x80430904 TEXTUREFILTER read@0x80430D2C
+site 0x80431ED0 0x4E800421 call rw_render_state_get 2    # 0x80431E38 SRCBLEND read@0x80432268
+site 0x80431EF0 0x4E800421 call rw_render_state_get 2    # 0x80431E38 DESTBLEND read@0x80432288
+site 0x80431F10 0x4E800421 call rw_render_state_get 2    # 0x80431E38 VERTEXALPHAENABLE read@0x804322A8
+site 0x80431F30 0x4E800421 call rw_render_state_get 2    # 0x80431E38 ZTESTENABLE read@0x804322C8
+site 0x80431F50 0x4E800421 call rw_render_state_get 2    # 0x80431E38 ZWRITEENABLE read@0x804322E8
+site 0x80431F70 0x4E800421 call rw_render_state_get 2    # 0x80431E38 FOGENABLE read@0x80432308
+site 0x80431F90 0x4E800421 call rw_render_state_get 2    # 0x80431E38 TEXTUREFILTER read@0x80432328
+site 0x80433F3C 0x4E800421 call rw_render_state_get 2    # 0x80433DA8 CULLMODE read@0x80434160
+site 0x80433F5C 0x4E800421 call rw_render_state_get 2    # 0x80433DA8 VERTEXALPHAENABLE read@0x80434140
+site 0x80433F7C 0x4E800421 call rw_render_state_get 2    # 0x80433DA8 FOGENABLE read@0x80434120
+site 0x80433F9C 0x4E800421 call rw_render_state_get 2    # 0x80433DA8 TEXTURERASTER read@0x80434180
+site 0x80433FBC 0x4E800421 call rw_render_state_get 2    # 0x80433DA8 TEXTUREFILTER read@0x804341A0
+site 0x80434AD4 0x4E800421 call rw_render_state_get 2    # 0x80434824 FOGENABLE read@0x80434B3C
+site 0x80436DFC 0x4E800421 call rw_render_state_get 2    # 0x804369CC SRCBLEND read@0x80437060
+site 0x80436E1C 0x4E800421 call rw_render_state_get 2    # 0x804369CC DESTBLEND read@0x80437080
+site 0x80436E3C 0x4E800421 call rw_render_state_get 2    # 0x804369CC TEXTUREFILTER read@0x80437120
+site 0x80436E5C 0x4E800421 call rw_render_state_get 2    # 0x804369CC VERTEXALPHAENABLE read@0x804370A0
+site 0x80436E7C 0x4E800421 call rw_render_state_get 2    # 0x804369CC ZTESTENABLE read@0x804370C0
+site 0x80436E9C 0x4E800421 call rw_render_state_get 2    # 0x804369CC ZWRITEENABLE read@0x804370E0
+site 0x80436EBC 0x4E800421 call rw_render_state_get 2    # 0x804369CC FOGENABLE read@0x80437100
+site 0x80436EDC 0x4E800421 call rw_render_state_get 2    # 0x804369CC CULLMODE read@0x80437140
+site 0x804387D4 0x4E800421 call rw_render_state_get 2    # 0x8043873C SRCBLEND n/a
+site 0x804387F4 0x4E800421 call rw_render_state_get 2    # 0x8043873C DESTBLEND n/a
+site 0x80438814 0x4E800421 call rw_render_state_get 2    # 0x8043873C VERTEXALPHAENABLE n/a
+site 0x80438834 0x4E800421 call rw_render_state_get 2    # 0x8043873C ZTESTENABLE n/a
+site 0x80438854 0x4E800421 call rw_render_state_get 2    # 0x8043873C ZWRITEENABLE n/a
+site 0x80438874 0x4E800421 call rw_render_state_get 2    # 0x8043873C FOGENABLE n/a
+site 0x80438894 0x4E800421 call rw_render_state_get 2    # 0x8043873C TEXTUREFILTER n/a
+site 0x804388B4 0x4E800421 call rw_render_state_get 2    # 0x8043873C SHADEMODE n/a
+site 0x804388D4 0x4E800421 call rw_render_state_get 2    # 0x8043873C CULLMODE n/a
+site 0x80438D24 0x4E800421 call rw_render_state_get 2    # 0x80438C90 SRCBLEND read@0x804395B0
+site 0x80438D44 0x4E800421 call rw_render_state_get 2    # 0x80438C90 DESTBLEND read@0x804395D0
+site 0x80438D64 0x4E800421 call rw_render_state_get 2    # 0x80438C90 VERTEXALPHAENABLE read@0x804395F0
+site 0x80438D84 0x4E800421 call rw_render_state_get 2    # 0x80438C90 ZTESTENABLE read@0x80439610
+site 0x80438DA4 0x4E800421 call rw_render_state_get 2    # 0x80438C90 ZWRITEENABLE read@0x80439630
+site 0x80438DC4 0x4E800421 call rw_render_state_get 2    # 0x80438C90 FOGENABLE read@0x80439650
+site 0x80438DE4 0x4E800421 call rw_render_state_get 2    # 0x80438C90 TEXTUREFILTER read@0x80439670
+site 0x8043B684 0x4E800421 call rw_render_state_get 2    # 0x8043B618 CULLMODE read@0x8043B89C
+site 0x8043B6A4 0x4E800421 call rw_render_state_get 2    # 0x8043B618 VERTEXALPHAENABLE read@0x8043B87C
+site 0x8043B6C4 0x4E800421 call rw_render_state_get 2    # 0x8043B618 FOGENABLE read@0x8043B85C
+site 0x8043B6E4 0x4E800421 call rw_render_state_get 2    # 0x8043B618 TEXTURERASTER read@0x8043B8BC
+site 0x804493D8 0x4E800421 call rw_render_state_get 2    # 0x80449118 SRCBLEND n/a [driver module: drop if the module is lifted in the same step]
+site 0x804493F0 0x4E800421 call rw_render_state_get 2    # 0x80449118 DESTBLEND n/a [driver module: drop if the module is lifted in the same step]
+site 0x80449408 0x4E800421 call rw_render_state_get 2    # 0x80449118 VERTEXALPHAENABLE n/a [driver module: drop if the module is lifted in the same step]
+site 0x80449C0C 0x4E800421 call rw_render_state_get 2    # 0x80449A74 SRCBLEND read@0x80449CB0 [driver module: drop if the module is lifted in the same step]
+site 0x80449C3C 0x4E800421 call rw_render_state_get 2    # 0x80449A74 DESTBLEND read@0x80449CC8 [driver module: drop if the module is lifted in the same step]
+site 0x804798CC 0x4E800421 call rw_render_state_get 2    # 0x80479750 ZTESTENABLE read@0x80479A34
+site 0x804798E4 0x4E800421 call rw_render_state_get 2    # 0x80479750 ZWRITEENABLE read@0x80479A4C
+site 0x804798FC 0x4E800421 call rw_render_state_get 2    # 0x80479750 SRCBLEND read@0x80479A64
+site 0x80479914 0x4E800421 call rw_render_state_get 2    # 0x80479750 DESTBLEND read@0x80479A7C
+site 0x8047992C 0x4E800421 call rw_render_state_get 2    # 0x80479750 TEXTURERASTER read@0x80479A94
+site 0x80479944 0x4E800421 call rw_render_state_get 2    # 0x80479750 TEXTUREFILTER read@0x80479AAC
+site 0x8047995C 0x4E800421 call rw_render_state_get 2    # 0x80479750 CULLMODE read@0x80479AC4
+site 0x804A423C 0x4E800421 call rw_render_state_get 2    # 0x804A3F74 SRCBLEND read@0x804A4318 [driver module: drop if the module is lifted in the same step]
+site 0x804A4254 0x4E800421 call rw_render_state_get 2    # 0x804A3F74 DESTBLEND read@0x804A4330 [driver module: drop if the module is lifted in the same step]
+site 0x804A47F0 0x4E800421 call rw_render_state_get 2    # 0x804A4358 SRCBLEND read@0x804A489C [driver module: drop if the module is lifted in the same step]
+site 0x804A4808 0x4E800421 call rw_render_state_get 2    # 0x804A4358 DESTBLEND read@0x804A48B4 [driver module: drop if the module is lifted in the same step]
+site 0x804A4B78 0x4E800421 call rw_render_state_get 2    # 0x804A48DC SRCBLEND read@0x804A4DC0 [driver module: drop if the module is lifted in the same step]
+site 0x804A4B90 0x4E800421 call rw_render_state_get 2    # 0x804A48DC DESTBLEND read@0x804A4DD8 [driver module: drop if the module is lifted in the same step]
+site 0x804A7AA8 0x4E800421 call rw_render_state_get 2    # 0x804A7A58 SRCBLEND read@0x804A7C40 [driver module: drop if the module is lifted in the same step]
+site 0x804A7AC0 0x4E800421 call rw_render_state_get 2    # 0x804A7A58 DESTBLEND read@0x804A7C58 [driver module: drop if the module is lifted in the same step]
+
+# ---- Im2D: RwIm2DRenderPrimitive dispatches (RwGlobals+0x30; r2/SITES_DEVICE.md 2): 50 site(s)
+site 0x80036764 0x4E800421 call rw_movie_frame 3 # 0x80036570 the movie player's frame blit: the picture refreshed, kept whole (R2_DRIVER 4.10)
+site 0x80039918 0x4E800421 call rw_im2d_render_primitive 3 # 0x800396F8 prim=TRISTRIP
+site 0x800449D8 0x4E800421 call rw_im2d_render_primitive 3 # 0x800448C8 prim=TRISTRIP
+site 0x80044A88 0x4E800421 call rw_im2d_render_primitive 3 # 0x800448C8 prim=TRISTRIP
+site 0x800BCE3C 0x4E800421 call rw_im2d_render_primitive 3 # 0x800BCBA4 prim=TRISTRIP
+site 0x802E5444 0x4E800421 call rw_im2d_render_primitive 3 # 0x802E51B0 prim=POLYLINE
+site 0x802E54A0 0x4E800421 call rw_im2d_render_primitive 3 # 0x802E51B0 prim=POLYLINE
+site 0x80306564 0x4E800421 call rw_im2d_render_primitive 3 # 0x80306354 prim=TRISTRIP
+site 0x80343718 0x4E800421 call rw_im2d_render_primitive 3 # 0x8034359C prim=TRISTRIP
+site 0x80343980 0x4E800421 call rw_im2d_render_primitive 3 # 0x80343768 prim=TRISTRIP
+site 0x80343FF8 0x4E800421 call rw_im2d_render_primitive 3 # 0x80343E74 prim=TRISTRIP
+site 0x80344228 0x4E800421 call rw_im2d_render_primitive 3 # 0x80344030 prim=TRISTRIP
+site 0x803442A0 0x4E800421 call rw_im2d_render_primitive 3 # 0x80344030 prim=TRISTRIP
+site 0x803442DC 0x4E800421 call rw_im2d_render_primitive 3 # 0x80344030 prim=TRISTRIP
+site 0x80344318 0x4E800421 call rw_im2d_render_primitive 3 # 0x80344030 prim=TRISTRIP
+site 0x80346BA0 0x4E800421 call rw_im2d_render_primitive 3 # 0x80346908 prim=TRISTRIP
+site 0x80363FC8 0x4E800421 call rw_im2d_render_primitive 3 # 0x80363F10 prim=TRISTRIP
+site 0x803640D4 0x4E800421 call rw_im2d_render_primitive 3 # 0x80364024 prim=TRISTRIP
+site 0x8042E738 0x4E800421 call rw_trail_draw 3 # 0x8042E254 DrawBlur: the view's history over the scene (R2_DRIVER 4.9)
+site 0x8042E954 0x4E800421 call rw_im2d_render_primitive 3 # 0x8042E838 prim=TRISTRIP
+site 0x8042E99C 0x4E800421 call rw_im2d_render_primitive 3 # 0x8042E838 prim=TRISTRIP
+site 0x8042F408 0x4E800421 call rw_im2d_render_primitive 3 # 0x8042F258 prim=TRISTRIP
+site 0x8042F61C 0x4E800421 call rw_im2d_render_primitive 3 # 0x8042F258 prim=TRISTRIP
+site 0x8042F7D4 0x4E800421 call rw_im2d_render_primitive 3 # 0x8042F258 prim=TRISTRIP
+site 0x8042F9B0 0x4E800421 call rw_im2d_render_primitive 3 # 0x8042F258 prim=TRISTRIP
+site 0x8042FB6C 0x4E800421 call rw_im2d_render_primitive 3 # 0x8042F258 prim=TRISTRIP
+site 0x8042FCA4 0x4E800421 call rw_im2d_render_primitive 3 # 0x8042F258 prim=TRISTRIP
+site 0x8042FDE8 0x4E800421 call rw_im2d_render_primitive 3 # 0x8042F258 prim=TRISTRIP
+site 0x8042FF20 0x4E800421 call rw_im2d_render_primitive 3 # 0x8042F258 prim=TRISTRIP
+site 0x80430078 0x4E800421 call rw_im2d_render_primitive 3 # 0x8042F258 prim=TRISTRIP
+site 0x804301B0 0x4E800421 call rw_im2d_render_primitive 3 # 0x8042F258 prim=TRISTRIP
+site 0x804302CC 0x4E800421 call rw_im2d_render_primitive 3 # 0x8042F258 prim=TRISTRIP
+site 0x80430474 0x4E800421 call rw_im2d_render_primitive 3 # 0x804302EC prim=TRISTRIP
+site 0x80430564 0x4E800421 call rw_im2d_render_primitive 3 # 0x804302EC prim=TRISTRIP
+site 0x804306DC 0x4E800421 call rw_im2d_render_primitive 3 # 0x804302EC prim=TRISTRIP
+site 0x804307CC 0x4E800421 call rw_im2d_render_primitive 3 # 0x804302EC prim=TRISTRIP
+site 0x80430C64 0x4E800421 call rw_im2d_render_primitive 3 # 0x80430904 prim=TRISTRIP
+site 0x804320EC 0x4E800421 call rw_im2d_render_primitive_projected 3 # 0x80431E38 prim=TRISTRIP (the lens flare's glow: at the sun, depth tested)
+site 0x80432194 0x4E800421 call rw_im2d_render_primitive_projected 3 # 0x80431E38 prim=TRISTRIP (the lens flare's ghosts: on the line from the sun through the centre)
+site 0x80432260 0x4E800421 call rw_im2d_render_primitive 3 # 0x80431E38 prim=TRISTRIP (the lens flare's full-screen flash: a screen cover, Fill)
+site 0x804360D4 0x4E800421 call rw_refraction_draw 3 # 0x8043531C a refraction element's patch over the snapshot (R2_DRIVER 4.9)
+site 0x80437040 0x4E800421 call rw_shimmer_draw 3 # 0x804369CC the full-screen heat haze's grid over the snapshot (R2_DRIVER 4.9)
+site 0x8043843C 0x4E800421 call rw_im2d_render_primitive 3 # 0x804382F8 prim=TRISTRIP
+site 0x804384F8 0x4E800421 call rw_im2d_render_primitive 3 # 0x804382F8 prim=TRISTRIP
+site 0x804385FC 0x4E800421 call rw_im2d_render_primitive 3 # 0x804382F8 prim=TRISTRIP
+site 0x804392DC 0x4E800421 call rw_screen_multiply 3 # 0x80438C90 DrawScreenColor: the scene times a colour (R2_DRIVER 4.9)
+site 0x80439404 0x4E800421 call rw_im2d_render_primitive 3 # 0x80438C90 prim=TRISTRIP
+site 0x80439590 0x4E800421 call rw_im2d_render_primitive 3 # 0x80438C90 prim=TRISTRIP
+
+# ---- Im2D: the indexed primitive dispatch (RwGlobals+0x34): 1 site(s)
+site 0x80479A28 0x4E800421 call rw_im2d_render_indexed_primitive 5 # 0x80479750 prim=TRILIST
+
+# ---- cameras: stdFunc CAMERABEGINUPDATE / ENDUPDATE / CAMERACLEAR (r2/SITES_DEVICE.md 4.2): 3 site(s)
+site 0x8048636C 0x4E800421 call rw_camera_end_update 3   # 0x80486340
+site 0x804863DC 0x4E800421 call rw_camera_begin_update 3 # 0x804863A4
+site 0x8048682C 0x4E800421 call rw_camera_clear 3        # 0x8048680C
+
+# ---- the level recipe latch 0x80046D80: alpha-test mode 0x804987C8 (r2/SITES_DEVICE.md 6.1): 6 site(s)
+site 0x80046E5C 0x4845196D call rw_alpha_test_mode 1 void # 0x80046D80 render-level recipe latch (RenderTaskSystem level states, S9) [R]
+site 0x80046EE8 0x484518E1 call rw_alpha_test_mode 1 void # 0x80046D80 render-level recipe latch (RenderTaskSystem level states, S9) [R]
+site 0x80046F44 0x48451885 call rw_alpha_test_mode 1 void # 0x80046D80 render-level recipe latch (RenderTaskSystem level states, S9) [R]
+site 0x80046FD8 0x484517F1 call rw_alpha_test_mode 1 void # 0x80046D80 render-level recipe latch (RenderTaskSystem level states, S9) [R]
+site 0x80047064 0x48451765 call rw_alpha_test_mode 1 void # 0x80046D80 render-level recipe latch (RenderTaskSystem level states, S9) [R]
+site 0x800470F0 0x484516D9 call rw_alpha_test_mode 1 void # 0x80046D80 render-level recipe latch (RenderTaskSystem level states, S9) [R]
+
+# ---- the level recipe latch: full alpha compare 0x80498F74 (r2/SITES_DEVICE.md 6.2): 6 site(s)
+site 0x80046E54 0x48452121 call rw_alpha_compare 5 void  # 0x80046D80 render-level recipe latch (RenderTaskSystem level states, S9) [R]
+site 0x80046EE0 0x48452095 call rw_alpha_compare 5 void  # 0x80046D80 render-level recipe latch (RenderTaskSystem level states, S9) [R]
+site 0x80046F3C 0x48452039 call rw_alpha_compare 5 void  # 0x80046D80 render-level recipe latch (RenderTaskSystem level states, S9) [R]
+site 0x80046FD0 0x48451FA5 call rw_alpha_compare 5 void  # 0x80046D80 render-level recipe latch (RenderTaskSystem level states, S9) [R]
+site 0x8004705C 0x48451F19 call rw_alpha_compare 5 void  # 0x80046D80 render-level recipe latch (RenderTaskSystem level states, S9) [R]
+site 0x800470E8 0x48451E8D call rw_alpha_compare 5 void  # 0x80046D80 render-level recipe latch (RenderTaskSystem level states, S9) [R]
+
+# ---- texture LOD read-back 0x8049B734 (r2/SITES_DEVICE.md 6.4): 2 site(s)
+site 0x80038BD8 0x48462B5D call rw_texture_get_lod 5 void # 0x80038BB0
+site 0x80039574 0x484621C1 call rw_texture_get_lod 5 void # 0x80039550
+
+# ---- camera-texture copies 0x80496208 (r2/SITES_PRESENT_EFFECTS.md 2.2): 17 site(s) - the glare's two, SaveScreen's first and the distortions' snapshots go to their native passes; the rest are no-ops (their passes' work is native or not yet)
+site 0x8042E8C0 0x48067949 call rw_trail_save 2 void # 0x8042E838 SaveScreen: copy #10 - the view's history saved (R2_DRIVER 4.9)
+site 0x8042E968 0x480678A1 call rw_camera_texture_copy 2 void # 0x8042E838 effect library: SaveScreen [R]
+site 0x8042F41C 0x48066DED call rw_camera_texture_copy 2 void # 0x8042F258 effect library: glare ladder [R]
+site 0x8042F630 0x48066BD9 call rw_camera_texture_copy 2 void # 0x8042F258 effect library: glare ladder [R]
+site 0x8042F7E8 0x48066A21 call rw_camera_texture_copy 2 void # 0x8042F258 effect library: glare ladder [R]
+site 0x8042F9C4 0x48066845 call rw_camera_texture_copy 2 void # 0x8042F258 effect library: glare ladder [R]
+site 0x8042FF40 0x480662C9 call rw_camera_texture_copy 2 void # 0x8042F258 effect library: glare ladder [R]
+site 0x804305A8 0x48065C61 call rw_camera_texture_copy 2 void # 0x804302EC effect library: glare blur pair [R]
+site 0x80430810 0x480659F9 call rw_camera_texture_copy 2 void # 0x804302EC effect library: glare blur pair [R]
+site 0x80430B58 0x480656B1 call rw_glare_composite 2 void # 0x80430904 PostGlare: copy #2, the glare-source image - the glare composite (R2_DRIVER 4.6)
+site 0x80430FAC 0x4806525D call rw_glare_sources_begin 2 void # 0x80430D64 PreGlare: copy #1, the scene saved before the glare sources (R2_DRIVER 4.6)
+site 0x80435FA4 0x48060265 call rw_screen_snapshot 2 void # 0x8043531C refraction element: copy #13 - a snapshot of the scene (R2_DRIVER 4.9)
+site 0x80436EEC 0x4805F31D call rw_screen_snapshot 2 void # 0x804369CC full-screen heat haze: copy #12 - a snapshot of the scene (R2_DRIVER 4.9)
+site 0x80438370 0x4805DE99 call rw_camera_texture_copy 2 void # 0x804382F8 effect library: atomic shimmer pass B [R]
+site 0x80438460 0x4805DDA9 call rw_camera_texture_copy 2 void # 0x804382F8 effect library: atomic shimmer pass B [R]
+site 0x80438B18 0x4805D6F1 call rw_camera_texture_copy 2 void # 0x8043873C effect library: atomic shimmer [R]
+site 0x80439124 0x4805D0E5 call rw_camera_texture_copy 2 void # 0x80438C90 effect library: ScreenColor [R]
+
+# ---- pipelines (r2/SITES_PIPELINES.md 1.1): RxPipelineExecute(pipeline, object, heapReset) at its six entry sites; the result is the pipeline (success)
+site 0x80456F3C 0x48045789 call rw_pipeline_execute_atomic 3     # S-A AtomicDefaultRenderCallBack 0x80456F04: every model and particle system
+site 0x80460BC8 0x4803BAFD call rw_pipeline_execute_sector 3     # S-B world-sector render callback 0x80460B60
+site 0x8049B930 0x48000D95 call rw_pipeline_execute_im3d_transform 3 # S-C RwIm3DTransform 0x8049B87C
+site 0x8049BC90 0x48000A35 call rw_pipeline_execute_im3d_render 3 # S-D RwIm3DRenderPrimitive 0x8049BB48
+site 0x8049BAFC 0x48000BC9 call rw_pipeline_execute_im3d_render 3 # S-E RwIm3DRenderIndexedPrimitive 0x8049B9AC
+
+# ---- texture LOD (r2/SITES_DEVICE.md 6.3): TextureSetLOD(texture, biasClamp, edgeLOD, maxAniso, f1 lodBias)
+site 0x80038C24 0x48462945 call rw_texture_set_lod 4 fpr 1 void  # 0x80038BB0 one-level, filter by mode
+site 0x80038C48 0x48462921 call rw_texture_set_lod 4 fpr 1 void  # 0x80038BB0 mipmapped, non-palettised
+site 0x80038C90 0x484628D9 call rw_texture_set_lod 4 fpr 1 void  # 0x80038BB0 mipmapped, palettised
+site 0x800395C0 0x48461FA9 call rw_texture_set_lod 4 fpr 1 void  # 0x80039550 mipmapped, palettised
+site 0x800395F0 0x48461F79 call rw_texture_set_lod 4 fpr 1 void  # 0x80039550 mipmapped, 4x anisotropy
+site 0x8049AB50 0x48000A19 call rw_native_texture_loaded 4 fpr 1 void # the native texture read 0x8049A8DC, after the texels are in the raster: the native texture is made here
+
+# ---- geometry instances (r2/SITES_PIPELINES.md 2.10): RpGeometryDestroy 0x8045A8AC and its 12 inlined copies free geometry->repEntry (lwz r3,0x58(r31); cmplwi; beq; bl) - in the lifted build the native mesh handle
+site 0x8045A8DC 0x48026E91 call rw_geometry_instance_release 1   # RwResourcesFreeResEntry(geometry->repEntry)
+site 0x8045AB1C 0x48026C51 call rw_geometry_instance_release 1   # RwResourcesFreeResEntry(geometry->repEntry)
+site 0x8045AC24 0x48026B49 call rw_geometry_instance_release 1   # RwResourcesFreeResEntry(geometry->repEntry)
+site 0x8045AD24 0x48026A49 call rw_geometry_instance_release 1   # RwResourcesFreeResEntry(geometry->repEntry)
+site 0x8045AE30 0x4802693D call rw_geometry_instance_release 1   # RwResourcesFreeResEntry(geometry->repEntry)
+site 0x8045B004 0x48026769 call rw_geometry_instance_release 1   # RwResourcesFreeResEntry(geometry->repEntry)
+site 0x8045B12C 0x48026641 call rw_geometry_instance_release 1   # RwResourcesFreeResEntry(geometry->repEntry)
+site 0x8045B218 0x48026555 call rw_geometry_instance_release 1   # RwResourcesFreeResEntry(geometry->repEntry)
+site 0x8045B308 0x48026465 call rw_geometry_instance_release 1   # RwResourcesFreeResEntry(geometry->repEntry)
+site 0x8045B428 0x48026345 call rw_geometry_instance_release 1   # RwResourcesFreeResEntry(geometry->repEntry)
+site 0x8045B528 0x48026245 call rw_geometry_instance_release 1   # RwResourcesFreeResEntry(geometry->repEntry)
+site 0x8045B60C 0x48026161 call rw_geometry_instance_release 1   # RwResourcesFreeResEntry(geometry->repEntry)
+site 0x8045B6E4 0x48026089 call rw_geometry_instance_release 1   # RwResourcesFreeResEntry(geometry->repEntry)
+
+# ---- the present (r2/SITES_PRESENT_EFFECTS.md 1.6): the display copy closes the frame
+site 0x80495DFC 0x4BF01649 call render_submit_frame 2 void       # GXCopyDisp(xfb, clear) in 0x80495CBC
+
+# ---- the render-state reset of FINALIZESTART 0x804981E8: its first GX call, after the cache defaults are stored
+site 0x80498280 0x4BF01B71 call rw_render_state_reset 3 void     # GXSetZMode(1, LEQUAL, 1)
+
+# ---- the 2D <-> 3D boundary (docs/boundary-20261007/DESIGN.md): the game's world-to-screen projection fn_8000F654
+# for the 2D it attaches to world points, placed by render/view.h canvas_point() from the authored picture the renderer
+# draws (runtime/scaffold/rw_driver/projection.cpp). Every call site of fn_8000F654 in the DOL (tools/dolxref.py
+# callers 0x8000F654); fn_8000F654, fn_8000F4A0 and their helpers are then unreachable.
+site 0x800BFA08 0x4BF4FC4D call world_to_screen 3                # GiHPGaugeEnemyImpl gate 0x800BF9D8: the anchor
+site 0x802B4B20 0x4BD5AB35 call world_to_screen 3                # the Sprite3D functor 0x802B4A8C
+site 0x8033BC9C 0x4BCD39B9 call world_to_screen 3                # a 3D-anchored CSD scene 0x8033BC6C
+site 0x8033BEAC 0x4BCD37A9 call world_to_screen 3                # a 3D-anchored CSD scene 0x8033BE80
+
+# The screen tests of the 2D the game attaches to world points: each read one edge of its viewport rectangle
+# through an accessor; they mean "is the point on the screen" and get the screen the output shows
+# (projection.cpp RwDriver::visible_screen_edge). The rectangle's own words, which place the 2D, stay the game's.
+# Weapon::LockonMark's draw 0x800620D4 is a native owner of this build (extract/native-owners-r2.txt): its 22
+# sites (the projection, the two Im2D quads, 19 render-state sites) left this list with it.
+site 0x800BFA7C 0x4BFA36C5 call visible_screen_right 1               # GiHPGaugeEnemyImpl gate 0x800BF9D8: x + w (fn_80063140)
+site 0x800BFAAC 0x4BF4FDA5 call visible_screen_left 1                # GiHPGaugeEnemyImpl gate: x (fn_8000F850)
+site 0x800BFADC 0x4BFA3655 call visible_screen_bottom 1              # GiHPGaugeEnemyImpl gate: y + h (fn_80063130)
+site 0x800BFB0C 0x4BF4FD4D call visible_screen_top 1                 # GiHPGaugeEnemyImpl gate: y (fn_8000F858)
+site 0x8033BD10 0x4BD27431 call visible_screen_right 1               # 3D-anchored CSD helper 0x8033BC6C: x + w
+site 0x8033BD40 0x4BCD3B11 call visible_screen_left 1                # 3D-anchored CSD helper 0x8033BC6C: x
+site 0x8033BD70 0x4BD273C1 call visible_screen_bottom 1              # 3D-anchored CSD helper 0x8033BC6C: y + h
+site 0x8033BDA0 0x4BCD3AB9 call visible_screen_top 1                 # 3D-anchored CSD helper 0x8033BC6C: y
+site 0x8033BF20 0x4BD27221 call visible_screen_right 1               # 3D-anchored CSD helper 0x8033BE80: x + w
+site 0x8033BF50 0x4BCD3901 call visible_screen_left 1                # 3D-anchored CSD helper 0x8033BE80: x
+site 0x8033BF80 0x4BD271B1 call visible_screen_bottom 1              # 3D-anchored CSD helper 0x8033BE80: y + h
+site 0x8033BFB0 0x4BCD38A9 call visible_screen_top 1                 # 3D-anchored CSD helper 0x8033BE80: y
+
+# The renderer camera's window (docs/boundary-20261007/DESIGN.md 8): the camera sync fn_80271F9C gives RenderWare's
+# camera the authored picture's window of the game camera's FOV (projection.cpp RwDriver::camera_picture_window).
+site 0x802720E8 0x4BD9D779 call camera_picture_window 2           # fn_80271F9C: fn_8000F860(window, fov)
+
+# The game's own "is it on the screen" decisions (docs/ASPECT_INVENTORY.md G1): the Black Arms' shared on-screen test
+# 0x8019DA1C (a vtable method of BkChaos, BkGiant, BkNinja and nine more) projects two world points with fn_8000F57C and
+# tests |x|, |y| <= 1 against its camera's own 4:3 window. The projection is measured in the displayed picture instead
+# (projection.cpp RwDriver::displayed_screen_point), so +-1 is the screen the player sees. fn_8000F57C stays for the
+# cameras' framing rules (0x801C2578, 0x801C28B0, 0x801C4AF8, 0x801B3584: authored composition, kept).
+site 0x8019DB0C 0x4BE71A71 call displayed_screen_point 4         # 0x8019DA1C: the first point
+site 0x8019DB74 0x4BE71A09 call displayed_screen_point 4         # 0x8019DA1C: the second point

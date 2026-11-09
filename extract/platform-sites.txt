@@ -1,0 +1,38 @@
+# Platform sites for ppcrecomp --platform-sites: site word kind [note].
+# docs/native-time-20261005/STAGE2_VI.md (D5, section 5, decided (b)): guest code
+# outside the VI library that reads or writes a VI register. The generator emits
+# Cpu::platform_read16 / Cpu::platform_write16 in place of exactly these accesses,
+# at the same effective address. Each site is pinned by its DOL instruction word (a
+# D-form lhz or sth, checked with tools/doldis.py) and must be emitted, or generation
+# is refused. The kind is the name the runtime answers for (NativeVideo,
+# runtime/src/gekko/native_video.cpp), which refuses any other effective address. A
+# site leaves this list when its containing function gets a native owner (fonts and
+# CARD: stage 5, reset: stage 6; SISetSamplingRate's VICLK read left at stage 3).
+# The kind `dead` (docs/native-time-20261005/STAGE6_PI_MI.md, D4) is a store whose
+# register has no consumer on the PC: the generator emits its effective address
+# and nothing else (only sth may be dead).
+0x80375178 0xA003206E video_encoder_status  OSGetFontEncode 0x80375150: lhz r0,0x206e(r3), VISEL, read only when the OS TV mode word 0x800000CC is NTSC
+0x80375DDC 0xA004206E video_encoder_status  OS font function 0x80375DA0 (inlined OSGetFontEncode): lhz r0,0x206e(r4), VISEL
+0x8037600C 0xA063006E video_encoder_status  OS font function 0x80375FAC (inlined OSGetFontEncode): lhz r3,0x6e(r3), VISEL
+0x80391910 0xA243206E video_encoder_status  __CARDFormatRegionAsync 0x803918C4: lhz r18,0x206e(r3), VISEL into the card ID block +0x1C
+# docs/native-time-20261005/STAGE4_GX_SYNC.md (D6): the CP performance-select
+# stores of GXInit and GXSetGPMetric, which stay game code (NativeGxSync,
+# runtime/src/gekko/native_gx_sync.cpp, answers them: nothing to select).
+0x80393FF4 0xB1830006 gx_performance_select GXInit 0x80393A88: sth r12,6(r3), select 0 through __cpReg
+0x8039A754 0xB0050006 gx_performance_select GXSetGPMetric 0x8039A648: sth r0,6(r5), the old metric off
+0x8039AE4C 0xB0030006 gx_performance_select GXSetGPMetric: sth r0,6(r3), select 2
+0x8039AE5C 0xB0030006 gx_performance_select GXSetGPMetric: sth r0,6(r3), select 3
+0x8039AE6C 0xB0030006 gx_performance_select GXSetGPMetric: sth r0,6(r3), select 4
+0x8039AE7C 0xB0030006 gx_performance_select GXSetGPMetric: sth r0,6(r3), select 5
+# docs/native-time-20261005/STAGE6_PI_MI.md (D4): __OSInitMemoryProtection's
+# memory-interface stores - the PC has no memory-protection hardware and no MI
+# interrupt; the BAT layout, the OS masks and records it writes stay game code.
+0x80376B88 0xB01C0020 dead __OSInitMemoryProtection 0x80376B60: sth r0,0x20(r28), MI 0x20 = 0 (clear)
+0x80376B94 0xB01C0010 dead __OSInitMemoryProtection: sth r0,0x10(r28), MI protection type = 0xFF (no protection)
+0x80376C1C 0xB01C0028 dead __OSInitMemoryProtection: sth r0,0x28(r28), MI 0x28 = 2 (only when physical memory exceeds the simulated size)
+# One time base (docs/FRAME_PACING.md, B2 2026-10-27): a console constant in game
+# code - li - whose register gets the native platform's value (Cpu::platform_value).
+# The loading screen's draw throttle compares the microseconds since its last draw
+# with the console's 59.94 Hz field (16,683 us = 675,675 ticks / 40.5); NativeVideo
+# answers the current field, exactly one 1/60 s frame (16,666 us).
+0x802BEA00 0x3800412B display_field_us  fn_802BE9D4 (loading screen draw): li r0,0x412B, the field it waits out between draws

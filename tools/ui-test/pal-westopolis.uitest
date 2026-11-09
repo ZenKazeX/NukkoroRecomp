@@ -1,0 +1,39 @@
+# PAL-aware Westopolis route. The 50/60 Hz selector is now live (fn_80306b48),
+# so every pre-2026-08-28 route is desynced by one screen. Opening is pal-boot's,
+# verbatim, which is the known-good path to the title screen on a PAL disc.
+label hz-select
+wait 120
+press A 8
+label boot-dialog
+wait 400
+press A 8
+label logos
+wait 700
+press START 8
+label main-menu
+wait 300
+press A 8
+label mode-submenu
+wait 250
+press DOWN 6
+wait 60
+press A 8
+label select-menu
+wait 400
+press A 8
+wait 150
+press A 8
+wait 150
+press A 8
+label loading
+wait 1400
+label play
+stick 0 100 90
+press A 4
+stick 0 100 60
+press B 4
+stick 0 100 90
+press A 4
+stick 30 100 40
+stick -30 100 40
+loop

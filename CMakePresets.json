@@ -1,0 +1,116 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "release",
+      "displayName": "Native renderer release",
+      "generator": "Visual Studio 18 2026",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/.build/${presetName}",
+      "cacheVariables": {
+        "SHADOW_RECOMP_DOL": "${sourceDir}/game/sys/main.dol",
+        "SHADOW_RENDER_LIFTED": "ON",
+        "SHADOW_ENABLE_PLUME": "ON",
+        "SHADOW_ENABLE_TRACY": "OFF",
+        "SHADOW_SHIPPING": "ON",
+        "SHADOW_BUILD_TESTS": "OFF",
+        "SHADOW_BUILD_REFERENCE": "OFF",
+        "SHADOW_RECOMP_SHARDS": "48",
+        "SHADOW_RECOMP_COMPILE_JOBS": "2",
+        "SHADOW_DEPLOY_DIR": ""
+      }
+    },
+    {
+      "name": "host-tools",
+      "displayName": "Build-machine tools for cross builds (ppcrecomp)",
+      "generator": "Visual Studio 18 2026",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/.build/${presetName}",
+      "cacheVariables": {
+        "SHADOW_RECOMP_DOL": "",
+        "SHADOW_ENABLE_PLUME": "OFF",
+        "SHADOW_ENABLE_TRACY": "OFF",
+        "SHADOW_BUILD_TESTS": "OFF",
+        "SHADOW_BUILD_REFERENCE": "OFF",
+        "SHADOW_DEPLOY_DIR": ""
+      }
+    },
+    {
+      "name": "android-base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/.build/${presetName}",
+      "toolchainFile": "$env{SHADOW_ANDROID_NDK}/build/cmake/android.toolchain.cmake",
+      "environment": {
+        "SHADOW_ANDROID_NDK": "C:/AndroidSDK/ndk/27.2.12479018"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_MAKE_PROGRAM": "C:/AndroidSDK/cmake/3.22.1/bin/ninja.exe",
+        "ANDROID_PLATFORM": "android-33",
+        "ANDROID_STL": "c++_static",
+        "SHADOW_PPCRECOMP_EXECUTABLE": "${sourceDir}/.build/host-tools/Release/ppcrecomp.exe",
+        "SHADOW_RECOMP_DOL": "${sourceDir}/game/sys/main.dol",
+        "SHADOW_RENDER_LIFTED": "OFF",
+        "SHADOW_ENABLE_PLUME": "OFF",
+        "SHADOW_ENABLE_TRACY": "OFF",
+        "SHADOW_SHIPPING": "ON",
+        "SHADOW_BUILD_TESTS": "OFF",
+        "SHADOW_BUILD_REFERENCE": "OFF",
+        "SHADOW_RECOMP_SHARDS": "48",
+        "SHADOW_DEPLOY_DIR": ""
+      }
+    },
+    {
+      "name": "android-arm64",
+      "displayName": "Android arm64-v8a (phones)",
+      "inherits": "android-base",
+      "cacheVariables": {
+        "ANDROID_ABI": "arm64-v8a"
+      }
+    },
+    {
+      "name": "android-x86_64",
+      "displayName": "Android x86_64 (the emulator)",
+      "inherits": "android-base",
+      "cacheVariables": {
+        "ANDROID_ABI": "x86_64"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "configuration": "Release",
+      "targets": [
+        "ShadowTheHedgehog"
+      ],
+      "jobs": 2
+    },
+    {
+      "name": "host-tools",
+      "configurePreset": "host-tools",
+      "configuration": "Release",
+      "targets": [
+        "ppcrecomp"
+      ],
+      "jobs": 2
+    },
+    {
+      "name": "android-arm64",
+      "configurePreset": "android-arm64",
+      "jobs": 2
+    },
+    {
+      "name": "android-x86_64",
+      "configurePreset": "android-x86_64",
+      "jobs": 2
+    }
+  ]
+}

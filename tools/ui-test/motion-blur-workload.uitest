@@ -1,0 +1,19 @@
+# Fixed gameplay workload for the DrawBlur/SaveScreen audit. The slot0 state
+# starts in Westopolis; long cardinal holds exercise the speed/FOV/shimmer path
+# without entering menus, and short jumps keep Shadow moving through geometry.
+stick 0 -100 240
+press A 8
+stick 0 -100 240
+press A 8
+stick 0 -100 240
+press A 8
+stick 0 -100 240
+press A 8
+stick 0 -100 240
+press A 8
+stick 0 -100 240
+press A 8
+stick 0 -100 240
+press A 8
+stick 0 -100 240
+press A 8

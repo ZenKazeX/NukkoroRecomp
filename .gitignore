@@ -1,0 +1,57 @@
+# Build trees and outputs
+.build/
+build/
+out/
+*.exe
+*.dll
+*.lib
+*.obj
+*.pdb
+*.ilk
+*.map
+!extract/address-maps/*.map
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# Game data: never commit anything from the disc
+game/
+sys/
+files/
+*.dol
+*.iso
+*.gcm
+*.rvz
+*.ciso
+*.wbfs
+*.adx
+*.afs
+*.sfd
+*.one
+
+# Memory cards, SRAM, saves, savestates, recordings, captures
+*.raw
+*.gci
+*.sav
+*.state
+*.savestate
+*.tape
+*.mem1
+SRAM*
+save-data/
+comparison_states/
+screenshots/
+*.png
+*.bmp
+*.wav
+*.cfg
+session-report.json
+
+# The setup window's art pack is part of the repository (see installer/ART_PACK.md)
+!installer/art/**
+
+# Logs and local tool settings
+*.log
+tools/.launcher.json
+tools/comparator/comparator.json
+tools/.launcher-live*.csv

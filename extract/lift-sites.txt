@@ -1,0 +1,44 @@
+# Lowered call sites and retired liveness roots (ppcrecomp --lift-sites).
+# docs/lift-20261006/LIFT_PROGRAMME.md section 2.1: a translated call of a lifted subsystem is replaced by
+# its generated lift_site_<address> function, which calls the native subsystem with values; a retired root
+# is a data word only lowered code read, so it no longer keeps translated code alive.
+#
+#   site   <address> <DOL word> <kind>
+#   retire <data word address> <value>
+#
+# The generator refuses a site whose word differs or that no surviving translation emits, and a retired
+# word whose value differs. tools/lift/verify_l1_input.py re-derives the evidence for every L1 line.
+
+# ---- L1 controller input (docs/lift-20261006/L1_INPUT.md) -------------------------------------------------
+# Sonicteam::System::Peripheral::Manager -> IManagerImp (devirtualised: PJSPeripheral::ManagerImpGc is the
+# only implementation; the lifted one is shadow::peripheral::ManagerImpPc).
+site 0x8040E960 0x4E800421 peripheral_port_count    # Manager::SetImp: imp->GetPortCount()
+site 0x8040EA68 0x4E800421 peripheral_read          # Manager::Update: imp->Read(records, count)
+site 0x8040EB38 0x4E800421 peripheral_stick_range   # Manager::Update: imp->GetStickRange(port, range)
+# Vibration::ServerGC::Update (0x8034FC7C): PADControlMotor(port, command)
+site 0x8034FCE8 0x480316ED peripheral_rumble
+site 0x8034FD80 0x48031655 peripheral_rumble
+site 0x8034FD90 0x48031645 peripheral_rumble
+# The reset / power-off handler: PADControlAllMotors(commands[4])
+site 0x8032D2C4 0x48054045 peripheral_rumble_all    # in 0x8032D1D0
+# Game main (0x800510C0): the per-frame drive check 0x8032D444 and the disc-error module's init 0x8032E254 - there
+# is no drive (docs/DISC_SYSTEM_MAP.md cut 1, gekko/native_disc_error.h). With them the disc-error screen 0x8032D4CC
+# (and its rumble stop, formerly a site here), its ARAM backup and its text drawing lose every caller.
+site 0x800511F0 0x482DC255 nothing
+site 0x8005126C 0x482DCFE9 nothing
+# Game init (0x80051684): PADInit() - nothing to initialise
+site 0x800517C4 0x4832F6F5 return_true
+# OSInit (0x80370E68): SIInit() - there is no serial interface
+site 0x8037101C 0x48045321 nothing
+# 0x80306888: SISetSamplingRate(rate) - there is no serial-interface poll grid
+site 0x80306A84 0x480B06B5 nothing
+# (The VI retrace handler's SIRefreshSamplingRate call, 0x8037E49C, is not listed: that handler is already
+# pruned - the retrace is a native delivery.)
+
+# ManagerImpGc's vtable slots read only by the lowered Manager sites (Recalibrate is never called):
+retire 0x80560888 0x80359950    # +0x0C Recalibrate
+retire 0x8056088C 0x80359948    # +0x10 GetPortCount
+retire 0x80560890 0x80359798    # +0x14 Read
+retire 0x80560894 0x80359768    # +0x18 GetStickRange
+# PAD's OS reset record {OnReset, priority, next, prev}: only PADInit registered it.
+retire 0x80563218 0x80381C44

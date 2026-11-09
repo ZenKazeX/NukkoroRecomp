@@ -1,0 +1,3532 @@
+{
+ "config": {
+  "seed": 20260915,
+  "scale": 1.0,
+  "generator_sha256": "7be695290389357876acd61ac49f53ea45a98ce6f7f2e33c12726a83ecab3f75"
+ },
+ "note": "Exact fingerprints of the F1b candidate groups recorded in docs/recompiler-core-audit-2026-09-13/infrastructure/DIFFTEST_F1B.md. Regenerate only after reviewing every changed group: tools/difftest/rootcause_f1b.py --ledger-out. Regenerated 2026-10-06 (native time) after reviewing every changed group: 154 groups unchanged; 110 groups changed only because native lanes carry no instruction count (the 'generated' value of the retired field is null) and TB/DEC no longer advance per retired instruction in the spec or the engines (dec/tb fields that only the retired project clock made differ are gone, so 21 pairs of groups that differed only in them merged, every merged group keeping its label; C06/C07 time-base reads now read the constant time base); the 8 E01/E02/E03 engine-divergence groups no longer reproduce (their irq vectors at retired counts are retired and coalesce_ram_poll is deleted). The unclassified engine divergence of bnd-00024/74/99/149/174/199/224/249 is a runtime bug (production Cpu::run no-progress test) and is deliberately not ledgered. Regenerated 2026-10-06 (M1, docs/memory-architecture-20261006) after reviewing every changed group (scratch/memory-20261006/scripts/review_f1b_groups_m1.py): 0 engine divergences, 0 host facts; of the 229 groups 163 are unchanged; 16 changed only because the harness names data-window bytes by their window address instead of the physical alias (mapping them back reproduces the recorded fingerprint exactly); 13 grew: their recorded members reproduce the recorded fingerprint exactly and every arrival is an MSR[IP]=0 vector that now ends at the low vector (M1 deleted the real-mode handler rows those exceptions used to round-trip through); 27 shrank (members left, none arrived) and 10 are new groups whose every member ends at the low vector - both the same consequence of the round-trip removal; 10 recorded groups no longer occur. Every group keeps a root-cause label (none unlabelled).",
+ "candidates": [
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "fbe833533939d10955214a474a9ea2288bdc3321",
+   "signature": [
+    "common-mode",
+    "ps_add",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 83
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "8729f6a610592a5ee7d33db5180179eee5af6f7c",
+   "signature": [
+    "common-mode",
+    "ps_madds0",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 78
+  },
+  {
+   "candidate": "C09-FP-ENABLED-PROGRAM-EXCEPTION+C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "9327626d98c347495af74b1e996e94eedbea5b6a",
+   "signature": [
+    "common-mode",
+    "fmuls",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 74
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "dadbaf249ffbb2bdc84b6628ca88e22d13ff1951",
+   "signature": [
+    "common-mode",
+    "fadds",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 56
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "e2ca1c639f422301c7ab23138311f1f615a5dbdb",
+   "signature": [
+    "common-mode",
+    "ps_nmadd",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 53
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "9ecb693cdcf3a7d9563cbeb471050c55fd9ab5a4",
+   "signature": [
+    "common-mode",
+    "ps_sub",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 52
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "d4a66011a9a67d4b26364f752fabb07e9fc2b42e",
+   "signature": [
+    "common-mode",
+    "fctiwz",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 49
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "892eaacd698cf7cbe4a8bf77fa4a252383b87a75",
+   "signature": [
+    "common-mode",
+    "ps_msub",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 48
+  },
+  {
+   "candidate": "C09-FP-ENABLED-PROGRAM-EXCEPTION+C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "a8bd14b068a1549fe5b3f3404e33ab9e54ee457f",
+   "signature": [
+    "common-mode",
+    "fmul",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 47
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+C12-FPSCR-ENABLE-NO-RESULT+R01-FPSCR-STATUS",
+   "fingerprint": "a35baf2df82248e115c4973d01b2fcd791544065",
+   "signature": [
+    "common-mode",
+    "fsub",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 42
+  },
+  {
+   "candidate": "C09-FP-ENABLED-PROGRAM-EXCEPTION+C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "31673a82d23a0d5c625e7b32afc23fb5be9a2341",
+   "signature": [
+    "common-mode",
+    "fmadds",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 37
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "a4b2a0b0023fe8bcaa2e9ddea9d077458a2fbb84",
+   "signature": [
+    "common-mode",
+    "ps_sum0",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 33
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+C12-FPSCR-ENABLE-NO-RESULT+R01-FPSCR-STATUS",
+   "fingerprint": "0bc6bcacd0fe82157094c2844be3c8c536bf27cd",
+   "signature": [
+    "common-mode",
+    "fsubs",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 32
+  },
+  {
+   "candidate": "C09-FP-ENABLED-PROGRAM-EXCEPTION+C12-FPSCR-ENABLE-NO-RESULT+R01-FPSCR-STATUS",
+   "fingerprint": "75487661aebdc9cdb82fccb565bce79c252a10e1",
+   "signature": [
+    "common-mode",
+    "fdiv",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 30
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "5c0bb163f2bebf8ded9b8324eb0ed069259f804e",
+   "signature": [
+    "common-mode",
+    "ps_div",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 30
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "f02317a0b37ca8fdbf0b0427b807c2aba1c7f6f9",
+   "signature": [
+    "common-mode",
+    "fadd",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 28
+  },
+  {
+   "candidate": "C01-RESERVE-ADDR-PHYSICAL",
+   "fingerprint": "65d0d4632de1602a40c8ada6f20d369a895e1acc",
+   "signature": [
+    "common-mode",
+    "lwarx",
+    [],
+    [
+     "reserve_addr"
+    ]
+   ],
+   "count": 28
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "dfd0b174140c3046527788c9bf469e1172aa4a72",
+   "signature": [
+    "common-mode",
+    "ps_madds1",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 27
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "693488a9f269ebbfa26516392fa3fcebc1b6d709",
+   "signature": [
+    "common-mode",
+    "fnmadd",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 26
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+C12-FPSCR-ENABLE-NO-RESULT+R01-FPSCR-STATUS",
+   "fingerprint": "1261a0871e4a04d0553a5d39e3833333b41fe1ba",
+   "signature": [
+    "common-mode",
+    "fdivs",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 25
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "f49d2daf2c1a2288f5377146eec2b4dd3a937b52",
+   "signature": [
+    "common-mode",
+    "ps_mul",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 25
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "ade03f937d1e7f1def0fc9c32742180646dbd04c",
+   "signature": [
+    "common-mode",
+    "fnmsub",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 23
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "d63c0f4cba03c6bb0b18102f302b410da6451ac5",
+   "signature": [
+    "common-mode",
+    "ps_madd",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 22
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "8fdb064195a6b19cef2c0388f61ca50d15736ec5",
+   "signature": [
+    "common-mode",
+    "fmadd",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 19
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "c2bce4253bca3abb8fa75b3e60d20ee87244046e",
+   "signature": [
+    "common-mode",
+    "ps_res",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 19
+  },
+  {
+   "candidate": "C05-PRIVILEGE-NOT-ENFORCED",
+   "fingerprint": "082943c13504f9991dfba62c6b557873d6c2766d",
+   "signature": [
+    "common-mode",
+    "mfspr",
+    [],
+    [
+     "gpr[]",
+     "msr{PR,FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{cause,msr-copy}"
+    ]
+   ],
+   "count": 18
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "88c2abd72691e1eeecf6a818627bdbd9e8d555ad",
+   "signature": [
+    "common-mode",
+    "ps_sum1",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 18
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "18dbf0f388dc71308c3f18c3b5ddb078d53aefad",
+   "signature": [
+    "common-mode",
+    "fres",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 17
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "2f5a814b2e12698e99341b28ef38aff20cc44374",
+   "signature": [
+    "common-mode",
+    "frsp",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 17
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "e3d8815de0d898d4758884759b3b07c9cf4cbaea",
+   "signature": [
+    "common-mode",
+    "ps_rsqrte",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 17
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "b5f86e9f122001b3c1ea25fbe81f8a0ea5526543",
+   "signature": [
+    "common-mode",
+    "fnmsubs",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 16
+  },
+  {
+   "candidate": "C06-SPR-DECODE-PROGRAM-EXCEPTION",
+   "fingerprint": "971e3eccfe722f711279e893db60af9745ebd9ec",
+   "signature": [
+    "common-mode",
+    "mfspr",
+    [],
+    [
+     "gpr[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{cause,msr-copy}"
+    ]
+   ],
+   "count": 16
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "03e294b643bb0b9698c710952a406fe8ad9da266",
+   "signature": [
+    "common-mode",
+    "ps_nmsub",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 16
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "2e1f6afb8fba21e0326436a867b0f3fa271f40c1",
+   "signature": [
+    "common-mode",
+    "ps_muls0",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 15
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "f649093840f0029b30afac1622f4da21238ac1c3",
+   "signature": [
+    "common-mode",
+    "fmsub",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 14
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "0c1b58492dc5d4e3472b5795c93c6d12b108120e",
+   "signature": [
+    "common-mode",
+    "fmsubs",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 14
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "f6701861777f417f7a7a17dddabd95d4f55971de",
+   "signature": [
+    "common-mode",
+    "frsqrte",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 14
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "461ea843718dbda256815747a9b05b42f27c1929",
+   "signature": [
+    "common-mode",
+    "fnmadds",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 13
+  },
+  {
+   "candidate": "C07-MFTB-IGNORES-TBR",
+   "fingerprint": "330b2dd8fc94f46552d5cfcbc81b9536d3cd05e2",
+   "signature": [
+    "common-mode",
+    "mfspr",
+    [],
+    [
+     "gpr[]"
+    ]
+   ],
+   "count": 11
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "b5ea37b934defd7ba14d8f49a0d2845a515ebda1",
+   "signature": [
+    "common-mode",
+    "ps_muls1",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 11
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "53962e58962da9cd98cec4b9190801e88f5c9a28",
+   "signature": [
+    "common-mode",
+    "ps_muls1",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 9
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "2c4fa0a1de0754490b024f5a1b0a2f0e87a09c4b",
+   "signature": [
+    "common-mode",
+    "ps_nmadd",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 9
+  },
+  {
+   "candidate": "C12-FPSCR-ENABLE-NO-RESULT+R01-FPSCR-STATUS",
+   "fingerprint": "5b5abf87bd0f2875313e9fdd5e014d8e39790db9",
+   "signature": [
+    "common-mode",
+    "fctiw",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 8
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "cc4acc172ae37c43b686ce3fbba5e906f33fafd6",
+   "signature": [
+    "common-mode",
+    "fdivs",
+    [],
+    [
+     "fpr[].ps0{rounding}",
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 8
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "6b2f1a2ed45a73857fd735092050fcceb1b3ce62",
+   "signature": [
+    "common-mode",
+    "ps_nmadd",
+    [],
+    [
+     "fpr[].ps0{rounding}"
+    ]
+   ],
+   "count": 8
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "750f94d193d5a31648b1c505d81d49957c4b6bed",
+   "signature": [
+    "common-mode",
+    "stfdux",
+    [],
+    [
+     "access_log",
+     "dar",
+     "gpr[]",
+     "mem[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 8
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "635495b851299bdbbf34427a8765047e69dde363",
+   "signature": [
+    "common-mode",
+    "fctiw",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 7
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "ef91f5b1c685d5799c79771b325a0540e129f860",
+   "signature": [
+    "common-mode",
+    "fmuls",
+    [],
+    [
+     "fpr[].ps0{rounding}",
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 7
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "38f3c32662f6498acce14f8c435ccf13f79303b2",
+   "signature": [
+    "common-mode",
+    "mtfsfi",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 7
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "bbcb5430f039abe4652aa00167a7c68b29c724fb",
+   "signature": [
+    "common-mode",
+    "ps_add",
+    [],
+    [
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 7
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "2d42f3cd2628a7844ae6a2f0ee0b5f26f2a6723e",
+   "signature": [
+    "common-mode",
+    "ps_div",
+    [],
+    [
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 7
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "a1bdea62576975cb2be8b115ab9fdc929193e6e7",
+   "signature": [
+    "common-mode",
+    "ps_msub",
+    [],
+    [
+     "fpr[].ps0{rounding}"
+    ]
+   ],
+   "count": 7
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "7a4df6f9e88a4513f6408e3d2e3c66b51771a9bd",
+   "signature": [
+    "common-mode",
+    "fadds",
+    [],
+    [
+     "fpr[].ps0{rounding}",
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 6
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "6beb69f47b2f9445a3e36b03bbf02991e9439931",
+   "signature": [
+    "common-mode",
+    "fnmadd",
+    [],
+    [
+     "fpr[].ps0{rounding}"
+    ]
+   ],
+   "count": 6
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "a6c01ff1d9c9f6b58f23bd7ecdb9a28a8ec1032e",
+   "signature": [
+    "common-mode",
+    "fsub",
+    [],
+    [
+     "fpr[].ps0{rounding}"
+    ]
+   ],
+   "count": 6
+  },
+  {
+   "candidate": "C05-PRIVILEGE-NOT-ENFORCED",
+   "fingerprint": "bacbe1869a28d6f585f133bb0b0c77de751be472",
+   "signature": [
+    "common-mode",
+    "mfmsr",
+    [],
+    [
+     "gpr[]",
+     "msr{PR,FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{cause,msr-copy}"
+    ]
+   ],
+   "count": 6
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "e1910cc923a8dec047d488c1661d806cd1ca4c78",
+   "signature": [
+    "common-mode",
+    "mtfsfi",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 6
+  },
+  {
+   "candidate": "C05-PRIVILEGE-NOT-ENFORCED",
+   "fingerprint": "612a47b8ceb9c797333618f5ec5820b559bc029d",
+   "signature": [
+    "common-mode",
+    "mtmsr",
+    [],
+    [
+     "gpr[]",
+     "msr{PR,FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{cause,msr-copy}"
+    ]
+   ],
+   "count": 6
+  },
+  {
+   "candidate": "C05-PRIVILEGE-NOT-ENFORCED",
+   "fingerprint": "44fc9e32051324bde114a50ad7502fb239c7944b",
+   "signature": [
+    "common-mode",
+    "mtspr",
+    [],
+    [
+     "dec",
+     "gpr[]",
+     "msr{PR,FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{cause,msr-copy}"
+    ]
+   ],
+   "count": 6
+  },
+  {
+   "candidate": "C05-PRIVILEGE-NOT-ENFORCED",
+   "fingerprint": "6c90a2d5d966cfa7355cfc3ff550d816222760da",
+   "signature": [
+    "common-mode",
+    "mtspr",
+    [],
+    [
+     "gpr[]",
+     "msr{PR,FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "sprg[]",
+     "srr0",
+     "srr1{cause,msr-copy}"
+    ]
+   ],
+   "count": 6
+  },
+  {
+   "candidate": "C05-PRIVILEGE-NOT-ENFORCED",
+   "fingerprint": "b996f4898cd483266d00242f7ae87dfad79a8f94",
+   "signature": [
+    "common-mode",
+    "mtspr",
+    [],
+    [
+     "gpr[]",
+     "msr{PR,FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{cause,msr-copy}",
+     "tb"
+    ]
+   ],
+   "count": 6
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "0326749afcacf523013f878a50d772ffbb7096c2",
+   "signature": [
+    "common-mode",
+    "ps_madd",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 6
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "69fafd9cf93ca052e34f22c6e0cab5d82a22d6d3",
+   "signature": [
+    "common-mode",
+    "ps_madds0",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 6
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "a878f1c76e7ff481c7033baed21bf365a0282dda",
+   "signature": [
+    "common-mode",
+    "ps_mul",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 6
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "35f5275f2b63ed9bef9c3c651e6941dda77f8d16",
+   "signature": [
+    "common-mode",
+    "ps_sub",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 6
+  },
+  {
+   "candidate": "C05-PRIVILEGE-NOT-ENFORCED",
+   "fingerprint": "c0bd0801c25483a85f4dc71e8d218d4b79a5f786",
+   "signature": [
+    "common-mode",
+    "rfi",
+    [],
+    [
+     "gpr[]",
+     "msr{PR,FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0"
+    ]
+   ],
+   "count": 6
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "869d2d899c86da1d36da66eb3cf271f632ff953e",
+   "signature": [
+    "common-mode",
+    "stfsu",
+    [],
+    [
+     "access_log",
+     "dar",
+     "gpr[]",
+     "mem[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 6
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "8a61f3d83c3e258bee009776d747033ede0b558c",
+   "signature": [
+    "common-mode",
+    "fmadds",
+    [],
+    [
+     "fpr[].ps0{rounding}",
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 5
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "d8820a99e4ba742170606f30dc6cf27a78d91a20",
+   "signature": [
+    "common-mode",
+    "fmul",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 5
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "d42f1769386a36e2e696a29dfc3c89ab6cf715ea",
+   "signature": [
+    "common-mode",
+    "fmul",
+    [],
+    [
+     "fpr[].ps0{rounding}"
+    ]
+   ],
+   "count": 5
+  },
+  {
+   "candidate": "C09-FP-ENABLED-PROGRAM-EXCEPTION+R01-FPSCR-STATUS",
+   "fingerprint": "35f4137f67f17f3c74a189b3e78f584283b9913d",
+   "signature": [
+    "common-mode",
+    "fmuls",
+    [],
+    [
+     "msr{FP,FE0,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 5
+  },
+  {
+   "candidate": "C09-FP-ENABLED-PROGRAM-EXCEPTION+R01-FPSCR-STATUS",
+   "fingerprint": "0549077c81506dd769a4d8751d25cda61d715e83",
+   "signature": [
+    "common-mode",
+    "fmuls",
+    [],
+    [
+     "msr{FP,FE1,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 5
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "4e827e855f358ace3b9591c67192d60a64e56252",
+   "signature": [
+    "common-mode",
+    "fnmsub",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 5
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "46786036c2f2814dd9cb047695a14a2c2900a25e",
+   "signature": [
+    "common-mode",
+    "fnmsub",
+    [],
+    [
+     "fpr[].ps0{rounding}"
+    ]
+   ],
+   "count": 5
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "5c14282fe87d9e8e4f2c29a428c9603aaef87438",
+   "signature": [
+    "common-mode",
+    "fnmsubs",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 5
+  },
+  {
+   "candidate": "C04-FSQRT-NOT-ILLEGAL",
+   "fingerprint": "339b807e04261a721949cee428715149f28f8cbc",
+   "signature": [
+    "common-mode",
+    "fsqrt",
+    [],
+    [
+     "cr{CR1}",
+     "fpr[].ps0{value}",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 5
+  },
+  {
+   "candidate": "C04-FSQRT-NOT-ILLEGAL",
+   "fingerprint": "bf2d6b71dc5bdcaa7ee92788b22206ceaf8f3fae",
+   "signature": [
+    "common-mode",
+    "fsqrts",
+    [],
+    [
+     "pc"
+    ]
+   ],
+   "count": 5
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "dbf99c8a41251ca6b516732b9709a4f5655dcf4e",
+   "signature": [
+    "common-mode",
+    "mtfsf",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 5
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "c0b2643d30f4edf69e2574280b067d564239e904",
+   "signature": [
+    "common-mode",
+    "ps_madds1",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 5
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "32c37f4320e79855db18c7990bc09e5fb616d7b0",
+   "signature": [
+    "common-mode",
+    "ps_madds1",
+    [],
+    [
+     "fpr[].ps0{rounding}"
+    ]
+   ],
+   "count": 5
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "5f94743e2739cf46f410ee89dfa8bf66f9aa1e31",
+   "signature": [
+    "common-mode",
+    "ps_muls0",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 5
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "05bd3008a45f270d5d7927d26a51977c9db10d66",
+   "signature": [
+    "common-mode",
+    "ps_muls0",
+    [],
+    [
+     "fpr[].ps0{rounding}"
+    ]
+   ],
+   "count": 5
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "2913c3ce914110a62f6d9ef8224cd66a36777d13",
+   "signature": [
+    "common-mode",
+    "ps_nmsub",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 5
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "d1ddbebf298320507f157ef98d3d65f444ac080d",
+   "signature": [
+    "common-mode",
+    "ps_sub",
+    [],
+    [
+     "fpr[].ps0{rounding}",
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 5
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "789540ab23ca2d5f856142f1c3de09a383062a2c",
+   "signature": [
+    "common-mode",
+    "ps_sum0",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 5
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "4f498b83f6635fdc0d5e44dcbafc8f6a75a7ba59",
+   "signature": [
+    "common-mode",
+    "ps_sum0",
+    [],
+    [
+     "fpr[].ps0{rounding}"
+    ]
+   ],
+   "count": 5
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "9b3a3e220eb812cbd078ed5e1c42b64980c8c13e",
+   "signature": [
+    "common-mode",
+    "stfs",
+    [],
+    [
+     "access_log",
+     "dar",
+     "mem[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 5
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "105880ade37d535d13d3759e595d61c7832ec610",
+   "signature": [
+    "common-mode",
+    "fmadds",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 4
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "07f502bcf85db4d23971c408b7f05c86c44269e2",
+   "signature": [
+    "common-mode",
+    "fmsubs",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 4
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "766257b0f34d528819db0e9a9338999901497e99",
+   "signature": [
+    "common-mode",
+    "fmuls",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 4
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "94619ef3b72994c4b3fb11a8faef50db041e91a8",
+   "signature": [
+    "common-mode",
+    "fnmadds",
+    [],
+    [
+     "fpr[].ps0{rounding}",
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 4
+  },
+  {
+   "candidate": "C04-FSQRT-NOT-ILLEGAL",
+   "fingerprint": "c666d26451725802ecad539082677f56752918d8",
+   "signature": [
+    "common-mode",
+    "fsqrts",
+    [],
+    [
+     "fpr[].ps0{nan-vs-number}",
+     "fpr[].ps1{nan-vs-number}",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 4
+  },
+  {
+   "candidate": "C04-FSQRT-NOT-ILLEGAL",
+   "fingerprint": "882aca3f893a7e25661e42339ef1e570c87020dd",
+   "signature": [
+    "common-mode",
+    "fsqrts",
+    [],
+    [
+     "fpr[].ps0{value}",
+     "fpr[].ps1{value}",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 4
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "7fbd2c574c3ec37befbb20eea85a012d84b6c347",
+   "signature": [
+    "common-mode",
+    "fsub",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 4
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "a372712f066b7150f03753e2cdce16f5b966bc52",
+   "signature": [
+    "common-mode",
+    "fsubs",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 4
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "a766a243d171b5da1d9ddcd22a084b4681eb824f",
+   "signature": [
+    "common-mode",
+    "lfdx",
+    [],
+    [
+     "access_log",
+     "dar",
+     "fpr[].ps0{value}",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 4
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "a160efe0fa7ec75478c5b90b72a0537cc96bb7ee",
+   "signature": [
+    "common-mode",
+    "lfsu",
+    [],
+    [
+     "access_log",
+     "dar",
+     "fpr[].ps0{value}",
+     "fpr[].ps1{value}",
+     "gpr[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 4
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "e9a6cdc10bc07147184906ee6df9f48445dff841",
+   "signature": [
+    "common-mode",
+    "mtfsb1",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 4
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "7b53aff35fdefab2d8c5c5f28577560ac07eda1e",
+   "signature": [
+    "common-mode",
+    "mtfsf",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 4
+  },
+  {
+   "candidate": "C03-READ-ONLY-OR-UNIMPLEMENTED-SPR-WRITE-STORED",
+   "fingerprint": "e7248a998d91dc2435a2e3e11b0c5720e83f3866",
+   "signature": [
+    "common-mode",
+    "mtspr",
+    [],
+    [
+     "spr[1009]"
+    ]
+   ],
+   "count": 4
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "0bbd4e8d0ca536fb29e3d17be103b348dd76f9ec",
+   "signature": [
+    "common-mode",
+    "ps_add",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 4
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "7d4e47c743ed056a5c1b5374d85636c53edb7f89",
+   "signature": [
+    "common-mode",
+    "ps_add",
+    [],
+    [
+     "fpr[].ps0{rounding}"
+    ]
+   ],
+   "count": 4
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "2a0510612e92f5946df9d45dafa710ad4d97fd71",
+   "signature": [
+    "common-mode",
+    "ps_madd",
+    [],
+    [
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 4
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "147f4603d6b3f884dc66925d904e6a1412856359",
+   "signature": [
+    "common-mode",
+    "ps_msub",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 4
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "cd45adfe0544afc920a059453c5f0712fa4b931d",
+   "signature": [
+    "common-mode",
+    "ps_nmadd",
+    [],
+    [
+     "fpr[].ps0{rounding}",
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 4
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "8e153bef9ead16d4f10ea98caf5b1fc7010f7da9",
+   "signature": [
+    "common-mode",
+    "ps_sub",
+    [],
+    [
+     "fpr[].ps0{rounding}"
+    ]
+   ],
+   "count": 4
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "be9eb18c7dbeb04f5b0cc152c57bfc95597149aa",
+   "signature": [
+    "common-mode",
+    "stfsx",
+    [],
+    [
+     "access_log",
+     "dar",
+     "mem[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 4
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "1b7b63cb5083fb830d4596d71612f6eb68b33c4a",
+   "signature": [
+    "common-mode",
+    "fadd",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 3
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "4b0c6f8493d2a10a8c2e79bc0273aa4d960bdbf5",
+   "signature": [
+    "common-mode",
+    "fctiwz",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 3
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "aed02392e319ebeb983bb8c8df8f10b7b4dd8bcb",
+   "signature": [
+    "common-mode",
+    "fdiv",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 3
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "9e69c311d293525ed3910f395386118cc31e5046",
+   "signature": [
+    "common-mode",
+    "fdivs",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 3
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "c830994fcbdf45d8370a7229c66b2b1d5544e002",
+   "signature": [
+    "common-mode",
+    "fnmadd",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 3
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "ba0364078e20904ac8886925fc1a6f4379910a29",
+   "signature": [
+    "common-mode",
+    "fnmsubs",
+    [],
+    [
+     "fpr[].ps0{rounding}",
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 3
+  },
+  {
+   "candidate": "C04-FSQRT-NOT-ILLEGAL",
+   "fingerprint": "4bf8d457188304ad4e08515f9e11b00e167c8fd0",
+   "signature": [
+    "common-mode",
+    "fsqrt",
+    [],
+    [
+     "cr{CR1}",
+     "fpr[].ps0{nan-vs-number}",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 3
+  },
+  {
+   "candidate": "C04-FSQRT-NOT-ILLEGAL",
+   "fingerprint": "94ed754f7617ef1d49b59946629cc5b599c0a45e",
+   "signature": [
+    "common-mode",
+    "fsqrt",
+    [],
+    [
+     "fpr[].ps0{value}",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 3
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "176f34a931715cc74502a421dc88ab30923bae17",
+   "signature": [
+    "common-mode",
+    "lfdu",
+    [],
+    [
+     "access_log",
+     "dar",
+     "fpr[].ps0{value}",
+     "gpr[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 3
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "b9122ff5af9c27c9d7b2c6ce34320354fde5bb37",
+   "signature": [
+    "common-mode",
+    "lwarx",
+    [],
+    [
+     "access_log",
+     "cr{CR0}",
+     "dar",
+     "gpr[]",
+     "mem[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "reserve",
+     "reserve_addr",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 3
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "6b397ff030995a1b95f39fe56826a227f79bb059",
+   "signature": [
+    "common-mode",
+    "lwarx",
+    [],
+    [
+     "access_log",
+     "cr{CR0}",
+     "dar",
+     "gpr[]",
+     "mem[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "reserve_addr",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 3
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "f7aa11bee09b751913a1cd341d0290c2da3a518d",
+   "signature": [
+    "common-mode",
+    "mtfsb1",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 3
+  },
+  {
+   "candidate": "C03-READ-ONLY-OR-UNIMPLEMENTED-SPR-WRITE-STORED",
+   "fingerprint": "565ffeafe1bbfafef798308a44459be5c4961e24",
+   "signature": [
+    "common-mode",
+    "mtspr",
+    [],
+    [
+     "spr[287]"
+    ]
+   ],
+   "count": 3
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "52d538ebd8ef3a07282a329007005054754b95d7",
+   "signature": [
+    "common-mode",
+    "ps_add",
+    [],
+    [
+     "fpr[].ps0{rounding}",
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 3
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "d3e56899e9d27aa046c0b2a0716e45f937152c6e",
+   "signature": [
+    "common-mode",
+    "ps_div",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 3
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "906bd212d8617229516668785dcb0b8baa96374d",
+   "signature": [
+    "common-mode",
+    "ps_msub",
+    [],
+    [
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 3
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "ac61cf7eaf57292d153422f82d98e32198c89edc",
+   "signature": [
+    "common-mode",
+    "ps_nmadd",
+    [],
+    [
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 3
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "fd5d2b5115ab381baa368877984eb5f29c2074e0",
+   "signature": [
+    "common-mode",
+    "ps_rsqrte",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 3
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "e057e1255932cba0baf5b8393df6da85cf88cbcc",
+   "signature": [
+    "common-mode",
+    "ps_sub",
+    [],
+    [
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 3
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "283563eca25afdba68a221221e5339c0ef44911d",
+   "signature": [
+    "common-mode",
+    "ps_sum1",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 3
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "fa77b872e9e5621bd42f3422e8d104fddb8ec949",
+   "signature": [
+    "common-mode",
+    "stfdx",
+    [],
+    [
+     "access_log",
+     "dar",
+     "mem[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 3
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "f9518c7107d293be152a92ddbdcd032466ba1514",
+   "signature": [
+    "common-mode",
+    "stfsux",
+    [],
+    [
+     "access_log",
+     "dar",
+     "gpr[]",
+     "mem[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 3
+  },
+  {
+   "candidate": "C12-FPSCR-ENABLE-NO-RESULT+R01-FPSCR-STATUS",
+   "fingerprint": "1fdd361589dcf55e8de56d849d725e847cab5699",
+   "signature": [
+    "common-mode",
+    "fdiv",
+    [],
+    [
+     "fpr[].ps0{nan-vs-number}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "83244a14b7de59a5c33df322f921cb8e2c804f6f",
+   "signature": [
+    "common-mode",
+    "fdiv",
+    [],
+    [
+     "fpr[].ps0{rounding}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "31cdd9b05ad4f393340a593d225948ad174df2ed",
+   "signature": [
+    "common-mode",
+    "fmadd",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C09-FP-ENABLED-PROGRAM-EXCEPTION+R01-FPSCR-STATUS",
+   "fingerprint": "e7b06a1d5df681a6c6b50b57ed38bdc988478adc",
+   "signature": [
+    "common-mode",
+    "fmadds",
+    [],
+    [
+     "msr{FP,FE0,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C09-FP-ENABLED-PROGRAM-EXCEPTION+R01-FPSCR-STATUS",
+   "fingerprint": "0163a9e3f0f6327a0eeef228539c85cf3dd77ed2",
+   "signature": [
+    "common-mode",
+    "fmadds",
+    [],
+    [
+     "msr{FP,FE1,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "a6e63ce85beecffb86ac0feb5088ead063e7ec52",
+   "signature": [
+    "common-mode",
+    "fmsub",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "3cc66d940a5c6d6b1d10d47385e3d7e46f9db950",
+   "signature": [
+    "common-mode",
+    "frsp",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C04-FSQRT-NOT-ILLEGAL",
+   "fingerprint": "a9c471e38633a636f02fe40333437cddba0e538e",
+   "signature": [
+    "common-mode",
+    "fsqrt",
+    [],
+    [
+     "cr{CR1}",
+     "fpr[].ps0{nan-vs-number}",
+     "msr{FP,FE1,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C04-FSQRT-NOT-ILLEGAL",
+   "fingerprint": "4b4b8f1bd6e9fa76f58d9fcbdf281f84c79907f8",
+   "signature": [
+    "common-mode",
+    "fsqrt",
+    [],
+    [
+     "fpr[].ps0{nan-vs-number}",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C04-FSQRT-NOT-ILLEGAL",
+   "fingerprint": "c7adb0882867c0b50729fa240b246983b6689b91",
+   "signature": [
+    "common-mode",
+    "fsqrts",
+    [],
+    [
+     "cr{CR1}",
+     "fpr[].ps0{nan-vs-number}",
+     "fpr[].ps1{nan-vs-number}",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C04-FSQRT-NOT-ILLEGAL",
+   "fingerprint": "289cfdbfd7327bd05de0d0f5ae10d4dbffcedba4",
+   "signature": [
+    "common-mode",
+    "fsqrts",
+    [],
+    [
+     "cr{CR1}",
+     "fpr[].ps0{value}",
+     "fpr[].ps1{value}",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C04-FSQRT-NOT-ILLEGAL",
+   "fingerprint": "9d461d114dce86f9bafe5f7236a23452245d6ec6",
+   "signature": [
+    "common-mode",
+    "fsqrts",
+    [],
+    [
+     "fpr[].ps0{nan-vs-number}",
+     "fpr[].ps1{nan-bits}",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C12-FPSCR-ENABLE-NO-RESULT+R01-FPSCR-STATUS",
+   "fingerprint": "6e341edfa56d6d173402f156317aff794d8b641b",
+   "signature": [
+    "common-mode",
+    "fsubs",
+    [],
+    [
+     "fpr[].ps0{nan-vs-number}",
+     "fpr[].ps1{nan-vs-number}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "fec8bf9518ec2d33ce5426dad88f49e2194cab64",
+   "signature": [
+    "common-mode",
+    "lmw",
+    [],
+    [
+     "access_log",
+     "dar",
+     "gpr[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "2c456e52c3f25b8419fb326d0dc6b0405d23c181",
+   "signature": [
+    "common-mode",
+    "mcrfs",
+    [],
+    [
+     "fpscr{status}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C06-SPR-DECODE-PROGRAM-EXCEPTION",
+   "fingerprint": "a4db2c5064c8ed44157544caf338e3ffd3e64311",
+   "signature": [
+    "common-mode",
+    "mfspr",
+    [],
+    [
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{cause,msr-copy}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C06-SPR-DECODE-PROGRAM-EXCEPTION",
+   "fingerprint": "31db4d09f4c5f07cbc2335d2364fc67e10cdb970",
+   "signature": [
+    "common-mode",
+    "mtspr",
+    [],
+    [
+     "gpr[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "spr[7]",
+     "srr0",
+     "srr1{cause,msr-copy}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C03-READ-ONLY-OR-UNIMPLEMENTED-SPR-WRITE-STORED",
+   "fingerprint": "ee65f94c7b2b4a6176b43b5bcc866fe5f96a3cff",
+   "signature": [
+    "common-mode",
+    "mtspr",
+    [],
+    [
+     "spr[959]"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "e9b6c9bae9bf8cfb66d3e44427f8ae01960b1523",
+   "signature": [
+    "common-mode",
+    "ps_div",
+    [],
+    [
+     "fpr[].ps0{value}",
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "3cd421f75787542c3112b80c59345c73d833b2bf",
+   "signature": [
+    "common-mode",
+    "ps_madds0",
+    [],
+    [
+     "fpr[].ps0{rounding}",
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "a03f1e10b4c71f00306261f44fd8d4cd0f32d0eb",
+   "signature": [
+    "common-mode",
+    "ps_madds0",
+    [],
+    [
+     "fpr[].ps0{rounding}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "3521d4eaf162b9be75e68600722a5f253467d259",
+   "signature": [
+    "common-mode",
+    "ps_madds1",
+    [],
+    [
+     "fpr[].ps0{rounding}",
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "d5815d05d24bbceae6ac77f3dc538afb7a7a54ee",
+   "signature": [
+    "common-mode",
+    "ps_madds1",
+    [],
+    [
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "c5d6f0c311dcf62f25aa9b7d634a2000a6dc58d6",
+   "signature": [
+    "common-mode",
+    "ps_muls1",
+    [],
+    [
+     "fpr[].ps0{rounding}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "23a91416fadf533b485079116b5f26ea3bab27d5",
+   "signature": [
+    "common-mode",
+    "ps_muls1",
+    [],
+    [
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "c5e4f8340b19f5b638aef3476d07c4648e02705a",
+   "signature": [
+    "common-mode",
+    "ps_nmadd",
+    [],
+    [
+     "fpr[].ps1{value}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "e9c8dee9b55a1104ddd9c98edb0a4c6fa670da53",
+   "signature": [
+    "common-mode",
+    "ps_nmsub",
+    [],
+    [
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "bb6b000f719efacb0aa2c99c47898b59cefb216c",
+   "signature": [
+    "common-mode",
+    "ps_res",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "ff19bb4d75ce8035094c1b0651d56ba51f33e644",
+   "signature": [
+    "common-mode",
+    "ps_sum1",
+    [],
+    [
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "5be74a2c1de7db0dd4301166678af5e4a78d91fd",
+   "signature": [
+    "common-mode",
+    "stfd",
+    [],
+    [
+     "access_log",
+     "dar",
+     "mem[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 2
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "f5c3e0125b8106cbdf0eef0c480472eadeb07235",
+   "signature": [
+    "common-mode",
+    "fadds",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C12-FPSCR-ENABLE-NO-RESULT+R01-FPSCR-STATUS",
+   "fingerprint": "1ebbcdf183187ec4dcde5e3e23c78fd8b332f5dc",
+   "signature": [
+    "common-mode",
+    "fctiw",
+    [],
+    [
+     "fpr[].ps0{nan-vs-number}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "bca8d9bf35f7718fa3392e5b9bf01f494a0fe832",
+   "signature": [
+    "common-mode",
+    "fctiwz",
+    [],
+    [
+     "fpr[].ps0{nan-vs-number}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED",
+   "fingerprint": "b8d9fc82724e82ae4707de5c31932652bb0fa7c7",
+   "signature": [
+    "common-mode",
+    "fctiwz",
+    [],
+    [
+     "fpr[].ps0{rounding}",
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C09-FP-ENABLED-PROGRAM-EXCEPTION+R01-FPSCR-STATUS",
+   "fingerprint": "010eb42ede24123d470848f4238e6236cba4ccd9",
+   "signature": [
+    "common-mode",
+    "fdiv",
+    [],
+    [
+     "fpr[].ps0{nan-vs-number}",
+     "msr{FP,FE0,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C09-FP-ENABLED-PROGRAM-EXCEPTION+R01-FPSCR-STATUS",
+   "fingerprint": "19df7a49bfec1ea274ec25af041c2bf48685d8fb",
+   "signature": [
+    "common-mode",
+    "fdiv",
+    [],
+    [
+     "fpr[].ps0{nan-vs-number}",
+     "msr{FP,FE1,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C12-FPSCR-ENABLE-NO-RESULT+R01-FPSCR-STATUS",
+   "fingerprint": "91820df3ae5e963eaa4ed4640fef0347a4cf0e06",
+   "signature": [
+    "common-mode",
+    "fdivs",
+    [],
+    [
+     "fpr[].ps0{value}",
+     "fpr[].ps1{value}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "6400764fb9b9e1a59a47718fb6850171171aec72",
+   "signature": [
+    "common-mode",
+    "fdivs",
+    [],
+    [
+     "fpr[].ps0{zero-vs-nonzero}",
+     "fpr[].ps1{zero-vs-nonzero}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "626758894c1a37ecdc61fb69039c6bc127b46702",
+   "signature": [
+    "common-mode",
+    "fmadd",
+    [],
+    [
+     "fpr[].ps0{rounding}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "8b4a8e46e1b29bcbd6d4d9764a68a19d60a4463b",
+   "signature": [
+    "common-mode",
+    "fmsub",
+    [],
+    [
+     "fpr[].ps0{rounding}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "ff66e73af61499af3fa825edca038446ddc69c07",
+   "signature": [
+    "common-mode",
+    "fmsubs",
+    [],
+    [
+     "fpr[].ps0{rounding}",
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C09-FP-ENABLED-PROGRAM-EXCEPTION+R01-FPSCR-STATUS",
+   "fingerprint": "b349818f7ebbea1cd3dd14259fd6c0d93e0748c0",
+   "signature": [
+    "common-mode",
+    "fmul",
+    [],
+    [
+     "msr{FP,FE0,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C09-FP-ENABLED-PROGRAM-EXCEPTION+R01-FPSCR-STATUS",
+   "fingerprint": "162aa50a27f82f5b93f6a8e086243db8dd2755e5",
+   "signature": [
+    "common-mode",
+    "fmul",
+    [],
+    [
+     "msr{FP,FE1,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "bbea91e4fcc0e3e2b80b5e88f8399f183d4951e5",
+   "signature": [
+    "common-mode",
+    "frsp",
+    [],
+    [
+     "fpr[].ps0{value}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "R01-FPSCR-STATUS",
+   "fingerprint": "2e25d4f038ef74b94aad7023f75fa8cf0b9d468e",
+   "signature": [
+    "common-mode",
+    "frsqrte",
+    [],
+    [
+     "cr{CR1}",
+     "fpscr{status}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C04-FSQRT-NOT-ILLEGAL",
+   "fingerprint": "a81be485700eb5a32790d8cdbb7f92914147cfdd",
+   "signature": [
+    "common-mode",
+    "fsqrt",
+    [],
+    [
+     "cr{CR1}",
+     "fpr[].ps0{nan-bits}",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C04-FSQRT-NOT-ILLEGAL",
+   "fingerprint": "5c35d0272e53e2c604007c709e71ade864d91b4e",
+   "signature": [
+    "common-mode",
+    "fsqrt",
+    [],
+    [
+     "cr{CR1}",
+     "fpr[].ps0{nan-vs-number}",
+     "msr{FP,FE0,FE1,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C04-FSQRT-NOT-ILLEGAL",
+   "fingerprint": "968ea7a36665926588e29cfe0150da430366bb74",
+   "signature": [
+    "common-mode",
+    "fsqrt",
+    [],
+    [
+     "cr{CR1}",
+     "fpr[].ps0{zero-vs-nonzero}",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C04-FSQRT-NOT-ILLEGAL",
+   "fingerprint": "0106edfe949fd40e43f55f8f56bf5f42e02a3aa8",
+   "signature": [
+    "common-mode",
+    "fsqrt",
+    [],
+    [
+     "pc"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C04-FSQRT-NOT-ILLEGAL",
+   "fingerprint": "2bf45a0ab2e55c9c668e629ae7ba930047c20ec1",
+   "signature": [
+    "common-mode",
+    "fsqrts",
+    [],
+    [
+     "cr{CR1}",
+     "fpr[].ps0{nan-bits}",
+     "fpr[].ps1{nan-vs-number}",
+     "msr{FP,FE1,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C04-FSQRT-NOT-ILLEGAL",
+   "fingerprint": "1ec3805bbfd96ff332195f9a200a629ef59139aa",
+   "signature": [
+    "common-mode",
+    "fsqrts",
+    [],
+    [
+     "cr{CR1}",
+     "fpr[].ps0{nan-vs-number}",
+     "fpr[].ps1{nan-vs-number}",
+     "msr{FP,FE1,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C04-FSQRT-NOT-ILLEGAL",
+   "fingerprint": "e54f27d771a3c1c6a883cb31864e060cf8a207d3",
+   "signature": [
+    "common-mode",
+    "fsqrts",
+    [],
+    [
+     "cr{CR1}",
+     "fpr[].ps0{nan-vs-number}",
+     "fpr[].ps1{value}",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C04-FSQRT-NOT-ILLEGAL",
+   "fingerprint": "b014590a439d110562f1c555a09d47489c021001",
+   "signature": [
+    "common-mode",
+    "fsqrts",
+    [],
+    [
+     "fpr[].ps0{nan-vs-number}",
+     "fpr[].ps1{nan-vs-number}",
+     "msr{FP,FE1,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C12-FPSCR-ENABLE-NO-RESULT+R01-FPSCR-STATUS",
+   "fingerprint": "064eec2fec1956a5fe70a95f8ac31f9591614d33",
+   "signature": [
+    "common-mode",
+    "fsub",
+    [],
+    [
+     "fpr[].ps0{nan-vs-number}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "188234fb366d8b06ae909899d82bd3b70d5b776a",
+   "signature": [
+    "common-mode",
+    "fsubs",
+    [],
+    [
+     "fpr[].ps0{rounding}",
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "3a91e70e8a6fb273f634697ae7f760da3d60dfc7",
+   "signature": [
+    "common-mode",
+    "fsubs",
+    [],
+    [
+     "fpr[].ps0{zero-sign}",
+     "fpr[].ps1{zero-sign}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "aaae956c87c3978abb8543f6b9f44722e7fe801e",
+   "signature": [
+    "common-mode",
+    "lfd",
+    [],
+    [
+     "access_log",
+     "dar",
+     "fpr[].ps0{nan-vs-number}",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "34273814d4e746243c9d75311321fa64c1589ad2",
+   "signature": [
+    "common-mode",
+    "lfdux",
+    [],
+    [
+     "access_log",
+     "dar",
+     "fpr[].ps0{value}",
+     "gpr[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "7e5f2df71510982e40c6690cebe9326b26094bd7",
+   "signature": [
+    "common-mode",
+    "lfs",
+    [],
+    [
+     "access_log",
+     "dar",
+     "fpr[].ps0{nan-vs-number}",
+     "fpr[].ps1{zero-vs-nonzero}",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "a55b29f68a0322a0099829db3dd84d5773674d91",
+   "signature": [
+    "common-mode",
+    "lfs",
+    [],
+    [
+     "access_log",
+     "dar",
+     "fpr[].ps0{rounding}",
+     "fpr[].ps1{zero-vs-nonzero}",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "07d22f055cd3e94268d37fe0615cabc6c6331ac1",
+   "signature": [
+    "common-mode",
+    "lfs",
+    [],
+    [
+     "access_log",
+     "dar",
+     "fpr[].ps0{value}",
+     "fpr[].ps1{value}",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "39710bad4a9aec017ec5daac96d6e73b87232b8a",
+   "signature": [
+    "common-mode",
+    "lfsu",
+    [],
+    [
+     "access_log",
+     "dar",
+     "fpr[].ps0{nan-vs-number}",
+     "fpr[].ps1{nan-vs-number}",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "b128aa4203fabff049cd9968853c130989006b3c",
+   "signature": [
+    "common-mode",
+    "lfsu",
+    [],
+    [
+     "access_log",
+     "dar",
+     "fpr[].ps0{value}",
+     "fpr[].ps1{value}",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "5508d3fa6d51cafc96126c434a9bade318fc02b1",
+   "signature": [
+    "common-mode",
+    "lfsu",
+    [],
+    [
+     "access_log",
+     "dar",
+     "fpr[].ps0{zero-vs-nonzero}",
+     "fpr[].ps1{zero-vs-nonzero}",
+     "gpr[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "18a7a7f90a3b400a6bf7752e82a267c7d1344994",
+   "signature": [
+    "common-mode",
+    "lfsux",
+    [],
+    [
+     "access_log",
+     "dar",
+     "fpr[].ps0{value}",
+     "fpr[].ps1{value}",
+     "gpr[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "85cf05079bc6fce6141cb1d8cc85e58e7070c809",
+   "signature": [
+    "common-mode",
+    "lwarx",
+    [],
+    [
+     "access_log",
+     "dar",
+     "gpr[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "reserve",
+     "reserve_addr",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "f25ce741fd620c1ed7e3d3968f0c2c010ec56e33",
+   "signature": [
+    "common-mode",
+    "lwarx",
+    [],
+    [
+     "access_log",
+     "dar",
+     "gpr[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "reserve_addr",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C06-SPR-DECODE-PROGRAM-EXCEPTION",
+   "fingerprint": "16112c1951ef28c6fa36d909185e9de8fb1efefd",
+   "signature": [
+    "common-mode",
+    "mtspr",
+    [],
+    [
+     "gpr[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "spr[0]",
+     "srr0",
+     "srr1{cause,msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C06-SPR-DECODE-PROGRAM-EXCEPTION",
+   "fingerprint": "2d62e96198ff086ad69149c45961cb3681ae1ad2",
+   "signature": [
+    "common-mode",
+    "mtspr",
+    [],
+    [
+     "gpr[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "spr[100]",
+     "srr0",
+     "srr1{cause,msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C06-SPR-DECODE-PROGRAM-EXCEPTION",
+   "fingerprint": "1fead1a0ddbdb275ac93f9350874a522cdc952ee",
+   "signature": [
+    "common-mode",
+    "mtspr",
+    [],
+    [
+     "gpr[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "spr[268]",
+     "srr0",
+     "srr1{cause,msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C06-SPR-DECODE-PROGRAM-EXCEPTION",
+   "fingerprint": "4e5215a2c489b165c12f3eb1a97eed8aaa584540",
+   "signature": [
+    "common-mode",
+    "mtspr",
+    [],
+    [
+     "gpr[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "spr[944]",
+     "srr0",
+     "srr1{cause,msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C06-SPR-DECODE-PROGRAM-EXCEPTION",
+   "fingerprint": "296e97818143e78de3619d95633ebe1c6b11b802",
+   "signature": [
+    "common-mode",
+    "mtspr",
+    [],
+    [
+     "gpr[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{cause,msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C06-SPR-DECODE-PROGRAM-EXCEPTION",
+   "fingerprint": "fef938a4077de717d0d3d6a99a0ec188761b640d",
+   "signature": [
+    "common-mode",
+    "mtspr",
+    [],
+    [
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "spr[0]",
+     "srr0",
+     "srr1{cause,msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C06-SPR-DECODE-PROGRAM-EXCEPTION",
+   "fingerprint": "58698ca6516d63786a4c735ff333583f171a4730",
+   "signature": [
+    "common-mode",
+    "mtspr",
+    [],
+    [
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "spr[100]",
+     "srr0",
+     "srr1{cause,msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C06-SPR-DECODE-PROGRAM-EXCEPTION",
+   "fingerprint": "8c65f8d00cb7c14b6ae1797f3a7bd0b3a526a154",
+   "signature": [
+    "common-mode",
+    "mtspr",
+    [],
+    [
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "spr[1023]",
+     "srr0",
+     "srr1{cause,msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C06-SPR-DECODE-PROGRAM-EXCEPTION",
+   "fingerprint": "7a92fff6d46afdbd064fa46e76e4686f6869ba4d",
+   "signature": [
+    "common-mode",
+    "mtspr",
+    [],
+    [
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "spr[16]",
+     "srr0",
+     "srr1{cause,msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C06-SPR-DECODE-PROGRAM-EXCEPTION",
+   "fingerprint": "5cdfd68ed8471dd2f6728dc751bf87a71374e11b",
+   "signature": [
+    "common-mode",
+    "mtspr",
+    [],
+    [
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "spr[3]",
+     "srr0",
+     "srr1{cause,msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C06-SPR-DECODE-PROGRAM-EXCEPTION",
+   "fingerprint": "90fc612fc312e4c259eb1ed93d13c884aa39f7d4",
+   "signature": [
+    "common-mode",
+    "mtspr",
+    [],
+    [
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "spr[500]",
+     "srr0",
+     "srr1{cause,msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C06-SPR-DECODE-PROGRAM-EXCEPTION",
+   "fingerprint": "c77128dc2ce61dce28023a93c07b86e8382f564b",
+   "signature": [
+    "common-mode",
+    "mtspr",
+    [],
+    [
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{cause,msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "0deef0ed07d621612d54ab68b764734de015b6f7",
+   "signature": [
+    "common-mode",
+    "ps_madd",
+    [],
+    [
+     "fpr[].ps0{rounding}",
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "425eac48c007232a55dcba9ff9ce044f173e3912",
+   "signature": [
+    "common-mode",
+    "ps_madd",
+    [],
+    [
+     "fpr[].ps0{value}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "ecea7a5c101d3b064421cf2a2a6101c68beac5de",
+   "signature": [
+    "common-mode",
+    "ps_madds0",
+    [],
+    [
+     "fpr[].ps0{value}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "0af0034b717873f557b8c2db35c76e88a5715de0",
+   "signature": [
+    "common-mode",
+    "ps_madds0",
+    [],
+    [
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "ee53ad6c1705bd317ef8d6d55de02115ddf4333b",
+   "signature": [
+    "common-mode",
+    "ps_madds0",
+    [],
+    [
+     "fpr[].ps1{value}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "3648ebe3accb951039629c369213acf2d4809273",
+   "signature": [
+    "common-mode",
+    "ps_madds1",
+    [],
+    [
+     "fpr[].ps0{nan-vs-number}",
+     "fpr[].ps0{rounding}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "9a616c468666e7a5459f2a9703d14cd7c8836716",
+   "signature": [
+    "common-mode",
+    "ps_mul",
+    [],
+    [
+     "fpr[].ps0{rounding}",
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "f2c88220ba755ce27caf89a666a4389ce30e535d",
+   "signature": [
+    "common-mode",
+    "ps_mul",
+    [],
+    [
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "9a3d2eda4d8fb9e83d9fcef785952dd105af803b",
+   "signature": [
+    "common-mode",
+    "ps_mul",
+    [],
+    [
+     "fpr[].ps1{value}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "a1fa77dcdd270faf3503cbbd09b5f86b641b6293",
+   "signature": [
+    "common-mode",
+    "ps_muls1",
+    [],
+    [
+     "fpr[].ps0{rounding}",
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "91ae832c55e62350d3a2b1638b9357f95cf03b4c",
+   "signature": [
+    "common-mode",
+    "ps_nmsub",
+    [],
+    [
+     "fpr[].ps0{rounding}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "b998578a1e9d5d2c7b491795341c36f25d5f07b6",
+   "signature": [
+    "common-mode",
+    "ps_nmsub",
+    [],
+    [
+     "fpr[].ps0{value}",
+     "fpr[].ps1{rounding}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "4d1caf5c859b115ed6ed8b93cf8f803cb244b4c4",
+   "signature": [
+    "common-mode",
+    "ps_nmsub",
+    [],
+    [
+     "fpr[].ps0{value}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "7c6deabc1e1c6c4df88dae2c19aad44c1d975506",
+   "signature": [
+    "common-mode",
+    "ps_sub",
+    [],
+    [
+     "access_log",
+     "fpr[].ps0{rounding}",
+     "fpr[].ps1{rounding}",
+     "mem[]"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "5b59f576b2fded45cf13189522e84d52044e960d",
+   "signature": [
+    "common-mode",
+    "ps_sub",
+    [],
+    [
+     "access_log",
+     "mem[]"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "2718c7ac87183b0714df627c886af38b3042e06e",
+   "signature": [
+    "common-mode",
+    "ps_sub",
+    [],
+    [
+     "fpr[].ps0{zero-sign}",
+     "fpr[].ps1{zero-sign}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C10-FPSCR-RN-IGNORED+R01-FPSCR-STATUS",
+   "fingerprint": "d98f971038e23bc8acdb3e92d0bff11e93547265",
+   "signature": [
+    "common-mode",
+    "ps_sum0",
+    [],
+    [
+     "fpr[].ps0{zero-sign}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "7eb3b3b3788d5ceadeb707ca333681b50451bfb3",
+   "signature": [
+    "common-mode",
+    "psq_stux",
+    [],
+    [
+     "access_log",
+     "dar",
+     "gpr[]",
+     "mem[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{cause,msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "7f3fdceca950bf26466b731ea46c207670466e23",
+   "signature": [
+    "common-mode",
+    "stfdu",
+    [],
+    [
+     "access_log",
+     "dar",
+     "gpr[]",
+     "mem[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "a9a5bcb0d1bcf136cff1f1286d8125214a9a5764",
+   "signature": [
+    "common-mode",
+    "stfdu",
+    [],
+    [
+     "access_log",
+     "dar",
+     "mem[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  },
+  {
+   "candidate": "C02-ALIGNMENT-NOT-RAISED",
+   "fingerprint": "ab6f2d8ba59c72526d1261769260fc3ed7be8067",
+   "signature": [
+    "common-mode",
+    "stmw",
+    [],
+    [
+     "access_log",
+     "dar",
+     "mem[]",
+     "msr{FP,IR,DR,RI}",
+     "pc",
+     "retired",
+     "srr0",
+     "srr1{msr-copy}"
+    ]
+   ],
+   "count": 1
+  }
+ ]
+}

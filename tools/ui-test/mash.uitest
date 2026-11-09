@@ -1,0 +1,10 @@
+# Exploration script: mash A and START with gaps so every screen that wants
+# either advances, and log where each burst lands.
+label boot-wait
+wait 200
+label mash
+press A 6
+wait 30
+press START 6
+wait 30
+loop

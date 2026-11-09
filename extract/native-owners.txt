@@ -1,0 +1,310 @@
+# Native owners for ppcrecomp --native-owners: guest functions whose entry a
+# runtime handler serves on EVERY call (it never declines), so the generator
+# emits only a thunk to the owner and never the original body. Startup refuses
+# to run recompiled code unless each one is installed. One start per line.
+#
+# An address inside a listed owner's extent is an OWNER ENTRY: native code
+# uses it as a guest-visible entry, so it gets a thunk of its own.
+#
+# runtime/src/gekko/native_file_api.cpp (NativeFileApi::install): every entry
+# point of the file API the game links against (the Nintendo DVD SDK's) that
+# any surviving guest code - the game, RenderWare, CRI, the OS, a data word -
+# can reach. Must equal NativeFileApi::addresses() (CTest native_file_api_tests).
+# With these owned, nothing reaches the SDK's path walk, command queue, drive
+# state machine, DI interrupt handler or alarms, and the generator prunes them.
+0x80371768 __OSGetDIConfig
+0x8037AAA0 DVDOpen
+0x8037AB68 DVDClose
+0x8037AF04 DVDReadAsyncPrio
+0x8037AFF4 DVDReadPrio
+0x8037B294 DVDGetTransferredSize
+0x8037B300 DVD default no-op callback
+0x8037B304 DVDInit
+0x8037CF40 DVDReadAbsAsyncPrio
+0x8037CF44 entry: file API callback return (the LR of every callback the API makes)
+0x8037D0EC DVDReadDiskID
+0x8037D1C0 DVDCancelStreamAsync
+0x8037D27C DVDInquiryAsync
+0x8037D390 DVDGetCommandBlockStatus
+0x8037D3DC DVDGetDriveStatus
+0x8037D488 DVDSetAutoInvalidation
+0x8037D498 DVDResume
+0x8037D4E8 DVDCancelAsync
+0x8037D764 DVDCancel
+0x8037D834 DVDGetCurrentDiskID
+0x8037D83C DVDCheckDisk
+0x8037D934 __DVDPrepareResetAsync
+0x8037DA50 __DVDTestAlarm
+0x8037DF9C DVDSetAutoFatalMessaging
+#
+# runtime/src/gekko/native_interrupts.cpp (NativeInterrupts::install): the OS's
+# interrupt bookkeeping and the native delivery
+# (docs/native-time-20261005/STAGE6_PI_MI.md, D2-D3) - __OSInterruptInit (no
+# external-interrupt handler: this platform has none, so ExternalInterruptHandler
+# and __OSDispatchInterrupt lose their only root and are pruned), the OS's
+# interrupt-mask application (SetInterruptMask), the two continuations of a
+# native interrupt delivery, and refusing owners for the OS handlers of sources
+# that do not exist (the memory-protection and reset-switch interrupts, and the
+# protection-error report only the first one raises). Must equal
+# NativeInterrupts::addresses().
+0x80376198 __OSInterruptInit
+0x803769DC MEMIntrruptHandler
+0x803771F0 __OSResetSWInterruptHandler
+0x803737F8 __OSUnhandledException: the protection-error report (switch case 15, a row of its own)
+0x8037620C SetInterruptMask
+0x80376210 entry: native interrupt: guest call return
+0x80376214 entry: native interrupt: reschedule return
+#
+# runtime/src/gekko/native_video.cpp (NativeVideo::install): the VI library's
+# entry points that read video hardware. With these owned nothing registers
+# __VIRetraceHandler (the retrace is a native delivery) and nothing calls the
+# cold start __VIInit or the beam-position helpers, and the generator prunes
+# them; the rest of the library never touched hardware and stays game code.
+# getCurrentFieldEvenOdd is owned although only the pruned handler called it:
+# the generator's conservative constant-formation edges keep it reachable.
+# Must equal NativeVideo::addresses().
+0x8037E824 VIInit
+0x8037FF9C getCurrentFieldEvenOdd
+0x80380004 VIGetNextField
+0x803800A0 VIGetCurrentLine
+#
+# runtime/src/gekko/native_audio.cpp (NativeAudio::install): the SDK's AI and
+# DSP libraries and the OS audio bring-up, every entry point surviving guest
+# code can reach. With these owned nothing reaches the AI/DSP registers or
+# their interrupt handlers, and the generator prunes them. ARAM and its queue
+# are not reached at all: the game constructor's ARInit/ARQInit calls are
+# lowered sites (extract/lift-sites-native.txt, docs/ARAM.md step 5).
+# Must equal NativeAudio::addresses().
+0x80372260 __OSInitAudioSystem
+0x8037241C __OSStopAudioSystem
+0x80381E74 AIInitDMA
+0x80381EFC AIStartDMA
+0x80381F14 AIStopDMA
+0x80381F2C AISetStreamPlayState
+0x80382004 AIGetStreamPlayState
+0x80382014 AISetDSPSampleRate
+0x803820F4 AIGetDSPSampleRate
+0x80382108 __AI_set_stream_sample_rate
+0x803821DC AIGetStreamSampleRate
+0x803821EC AISetStreamVolLeft
+0x80382208 AIGetStreamVolLeft
+0x80382218 AISetStreamVolRight
+0x80382234 AIGetStreamVolRight
+0x80382244 AIInit
+0x8038C274 DSPCheckMailToDSP
+0x8038C284 DSPCheckMailFromDSP
+0x8038C294 DSPReadMailFromDSP
+0x8038C2AC DSPSendMailToDSP
+0x8038C2C0 DSPInit
+0x8038C38C DSPAddTask
+0x8038C43C DSPAssertTask
+#
+# runtime/src/gekko/native_frame_limiter.cpp (NativeFrameLimiter::install): the
+# game's frame limiter fn_801E1F2C - a wait point of the game clock - and its
+# continuations. Must equal NativeFrameLimiter::addresses().
+0x801E1F2C frame limiter (fn_801E1F2C)
+0x801E20AC entry: frame limiter: movie refresh wait returned
+0x801E20C4 entry: frame limiter: wait resumes
+0x801E2138 entry: frame limiter: publish resumes
+0x801E21D8 entry: frame limiter: frame-step setter returned
+#
+# runtime/src/gekko/native_object_range.cpp (NativeObjectRange::install): the
+# layout objects' range - the game's draw distance - in its four leaves.
+# Must equal NativeObjectRange::addresses().
+0x800C9D20 object range: radius
+0x800C9D54 object range: out of range
+0x800CA200 object range: range
+0x800CA970 object range: in range
+#
+# runtime/src/gekko/native_motion_store.cpp (NativeMotionStore::install): the
+# motion clips without ARAM (docs/ARAM.md step 1) - the pool lives in a native
+# arena, the clip upload and fetch are plain copies (no ARQ, no wait). Must
+# equal NativeMotionStore::addresses().
+0x80422234 motion store: clip fetch
+0x804222C0 motion store: clip upload
+0x80422550 motion store: pool destroy
+0x804225B0 motion store: pool create
+#
+# runtime/src/gekko/native_sound_banks.cpp (NativeSoundBanks::install): the
+# GCAX sound banks without ARAM (docs/ARAM.md step 2) - the banks live in a
+# native arena and the bank upload is a plain copy (no ARQ, no wait); the init's
+# ARAlloc and zero-block upload are lowered sites (extract/lift-sites-native.txt).
+# Must equal NativeSoundBanks::addresses().
+0x8043BACC sound banks: bank upload
+#
+# runtime/src/gekko/native_gx_sync.cpp (NativeGxSync::install): the GX library's
+# entry points that touched command-processor, pixel-engine, CPU-FIFO or
+# memory-interface hardware (docs/native-time-20261005/STAGE4_GX_SYNC.md, D1);
+# __GXShutdown through its OS reset record. With these owned nothing reaches the
+# CP-control helpers, the CP / PE token / PE finish interrupt handlers or
+# __GXAbort, and the generator prunes them. Must equal NativeGxSync::addresses().
+0x80393754 __GXShutdown
+0x80394BDC GXSetCPUFifo
+0x80394D04 GXSetGPFifo
+0x80394EA4 GXGetFifoPtrs
+0x80394F80 GXEnableBreakPt
+0x80395034 GXDisableBreakPt
+0x80395088 __GXFifoInit
+0x803964DC GXReadDrawSync
+0x8039658C GXPokeAlphaMode
+0x803965A0 GXPokeAlphaRead
+0x803965C0 GXPokeAlphaUpdate
+0x803965D8 GXPokeBlendMode
+0x8039663C GXPokeColorUpdate
+0x80396654 GXPokeDstAlpha
+0x80396678 GXPokeDither
+0x80396690 GXPokeZMode
+0x80396840 __GXPEInit
+0x8039AE90 GXClearGPMetric
+#
+# runtime/src/gekko/native_card.cpp (NativeCard::install): the memory card's
+# block device and its identity / mount (docs/native-time-20261005/STAGE5_EXI.md,
+# D1). With these owned nothing reaches DoMount, __CARDMountCallback,
+# DoUnmount, the unlock handshake, __CARDStart, the chip commands, Retry or the
+# EXI / TX / EXT / unlocked / timeout handlers, nor the EXI library through
+# them, and the generator prunes them; the CARD file system stays game code.
+# Must equal NativeCard::addresses().
+0x8038DD2C __CARDEraseSector
+0x8038F56C __CARDRead
+0x8038F6B8 __CARDWrite
+0x80390D90 CARDProbeEx
+0x80391498 CARDMountAsync
+0x803916D4 CARDUnmount
+#
+# runtime/src/gekko/native_ipl.cpp (NativeIpl::install): the OS's other
+# external-interface clients (STAGE5_EXI.md, D4-D5) - the SRAM read and
+# commit, the boot ROM (refused), the debug UART, the EXI bring-up and the
+# debugger hand-off (refused). With these owned nothing reaches WriteSram,
+# WriteSramCallback, the EXI library, MetroTRK's comm table or the EXI2 debug
+# driver, and the generator prunes them. Must equal NativeIpl::addresses().
+0x803776F4 __OSInitSram
+0x803778E8 UnlockSram
+0x80377C7C __OSReadROM
+0x8039F8E0 InitMetroTRK
+0x8039F928 InitMetroTRK: the resume point after its mtmsr (a row of its own)
+0x8039F978 InitMetroTRK_BBA
+0x803B4CFC EXIInit
+0x803B5848 WriteUARTN
+#
+# runtime/src/gekko/native_reset.cpp (NativeReset::install): the console's reset
+# and boot controls (STAGE6_PI_MI.md, D5) - the reset / restart / shutdown
+# request ends the program, the boot is always cold, the PC has no reset
+# button, and the memory interface's OnReset record (walked only by
+# OSResetSystem) is refused. With these owned nothing reaches Reset,
+# __OSDoHotReset, KillThreads, __OSCallResetFunctions or the OS reboot path,
+# and the generator prunes them. Must equal NativeReset::addresses().
+0x803769A0 the memory interface's OnReset
+0x80376FB8 OSResetSystem
+0x803771B8 OSGetResetCode
+0x803772E4 OSGetResetButtonState
+#
+# runtime/src/gekko/native_disc_error.cpp (NativeDiscError::install): what stays
+# reachable of the game's disc-error screen module with no drive
+# (docs/DISC_SYSTEM_MAP.md cut 1) - the loaders' hold query (never held) and
+# RtGCNFS's drive-error callback (no drive error). The screen, its ARAM backup
+# and its text drawing lose every caller. Must equal NativeDiscError::addresses().
+0x8032D138 the disc-error screen's load hold query
+0x8032D3D4 the RtGCNFS drive-error callback
+#
+# runtime/src/gekko/native_link_groups.cpp (NativeLinkGroups::install): the
+# layout manager's link-group lists for all 256 groups at once (fn_800CAEAC;
+# docs/GPU_FILL.md "stage start"): one pass over the 2,048 spawn slots instead of
+# 256. fn_800CAE24 (one group) stays guest code. Must equal
+# NativeLinkGroups::addresses().
+0x800CAEAC the layout manager's link-group lists (all groups)
+#
+# runtime/src/gekko/native_directory_scan.cpp (NativeDirectoryScan::install):
+# the game's directory scan over the asset namespace, with the game's own heap
+# calls (docs/DISC_SYSTEM_MAP.md cut 2). Its only route is StageSequence mode 5,
+# which nothing sets (a debug movie selector). With it the SDK's DVDOpenDir and
+# DVDReadDir lost their last caller and their owners went (they are pruned).
+# Must equal NativeDirectoryScan::addresses().
+0x80044ED4 the game's directory scan
+#
+# runtime/src/gekko/native_cri_file_device.cpp (NativeCriFileDevice::install):
+# CRI's "DVD" file device gcCi (the cvFs device ADXF, Sofdec and the ADX
+# stream server read through) over the asset namespace, its state in the
+# game's own handle pool (docs/DISC_SYSTEM_MAP.md cut 3). gcCi_GetInterface
+# and every entry of the interface table 0x80569FC8. Must equal
+# NativeCriFileDevice::addresses().
+0x803CDADC gcCi GetNumTr
+0x803CDB3C gcCi SetSctLen
+0x803CDC20 gcCi GetSctLen
+0x803CDC80 gcCi GetStat
+0x803CDCE4 gcCi StopTr
+0x803CDE84 gcCi ReqRd
+0x803CE2AC gcCi Tell
+0x803CE30C gcCi Seek
+0x803CE3D8 gcCi Close
+0x803CE59C gcCi Open
+0x803CE7AC gcCi GetFileSize
+0x803CE910 gcCi EntryErrFunc
+0x803CE924 gcCi ExecServer
+0x803CEA9C gcCi_GetInterface
+#
+# runtime/src/gekko/native_rtgcnfs.cpp (NativeRtGcnFs::install): RenderWare's
+# GameCube file system RtGCNFS over the asset namespace - the device functions
+# that touched the disc (docs/RTGCNFS_SPEC.md, docs/DISC_SYSTEM_MAP.md cut 4).
+# read yields where the original did and resumes at its two entries. Must equal
+# NativeRtGcnFs::addresses().
+0x8047B874 RtGCNFS open
+0x8047B988 RtGCNFS close
+0x8047BC60 RtGCNFS read
+0x8047BC64 entry: RtGCNFS read, a chunk's yield returned
+0x8047BC68 entry: RtGCNFS read, a transfer's yield returned
+0x8047C1A4 RtGCNFS sync
+0x8047C3D4 RtGCNFS abort
+#
+# runtime/src/gekko/game_memory.cpp (GameMemory::install): the game's memory
+# services (docs/memory-architecture-20261006/README.md). RealMode is the OS's
+# real-mode trampoline; its only callers are __OSInitMemoryProtection's BAT
+# configurers, and the game's address window has no BATs and no real mode.
+# Must equal GameMemory::addresses().
+0x80376B48 RealMode
+# The C runtime's "memcpy" (a byte-wise memmove) and the SEGA PRS expander,
+# the stage loads' bulk byte movers (findings-20261019-EV/EV_REPORT.md 7): their
+# loops hand back at every back edge while a dispatch is due, so the two loop
+# heads of memcpy and the three of the expander are owner entries too.
+0x800054F4 memcpy (memmove)
+0x8000550C entry: memcpy: forward loop resumes
+0x80005530 entry: memcpy: backward loop resumes
+0x80043FE0 PRS expand
+0x80043FF0 entry: PRS expand: token loop resumes
+0x800440AC entry: PRS expand: short length resumes
+0x800440F8 entry: PRS expand: match copy resumes
+# NE-OS-0 (EV 2026-10-20): the SDK's cache maintenance, the DOL's only three `sc` (the system-call vector is
+# PPCSync's HID0[ABE] toggle). No cache exists here: the owners return. Proof: GLE (EV_REPORT 23).
+0x80370B14 PPCSync
+0x80372534 DCFlushRange
+0x80372564 DCStoreRange
+#
+# runtime/src/gekko/native_reverb_owner.cpp (System::install_reverb_owner): the
+# game's room reverb. The SDK's ReverbHi callback - the only aux callback the
+# game registers (0x8043F304 type 2, aux A) - is the native effect in the
+# mixer. With it owned, its crossfeed (0x80387D24) and HandleReverb
+# (0x80387EB4) lose their only caller and the generator prunes them.
+0x803885A0 AXFXReverbHiCallback
+#
+# runtime/src/gekko/native_sound_tables.cpp (System::start): the game's sound-effect table
+# lookup (PlaySE's id resolution) and its data errata. With it owned, its slot helper
+# (0x801D8838) loses its only caller and the generator prunes it.
+0x801D88CC SoundTable lookup
+#
+# runtime/src/gekko/native_gcax_midi.cpp (System::start): GCAX's MIDI ring push. Every
+# message the still-translated GCAX front end and the native SE manager send lands here.
+0x8043F054 gcaxPortPush
+#
+# runtime/src/gekko/native_se_manager.cpp (System::start): the game's SE manager - its four
+# request wrappers, the four request-gate entries and the per-frame update FrameSE. With
+# them owned, PlaySE, the allocator, FindOwned, RowFlags, Start, the per-frame counters,
+# UpdateChan, SendPan and the request helpers lose every caller and the generator prunes
+# them (docs/SE_MANAGER_MAP.md section 1c).
+0x801D59AC SE PlaySimple
+0x801D5894 SE PlayFlags
+0x801D5764 SE Play3D
+0x801D56A0 SE PlayRing
+0x801D5190 SE GateClearIfZero
+0x801D51C0 SE GateSetIfZero
+0x801D51F0 SE GateClear
+0x801D5218 SE GateSet
+0x801D6270 SE FrameSE

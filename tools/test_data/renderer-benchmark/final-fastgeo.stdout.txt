@@ -1,0 +1,207 @@
+Shadow the Hedgehog native preservation runtime
+Game data: H:\ShadowTheHedgehogDiskGC_Extract
+System image: embedded in executable
+Title: GUPP8P  SHADOW THE HEDGEHOG
+Filesystem mounted: 3480 files, 134 directories
+DOL loaded: 5773024 bytes, 2 text + 8 data sections
+MEM1: 24 MiB; entry point 0x80003154
+Display: window 1280x720 windowed, aspect auto, HUD scale 1, inset 0
+Internal EFB: 640x528 (1x isotropic; guest copies remain 640x528 units, chosen automatically from the fitted output)
+Memory card A source: H:\ShadowTheHedgehogDiskGC_Extract\GC\EUR\Card A\8P-GUPP-SHADOWTHEHEDGEHOG.gci
+Memory card A working image: H:\ShadowTheHedgehogDiskGC_Extract\GekkoForge\build-native\bin\Release\save-data\8P-GUPP-SHADOWTHEHEDGEHOG.pc.raw
+Memory card A SRAM identity: derived from card header
+Assets: 3480 files, 1293.75 MiB across 1444.5 MiB of address space (131 KiB of tables)
+Resources: native handler (asset decode; no DI device, no completion timer, no residency cache)
+Gameplay: native scheduler (native task traversal; translated task bodies)
+Recompiled code: 172104 guest entry points over 35782 translated address ranges, running as native x86-64
+Native renderer: RenderWare capture on, 2 frame(s) in flight
+Restored savestate H:/ShadowTheHedgehogDiskGC_Extract/save-data/gunfortress-v9.gekkostate at 6000000019 retired instructions
+
+Executing the original PAL game image from its entry point...
+[resource-handler] reads 1 (45056 B) disc-id 0 callbacks 1 failed 0 refused 0 unmapped 0 out-of-range 0
+[gameplay-scheduler] traversals 247 levels 60021 (peak 6, nested 1) visits 60021 executes 59774 instrumented 0 destroys 0 marks 0 paused-skips 0 yields 2 charged 2903485 instr faults 0 traversal-storage 1 created 246 reused (peak 1)
+[native-capture] segments 247 presents 247 commands 493015 payload 51482320 B
+[native-capture] state calls 811535 deduplicated 500088 immediate draws 37921 mesh draws 57489 clears 1976 copies 2240 cameras 7921
+[native-capture] coverage: untracked primitives 0 (first opcode 0x0) unknown GXBegin sites 0 (first lr 0x0) unknown DL sites 0 (first lr 0x0) DL without object 0 DL mesh not found 0 immediate indexed 0 count mismatch 0 unsupported programs 0 clear quads absorbed 1976 GX copy triggers 2487 im3d program vs raster proxy disagreements 0 untextured PTank draws 0
+[native-capture] textures: binds 93688 uploads 81 (322176 B) served natively 0 native misses 81 releases 0 null raster 0 upload failures 0 (first format 0 0x0) unknown filter 0 changed without event 0
+[native-capture] geometry: uploads 58 (408867 B) dynamic 1235 (9484800 B) releases 12 invalid 0 guest reads out of range 0 state loads 1 (replayed 1, 40 state commands)
+[native-capture] rejections: none received from the renderer
+[native-capture] geometry churn: uploads new-entry 58 regenerate 0 retry 0; releases notify 12 regenerate 0
+[native-capture] geometry identity (token/serial/arena tail excluded): distinct 48 identical-to-live 0 resurrected-after-release 10 display lists past size 0; bytes: instance 377807 + per-frame arrays appended 31060
+[native-capture] geometry release sites (notify lr / caller / caller's caller): 804819DC/8046D2E0/80464A80=2 804819DC/8044E23C/8044EBC4=10
+[native-capture] host cost: hook calls 956386 hook TSC ticks 91698264 tap TSC ticks 43449551 queue wait 0 ms
+[native-capture] ops: Viewport=1 Scissor=1 ScissorOffset=1 Projection=46471 PositionMatrix=28922 NormalMatrix=13212 CurrentMatrix=1 TextureMatrix=3111 Blend=32615 DepthMode=2965 DepthBeforeTexture=18319 AlphaCompare=13833 Cull=5181 Fog=11271 ColorUpdate=1 AlphaUpdate=1 DestinationAlpha=1 ChannelCount=1 ChannelControl=31286 MaterialColor=13032 AmbientColor=2473 Light=989 TexGenCount=5929 TexGen=23020 TevRegisterColor=1237 BindTexture=57118 TextureContent=81 GeometryContent=58 GeometryDynamic=1235 ReleaseGeometry=12 DrawImmediate=37921 DrawMesh=57489 Clear=1976 CopyTexture=2240 CameraBegin=7921 CameraEnd=7921 Present=247 ResetState=1 HudGroup=5187 HudScene=59280 GlareWindow=495
+[native-renderer] segments 247 frames 247 commands 493056 payload 51482320 B dumped 0 process 94.7676 ms (max 8.2 ms)
+[native-renderer] queue pushed 247 popped 247 producer waits 0 (0 ms, max 0 ms) depth max 1 segments allocated 4
+[native-gpu] frames 247 draws 95410 (immediate 37921, mesh 57489, skipped 0 [cull-all 0, refused pipeline 0], unsupported program 0) clears 1976 copies 2240 half-res copies unsupported 0 lines 0 points 0
+[native-gpu] fence waits 1 (slot already complete 247, FAILED 0) target allocation failures 0
+[native-gpu] transfer queue: submits 15 (early 0) uploads 175 (2.99177 MiB, staging 3.10224 MiB) retained 4.25 MiB peak-batch 2.66134 MiB largest-request 0.25 MiB growths 10 allocation-failures 0 current 0.0664062 MiB resets 13 chunk-switches 9 batch reuse waits 13 (0.0088 ms) refused oversize 0 zero-byte 0 semaphores 2 (failures 0)
+[native-gpu] transfer direct-fill 46/0.537025 MiB (generated directly in mapped staging)
+[native-gpu] transfer owners: texture=81/2.40723/2.41219MiB geometry-vertex=44/0.532654/0.532734MiB geometry-index=48/0.152927/0.152946MiB immediate-index=2/0.00437164/0.00437164MiB (uploads/payload/staging)
+[native-gpu] geometry store: assets created 48 instance hits 10 resident 48 (unreferenced 2, 0.685581 MiB GPU, 0.338074 MiB identity source) evicted 0 IDENTITY CONFLICTS 0
+[native-gpu] glare windows 495 (gate open 495, parameter changes 1)
+[native-gpu] glare parameters: enable 1 A 1 B 1 separate 0 b-from-source 0 intensity 32/48 spread 1.0000/1.0000 taps 2/2 4/4
+[native-gpu] guest-texel footprint draws 0; raster-border snapped draws 0 (refused 0)
+[render-targets] output 640x480  fitted 640x480 at 0,0  aspect 1.3333
+[render-targets] internal scale 1x (isotropic)  efb 640x528  raster 640x480
+[render-targets]   0x809ED7E0 guest 128x128 -> native 128x128  x1.000,1.000  0.062 MiB (guest size would be 0.062 MiB)  sub-raster
+[render-targets]   0x809ED740 guest 640x480 -> native 640x480  x1.000,1.000  1.172 MiB (guest size would be 1.172 MiB)
+[render-targets]   0x809ED600 guest 640x480 -> native 640x480  x1.000,1.000  1.172 MiB (guest size would be 1.172 MiB)
+[render-targets]   0x809ED880 guest 64x64 -> native 64x64  x1.000,1.000  0.016 MiB (guest size would be 0.016 MiB)  sub-raster
+[render-targets] totals: efb 2.578 MiB + targets 2.422 MiB = 5.000 MiB; the same targets at guest resolution would be 2.422 MiB
+[native-gpu] missing textures 0 missing geometry 0 decode failures 0 convert failures 0 foreign DL commands 0 logic-op draws 0 early-z+alpha-test 0
+[native-gpu] SILENT DROPS: none on this route (immediate, mesh and geometry-content lanes all zero)
+[native-gpu] RESOURCE REJECTIONS: none (every geometry and texture the capture sent was accepted)
+[native-gpu] GX state records emitted and consumed by nothing: 1 (first op id 17). Op::DestinationAlpha and Op::TevKonstColor have no handler; Op::TevRegisterColor does.
+[native-gpu] guest present -> output published: mean 0.378175 ms, p50 <= 0.5 ms, p99 <= 1 ms, max 8.1701 ms
+[native-gpu] hud laid out 0 remapped 0 off canvas 0 skipped (before last copy 0, effect texture 0, small scissor 0) groups 5187 scenes 59280 output 640x480 resizes 0
+[native-gpu] output pool slots 3 created 3 pins 0 (observed peak 0) retained 3.51562 MiB
+[native-gpu] pipelines 12 (1.0327 ms, CREATE FAILURES 0) textures live 81 created 81 (2.30182 MiB decoded) camera targets 4 geometry live 46 created 48 dynamic updates 1235 bindless high water 87
+[native-gpu] constants uploaded 73469 reused 21941 (identity 1849, rebuilt-identical 20092, materialized 93561) upload 105.072 MiB ring retained 3 MiB peak 0.536224 MiB largest-request 0.0632629 MiB growths 15 allocation-failures 0 current 0.964661 MiB resets 245 chunk-switches 851 ring splits 0 ring bound failures 0 deferred releases 0 fence waits 1 (0.1278 ms, already complete 247)
+[native-gpu] rebuilt-identical constant triggers: no-state=0 Projection=16302 Blend=2734 DepthBeforeTexture=494 Cull=494 Fog=3790 ChannelControl=494 TexGenCount=494 (an event can name multiple state owners)
+[native-gpu] CPU staging copies avoided 28.9453 MiB; dynamic decode scratch avoided 14.4727 MiB; immediate index copies avoided 4.65968 MiB; static geometry copies avoided 0.532654 MiB (generated directly in fence-owned upload memory)
+[native-gpu] immediate topology (draws/indexed/index-MiB/max-vertices): 0=6503/6503/3.99261/200 2=10166/0/0/6 3=21252/21252/0.667065/137; resident-index hits 27753 growths 2 retained 0.00437164 MiB upload/generation avoided 4.65908/4.65908 MiB failures 0/0
+[native-gpu] graphics upload owners: texture=0/0MiB geometry-vertex=0/0MiB geometry-index=0/0MiB dynamic-vertex=1235/28.9453MiB light-constants=1237/0.906006MiB draw-constants=73469/35.8735MiB immediate-vertex=37921/39.347MiB immediate-index=0/0MiB (allocations/payload)
+[native-gpu] copy queue submits 15 uploads 175 (2.99177 MiB) graphics waits on copy 15 barriers 10129 (requested 10623) pso hits 95398 misses 12
+[native-gpu] record 93.6567 ms total (max 8.1863 ms/segment); GPU 0.147925 ms/frame mean over 248 (max 0.41344 ms); VRAM usage 46.9492 MiB of 15280 MiB budget; screenshots 1
+[native-assets] files notified 0 parsed 0 ones 0 txds 0 textures 0 failed 0 lookups 81 hits 0 evictions 0 resident 0 B budget 5811291136 B
+[native-execution] workers 30 graphs 0 tasks 0 worker tasks 0 failures 0
+[gx-fifo] compacts 0 moved 0 B; header-table skips 3148183
+[native-memory] physical-total=68469481472 physical-available=31948308480 commit-available=26502651904 commit-budget=23245164544 process-private=286281728 process-resident=261197824 process-peak-resident=271130624
+[native-memory] tracked reserved=12451840 committed=5865472 active-requested=5523484 peak-active=5589020 peak-committed=5931008 peak-reserved=12517376 live=122 allocations=142 failures=0 mappings=0 live-mappings=0 rejected-mappings=0 invalid-releases=0
+[native-memory] assets reserved=7340032 committed=966656 active-requested=628668 peak-active=628668 peak-committed=966656 peak-reserved=7340032 live=111 allocations=118 failures=0
+[native-memory] streaming reserved=65536 committed=45056 active-requested=45056 peak-active=45056 peak-committed=45056 peak-reserved=65536 live=1 allocations=1 failures=0
+[native-memory] renderer-host reserved=4718592 committed=4587520 active-requested=4587520 peak-active=4653056 peak-committed=4653056 peak-reserved=4784128 live=8 allocations=12 failures=0
+[native-memory] scratch reserved=262144 committed=262144 active-requested=262144 peak-active=393216 peak-committed=393216 peak-reserved=393216 live=1 allocations=6 failures=0
+[native-memory] decompression reserved=0 committed=0 active-requested=0 peak-active=0 peak-committed=0 peak-reserved=0 live=0 allocations=0 failures=0
+[native-memory] audio-host reserved=0 committed=0 active-requested=0 peak-active=0 peak-committed=0 peak-reserved=0 live=0 allocations=0 failures=0
+[native-memory] general reserved=0 committed=0 active-requested=0 peak-active=0 peak-committed=0 peak-reserved=0 live=0 allocations=0 failures=0
+[native-memory] gameplay reserved=65536 committed=4096 active-requested=96 peak-active=160 peak-committed=8192 peak-reserved=131072 live=1 allocations=5 failures=0
+[native-memory] scope=registered-native-allocations; GPU heaps and legacy game storage reported separately
+[memory-port-status] remaining-legacy MEM1=25165824 ARAM=16777216 bytes; game-heap-live=unmeasured; translated-game/BAT/DMA/savestate dependencies remain
+Audio runtime: counting only; producer 16461 AI DMA blocks, 131688 frames (0 explicit silence), 0 dropped in 0 events, 0 timeline resets
+Process memory: working set 249.137 MiB (peak 258.57), private 273.02 MiB (peak 287.211)
+Deferred GX copy completions:
+  guest-memory-dependency         0       0.00 ms    0.000 ms each  (XFB 0, 0.00 ms)
+  ready-poll                      0       0.00 ms    0.000 ms each  (XFB 0, 0.00 ms)
+  flight-capacity                 0       0.00 ms    0.000 ms each  (XFB 0, 0.00 ms)
+  flush                           0       0.00 ms    0.000 ms each  (XFB 0, 0.00 ms)
+  ordering-conflict               0       0.00 ms    0.000 ms each  (XFB 0, 0.00 ms)
+Assets: 1 reads, 0.04 MiB, 0.088 ms total / 0.088 ms worst; 1 of 3480 files mapped (258.1 MiB); 0 unmapped, 0 out of range, 0 failed
+ARAM DMA: 514 transfers, 8.38 MiB moved
+Geometry on the Flipper thread: decode 0 ms (parallel above 64 vertices), state 0 ms (pipeline/bind/layout), clip 0 ms (parallel above 32 triangles), commit 0 ms (serial)
+Split hazard surface: 0 live register reads (pixel_ null), 0 indexed-attribute vertices, 0 texture fingerprints over 0.0 MiB; 0 clear-snapshot / 0 pipeline-identity mismatches (both must be 0)
+Native visibility: 18422 decided by the native frustum (16112 inside, 581 boundary, 1729 outside), 248 camera rebuilds
+  ADMITTED that the original would have rejected: 0
+  deferred: 0 at unity widening (4:3 reference), 0 unrecognised layout, 0 display not yet configured
+Health bar (native): 494 considered, 0 drawn, 0 quads
+  camera: 494 updates, 0 refused, 0 declines
+  rejected: hud 0, disabled 0, authored-min 0, authored-max 494, near 0, far 0, behind 0, off-screen 0, unattributed 0
+Flipper thread: depth 16, 0.0 ms executing, 0.0 ms guest blocked, 0 dependency drains, 0 source-write waits (0.00 ms), 0 owner violations (must be 0)
+  guest blocked by cause (calls, waits, ms, ms/wait):
+    pe-draw-done                0 calls        0 waits       0.00 ms    0.000 ms/wait
+    pe-token                    0 calls        0 waits       0.00 ms    0.000 ms/wait
+    pe-token-interrupt          0 calls        0 waits       0.00 ms    0.000 ms/wait
+    flush                       0 calls        0 waits       0.00 ms    0.000 ms/wait
+    backpressure                0 calls        0 waits       0.00 ms    0.000 ms/wait
+    semantic drains 0.00 ms + backpressure 0.00 ms = 0.00 ms blocked
+    copy ledger: 1 entries, 0 contended acquisitions (serialised)
+    DMA guard cost: 3 host-page-table invalidations, 0 observer calls, 0 page memoisations refused; guard publishes 1 real / 1 elided
+    memory card: 0 pages programmed, 0 sectors erased; host persists 0 (0 absorbed by the debounce), 0.0 ms total, 0.0 ms max; tick wired yes; 0 failures
+    IPL chip: 0 debug-UART writes discarded, 0 SRAM persists, 0 unchanged SRAM writes skipped, 0 unknown writes
+      guard cost: 6 invalidations 1.2 ms; observer sampled 0 of 0 calls, mean 0 ns (est. total 0.0 ms); 403 page installs; 0 refusals where the access itself touched a guarded byte; 0 tagged-page bitmap hits with no exact dest overlap
+    handoff: 0 empty enqueues; guest-side enqueue CPU 0.0 ms; compute_source_ranges 0.0 ms over 0 calls; ledger contended wait 0.00 ms; 0 real guard publications were set-equivalent
+    source guard: 3 publications (0 non-empty, 3 unchanged), mean 0.0 ranges per publication, max 0, 0 exact overlap scans
+    items: flush 0 samples, mean 0.000, p50 0.000, p95 0.000, p99 0.000, p99.9 0.000, max 0.000 ms
+           texture 0 samples, mean 0.000, p50 0.000, p95 0.000, p99 0.000, p99.9 0.000, max 0.000 ms
+           xfb 0 samples, mean 0.000, p50 0.000, p95 0.000, p99 0.000, p99.9 0.000, max 0.000 ms
+Texture path: fingerprint 0.0 ms over 0 hashes (0.0 MiB), decode 0.0 ms; decoded-map cache 0 hits, 0 verified unchanged, 0 decodes
+Renderer inline in the guest stream: 0 copies, 0 ms (0 ms per copy)
+Host jobs: 9 logical workers, 0 joined groups, 0 worker chunks + 0 caller chunks, 0 independent items
+Retired 2000000005 instructions.
+
+Stop reason: still running
+PC: 0x803A2114  LR: 0x80051450
+Retired instructions: 8000000024
+  r0  FFFFFF9C  r8  000000E0  r16 00000000  r24 00FB4058
+  r1  8060C498  r9  FFFFFFFF  r17 00000000  r25 00000000
+  r2  805FA780  r10 FFFFFFFF  r18 00000000  r26 8057E760
+  r3  D3C00000  r11 805E4238  r19 00000000  r27 00000000
+  r4  000001F6  r12 80494EDC  r20 00000000  r28 0000411A
+  r5  00000000  r13 805EC500  r21 00000000  r29 00FB2C68
+  r6  00000144  r14 00000000  r22 00000000  r30 0000411A
+  r7  00000000  r15 00000000  r23 00000000  r31 00000000
+  CR 80000288  XER 00000000  CTR 0000000E  MSR 00009032  DEC D8437953  L2CR 80000000  HID0 0011CE64
+Native execution: 604025 entries, 2000000005 instructions retired through native frames (100.0% of retired; coalesced/intrinsic charges included, see the split), 84193 dispatcher round trips (sc/rfi/yield/trap, nothing interpreted unless the interpreter line says so)
+Native transfers: 1405706 published to the waiting frame (jump_indirect/resume_elsewhere), 0 left to the dispatcher
+Throughput split: 2000000005 retired = 1166591244 executed + 0 coalesced + 833408761 intrinsic (41.670% charged but not executed) over 487656 hardware ticks
+Counter identity: retired 2000000005 = native 2000000005 + interpreted 0; native = executed-native 1166591244 + coalesced 0 + intrinsic 833408761; entries 604025 = dispatcher exits 84193 + normal returns 519832
+TOTAL_NON_NATIVE_PPC_EXECUTIONS: 0
+HLE filter: 4 of 82 hooked slots shared: 8037D27C 8039A27C | 8037A4E4 8039A4E4 | 8004ECAC 80495CAC | 80397CBC 80495CBC |
+HLE hooks installed: 86; hits this run:
+    0x8004ECAC  x247  native gameplay scheduler
+    0x8004ECB0  x59782  native gameplay scheduler continuation
+    0x800BF634  x494  GiHPGaugeEnemy draw (native health bar)
+    0x8037CF40  x1  DVDReadAbsAsyncPrio (resource handler)
+    0x8037CF44  x1  native resource completion return
+    0x803A1F54  x2032784  unsigned 64-bit compiler divide intrinsic
+    0x803A2040  x1955656  signed 64-bit compiler divide intrinsic
+    0x80486718  x18422  RwCameraTestSphere (native visibility)
+Dispatch blocked: interrupt due 2591, HLE hook 0, no native code 61180
+Native boundary transitions: not-recompiled 0, sc 6113, rfi 15036, trap 1500, unexpected-return 0, past-function 0, yield 61544, verify-cut 0
+Native dispatch: 602628 at declared entry points, 1397 entered mid-function through the translated-range table
+Dispatch tables: 9.3 MiB committed (dense span 0x80000100-0x804AAC3C)
+INTERPRETER ENTRIES: 0  (0 guest instructions, 0.000 ms)
+Interpreter cost: 0 instructions (0.000% of retired) in 0.00 ms (0.0% of execution) across 0 distinct strand origins
+
+Machine progress:
+  VI: 490 fields, line 287, 640x480, XFB physical 0x0064E900
+  VI DI0 = 0x110701AE active=0
+  VI DI1 = 0x11290000 active=0
+  VI DI2 = 0x00000000 active=0
+  VI DI3 = 0x00000000 active=0
+  VI DCR = 0x0001  VTR = 0x0F06  TFBL = 0x0064E900
+  PI interrupts: serial=6353 dsp=6861 video=980 pe-token=926 cp-fifo=926 (mask 0x0FF8 cause 0x0000)
+  Renderer: 0 triangles, 0 pixels, 0 copies (0 clears, 0 to texture); XFB 0x00000000 0x0 stride 0
+  Texturing: 0 textured pixels, 0 flat; last unit format 4294967295 base 0x00000000 0x0, gen mode 0x000000
+  SI: 6353 transfers (last 0x00000000 -> 0x00000000), 1972 polls, POLL 0x00F60280 CSR 0x70010306 STATUS 0x20000000
+  EXI card A: inserted, 0 transfers, 0 bytes read, 0 bytes written, last command 0x00
+  Raster: 0 vertices ok, 0 rejected; 0 outside clip, 0 clipped, 0 behind eye, 0 degenerate
+  Cull rejects: 0 front, 0 back, 0 all; state snapshots 0 transform, 0 pixel; XF banks pos 0/0 nrm 0/0 light 0/0 (fill/skip); native pipeline 0 prepared + 0 reused for 39897 primitives
+  Cull inputs raw mode 0/1/2/3: 0/0/0/0 triangles; negative screen area 0/0/0/0
+  Raster work: 0 candidate fragments; 0 parallel and 0 serial triangle row submissions
+  GX: 3173145 commands, 39897 primitives, 867453 vertices, 0 draw-done, 494 tokens, 0 indexed-xf
+  Native compiler intrinsics: 0 tick conversions, 2032784 unsigned and 1955656 signed 64-bit divides, 215199 declined to the recovered body
+  EFB copy semantics census (guest programs vs host consumes):
+    exec 0x010063 x511  src [0,0] 640x480  stride 10240  fmt 6 (nib 12)
+      consumed     : clear=0 to_xfb=0 format=6 pe_format=0 opaque_copy_alpha=1
+      NOT consumed : clamp0=1 clamp1=1 yuv=0 gamma=0 half_scale=0 scale_invert=0 frame_to_field=0 intensity=0 auto_conv=1
+      NOT consumed : yscale(0x4E)=0x000100 filter0(0x53)=0x595000 filter1(0x54)=0x000015
+      scissor      : TL 0x156156 BR 0x3D5335 OFF 0x02ACAB
+    exec 0x010063 x988  src [0,0] 128x128  stride 2048  fmt 6 (nib 12)
+      consumed     : clear=0 to_xfb=0 format=6 pe_format=0 opaque_copy_alpha=1
+      NOT consumed : clamp0=1 clamp1=1 yuv=0 gamma=0 half_scale=0 scale_invert=0 frame_to_field=0 intensity=0 auto_conv=1
+      NOT consumed : yscale(0x4E)=0x000100 filter0(0x53)=0x595000 filter1(0x54)=0x000015
+      scissor      : TL 0x156156 BR 0x3D5335 OFF 0x02ACAB
+    exec 0x010063 x741  src [0,0] 64x64  stride 1024  fmt 6 (nib 12)
+      consumed     : clear=0 to_xfb=0 format=6 pe_format=0 opaque_copy_alpha=1
+      NOT consumed : clamp0=1 clamp1=1 yuv=0 gamma=0 half_scale=0 scale_invert=0 frame_to_field=0 intensity=0 auto_conv=1
+      NOT consumed : yscale(0x4E)=0x000100 filter0(0x53)=0x595000 filter1(0x54)=0x000015
+      scissor      : TL 0x156156 BR 0x3D5335 OFF 0x02ACAB
+    exec 0x004003 x247  src [0,0] 640x480  stride 1280  fmt 0 (nib 0)
+      consumed     : clear=0 to_xfb=1 format=0 pe_format=0 opaque_copy_alpha=1
+      NOT consumed : clamp0=1 clamp1=1 yuv=0 gamma=0 half_scale=0 scale_invert=0 frame_to_field=0 intensity=0 auto_conv=0
+      NOT consumed : yscale(0x4E)=0x000100 filter0(0x53)=0x30A208 filter1(0x54)=0x00820A
+      scissor      : TL 0x156156 BR 0x3D5335 OFF 0x02ACAB
+  EFB copy control words: 0x010063 0x004003 | copy-clear registers AR 0x00FFFF GB 0x00FFFF Z 0xFFFFFF | z mode 0x00000F cmode0 0x0004BD pe control 0x000040
+  EFB copy triggers 2487, display lists 57489, dropped by nesting 0, mapped-view 0 (0 bytes), skipped unwalked (native) 57489
+  Palette loads 57465, 0 bytes (0 effective / 0 redundant, 0 effective bytes; arena 0 growths, 0-byte peak), into 0 distinct texture-memory slots:
+  DSP: microcode boot ROM
+  DSP mail: 0xBABE0180 0x8058AEC0 <0xDCD10002 0xCDD10003 0xBABE0180 0x8058ABC0 <0xDCD10002 0xCDD10003 0xBABE0180 0x8058AEC0 <0xDCD10002 0xCDD10003 0xBABE0180 0x8058ABC0 <0xDCD10002 0xCDD10003 0xBABE0180 0x8058AEC0 <0xDCD10002 0xCDD10003 0xBABE0180 0x8058ABC0 <0xDCD10002 0xCDD10003 0xBABE0180 0x8058AEC0 <0xDCD10002 0xCDD10003 0xBABE0180 0x8058ABC0 <0xDCD10002 0xCDD10003 ...
+  Assets: 1 reads, 45056 bytes, 0 unmapped, 0 out of range, 0 failed
+
+Execution reach:
+  0 distinct call targets reached; last 0:
+
+Recent call path:
+Session report written: scratch/runtime-hardening-20261001/final-fastgeo.json

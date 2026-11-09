@@ -1,0 +1,40 @@
+# Boot -> SELECT MODE -> Westopolis -> and then actually PLAY, so the mission objective
+# window (gated on the HUD flag at 0x8057E760+328) is raised.
+#
+# The other routes press nothing once gameplay starts, which is why group 0x800B8AFC never
+# appears in any capture taken from them. This one holds forward and jumps so the stage
+# actually progresses.
+label boot-and-dialog
+wait 260
+press A 8
+label logos-and-title
+wait 640
+press START 8
+label main-menu
+wait 200
+press A 8
+label mode-submenu
+wait 200
+press DOWN 6
+wait 60
+press A 8
+label select-menu
+wait 400
+label confirm-stage
+press A 8
+wait 120
+press A 8
+wait 120
+press A 8
+label loading
+wait 1300
+label play
+stick 0 100 90
+press A 4
+stick 0 100 60
+press B 4
+stick 0 100 90
+press A 4
+stick 30 100 40
+stick -30 100 40
+loop

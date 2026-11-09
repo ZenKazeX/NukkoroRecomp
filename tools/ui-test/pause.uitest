@@ -1,0 +1,37 @@
+# Boot -> SELECT MODE -> confirm a stage -> into gameplay -> open and close the PAUSE menu,
+# repeatedly.
+#
+# Pause is the only one of the remaining 2D screens that can be reached without playing a
+# stage to completion, so it is the one that can be stimulated continuously. Budget 36e9;
+# gameplay starts around 34e9.
+label boot-and-dialog
+wait 260
+press A 8
+label logos-and-title
+wait 640
+press START 8
+label main-menu
+wait 200
+press A 8
+label mode-submenu
+wait 200
+press DOWN 6
+wait 60
+press A 8
+label select-menu
+wait 400
+label confirm-stage
+press A 8
+wait 120
+press A 8
+wait 120
+press A 8
+label loading-and-gameplay
+wait 1400
+label pause-open
+press START 8
+wait 200
+label pause-close
+press START 8
+wait 200
+loop

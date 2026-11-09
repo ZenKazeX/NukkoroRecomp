@@ -1,0 +1,13 @@
+# The autosave dialog, held open.
+#
+# The dialog is the first thing the game draws: a bordered window that opens
+# with a horizontal expansion animation and then sits waiting for A. Pressing
+# nothing keeps it up for the whole run, so a capture can watch both the
+# opening animation - which is where the window used to snap outwards the frame
+# its body crossed 90% of the canvas - and the settled composition.
+#
+# Budget: the dialog is up from about 0.15e9 retired instructions. 2.5e9 gives
+# roughly 250 VI fields of it.
+label autosave-dialog
+wait 2000
+loop

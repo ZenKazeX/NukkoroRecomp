@@ -1,0 +1,14 @@
+# Native owners of the SHADOW_RENDER_LIFTED build (ppcrecomp --native-owners, given after extract/native-owners.txt):
+# guest functions served natively on every call (since NE-RW1 the game-level owners in runtime/game/game_owners.cpp);
+# the generator emits only a thunk. Installed by
+# LiftedRender::install_owners (runtime/src/gekko/lifted_render.cpp) before guest code runs.
+#
+# docs/boundary-20261007/DESIGN.md: Weapon::LockonMark's draw (reached only through its render functor's bound member
+# pointer, so no call site is its own) - the mark placed by the boundary and tested against the displayed screen
+# (runtime/game/game_owners.cpp GameOwners::lockon_mark_draw; NE-RW1 moved it out of the RenderWare scaffold).
+0x800620D4 Weapon::LockonMark draw
+
+# docs/boundary-20261007/FLARE.md: the lens flare's builder (called by fn_8043329C from the draw task
+# EffectDrawGlobalLensFlareTask) - laid out natively against the view the output shows
+# (runtime/lift/effects/lens_flare.h, runtime/game/game_owners.cpp GameOwners::lens_flare_build; NE-RW1).
+0x80432360 Effect global lens flare build

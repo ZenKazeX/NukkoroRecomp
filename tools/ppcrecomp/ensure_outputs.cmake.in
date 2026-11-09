@@ -1,0 +1,17 @@
+# MSBuild tracks the stamp but does not use BYPRODUCTS as missing-output
+# triggers. This cheap existence pass also repairs a partially removed build
+# tree, without rerunning translation on an ordinary no-op build.
+set(expected_outputs [====[@SHADOW_RECOMP_ALL_OUTPUTS@]====])
+foreach(output IN LISTS expected_outputs)
+    if(NOT EXISTS "${output}")
+        message(STATUS "Repairing missing recompiler output: ${output}")
+        execute_process(
+            COMMAND [====[$<TARGET_FILE:ppcrecomp>]====] @SHADOW_RECOMP_SCRIPT_ARGS@
+            RESULT_VARIABLE result)
+        if(NOT result EQUAL 0)
+            message(FATAL_ERROR "Recompiler output repair failed: ${result}")
+        endif()
+        file(TOUCH [====[@SHADOW_RECOMP_STAMP@]====])
+        break()
+    endif()
+endforeach()

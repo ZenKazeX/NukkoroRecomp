@@ -1,0 +1,16 @@
+# PAL 50/60 Hz selection screen. It is the first thing a PAL boot renders -
+# fn_80306b48 runs at about 9.7M instructions - so the settle here is short.
+# Waits are VI fields, and PAL fields are 50/s.
+label settle
+wait 120
+label move-right
+press RIGHT 8
+wait 60
+press RIGHT 8
+wait 60
+label move-left
+press LEFT 8
+wait 60
+label confirm
+press A 8
+wait 300

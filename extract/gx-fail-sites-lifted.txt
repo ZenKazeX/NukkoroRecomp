@@ -1,0 +1,846 @@
+# HW 2026-10-20 13:2x: GX pipe sites DEAD in the lifted build (GC_ENVIRONMENT row 7). Source: src-shim extract/gx-sites.txt.
+# Evidence: every lifted run reports 'GX immediate: 0 primitives (0 vertices ...)' (Lava, menus+movies, all 62 CH series runs).
+# Lifted build: emit a fail-closed dead site (stop + name the site) instead of the family call. Legacy / reference builds keep today's families.
+# Columns as in gx-sites.txt: site word family note. copy_trigger / draw_done listed separately (no effect in lifted; draw_done 0 on Lava): emit 'dead' after one counter run.
+0x8032E090 0xB3A58000 vertex  fn 0x8032E038 sth: client store after GXBegin on every path
+0x8032E09C 0xB3658000 vertex  fn 0x8032E038 sth: client store after GXBegin on every path
+0x8032E0A0 0xB0858000 vertex  fn 0x8032E038 sth: client store after GXBegin on every path
+0x8032E0A4 0x93258000 vertex  fn 0x8032E038 stw: client store after GXBegin on every path
+0x8032E0A8 0xB2E58000 vertex  fn 0x8032E038 sth: client store after GXBegin on every path
+0x8032E0AC 0xB3058000 vertex  fn 0x8032E038 sth: client store after GXBegin on every path
+0x8032E0B0 0xB3858000 vertex  fn 0x8032E038 sth: client store after GXBegin on every path
+0x8032E0B4 0xB3658000 vertex  fn 0x8032E038 sth: client store after GXBegin on every path
+0x8032E0B8 0xB0858000 vertex  fn 0x8032E038 sth: client store after GXBegin on every path
+0x8032E0BC 0x93258000 vertex  fn 0x8032E038 stw: client store after GXBegin on every path
+0x8032E0C0 0xB0658000 vertex  fn 0x8032E038 sth: client store after GXBegin on every path
+0x8032E0C4 0xB3058000 vertex  fn 0x8032E038 sth: client store after GXBegin on every path
+0x8032E0C8 0xB3858000 vertex  fn 0x8032E038 sth: client store after GXBegin on every path
+0x8032E0CC 0xB3458000 vertex  fn 0x8032E038 sth: client store after GXBegin on every path
+0x8032E0D0 0xB0858000 vertex  fn 0x8032E038 sth: client store after GXBegin on every path
+0x8032E0D4 0x93258000 vertex  fn 0x8032E038 stw: client store after GXBegin on every path
+0x8032E0D8 0xB0658000 vertex  fn 0x8032E038 sth: client store after GXBegin on every path
+0x8032E0DC 0xB0058000 vertex  fn 0x8032E038 sth: client store after GXBegin on every path
+0x8032E0E0 0xB3A58000 vertex  fn 0x8032E038 sth: client store after GXBegin on every path
+0x8032E0E4 0xB3458000 vertex  fn 0x8032E038 sth: client store after GXBegin on every path
+0x8032E0E8 0xB0858000 vertex  fn 0x8032E038 sth: client store after GXBegin on every path
+0x8032E0EC 0x93258000 vertex  fn 0x8032E038 stw: client store after GXBegin on every path
+0x8032E0F0 0xB2E58000 vertex  fn 0x8032E038 sth: client store after GXBegin on every path
+0x8032E0F4 0xB0058000 vertex  fn 0x8032E038 sth: client store after GXBegin on every path
+0x803969DC 0x98038000 primitive_opcode  fn 0x80396934 stb: GXBegin's header byte
+0x803969E0 0xB3C38000 primitive_count  fn 0x80396934 sth: GXBegin's vertex count
+0x8044A4DC 0xF3FB6000 vertex  fn 0x8044A25C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A4E0 0xF3DBE000 vertex  fn 0x8044A25C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A4E8 0xF27B7000 vertex  fn 0x8044A25C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A4EC 0xF25BF000 vertex  fn 0x8044A25C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A4F4 0x93FB0000 vertex  fn 0x8044A25C stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A4FC 0xF29B0000 vertex  fn 0x8044A25C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A500 0xF3BB6000 vertex  fn 0x8044A25C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A504 0xF39BE000 vertex  fn 0x8044A25C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A50C 0xF27B7000 vertex  fn 0x8044A25C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A510 0xF25BF000 vertex  fn 0x8044A25C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A518 0x93DB0000 vertex  fn 0x8044A25C stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A520 0xF2FB0000 vertex  fn 0x8044A25C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A524 0xF37B6000 vertex  fn 0x8044A25C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A528 0xF35BE000 vertex  fn 0x8044A25C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A530 0xF27B7000 vertex  fn 0x8044A25C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A534 0xF25BF000 vertex  fn 0x8044A25C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A53C 0x93BB0000 vertex  fn 0x8044A25C stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A544 0xF2DB0000 vertex  fn 0x8044A25C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A548 0xF33B6000 vertex  fn 0x8044A25C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A54C 0xF31BE000 vertex  fn 0x8044A25C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A558 0xF27B7000 vertex  fn 0x8044A25C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A55C 0xF25BF000 vertex  fn 0x8044A25C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A568 0x939B0000 vertex  fn 0x8044A25C stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A574 0xF2BB0000 vertex  fn 0x8044A25C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A8A0 0xF3FB6000 vertex  fn 0x8044A620 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A8A4 0xF3DBE000 vertex  fn 0x8044A620 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A8AC 0xF27B7000 vertex  fn 0x8044A620 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A8B0 0xF25BF000 vertex  fn 0x8044A620 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A8B8 0x93FB0000 vertex  fn 0x8044A620 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A8C0 0xF29B0000 vertex  fn 0x8044A620 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A8C4 0xF3BB6000 vertex  fn 0x8044A620 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A8C8 0xF39BE000 vertex  fn 0x8044A620 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A8D0 0xF27B7000 vertex  fn 0x8044A620 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A8D4 0xF25BF000 vertex  fn 0x8044A620 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A8DC 0x93DB0000 vertex  fn 0x8044A620 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A8E4 0xF2FB0000 vertex  fn 0x8044A620 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A8E8 0xF37B6000 vertex  fn 0x8044A620 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A8EC 0xF35BE000 vertex  fn 0x8044A620 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A8F4 0xF27B7000 vertex  fn 0x8044A620 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A8F8 0xF25BF000 vertex  fn 0x8044A620 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A900 0x93BB0000 vertex  fn 0x8044A620 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A908 0xF2DB0000 vertex  fn 0x8044A620 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A90C 0xF33B6000 vertex  fn 0x8044A620 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A910 0xF31BE000 vertex  fn 0x8044A620 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A91C 0xF27B7000 vertex  fn 0x8044A620 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A920 0xF25BF000 vertex  fn 0x8044A620 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A92C 0x939B0000 vertex  fn 0x8044A620 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044A938 0xF2BB0000 vertex  fn 0x8044A620 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044AC68 0xF3FB6000 vertex  fn 0x8044A9E4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044AC6C 0xF3DBE000 vertex  fn 0x8044A9E4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044AC74 0xF27B7000 vertex  fn 0x8044A9E4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044AC78 0xF25BF000 vertex  fn 0x8044A9E4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044AC80 0x93FB0000 vertex  fn 0x8044A9E4 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044AC88 0xF29B0000 vertex  fn 0x8044A9E4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044AC8C 0xF3BB6000 vertex  fn 0x8044A9E4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044AC90 0xF39BE000 vertex  fn 0x8044A9E4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044AC98 0xF27B7000 vertex  fn 0x8044A9E4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044AC9C 0xF25BF000 vertex  fn 0x8044A9E4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044ACA4 0x93DB0000 vertex  fn 0x8044A9E4 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044ACAC 0xF2FB0000 vertex  fn 0x8044A9E4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044ACB0 0xF37B6000 vertex  fn 0x8044A9E4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044ACB4 0xF35BE000 vertex  fn 0x8044A9E4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044ACBC 0xF27B7000 vertex  fn 0x8044A9E4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044ACC0 0xF25BF000 vertex  fn 0x8044A9E4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044ACC8 0x93BB0000 vertex  fn 0x8044A9E4 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044ACD0 0xF2DB0000 vertex  fn 0x8044A9E4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044ACD4 0xF33B6000 vertex  fn 0x8044A9E4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044ACD8 0xF31BE000 vertex  fn 0x8044A9E4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044ACE4 0xF27B7000 vertex  fn 0x8044A9E4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044ACE8 0xF25BF000 vertex  fn 0x8044A9E4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044ACF4 0x939B0000 vertex  fn 0x8044A9E4 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044AD00 0xF2BB0000 vertex  fn 0x8044A9E4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B074 0xF3FB6000 vertex  fn 0x8044ADAC psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B078 0xF3DBE000 vertex  fn 0x8044ADAC psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B080 0xF27B7000 vertex  fn 0x8044ADAC psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B084 0xF25BF000 vertex  fn 0x8044ADAC psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B08C 0x93FB0000 vertex  fn 0x8044ADAC stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B094 0xF29B0000 vertex  fn 0x8044ADAC psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B098 0xF3BB6000 vertex  fn 0x8044ADAC psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B09C 0xF39BE000 vertex  fn 0x8044ADAC psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B0A4 0xF27B7000 vertex  fn 0x8044ADAC psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B0A8 0xF25BF000 vertex  fn 0x8044ADAC psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B0B0 0x93DB0000 vertex  fn 0x8044ADAC stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B0B8 0xF2FB0000 vertex  fn 0x8044ADAC psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B0BC 0xF37B6000 vertex  fn 0x8044ADAC psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B0C0 0xF35BE000 vertex  fn 0x8044ADAC psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B0C8 0xF27B7000 vertex  fn 0x8044ADAC psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B0CC 0xF25BF000 vertex  fn 0x8044ADAC psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B0D4 0x93BB0000 vertex  fn 0x8044ADAC stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B0DC 0xF2DB0000 vertex  fn 0x8044ADAC psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B0E0 0xF33B6000 vertex  fn 0x8044ADAC psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B0E4 0xF31BE000 vertex  fn 0x8044ADAC psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B0F0 0xF27B7000 vertex  fn 0x8044ADAC psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B0F4 0xF25BF000 vertex  fn 0x8044ADAC psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B100 0x939B0000 vertex  fn 0x8044ADAC stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B10C 0xF2BB0000 vertex  fn 0x8044ADAC psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B448 0xF3FB6000 vertex  fn 0x8044B1B8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B44C 0xF3DBE000 vertex  fn 0x8044B1B8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B454 0xF27B7000 vertex  fn 0x8044B1B8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B458 0xF25BF000 vertex  fn 0x8044B1B8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B460 0x93FB0000 vertex  fn 0x8044B1B8 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B468 0xF29B0000 vertex  fn 0x8044B1B8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B46C 0xF3BB6000 vertex  fn 0x8044B1B8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B470 0xF39BE000 vertex  fn 0x8044B1B8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B478 0xF27B7000 vertex  fn 0x8044B1B8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B47C 0xF25BF000 vertex  fn 0x8044B1B8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B484 0x93DB0000 vertex  fn 0x8044B1B8 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B48C 0xF2FB0000 vertex  fn 0x8044B1B8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B490 0xF37B6000 vertex  fn 0x8044B1B8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B494 0xF35BE000 vertex  fn 0x8044B1B8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B49C 0xF27B7000 vertex  fn 0x8044B1B8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B4A0 0xF25BF000 vertex  fn 0x8044B1B8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B4A8 0x93BB0000 vertex  fn 0x8044B1B8 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B4B0 0xF2DB0000 vertex  fn 0x8044B1B8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B4B4 0xF33B6000 vertex  fn 0x8044B1B8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B4BC 0xF31BE000 vertex  fn 0x8044B1B8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B4C8 0xF27B7000 vertex  fn 0x8044B1B8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B4CC 0xF25BF000 vertex  fn 0x8044B1B8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B4D8 0x939B0000 vertex  fn 0x8044B1B8 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B4E4 0xF2BB0000 vertex  fn 0x8044B1B8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B844 0xF3FB6000 vertex  fn 0x8044B590 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B848 0xF3DBE000 vertex  fn 0x8044B590 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B850 0xF27B7000 vertex  fn 0x8044B590 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B854 0xF25BF000 vertex  fn 0x8044B590 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B85C 0x93FB0000 vertex  fn 0x8044B590 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B864 0xF29B0000 vertex  fn 0x8044B590 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B868 0xF3BB6000 vertex  fn 0x8044B590 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B86C 0xF39BE000 vertex  fn 0x8044B590 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B874 0xF27B7000 vertex  fn 0x8044B590 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B878 0xF25BF000 vertex  fn 0x8044B590 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B880 0x93DB0000 vertex  fn 0x8044B590 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B888 0xF2FB0000 vertex  fn 0x8044B590 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B88C 0xF37B6000 vertex  fn 0x8044B590 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B890 0xF35BE000 vertex  fn 0x8044B590 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B898 0xF27B7000 vertex  fn 0x8044B590 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B89C 0xF25BF000 vertex  fn 0x8044B590 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B8A4 0x93BB0000 vertex  fn 0x8044B590 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B8AC 0xF2DB0000 vertex  fn 0x8044B590 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B8B0 0xF33B6000 vertex  fn 0x8044B590 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B8B8 0xF31BE000 vertex  fn 0x8044B590 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B8C4 0xF27B7000 vertex  fn 0x8044B590 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B8C8 0xF25BF000 vertex  fn 0x8044B590 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B8D4 0x939B0000 vertex  fn 0x8044B590 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044B8E0 0xF2BB0000 vertex  fn 0x8044B590 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BCB0 0xF3FB6000 vertex  fn 0x8044B98C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BCB4 0xF3DBE000 vertex  fn 0x8044B98C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BCBC 0xF27B7000 vertex  fn 0x8044B98C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BCC0 0xF25BF000 vertex  fn 0x8044B98C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BCC8 0x93FB0000 vertex  fn 0x8044B98C stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BCD0 0xF29B0000 vertex  fn 0x8044B98C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BCD4 0xF3BB6000 vertex  fn 0x8044B98C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BCD8 0xF39BE000 vertex  fn 0x8044B98C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BCE0 0xF27B7000 vertex  fn 0x8044B98C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BCE4 0xF25BF000 vertex  fn 0x8044B98C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BCEC 0x93DB0000 vertex  fn 0x8044B98C stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BCF4 0xF2FB0000 vertex  fn 0x8044B98C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BCF8 0xF37B6000 vertex  fn 0x8044B98C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BCFC 0xF35BE000 vertex  fn 0x8044B98C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BD04 0xF27B7000 vertex  fn 0x8044B98C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BD08 0xF25BF000 vertex  fn 0x8044B98C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BD10 0x93BB0000 vertex  fn 0x8044B98C stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BD18 0xF2DB0000 vertex  fn 0x8044B98C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BD1C 0xF33B6000 vertex  fn 0x8044B98C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BD24 0xF31BE000 vertex  fn 0x8044B98C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BD30 0xF27B7000 vertex  fn 0x8044B98C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BD34 0xF25BF000 vertex  fn 0x8044B98C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BD40 0x939B0000 vertex  fn 0x8044B98C stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044BD4C 0xF2BB0000 vertex  fn 0x8044B98C psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C118 0xF3FB6000 vertex  fn 0x8044BDF8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C11C 0xF3DBE000 vertex  fn 0x8044BDF8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C124 0xF27B7000 vertex  fn 0x8044BDF8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C128 0xF25BF000 vertex  fn 0x8044BDF8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C130 0x93FB0000 vertex  fn 0x8044BDF8 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C138 0xF29B0000 vertex  fn 0x8044BDF8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C13C 0xF3BB6000 vertex  fn 0x8044BDF8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C140 0xF39BE000 vertex  fn 0x8044BDF8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C148 0xF27B7000 vertex  fn 0x8044BDF8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C14C 0xF25BF000 vertex  fn 0x8044BDF8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C154 0x93DB0000 vertex  fn 0x8044BDF8 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C15C 0xF2FB0000 vertex  fn 0x8044BDF8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C160 0xF37B6000 vertex  fn 0x8044BDF8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C164 0xF35BE000 vertex  fn 0x8044BDF8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C16C 0xF27B7000 vertex  fn 0x8044BDF8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C170 0xF25BF000 vertex  fn 0x8044BDF8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C178 0x93BB0000 vertex  fn 0x8044BDF8 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C180 0xF2DB0000 vertex  fn 0x8044BDF8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C184 0xF33B6000 vertex  fn 0x8044BDF8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C18C 0xF31BE000 vertex  fn 0x8044BDF8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C198 0xF27B7000 vertex  fn 0x8044BDF8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C19C 0xF25BF000 vertex  fn 0x8044BDF8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C1A8 0x939B0000 vertex  fn 0x8044BDF8 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C1B4 0xF2BB0000 vertex  fn 0x8044BDF8 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C558 0xF3FB6000 vertex  fn 0x8044C260 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C55C 0xF3DBE000 vertex  fn 0x8044C260 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C564 0xF27B7000 vertex  fn 0x8044C260 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C568 0xF25BF000 vertex  fn 0x8044C260 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C570 0x93FB0000 vertex  fn 0x8044C260 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C578 0xF29B0000 vertex  fn 0x8044C260 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C57C 0xF3BB6000 vertex  fn 0x8044C260 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C580 0xF39BE000 vertex  fn 0x8044C260 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C588 0xF27B7000 vertex  fn 0x8044C260 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C58C 0xF25BF000 vertex  fn 0x8044C260 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C594 0x93DB0000 vertex  fn 0x8044C260 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C59C 0xF2FB0000 vertex  fn 0x8044C260 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C5A0 0xF37B6000 vertex  fn 0x8044C260 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C5A4 0xF35BE000 vertex  fn 0x8044C260 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C5AC 0xF27B7000 vertex  fn 0x8044C260 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C5B0 0xF25BF000 vertex  fn 0x8044C260 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C5B8 0x93BB0000 vertex  fn 0x8044C260 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C5C0 0xF2DB0000 vertex  fn 0x8044C260 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C5C8 0xF33B6000 vertex  fn 0x8044C260 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C5D0 0xF31BE000 vertex  fn 0x8044C260 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C5DC 0xF27B7000 vertex  fn 0x8044C260 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C5E0 0xF25BF000 vertex  fn 0x8044C260 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C5EC 0x939B0000 vertex  fn 0x8044C260 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C5F8 0xF2BB0000 vertex  fn 0x8044C260 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C9B8 0xF3FB6000 vertex  fn 0x8044C6A4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C9BC 0xF3DBE000 vertex  fn 0x8044C6A4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C9C4 0xF27B7000 vertex  fn 0x8044C6A4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C9C8 0xF25BF000 vertex  fn 0x8044C6A4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C9D0 0x93FB0000 vertex  fn 0x8044C6A4 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C9D8 0xF29B0000 vertex  fn 0x8044C6A4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C9DC 0xF3BB6000 vertex  fn 0x8044C6A4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C9E0 0xF39BE000 vertex  fn 0x8044C6A4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C9E8 0xF27B7000 vertex  fn 0x8044C6A4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C9EC 0xF25BF000 vertex  fn 0x8044C6A4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C9F4 0x93DB0000 vertex  fn 0x8044C6A4 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044C9FC 0xF2FB0000 vertex  fn 0x8044C6A4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044CA00 0xF37B6000 vertex  fn 0x8044C6A4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044CA04 0xF35BE000 vertex  fn 0x8044C6A4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044CA0C 0xF27B7000 vertex  fn 0x8044C6A4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044CA10 0xF25BF000 vertex  fn 0x8044C6A4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044CA18 0x93BB0000 vertex  fn 0x8044C6A4 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044CA20 0xF2DB0000 vertex  fn 0x8044C6A4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044CA28 0xF33B6000 vertex  fn 0x8044C6A4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044CA30 0xF31BE000 vertex  fn 0x8044C6A4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044CA3C 0xF27B7000 vertex  fn 0x8044C6A4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044CA40 0xF25BF000 vertex  fn 0x8044C6A4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044CA4C 0x939B0000 vertex  fn 0x8044C6A4 stw: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x8044CA58 0xF2BB0000 vertex  fn 0x8044C6A4 psq_st: PTank vertex writer, called through +0x28 after GXBegin (bctrl at 0x8044a23c)
+0x80491B6C 0xD0068000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491B70 0xD0268000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491B74 0xD0468000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491B88 0x98068000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491B8C 0x98668000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491B90 0x98868000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491B94 0x98A68000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491BA0 0xD0068000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491BA4 0xD0268000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491BB4 0xD0068000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491BB8 0xD0268000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491BBC 0xD0468000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491BD0 0x98068000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491BD4 0x98668000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491BD8 0x98868000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491BDC 0x98A68000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491BE8 0xD0068000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491BEC 0xD0268000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491BFC 0xD0068000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491C00 0xD0268000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491C04 0xD0468000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491C18 0x98068000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491C1C 0x98668000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491C20 0x98868000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491C24 0x98A68000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491C30 0xD0068000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491C34 0xD0268000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491C4C 0xD0068000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491C50 0xD0268000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491C54 0xD0468000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491C68 0x98068000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491C6C 0x98668000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491C70 0x98868000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491C74 0x98A68000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491C84 0xD0068000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491C88 0xD0268000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491C8C 0xD0468000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491CA0 0x98068000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491CA4 0x98668000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491CA8 0x98868000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491CAC 0x98A68000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491CBC 0xD0068000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491CC0 0xD0268000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491CC4 0xD0468000 vertex  fn 0x80491B08 stfs: client store after GXBegin on every path
+0x80491CD8 0x98068000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491CDC 0x98668000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491CE0 0x98868000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491CE4 0x98A68000 vertex  fn 0x80491B08 stb: client store after GXBegin on every path
+0x80491D64 0xD0068000 vertex  fn 0x80491D0C stfs: client store after GXBegin on every path
+0x80491D68 0xD0268000 vertex  fn 0x80491D0C stfs: client store after GXBegin on every path
+0x80491D6C 0xD0468000 vertex  fn 0x80491D0C stfs: client store after GXBegin on every path
+0x80491D80 0x98068000 vertex  fn 0x80491D0C stb: client store after GXBegin on every path
+0x80491D84 0x98668000 vertex  fn 0x80491D0C stb: client store after GXBegin on every path
+0x80491D88 0x98868000 vertex  fn 0x80491D0C stb: client store after GXBegin on every path
+0x80491D8C 0x98A68000 vertex  fn 0x80491D0C stb: client store after GXBegin on every path
+0x80491D98 0xD0068000 vertex  fn 0x80491D0C stfs: client store after GXBegin on every path
+0x80491D9C 0xD0268000 vertex  fn 0x80491D0C stfs: client store after GXBegin on every path
+0x80491DAC 0xD0068000 vertex  fn 0x80491D0C stfs: client store after GXBegin on every path
+0x80491DB0 0xD0268000 vertex  fn 0x80491D0C stfs: client store after GXBegin on every path
+0x80491DB4 0xD0468000 vertex  fn 0x80491D0C stfs: client store after GXBegin on every path
+0x80491DC8 0x98068000 vertex  fn 0x80491D0C stb: client store after GXBegin on every path
+0x80491DCC 0x98668000 vertex  fn 0x80491D0C stb: client store after GXBegin on every path
+0x80491DD0 0x98868000 vertex  fn 0x80491D0C stb: client store after GXBegin on every path
+0x80491DD4 0x98A68000 vertex  fn 0x80491D0C stb: client store after GXBegin on every path
+0x80491DE0 0xD0068000 vertex  fn 0x80491D0C stfs: client store after GXBegin on every path
+0x80491DE4 0xD0268000 vertex  fn 0x80491D0C stfs: client store after GXBegin on every path
+0x80491DFC 0xD0068000 vertex  fn 0x80491D0C stfs: client store after GXBegin on every path
+0x80491E00 0xD0268000 vertex  fn 0x80491D0C stfs: client store after GXBegin on every path
+0x80491E04 0xD0468000 vertex  fn 0x80491D0C stfs: client store after GXBegin on every path
+0x80491E18 0x98068000 vertex  fn 0x80491D0C stb: client store after GXBegin on every path
+0x80491E1C 0x98668000 vertex  fn 0x80491D0C stb: client store after GXBegin on every path
+0x80491E20 0x98868000 vertex  fn 0x80491D0C stb: client store after GXBegin on every path
+0x80491E24 0x98A68000 vertex  fn 0x80491D0C stb: client store after GXBegin on every path
+0x80491E34 0xD0068000 vertex  fn 0x80491D0C stfs: client store after GXBegin on every path
+0x80491E38 0xD0268000 vertex  fn 0x80491D0C stfs: client store after GXBegin on every path
+0x80491E3C 0xD0468000 vertex  fn 0x80491D0C stfs: client store after GXBegin on every path
+0x80491E50 0x98068000 vertex  fn 0x80491D0C stb: client store after GXBegin on every path
+0x80491E54 0x98668000 vertex  fn 0x80491D0C stb: client store after GXBegin on every path
+0x80491E58 0x98868000 vertex  fn 0x80491D0C stb: client store after GXBegin on every path
+0x80491E5C 0x98A68000 vertex  fn 0x80491D0C stb: client store after GXBegin on every path
+0x80491F20 0xD0078000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80491F24 0xD0278000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80491F28 0xD0478000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80491F3C 0x98078000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80491F40 0x98878000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80491F44 0x98A78000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80491F48 0x98C78000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80491F54 0xD0078000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80491F58 0xD0278000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80491F68 0xD0078000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80491F6C 0xD0278000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80491F70 0xD0478000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80491F84 0x98078000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80491F88 0x98878000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80491F8C 0x98A78000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80491F90 0x98C78000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80491FA0 0xD0078000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80491FA4 0xD0278000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80491FC4 0xD0078000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80491FC8 0xD0278000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80491FCC 0xD0478000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80491FE0 0x98078000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80491FE4 0x98878000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80491FE8 0x98A78000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80491FEC 0x98C78000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80491FFC 0xD0078000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492000 0xD0278000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492034 0xD0078000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492038 0xD0278000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x8049203C 0xD0478000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492050 0x98078000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492054 0x98878000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492058 0x98A78000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x8049205C 0x98C78000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x8049206C 0xD0078000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492070 0xD0278000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492074 0xD0478000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x8049208C 0x98078000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492090 0x98878000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492094 0x98A78000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492098 0x98C78000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x804920B8 0xD0078000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x804920BC 0xD0278000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x804920C0 0xD0478000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x804920D8 0x98078000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x804920DC 0x98878000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x804920E0 0x98A78000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x804920E4 0x98C78000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492120 0xD0068000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492124 0xD0268000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492128 0xD0468000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x8049213C 0x98068000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492140 0x98668000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492144 0x98868000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492148 0x98A68000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492154 0xD0068000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492158 0xD0268000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492168 0xD0068000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x8049216C 0xD0268000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492170 0xD0468000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492184 0x98068000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492188 0x98668000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x8049218C 0x98868000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492190 0x98A68000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x804921A0 0xD0068000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x804921A4 0xD0268000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x804921CC 0xD0068000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x804921D0 0xD0268000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x804921D4 0xD0468000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x804921E8 0x98068000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x804921EC 0x98668000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x804921F0 0x98868000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x804921F4 0x98A68000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492204 0xD0068000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492208 0xD0268000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x8049220C 0xD0468000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492224 0x98068000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492228 0x98668000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x8049222C 0x98868000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492230 0x98A68000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x8049227C 0xD0068000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492280 0xD0268000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492284 0xD0468000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492298 0x98068000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x8049229C 0x98668000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x804922A0 0x98868000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x804922A4 0x98A68000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x804922B0 0xD0068000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x804922B4 0xD0268000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x804922C4 0xD0068000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x804922C8 0xD0268000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x804922CC 0xD0468000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x804922E0 0x98068000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x804922E4 0x98668000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x804922E8 0x98868000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x804922EC 0x98A68000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x804922F8 0xD0068000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x804922FC 0xD0268000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x8049230C 0xD0068000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492310 0xD0268000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492314 0xD0468000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492328 0x98068000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x8049232C 0x98668000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492330 0x98868000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492334 0x98A68000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492344 0xD0068000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492348 0xD0268000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492370 0xD0068000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492374 0xD0268000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492378 0xD0468000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x8049238C 0x98068000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492390 0x98668000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492394 0x98868000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492398 0x98A68000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x804923A8 0xD0068000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x804923AC 0xD0268000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x804923B0 0xD0468000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x804923C4 0x98068000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x804923C8 0x98668000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x804923CC 0x98868000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x804923D0 0x98A68000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x804923E0 0xD0068000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x804923E4 0xD0268000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x804923E8 0xD0468000 vertex  fn 0x80491E80 stfs: client store after GXBegin on every path
+0x80492400 0x98068000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492404 0x98668000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492408 0x98868000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x8049240C 0x98A68000 vertex  fn 0x80491E80 stb: client store after GXBegin on every path
+0x80492510 0xD0078000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492514 0xD0278000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492518 0xD0478000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x8049252C 0x98078000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492530 0x98878000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492534 0x98A78000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492538 0x98C78000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492544 0xD0078000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492548 0xD0278000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492568 0xD0078000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x8049256C 0xD0278000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492570 0xD0478000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492584 0x98078000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492588 0x98878000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x8049258C 0x98A78000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492590 0x98C78000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x8049259C 0xD0078000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x804925A0 0xD0278000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x804925D0 0xD0078000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x804925D4 0xD0278000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x804925D8 0xD0478000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x804925EC 0x98078000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x804925F0 0x98878000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x804925F4 0x98A78000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x804925F8 0x98C78000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492604 0xD0078000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492608 0xD0278000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492648 0xD0078000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x8049264C 0xD0278000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492650 0xD0478000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492664 0x98078000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492668 0x98878000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x8049266C 0x98A78000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492670 0x98C78000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492690 0xD0078000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492694 0xD0278000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492698 0xD0478000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x804926AC 0x98078000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x804926B0 0x98878000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x804926B4 0x98A78000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x804926B8 0x98C78000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x804926E8 0xD0078000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x804926EC 0xD0278000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x804926F0 0xD0478000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492704 0x98078000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492708 0x98878000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x8049270C 0x98A78000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492710 0x98C78000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492758 0xD0068000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x8049275C 0xD0268000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492760 0xD0468000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492774 0x98068000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492778 0x98668000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x8049277C 0x98868000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492780 0x98A68000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x8049278C 0xD0068000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492790 0xD0268000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x804927B0 0xD0068000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x804927B4 0xD0268000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x804927B8 0xD0468000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x804927CC 0x98068000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x804927D0 0x98668000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x804927D4 0x98868000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x804927D8 0x98A68000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x804927E4 0xD0068000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x804927E8 0xD0268000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x8049281C 0xD0068000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492820 0xD0268000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492824 0xD0468000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492838 0x98068000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x8049283C 0x98668000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492840 0x98868000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492844 0x98A68000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492864 0xD0068000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492868 0xD0268000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x8049286C 0xD0468000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492880 0x98068000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492884 0x98668000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492888 0x98868000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x8049288C 0x98A68000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x804928E4 0xD0068000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x804928E8 0xD0268000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x804928EC 0xD0468000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492900 0x98068000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492904 0x98668000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492908 0x98868000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x8049290C 0x98A68000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492918 0xD0068000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x8049291C 0xD0268000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492938 0xD0068000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x8049293C 0xD0268000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492940 0xD0468000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492954 0x98068000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492958 0x98668000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x8049295C 0x98868000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492960 0x98A68000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x8049296C 0xD0068000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492970 0xD0268000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492990 0xD0068000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492994 0xD0268000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492998 0xD0468000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x804929AC 0x98068000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x804929B0 0x98668000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x804929B4 0x98868000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x804929B8 0x98A68000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x804929C4 0xD0068000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x804929C8 0xD0268000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x804929FC 0xD0068000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492A00 0xD0268000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492A04 0xD0468000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492A18 0x98068000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492A1C 0x98668000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492A20 0x98868000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492A24 0x98A68000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492A40 0xD0068000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492A44 0xD0268000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492A48 0xD0468000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492A5C 0x98068000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492A60 0x98668000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492A64 0x98868000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492A68 0x98A68000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492A88 0xD0068000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492A8C 0xD0268000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492A90 0xD0468000 vertex  fn 0x8049245C stfs: client store after GXBegin on every path
+0x80492AA4 0x98068000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492AA8 0x98668000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492AAC 0x98868000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x80492AB0 0x98A68000 vertex  fn 0x8049245C stb: client store after GXBegin on every path
+0x804994E8 0xB0A38000 vertex  fn 0x80499394 sth: client store after GXBegin on every path
+0x804994EC 0xB0C38000 vertex  fn 0x80499394 sth: client store after GXBegin on every path
+0x80499530 0xD0038000 vertex  fn 0x80499394 stfs: client store after GXBegin on every path
+0x80499534 0xD0238000 vertex  fn 0x80499394 stfs: client store after GXBegin on every path
+0x80499554 0xB0A38000 vertex  fn 0x80499394 sth: client store after GXBegin on every path
+0x8049955C 0xB0C38000 vertex  fn 0x80499394 sth: client store after GXBegin on every path
+0x80499598 0xD0038000 vertex  fn 0x80499394 stfs: client store after GXBegin on every path
+0x8049959C 0xD0238000 vertex  fn 0x80499394 stfs: client store after GXBegin on every path
+0x804995D0 0xB0A38000 vertex  fn 0x80499394 sth: client store after GXBegin on every path
+0x804995D4 0xB1038000 vertex  fn 0x80499394 sth: client store after GXBegin on every path
+0x80499624 0xD0038000 vertex  fn 0x80499394 stfs: client store after GXBegin on every path
+0x80499628 0xD0238000 vertex  fn 0x80499394 stfs: client store after GXBegin on every path
+0x80499648 0xB0038000 vertex  fn 0x80499394 sth: client store after GXBegin on every path
+0x80499650 0xB0838000 vertex  fn 0x80499394 sth: client store after GXBegin on every path
+0x8049968C 0xD0038000 vertex  fn 0x80499394 stfs: client store after GXBegin on every path
+0x80499690 0xD0238000 vertex  fn 0x80499394 stfs: client store after GXBegin on every path
+0x804996FC 0xB0A38000 vertex  fn 0x80499394 sth: client store after GXBegin on every path
+0x80499700 0xB0C38000 vertex  fn 0x80499394 sth: client store after GXBegin on every path
+0x80499744 0xD0038000 vertex  fn 0x80499394 stfs: client store after GXBegin on every path
+0x80499748 0xD0238000 vertex  fn 0x80499394 stfs: client store after GXBegin on every path
+0x80499768 0xB0A38000 vertex  fn 0x80499394 sth: client store after GXBegin on every path
+0x80499770 0xB0C38000 vertex  fn 0x80499394 sth: client store after GXBegin on every path
+0x804997AC 0xD0038000 vertex  fn 0x80499394 stfs: client store after GXBegin on every path
+0x804997B0 0xD0238000 vertex  fn 0x80499394 stfs: client store after GXBegin on every path
+0x804997E4 0xB0A38000 vertex  fn 0x80499394 sth: client store after GXBegin on every path
+0x804997E8 0xB1038000 vertex  fn 0x80499394 sth: client store after GXBegin on every path
+0x80499838 0xD0038000 vertex  fn 0x80499394 stfs: client store after GXBegin on every path
+0x8049983C 0xD0238000 vertex  fn 0x80499394 stfs: client store after GXBegin on every path
+0x8049985C 0xB0038000 vertex  fn 0x80499394 sth: client store after GXBegin on every path
+0x80499864 0xB0838000 vertex  fn 0x80499394 sth: client store after GXBegin on every path
+0x804998A0 0xD0038000 vertex  fn 0x80499394 stfs: client store after GXBegin on every path
+0x804998A4 0xD0238000 vertex  fn 0x80499394 stfs: client store after GXBegin on every path
+0x80499FC0 0xD0058000 vertex  fn 0x80499F10 stfs: client store after GXBegin on every path
+0x80499FCC 0xD0058000 vertex  fn 0x80499F10 stfs: client store after GXBegin on every path
+0x80499FD8 0xD0058000 vertex  fn 0x80499F10 stfs: client store after GXBegin on every path
+0x8049A010 0xD0058000 vertex  fn 0x80499F10 stfs: client store after GXBegin on every path
+0x8049A014 0xD0258000 vertex  fn 0x80499F10 stfs: client store after GXBegin on every path
+0x8049A020 0xD0058000 vertex  fn 0x80499F10 stfs: client store after GXBegin on every path
+0x8049A064 0xD0058000 vertex  fn 0x80499F10 stfs: client store after GXBegin on every path
+0x8049A068 0xD0258000 vertex  fn 0x80499F10 stfs: client store after GXBegin on every path
+0x8049A070 0xD0058000 vertex  fn 0x80499F10 stfs: client store after GXBegin on every path
+0x8049A0A4 0xD0058000 vertex  fn 0x80499F10 stfs: client store after GXBegin on every path
+0x8049A0A8 0xD0258000 vertex  fn 0x80499F10 stfs: client store after GXBegin on every path
+0x8049A0B0 0xD0058000 vertex  fn 0x80499F10 stfs: client store after GXBegin on every path
+0x804A0D68 0xD0068000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0D6C 0xD0268000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0D70 0xD0468000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0D84 0x98068000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0D88 0x98668000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0D8C 0x98868000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0D90 0x98A68000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0D9C 0xD0068000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0DA0 0xD0268000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0DD8 0xD0068000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0DDC 0xD0268000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0DE0 0xD0468000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0DF4 0x98068000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0DF8 0x98668000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0DFC 0x98868000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0E00 0x98A68000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0E54 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0E58 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0E5C 0xD0478000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0E70 0x98078000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0E74 0x98878000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0E78 0x98A78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0E7C 0x98C78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0E88 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0E8C 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0EA8 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0EAC 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0EB0 0xD0478000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0EC4 0x98078000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0EC8 0x98878000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0ECC 0x98A78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0ED0 0x98C78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0EDC 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0EE0 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0F00 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0F04 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0F08 0xD0478000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0F1C 0x98078000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0F20 0x98878000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0F24 0x98A78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0F28 0x98C78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0F34 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0F38 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0F6C 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0F70 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0F74 0xD0478000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0F88 0x98078000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0F8C 0x98878000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0F90 0x98A78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0F94 0x98C78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0FB0 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0FB4 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0FB8 0xD0478000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0FCC 0x98078000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0FD0 0x98878000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0FD4 0x98A78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0FD8 0x98C78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A0FF8 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A0FFC 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1000 0xD0478000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1014 0x98078000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1018 0x98878000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A101C 0x98A78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1020 0x98C78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1068 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A106C 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1070 0xD0478000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1084 0x98078000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1088 0x98878000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A108C 0x98A78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1090 0x98C78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A109C 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A10A0 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A10C0 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A10C4 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A10C8 0xD0478000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A10DC 0x98078000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A10E0 0x98878000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A10E4 0x98A78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A10E8 0x98C78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A10F4 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A10F8 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A112C 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1130 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1134 0xD0478000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1148 0x98078000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A114C 0x98878000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1150 0x98A78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1154 0x98C78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1174 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1178 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A117C 0xD0478000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1190 0x98078000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1194 0x98878000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1198 0x98A78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A119C 0x98C78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1394 0xD0068000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1398 0xD0268000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A139C 0xD0468000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A13B0 0x98068000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A13B4 0x98668000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A13B8 0x98868000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A13BC 0x98A68000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A13CC 0xD0068000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A13D0 0xD0268000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A13F8 0xD0068000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A13FC 0xD0268000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1400 0xD0468000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1418 0x98068000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A141C 0x98668000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1420 0x98868000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1424 0x98A68000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1478 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A147C 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1480 0xD0478000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1494 0x98078000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1498 0x98878000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A149C 0x98A78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A14A0 0x98C78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A14AC 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A14B0 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A14C0 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A14C4 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A14C8 0xD0478000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A14DC 0x98078000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A14E0 0x98878000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A14E4 0x98A78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A14E8 0x98C78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A14F4 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A14F8 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1508 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A150C 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1510 0xD0478000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1524 0x98078000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1528 0x98878000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A152C 0x98A78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1530 0x98C78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1540 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1544 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A156C 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1570 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1574 0xD0478000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1588 0x98078000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A158C 0x98878000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1590 0x98A78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1594 0x98C78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A15A4 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A15A8 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A15AC 0xD0478000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A15C0 0x98078000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A15C4 0x98878000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A15C8 0x98A78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A15CC 0x98C78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A15DC 0xD0078000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A15E0 0xD0278000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A15E4 0xD0478000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A15FC 0x98078000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1600 0x98878000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1604 0x98A78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1608 0x98C78000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A164C 0xD0068000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1650 0xD0268000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1654 0xD0468000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1668 0x98068000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A166C 0x98668000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1670 0x98868000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1674 0x98A68000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1680 0xD0068000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1684 0xD0268000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1694 0xD0068000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1698 0xD0268000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A169C 0xD0468000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A16B0 0x98068000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A16B4 0x98668000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A16B8 0x98868000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A16BC 0x98A68000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A16CC 0xD0068000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A16D0 0xD0268000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A16F8 0xD0068000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A16FC 0xD0268000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1700 0xD0468000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1714 0x98068000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1718 0x98668000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A171C 0x98868000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1720 0x98A68000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1730 0xD0068000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1734 0xD0268000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1738 0xD0468000 vertex  fn 0x804A0B68 stfs: client store after GXBegin on every path
+0x804A1750 0x98068000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1754 0x98668000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A1758 0x98868000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+0x804A175C 0x98A68000 vertex  fn 0x804A0B68 stb: client store after GXBegin on every path
+# --- no effect in lifted (copy trigger feeds only the legacy RwCapture), draw_done 0 on Lava:
+0x80396510 0x90058000 draw_done  fn 0x803964E8 stw: BP 0x45 payload (constant top byte)
+0x8039755C 0x90078000 copy_trigger  fn 0x80397444 stw: BP 0x52 payload (__GXData field +0x1EC)
+0x803976E8 0x90688000 copy_trigger  fn 0x803975AC stw: BP 0x52 payload (__GXData field +0x1FC)
