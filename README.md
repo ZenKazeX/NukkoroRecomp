@@ -27,7 +27,7 @@ your disc, so please keep it to yourself.
 ## Install
 
 1. In Dolphin, right-click the game and choose *Properties*. On the *Filesystem* tab, right-click the disc at the top and
-   choose *Extract Entire Disc...*.
+   choose *Extract Entire Disc...*. [Extracting the disc](#extracting-the-disc) shows this with pictures.
 2. Download `NukkoroRecomp-<version>-Setup.exe` from [Releases](https://github.com/ZenKazeX/NukkoroRecomp/releases) and run
    it. Windows may warn about an unknown publisher, because the file is unsigned. Choose *More info*, then *Run anyway*.
 3. Choose the extracted disc folder, the install location and the shortcuts you want, then start the install.
@@ -41,6 +41,32 @@ From a copy of this repository, run `Install.cmd` instead. To install from a con
 ```powershell
 .\Install.cmd -DiscPath "D:\Dumps\Shadow PAL" -InstallPath "D:\Games\Shadow the Hedgehog Recompiled"
 ```
+
+### Extracting the disc
+
+Follow the red numbers in each picture. Right-click means the right mouse button, and every other click is the left one.
+
+1. In Dolphin's game list, right-click the European version of the game, which has the blue flag with yellow stars. Then
+   click *Properties*.
+
+   <img src="docs/assets/install/dolphin-1-properties.png" alt="Dolphin's game list with the right-click menu open and Properties marked" width="720"/>
+
+2. On the *Info* page, check that the *Name* line ends with `Revision 0` and the *Game ID* line says `GUPP8P`. The setup
+   refuses any other version.
+
+   <img src="docs/assets/install/dolphin-2-check-version.png" alt="Dolphin's Properties window with Revision 0 and Game ID GUPP8P marked" width="720"/>
+
+3. Click *Filesystem*, right-click the *Disc* line at the very top of the list, then click *Extract Entire Disc...*.
+
+   <img src="docs/assets/install/dolphin-3-extract.png" alt="Dolphin's Filesystem page with the Disc line and Extract Entire Disc marked" width="720"/>
+
+4. Pick a drive, click *New folder*, type a name and press Enter. Double-click the new folder to go inside it, then click
+   *Select Folder*. The picture hides the drives and folders, and you will see your own.
+
+   <img src="docs/assets/install/dolphin-4-choose-folder.png" alt="The folder window with the drive area, New folder and Select Folder marked" width="720"/>
+
+5. When the extraction has finished, check that the folder contains `sys` and `files`. This is the folder the setup asks
+   for.
 
 ## Controller
 
