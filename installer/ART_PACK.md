@@ -19,8 +19,10 @@ rebuilds the game. A different icon file can be given with `-DSHADOW_GAME_ICON=<
 | `branding/emblem.png` | Shadow emblem, behind the end of the logo as on the game's title screen |
 | `window/main_background.png` | Main background, stretched to the window |
 | `window/sidebar_background.svg` | Sidebar background, stretched to the window height |
-| `audio/music.mp3` | Looping music (starts at 25% volume; the window shows a toggle and slider) |
-| `app.ico` | Icon of `NukkoroSetup.exe` and of the game, `ShadowTheHedgehog.exe` (file, window, taskbar, shortcuts). One file with 16, 20, 24, 32, 40, 48, 64, 96, 128 and 256 px images |
+| `audio/music.mp3` | Looping music (starts by itself at 25% volume; the window shows a toggle and slider) |
+| `branding/setup_logo.png` | The installer's logo at 1024 x 1024: the emblem on a dark tile with an install badge |
+| `setup.ico` | Icon of the setup programs, `NukkoroSetup.exe` and `NukkoroRecomp-<version>-Setup.exe`, made from the installer's logo. One file with 16, 20, 24, 32, 40, 48, 64, 96, 128 and 256 px images |
+| `app.ico` | Icon of the game, `ShadowTheHedgehog.exe` (file, window, taskbar, shortcuts). Same image sizes as `setup.ico` |
 
 Any file may be missing; the page hides that layer. Positions come from the approved design (1265 x 648 window) and
 are set in `installer/web/setup.css`.

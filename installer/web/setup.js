@@ -60,10 +60,17 @@ function loadArt(present) {
   });
   if (!present) return;
   const audio = $('#music-audio');
-  audio.addEventListener('canplay', () => { $('#music').hidden = false; }, { once: true });
+  const musicOn = $('#music-on');
+  audio.addEventListener('canplay', () => {
+    $('#music').hidden = false;
+    // If the browser engine refuses to start without a user action, the first click starts the music.
+    if (musicOn.checked) audio.play().catch(() => {
+      document.addEventListener('pointerdown', () => { if (musicOn.checked) audio.play().catch(() => {}); }, { once: true });
+    });
+  }, { once: true });
   audio.volume = 0.25;
   audio.src = 'https://art.nukkoro.local/audio/music.mp3';
-  $('#music-on').addEventListener('change', e => { if (e.target.checked) audio.play().catch(() => {}); else audio.pause(); });
+  musicOn.addEventListener('change', e => { if (e.target.checked) audio.play().catch(() => {}); else audio.pause(); });
   $('#music-volume').addEventListener('input', e => {
     audio.volume = e.target.value / 100;
     e.target.style.setProperty('--fill', `${e.target.value}%`);
@@ -388,6 +395,10 @@ async function selftest() {
   const snap = async name => { await wait(400); await native.request('selftest-snapshot', name); report.pages.push(name); };
   try {
     const config = await native.request('selftest-config');
+    const music = $('#music-audio');
+    const musicExpected = !!music.src;
+    if (musicExpected) await until(() => !music.paused && music.currentTime > 0, 10000).catch(() => {});
+    report.musicPlaying = !music.paused && music.currentTime > 0;
     await snap('1-welcome-empty');
     state.disc.path = 'C:\\Windows'; render(); checkDisc(0);
     await until(() => state.disc.result); report.badDiscRejected = !discOk();
@@ -405,7 +416,8 @@ async function selftest() {
     state.desktop = false; state.startMenu = false; state.launch = false;
     next.click(); await wait(100);
     await snap('4-ready');
-    report.passed = report.badDiscRejected && report.discAccepted && report.targetAccepted && report.prereqsOk;
+    report.passed = report.badDiscRejected && report.discAccepted && report.targetAccepted && report.prereqsOk &&
+                    (!musicExpected || report.musicPlaying);
     if (config.install && report.passed) {
       const exited = new Promise(resolve => { selftestHooks.onExit = resolve; });
       next.click();

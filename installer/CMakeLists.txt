@@ -25,10 +25,10 @@ if(NOT EXISTS "${WEBVIEW2_DIR}/build/native/include/WebView2.h")
     file(ARCHIVE_EXTRACT INPUT "${package}" DESTINATION "${WEBVIEW2_DIR}")
 endif()
 
-# Art pack (installer/art, not in git): its icon is used when present.
+# Art pack (installer/art): the setup's own icon is used when present.
 set(SETUP_ICON_LINE "")
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/art/app.ico")
-    set(SETUP_ICON_LINE "IDI_APP ICON \"${CMAKE_CURRENT_SOURCE_DIR}/art/app.ico\"")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/art/setup.ico")
+    set(SETUP_ICON_LINE "IDI_APP ICON \"${CMAKE_CURRENT_SOURCE_DIR}/art/setup.ico\"")
 endif()
 configure_file(resources/app.rc.in "${CMAKE_BINARY_DIR}/app.rc" @ONLY)
 
