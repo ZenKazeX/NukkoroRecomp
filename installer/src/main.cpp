@@ -11,7 +11,9 @@
 #include <dwmapi.h>
 #include <wrl.h>
 #include <WebView2.h>
-#include <WebView2EnvironmentOptions.h>
+#include <mfplay.h>
+#include <mmdeviceapi.h>
+#include <audiopolicy.h>
 #include "resource.h"
 #include <algorithm>
 #include <filesystem>
@@ -186,6 +188,101 @@ std::wstring PowerShellLine(const fs::path& installer, const std::vector<std::ws
     return line;
 }
 
+// ---- music ----------------------------------------------------------------------------------
+
+// Plays the art pack's music from this process, so Windows lists it under the setup's name in the Volume Mixer.
+// Media Foundation is loaded at run time because some Windows editions ship without it; the setup then has no music.
+class MusicPlayer final : public IMFPMediaPlayerCallback {
+public:
+    bool Start(const fs::path& file) {
+        if (player) return true;
+        HMODULE library = LoadLibraryExW(L"mfplay.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (!library) return false;
+        const auto create = reinterpret_cast<decltype(&MFPCreateMediaPlayer)>(GetProcAddress(library, "MFPCreateMediaPlayer"));
+        return create && SUCCEEDED(create(file.c_str(), FALSE, MFP_OPTION_NONE, this, nullptr, &player));
+    }
+    void Play() {
+        wanted = true;
+        if (loaded) player->Play();
+    }
+    void Pause() {
+        wanted = false;
+        if (loaded) player->Pause();
+    }
+    void SetVolume(float value) {
+        volume = value;
+        if (loaded) player->SetVolume(volume);
+    }
+    void Shutdown() {
+        if (player) player->Shutdown();
+        player.Reset();
+        loaded = false;
+    }
+    bool Available() const { return player && !failed; }
+    int Loops() const { return loops; }
+    bool Playing() const {
+        MFP_MEDIAPLAYER_STATE state = MFP_MEDIAPLAYER_STATE_EMPTY;
+        return loaded && SUCCEEDED(player->GetState(&state)) && state == MFP_MEDIAPLAYER_STATE_PLAYING;
+    }
+    long long PositionMs() const {
+        if (!loaded) return 0;
+        PROPVARIANT position;
+        PropVariantInit(&position);
+        long long result = 0;
+        if (SUCCEEDED(player->GetPosition(MFP_POSITIONTYPE_100NS, &position)) && position.vt == VT_I8) result = position.hVal.QuadPart / 10000;
+        PropVariantClear(&position);
+        return result;
+    }
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** object) override {
+        if (iid != __uuidof(IUnknown) && iid != __uuidof(IMFPMediaPlayerCallback)) { *object = nullptr; return E_NOINTERFACE; }
+        *object = static_cast<IMFPMediaPlayerCallback*>(this);
+        return S_OK;
+    }
+    // The host owns this object and outlives the player.
+    ULONG STDMETHODCALLTYPE AddRef() override { return 2; }
+    ULONG STDMETHODCALLTYPE Release() override { return 1; }
+    void STDMETHODCALLTYPE OnMediaPlayerEvent(MFP_EVENT_HEADER* event) override {
+        if (!player) return;
+        if (FAILED(event->hrEvent) || event->eEventType == MFP_EVENT_TYPE_ERROR) { failed = true; return; }
+        if (event->eEventType == MFP_EVENT_TYPE_MEDIAITEM_SET) {
+            loaded = true;
+            NameSession();
+            player->SetVolume(volume);
+            if (wanted) player->Play();
+        } else if (event->eEventType == MFP_EVENT_TYPE_PLAYBACK_ENDED) {
+            ++loops;
+            PROPVARIANT start;
+            PropVariantInit(&start);
+            start.vt = VT_I8;
+            start.hVal.QuadPart = 0;
+            player->SetPosition(MFP_POSITIONTYPE_100NS, &start);
+            if (wanted) player->Play();
+        }
+    }
+
+private:
+    // The name and icon the Volume Mixer shows for this process's audio.
+    void NameSession() {
+        ComPtr<IMMDeviceEnumerator> devices;
+        ComPtr<IMMDevice> device;
+        ComPtr<IAudioSessionManager> manager;
+        ComPtr<IAudioSessionControl> session;
+        if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&devices))) ||
+            FAILED(devices->GetDefaultAudioEndpoint(eRender, eConsole, &device)) ||
+            FAILED(device->Activate(__uuidof(IAudioSessionManager), CLSCTX_ALL, nullptr, reinterpret_cast<void**>(manager.GetAddressOf()))) ||
+            FAILED(manager->GetAudioSessionControl(nullptr, 0, &session))) return;
+        session->SetDisplayName(L"Nukkoro Recompiled Setup", nullptr);
+        wchar_t exe[MAX_PATH];
+        if (GetModuleFileNameW(nullptr, exe, MAX_PATH)) session->SetIconPath((std::wstring(exe) + L",0").c_str(), nullptr);
+    }
+
+    ComPtr<IMFPMediaPlayer> player;
+    bool wanted = true, loaded = false, failed = false;
+    float volume = 0.25f;
+    int loops = 0;
+};
+
 // ---- the host -------------------------------------------------------------------------------
 
 class SetupHost {
@@ -195,6 +292,7 @@ public:
     ComPtr<ICoreWebView2> webview;
     fs::path installer;
     bool artPresent = false;
+    MusicPlayer music;
     bool folderPending = false;
     bool closing = false;
     int exitCode = 0;
@@ -385,6 +483,18 @@ public:
         if (FAILED(hr)) Reply(id, L"\"error\":\"Cannot start snapshot\"");
     }
 
+    // start / play / pause / volume:<0-100> / state; every answer reports the player's state.
+    void MusicCommand(const std::wstring& id, const std::wstring& action) {
+        std::error_code error;
+        const fs::path file = installer / "art" / "audio" / "music.mp3";
+        if (action == L"start") { if (artPresent && fs::is_regular_file(file, error)) music.Start(file); }
+        else if (action == L"play") music.Play();
+        else if (action == L"pause") music.Pause();
+        else if (action.rfind(L"volume:", 0) == 0) music.SetVolume(std::clamp(_wtoi(action.c_str() + 7), 0, 100) / 100.0f);
+        Reply(id, std::wstring(L"\"available\":") + (music.Available() ? L"true" : L"false") + L",\"playing\":" + (music.Playing() ? L"true" : L"false") +
+                  L",\"positionMs\":" + std::to_wstring(music.PositionMs()) + L",\"loops\":" + std::to_wstring(music.Loops()));
+    }
+
     void Message(ICoreWebView2WebMessageReceivedEventArgs* args) {
         LPWSTR source = nullptr;
         args->get_Source(&source);
@@ -409,6 +519,8 @@ public:
         if (command == L"ping") {
             Reply(id, std::wstring(L"\"native\":true,\"version\":2,\"art\":") + (artPresent ? L"true" : L"false") +
                       L",\"selftest\":" + (selftest ? L"true" : L"false"));
+        } else if (command == L"music") {
+            MusicCommand(id, payload);
         } else if (command == L"folder" || command == L"disc-folder") {
             if (folderPending) { Reply(id, L"\"error\":\"The folder chooser is already open.\""); return; }
             folderPending = true; folderId = id; folderInitial = payload; folderForDisc = command == L"disc-folder";
@@ -467,9 +579,7 @@ public:
         if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &appData))) { Fail(E_FAIL, L"Find the user data folder"); return; }
         userData = fs::path(appData) / "NukkoroSetup" / "WebView2";
         CoTaskMemFree(appData);
-        auto options = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
-        options->put_AdditionalBrowserArguments(L"--autoplay-policy=no-user-gesture-required");
-        hr = CreateCoreWebView2EnvironmentWithOptions(nullptr, userData.c_str(), options.Get(),
+        hr = CreateCoreWebView2EnvironmentWithOptions(nullptr, userData.c_str(), nullptr,
             Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>([this](HRESULT result, ICoreWebView2Environment* environment) -> HRESULT {
                 if (FAILED(result)) { Fail(result, L"Create the WebView2 environment"); return S_OK; }
                 const HRESULT created = environment->CreateCoreWebView2Controller(window,
@@ -487,7 +597,7 @@ public:
                             FAILED(mapping->SetVirtualHostNameToFolderMapping(PageHost, (installer / "web").c_str(), COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY))) {
                             Fail(E_FAIL, L"Map the setup pages"); return S_OK;
                         }
-                        // The optional art pack: images and music the page may embed, nothing else.
+                        // The optional art pack: images the page may embed, nothing else.
                         if (artPresent) mapping->SetVirtualHostNameToFolderMapping(ArtHost, (installer / "art").c_str(), COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS);
                         ComPtr<ICoreWebView2Settings> settings;
                         webview->get_Settings(&settings);
@@ -562,6 +672,7 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wParam, LPARA
         }
         return 0;
     case WM_DESTROY:
+        host->music.Shutdown();
         if (host->controller) host->controller->Close();
         host->webview.Reset();
         host->controller.Reset();
