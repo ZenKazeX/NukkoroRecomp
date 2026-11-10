@@ -51,6 +51,7 @@ const discOk = () => !!(state.disc.result && state.disc.result.ok);
 const targetOk = () => !!(state.target.result && state.target.result.ok);
 
 // ---- art pack ----------------------------------------------------------------------------
+let musicStart = Promise.resolve(false);
 function loadArt(present) {
   document.querySelectorAll('[data-art]').forEach(img => {
     if (!present) { img.classList.add('missing'); img.remove(); return; }
@@ -59,20 +60,15 @@ function loadArt(present) {
     img.src = `https://art.nukkoro.local/${img.dataset.art}`;
   });
   if (!present) return;
-  const audio = $('#music-audio');
-  const musicOn = $('#music-on');
-  audio.addEventListener('canplay', () => {
-    $('#music').hidden = false;
-    // If the browser engine refuses to start without a user action, the first click starts the music.
-    if (musicOn.checked) audio.play().catch(() => {
-      document.addEventListener('pointerdown', () => { if (musicOn.checked) audio.play().catch(() => {}); }, { once: true });
-    });
-  }, { once: true });
-  audio.volume = 0.25;
-  audio.src = 'https://art.nukkoro.local/audio/music.mp3';
-  musicOn.addEventListener('change', e => { if (e.target.checked) audio.play().catch(() => {}); else audio.pause(); });
+  // The setup program plays the music itself, so Windows shows it under the setup's own name.
+  musicStart = native.request('music', 'start').then(reply => {
+    if (reply.available) $('#music').hidden = false;
+    return reply.available;
+  }).catch(() => false);
+  const music = action => native.request('music', action).catch(() => {});
+  $('#music-on').addEventListener('change', e => music(e.target.checked ? 'play' : 'pause'));
   $('#music-volume').addEventListener('input', e => {
-    audio.volume = e.target.value / 100;
+    music(`volume:${e.target.value}`);
     e.target.style.setProperty('--fill', `${e.target.value}%`);
     $('#music-value').textContent = `${e.target.value}%`;
   });
@@ -395,10 +391,13 @@ async function selftest() {
   const snap = async name => { await wait(400); await native.request('selftest-snapshot', name); report.pages.push(name); };
   try {
     const config = await native.request('selftest-config');
-    const music = $('#music-audio');
-    const musicExpected = !!music.src;
-    if (musicExpected) await until(() => !music.paused && music.currentTime > 0, 10000).catch(() => {});
-    report.musicPlaying = !music.paused && music.currentTime > 0;
+    const musicExpected = await musicStart;
+    const musicState = () => native.request('music', 'state');
+    report.musicPlaying = false;
+    for (let end = Date.now() + 10000; musicExpected && Date.now() < end; await wait(100)) {
+      const state = await musicState();
+      if (state.playing && state.positionMs > 0) { report.musicPlaying = true; break; }
+    }
     await snap('1-welcome-empty');
     state.disc.path = 'C:\\Windows'; render(); checkDisc(0);
     await until(() => state.disc.result); report.badDiscRejected = !discOk();
@@ -416,6 +415,7 @@ async function selftest() {
     state.desktop = false; state.startMenu = false; state.launch = false;
     next.click(); await wait(100);
     await snap('4-ready');
+    report.musicLoops = (await musicState()).loops;
     report.passed = report.badDiscRejected && report.discAccepted && report.targetAccepted && report.prereqsOk &&
                     (!musicExpected || report.musicPlaying);
     if (config.install && report.passed) {
