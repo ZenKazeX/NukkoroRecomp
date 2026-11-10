@@ -7,6 +7,15 @@
 A static recompilation of **Shadow the Hedgehog** (GameCube, PAL) for PC, made with GekkoForge and built from your own
 copy of the game. It is still under development, so expect bugs and unfinished features.
 
+## Screenshots
+
+<p align="center">
+    <img src="docs/assets/screenshots/1-sky-ruins.jpg" alt="Shadow flying above floating ruins in a blue sky" width="49%"/>
+    <img src="docs/assets/screenshots/2-research-lab.jpg" alt="Shadow in a green-lit research lab" width="49%"/>
+    <img src="docs/assets/screenshots/3-castle-courtyard.jpg" alt="Shadow running across a castle courtyard" width="49%"/>
+    <img src="docs/assets/screenshots/4-purple-lake.jpg" alt="Shadow on a hover platform over a glowing purple lake" width="49%"/>
+</p>
+
 ## How it works
 
 When you install it, GekkoForge translates the game's executable from your disc into C++ and compiles it for Windows.
