@@ -41,7 +41,7 @@ your disc, so please keep it to yourself.
    it. Windows may warn about an unknown publisher, because the file is unsigned. Choose *More info*, then *Run anyway*.
 3. Choose the extracted disc folder, the install location and the shortcuts you want, then start the install.
 
-The first build takes about 10 to 30 minutes. Afterwards the extracted disc folder is no longer needed, and you can delete
+The first build takes about 5 to 20 minutes. Afterwards the extracted disc folder is no longer needed, and you can delete
 the build files in `C:\Users\Public\NukkoroRecomp`. Running the setup again on the same folder updates the game and keeps
 your saves.
 

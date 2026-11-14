@@ -229,7 +229,7 @@ function renderReview() {
   const target = state.target.result || {};
   content.innerHTML = `
     <h1>Ready to Install</h1>
-    <p class="description">Review your settings, then select Install. The first build takes about 10-30 minutes.</p>
+    <p class="description">Review your settings, then select Install. The first build takes about 5-20 minutes.</p>
     <dl class="summary">
       <dt>Disc</dt><dd title="${escapeText(state.disc.result.root)}">${escapeText(state.disc.result.root)}</dd>
       <dt>Destination</dt><dd title="${escapeText(target.path)}">${escapeText(target.path)}</dd>

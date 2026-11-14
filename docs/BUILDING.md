@@ -110,7 +110,9 @@ folders, definitions, link order). The target compiles one empty file and its ar
 into it (`lib.exe` accepts a `.lib` as input; `STATIC_LIBRARY_OPTIONS`), so the executable's link line is the same,
 item for item, as a full build's. `ppcrecomp` becomes an imported executable, as in cross builds, and
 `ShadowPadConfig` a copy of the prebuilt program. The renderer's shaders are not compiled, since only
-`shadow_render` uses them.
+`shadow_render` uses them. The build-time string the runtime shows (`__DATE__ __TIME__` in `system.cpp`) is then the
+release step's. `prebuilt/` may hold several sets, one per toolchain (run the release step with each); CMake takes the
+first whose key matches.
 
 To add a part (it must take no input from the disc or from `extract/`): build it as a target, add its name to
 `SHADOW_PREBUILT_LIBRARIES` (a static library) or `SHADOW_PREBUILT_PROGRAMS` (a program the game does not link; give
