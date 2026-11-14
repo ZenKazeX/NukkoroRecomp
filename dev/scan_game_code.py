@@ -148,6 +148,7 @@ def grow(a: bytes, ai: int, b: bytes, bi: int):
 def scan_disc(disc: Path, index, files, report):
     blobs, h, own, off = index
     found = {}
+    tries = {}  # index window -> disc places it was grown from (a few are enough to find its longest run)
     disc_files = [p for p in sorted((disc / 'sys').glob('*')) if p.is_file()] + \
                  sorted(p for p in (disc / 'files').rglob('*') if p.is_file())
     total = 0
@@ -167,11 +168,14 @@ def scan_disc(disc: Path, index, files, report):
             pos[pos >= len(h)] = len(h) - 1
             covered = -1  # disc bytes before this are inside a run already grown
             for i in np.nonzero(h[pos] == hh)[0]:
-                p = pos[i]
+                p = int(pos[i])
+                if tries.get(p, 0) >= 4:
+                    continue
                 fileno, view, phase, blob = blobs[own[p]]
                 bi, di = int(off[p]), int(o[i])
                 if di < covered or blob[bi:bi + W] != raw[di:di + W]:
                     continue
+                tries[p] = tries.get(p, 0) + 1
                 b0, d0, n = grow(blob, bi, raw, di)
                 covered = d0 + n - W + 1
                 key = (int(own[p]), b0)

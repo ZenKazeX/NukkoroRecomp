@@ -206,11 +206,13 @@ set(SHADOW_PREBUILT_PROGRAMS ppcrecomp ShadowPadConfig)
 # before. The prebuilt archives lack their objects; the player's tree compiles them into the same targets.
 #   native_audio_mixer.cpp: the AX compressor's gain table (main.dol 0x80563420..0x80564E5F).
 #   button_glyphs.cpp (button_glyph_data.inc): palettes and texel blocks that match the game's button sheets.
-#   native_boot.cpp: the OS exception vector page's PowerPC words it writes into guest memory, and a table of the OS's.
+#   native_boot.cpp, os_exception_entry.cpp: the SDK's exception vector, 38 PowerPC words (gekko/os_exception_vector.h)
+#   the boot writes into guest memory and the exception entry checks; native_boot.cpp also has a table of the OS's.
 set(SHADOW_PREBUILT_LOCAL_SOURCES
     runtime/src/native_audio_mixer.cpp
     runtime/src/gekko/button_glyphs.cpp
-    runtime/src/gekko/native_boot.cpp)
+    runtime/src/gekko/native_boot.cpp
+    runtime/src/gekko/os_exception_entry.cpp)
 set(SHADOW_PREBUILT_DIR "" CACHE PATH "Folder of prebuilt game-code-free parts (the release package's prebuilt/)")
 option(SHADOW_PREBUILT_EXPORT "Release step: build the prebuilt parts (requires an empty SHADOW_RECOMP_DOL)" OFF)
 

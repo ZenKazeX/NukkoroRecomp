@@ -68,18 +68,29 @@ and `SHADOW_PREBUILT_PROGRAMS`, the only list):
 
 | Part | Built from |
 | --- | --- |
-| `shadow_runtime` (with `shadow_runtime_common`), `shadow_render`, `shadow_render_lifted`, `shadow_rwim`, `shadow_d3d12ma`, `shadow_lift`, `shadow_assets`, `shadow_motion`, `shadow_msl`, `shadow_native_execution`, `shadow_native_memory`, `shadow_native_gameplay` | `runtime/`, `thirdparty/plume/contrib/D3D12MemoryAllocator`; `shadow_render` includes the renderer's shaders, compiled by DXC from `runtime/lift/render/shaders` |
+| `shadow_runtime` (with `shadow_runtime_common`), `shadow_render`, `shadow_render_lifted`, `shadow_rwim`, `shadow_d3d12ma`, `shadow_lift`, `shadow_assets`, `shadow_motion`, `shadow_native_execution`, `shadow_native_memory`, `shadow_native_gameplay` | `runtime/`, `thirdparty/plume/contrib/D3D12MemoryAllocator`; `shadow_render` includes the renderer's shaders, compiled by DXC from `runtime/lift/render/shaders` |
 | `ppcrecomp.exe` | `tools/ppcrecomp/main.cpp` (the recompiler itself; it reads your DOL only when it runs on your PC) |
 | `ShadowPadConfig.exe` | `tools/padconfig/`, `runtime/lift/peripheral/gamepad_binding.cpp` |
+
+Some sources of this repository carry data taken from the game, and the scan finds their objects: they are never
+prebuilt. `SHADOW_PREBUILT_LOCAL_SOURCES` lists them (`native_audio_mixer.cpp`: the AX compressor's gain table;
+`button_glyphs.cpp`: palettes and texel blocks matching the game's button sheets; `native_boot.cpp` and `os_exception_entry.cpp`: the 38
+PowerPC words of the SDK's exception vector, `gekko/os_exception_vector.h`). The release step leaves their objects out of the
+archives and your build compiles them into the same targets. `shadow_msl` (fdlibm, whose constant tables are the
+game's C library's byte for byte) is not prebuilt at all.
 
 **How they are made.** `dev/Package-Release.ps1` unpacks the source package it is about to publish, configures it with
 the release preset and an empty `SHADOW_RECOMP_DOL` plus `SHADOW_PREBUILT_EXPORT=ON` (CMake refuses the export when a
 DOL is given, so that tree has no game input at all), builds exactly the listed targets and writes
 `prebuilt/<set>/prebuilt.json`: the key below, every file's size and SHA-256, and the toolchain's versions. It then runs
 `dev/scan_game_code.py` over every prebuilt file against the PAL disc: every 32-byte window of `sys/` and of the whole
-`files/` tree, at every offset, is looked up among the prebuilt files; no shared run of 64 bytes or more, no defined
-translated function (`fn_8xxxxxxx`) in any symbol table and no path of the release machine's user may appear, or the
-release stops.
+`files/` tree, at every offset, is looked up among the prebuilt files, taken as they are and byte-swapped in 16- and
+32-bit units (the console is big-endian). Counting and identity tables, and runs that occur as they are in the C
+runtime libraries the toolchain links into every program, are listed apart. Any other shared run of 64 bytes or more,
+256 shared bytes in one file, a defined translated function (`fn_8xxxxxxx`) in a symbol table or a path of the
+release machine's user stops the release. The prebuilt parts are compiled in the folder the setup unpacks the
+package into (`%PUBLIC%\NukkoroRecomp\<version>`), because MSVC derives the names of anonymous namespaces (which also
+appear in RTTI names) from each source file's full path.
 
 **When they are used.** At configure time CMake computes the key of the player's tree, one line each: the compiler
 and its exact version, the platform toolset, the Windows SDK, the generator and platform, `CMAKE_CXX_FLAGS`,
