@@ -187,6 +187,127 @@ if(MSVC)
     target_link_libraries(shadow_host_isa INTERFACE $<TARGET_OBJECTS:shadow_host_isa_gate>)
 endif()
 
+# ---- prebuilt game-code-free parts (docs/BUILDING.md "Prebuilt parts") ---------------------------------------------
+# The release package may carry the parts of the build that contain no game code, compiled once by the release step
+# (dev/Package-Release.ps1) in a tree configured WITHOUT a main.dol (SHADOW_PREBUILT_EXPORT): the runtime libraries,
+# the recompiler and the controller configurator. A player's tree uses them only when everything that shapes their
+# compiled bytes matches exactly (shadow_prebuilt_key: compiler version, Windows SDK, generator, flags, options, a hash
+# of every source file); otherwise it builds them, as before. The recompiled game code, everything generated from the
+# player's main.dol and the executable that embeds it are always built on the player's PC. The two lists below are the
+# only place the prebuilt parts are named: the release step exports exactly these targets.
+set(SHADOW_PREBUILT_LIBRARIES shadow_native_execution shadow_native_memory shadow_native_gameplay shadow_msl shadow_lift
+    shadow_assets shadow_motion shadow_d3d12ma shadow_render shadow_rwim shadow_render_lifted shadow_runtime)
+# OBJECT libraries whose objects the static libraries above already hold (shadow_runtime holds shadow_runtime_common's).
+set(SHADOW_PREBUILT_FOLDED_OBJECT_LIBRARIES shadow_runtime_common)
+set(SHADOW_PREBUILT_PROGRAMS ppcrecomp ShadowPadConfig)
+set(SHADOW_PREBUILT_DIR "" CACHE PATH "Folder of prebuilt game-code-free parts (the release package's prebuilt/)")
+option(SHADOW_PREBUILT_EXPORT "Release step: build the prebuilt parts (requires an empty SHADOW_RECOMP_DOL)" OFF)
+
+# Everything that decides the bytes of the prebuilt parts, one "name=value" line each.
+function(shadow_prebuilt_key out_var)
+    file(GLOB_RECURSE _sources LIST_DIRECTORIES false RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}"
+         "${CMAKE_CURRENT_SOURCE_DIR}/runtime/*" "${CMAKE_CURRENT_SOURCE_DIR}/rwcore/*"
+         "${CMAKE_CURRENT_SOURCE_DIR}/rpworld/*" "${CMAKE_CURRENT_SOURCE_DIR}/tools/*"
+         "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/*")
+    list(FILTER _sources EXCLUDE REGEX "(^|/)__pycache__/|\\.pyc$")
+    list(APPEND _sources CMakeLists.txt CMakePresets.json)
+    list(SORT _sources)
+    set(_listing "")
+    foreach(_file IN LISTS _sources)
+        file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/${_file}" _hash)
+        string(APPEND _listing "${_file} ${_hash}\n")
+    endforeach()
+    string(SHA256 _source_hash "${_listing}")
+    list(LENGTH _sources _source_count)
+    set(_key
+        "compiler=${CMAKE_CXX_COMPILER_ID} ${CMAKE_CXX_COMPILER_VERSION}"
+        "toolset=${CMAKE_VS_PLATFORM_TOOLSET} ${CMAKE_VS_PLATFORM_TOOLSET_VERSION}"
+        "windows_sdk=${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}"
+        "generator=${CMAKE_GENERATOR} ${CMAKE_VS_PLATFORM_NAME}"
+        "cxx_flags=${CMAKE_CXX_FLAGS}"
+        "cxx_flags_release=${CMAKE_CXX_FLAGS_RELEASE}"
+        "rc_flags=${CMAKE_RC_FLAGS}"
+        "options=X64_ARCH:${SHADOW_X64_ARCH} SHIPPING:${SHADOW_SHIPPING} RENDER_LIFTED:${SHADOW_RENDER_LIFTED} PLUME:${SHADOW_ENABLE_PLUME} TRACY:${SHADOW_ENABLE_TRACY} WATCH_SYMBOLS:${SHADOW_WATCH_SYMBOLS} TESTS:${SHADOW_BUILD_TESTS} REFERENCE:${SHADOW_BUILD_REFERENCE}"
+        "sources=${_source_count} files ${_source_hash}")
+    set(${out_var} "${_key}" PARENT_SCOPE)
+endfunction()
+
+set(SHADOW_PREBUILT_USED "" CACHE INTERNAL "The prebuilt set this tree links (empty: everything is built here)")
+set(SHADOW_PREBUILT_USED "")
+if(SHADOW_PREBUILT_EXPORT)
+    if(NOT SHADOW_RECOMP_DOL STREQUAL "" OR SHADOW_PREBUILT_DIR)
+        message(FATAL_ERROR "SHADOW_PREBUILT_EXPORT builds the prebuilt parts with no game input: configure it with "
+                            "-DSHADOW_RECOMP_DOL= (empty) and no SHADOW_PREBUILT_DIR")
+    endif()
+    shadow_prebuilt_key(_shadow_key)
+    string(REPLACE ";" "\n" _shadow_key "${_shadow_key}")
+    file(WRITE "${CMAKE_BINARY_DIR}/prebuilt-export/key.txt" "${_shadow_key}\n")
+elseif(SHADOW_PREBUILT_DIR)
+    shadow_prebuilt_key(_shadow_key)
+    file(GLOB _shadow_manifests "${SHADOW_PREBUILT_DIR}/*/prebuilt.json")
+    set(_shadow_reasons "")
+    foreach(_manifest IN LISTS _shadow_manifests)
+        get_filename_component(_set_dir "${_manifest}" DIRECTORY)
+        get_filename_component(_set_name "${_set_dir}" NAME)
+        file(READ "${_manifest}" _json)
+        string(JSON _count ERROR_VARIABLE _json_error LENGTH "${_json}" key)
+        if(_json_error)
+            list(APPEND _shadow_reasons "${_set_name}: unreadable prebuilt.json")
+            continue()
+        endif()
+        set(_theirs "")
+        if(_count GREATER 0)
+            math(EXPR _last "${_count} - 1")
+            foreach(_i RANGE ${_last})
+                string(JSON _line GET "${_json}" key ${_i})
+                list(APPEND _theirs "${_line}")
+            endforeach()
+        endif()
+        set(_mismatch "")
+        foreach(_line IN LISTS _shadow_key)
+            if(NOT "${_line}" IN_LIST _theirs)
+                string(REGEX REPLACE "=.*" "" _name "${_line}")
+                list(APPEND _mismatch "${_name}")
+            endif()
+        endforeach()
+        list(LENGTH _shadow_key _ours)
+        if(NOT _mismatch STREQUAL "" OR NOT _count EQUAL _ours)
+            list(APPEND _shadow_reasons "${_set_name}: differs in ${_mismatch}")
+            continue()
+        endif()
+        # Every file must be the one the release step recorded.
+        string(JSON _files LENGTH "${_json}" files)
+        math(EXPR _last "${_files} - 1")
+        set(_intact TRUE)
+        foreach(_i RANGE ${_last})
+            string(JSON _path GET "${_json}" files ${_i} path)
+            string(JSON _want GET "${_json}" files ${_i} sha256)
+            if(NOT EXISTS "${_set_dir}/${_path}")
+                set(_intact FALSE)
+                break()
+            endif()
+            file(SHA256 "${_set_dir}/${_path}" _have)
+            if(NOT _have STREQUAL _want)
+                set(_intact FALSE)
+                break()
+            endif()
+        endforeach()
+        if(NOT _intact)
+            list(APPEND _shadow_reasons "${_set_name}: a file is missing or changed")
+            continue()
+        endif()
+        set(SHADOW_PREBUILT_USED "${_set_dir}")
+        break()
+    endforeach()
+    set(SHADOW_PREBUILT_USED "${SHADOW_PREBUILT_USED}" CACHE INTERNAL "" FORCE)
+    if(SHADOW_PREBUILT_USED)
+        message(STATUS "Prebuilt game-code-free parts: ${SHADOW_PREBUILT_USED}")
+    else()
+        message(STATUS "Prebuilt game-code-free parts not used, everything is built here (${_shadow_reasons})")
+        message(STATUS "This tree: ${_shadow_key}")
+    endif()
+endif()
+
 find_package(Threads REQUIRED)
 add_library(shadow_native_execution STATIC runtime/src/native_execution.cpp)
 target_compile_features(shadow_native_execution PUBLIC cxx_std_20)
@@ -472,7 +593,9 @@ if(WIN32)
         runtime/lift/render/resources.cpp
         runtime/lift/render/skin_cache.cpp
         runtime/lift/render/swap_chain.cpp)
-    add_dependencies(shadow_render shadow_render_shaders)
+    if(NOT SHADOW_PREBUILT_USED)  # a prebuilt shadow_render.lib already holds the compiled shaders
+        add_dependencies(shadow_render shadow_render_shaders)
+    endif()
     target_include_directories(shadow_render PUBLIC runtime/lift "${SHADOW_RENDER_SHADER_DIR}")
     target_compile_features(shadow_render PUBLIC cxx_std_20)
     target_compile_definitions(shadow_render PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN)
@@ -894,6 +1017,11 @@ if(CMAKE_CROSSCOMPILING)
     add_executable(ppcrecomp IMPORTED)
     set_property(TARGET ppcrecomp PROPERTY IMPORTED_LOCATION "${SHADOW_PPCRECOMP_EXECUTABLE}")
     set(SHADOW_PPCRECOMP_DEPENDS "${SHADOW_PPCRECOMP_EXECUTABLE}")
+elseif(SHADOW_PREBUILT_USED)
+    # The release step's recompiler (built from this package's own tools/ppcrecomp by the same compiler).
+    add_executable(ppcrecomp IMPORTED)
+    set_property(TARGET ppcrecomp PROPERTY IMPORTED_LOCATION "${SHADOW_PREBUILT_USED}/ppcrecomp.exe")
+    set(SHADOW_PPCRECOMP_DEPENDS "${SHADOW_PREBUILT_USED}/ppcrecomp.exe")
 else()
     add_executable(ppcrecomp tools/ppcrecomp/main.cpp)
     target_include_directories(ppcrecomp PRIVATE runtime/include)
@@ -1141,6 +1269,9 @@ else()
                                                      /d2OptimizeHugeFunctions /we4883
                                                      /bigobj /MP${SHADOW_RECOMP_COMPILE_JOBS}
                                                      ${SHADOW_ARCH_FLAGS})
+        # The runtime's 143 files are the other long stage, and nothing else can start until they finish. (/MP runs
+        # several compilers at once; it changes no compiled byte.)
+        target_compile_options(shadow_runtime_common PRIVATE /MP${SHADOW_RECOMP_COMPILE_JOBS})
         # Every shard is compiled with the same flags. (A 2026-09-20 workaround
         # compiled recomp_034.cpp at /O1 for an ICE seen on MSVC 14.51.36231;
         # keyed on a shard index, it slowed whatever functions the layout put
@@ -3787,7 +3918,16 @@ if(SHADOW_BUILD_TESTS)
 endif()
 
 # The button mapping configurator: a small program installed beside the game, writing the pad.cfg the game reads.
-if(WIN32 AND TARGET ShadowTheHedgehog)
+if(WIN32 AND TARGET ShadowTheHedgehog AND SHADOW_PREBUILT_USED)
+    # The prebuilt configurator, put where the build would have written it.
+    add_custom_target(ShadowPadConfig ALL
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:ShadowTheHedgehog>"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SHADOW_PREBUILT_USED}/ShadowPadConfig.exe"
+                "$<TARGET_FILE_DIR:ShadowTheHedgehog>/ShadowPadConfig.exe"
+        DEPENDS "${SHADOW_PREBUILT_USED}/ShadowPadConfig.exe"
+        COMMENT "Using the prebuilt ShadowPadConfig.exe"
+        VERBATIM)
+elseif(WIN32 AND (TARGET ShadowTheHedgehog OR SHADOW_PREBUILT_EXPORT))
     add_executable(ShadowPadConfig WIN32 tools/padconfig/main.cpp tools/padconfig/pad_config.cpp tools/padconfig/controller_view.cpp tools/padconfig/padconfig.rc
                    runtime/lift/peripheral/gamepad_binding.cpp)
     target_include_directories(ShadowPadConfig PRIVATE runtime/lift tools/padconfig)
@@ -3795,7 +3935,8 @@ if(WIN32 AND TARGET ShadowTheHedgehog)
     target_link_libraries(ShadowPadConfig PRIVATE comctl32 gdiplus)
     set_source_files_properties(tools/padconfig/padconfig.rc PROPERTIES OBJECT_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/padconfig/art/top.png;${CMAKE_CURRENT_SOURCE_DIR}/tools/padconfig/art/tilted.png")
-    set_target_properties(ShadowPadConfig PROPERTIES RUNTIME_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:ShadowTheHedgehog>")
+    # Beside the game (bin/<config>, the game's RUNTIME_OUTPUT_DIRECTORY).
+    set_target_properties(ShadowPadConfig PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     if(MSVC)
         target_compile_options(ShadowPadConfig PRIVATE /W4 /permissive-)
         set_property(TARGET ShadowPadConfig PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -3827,4 +3968,40 @@ if(SHADOW_RENDER_LIFTED AND SHADOW_BUILD_TESTS)
             endif()
         endif()
     endforeach()
+endif()
+
+# ---- the prebuilt parts, used or exported (see "prebuilt game-code-free parts" near the top) -------------------------
+if(SHADOW_PREBUILT_USED)
+    # Each prebuilt library keeps its target, and with it every usage requirement (include directories, definitions,
+    # compile features, link order): only its compiled code is the release step's. The target compiles one empty file
+    # and its archive step folds the prebuilt archive in (lib.exe merges a .lib given as input), so the link line is
+    # the one a full build has, item for item.
+    set(SHADOW_PREBUILT_STUB "${CMAKE_BINARY_DIR}/prebuilt_stub.cpp")
+    file(WRITE "${SHADOW_PREBUILT_STUB}" "// Empty: this target's code is the prebuilt archive merged into it.\n")
+    set(_shadow_prebuilt_archives "")
+    foreach(_target IN LISTS SHADOW_PREBUILT_LIBRARIES)
+        if(NOT TARGET ${_target})
+            continue()
+        endif()
+        set(_archive "${SHADOW_PREBUILT_USED}/${_target}.lib")
+        set_property(TARGET ${_target} PROPERTY SOURCES "${SHADOW_PREBUILT_STUB}")
+        # LNK4221: the empty object defines no symbol, which is the point.
+        set_property(TARGET ${_target} APPEND PROPERTY STATIC_LIBRARY_OPTIONS "${_archive}" /IGNORE:4221)
+        list(APPEND _shadow_prebuilt_archives "${_archive}")
+    endforeach()
+    foreach(_target IN LISTS SHADOW_PREBUILT_FOLDED_OBJECT_LIBRARIES)
+        if(TARGET ${_target})
+            set_property(TARGET ${_target} PROPERTY SOURCES "${SHADOW_PREBUILT_STUB}")
+        endif()
+    endforeach()
+    set_property(SOURCE "${SHADOW_PREBUILT_STUB}" PROPERTY OBJECT_DEPENDS "${_shadow_prebuilt_archives}")
+elseif(SHADOW_PREBUILT_EXPORT)
+    # The release step reads this list: target name and built file, one per line.
+    set(_shadow_export "")
+    foreach(_target IN LISTS SHADOW_PREBUILT_LIBRARIES SHADOW_PREBUILT_PROGRAMS)
+        if(TARGET ${_target})
+            string(APPEND _shadow_export "${_target}=$<TARGET_FILE:${_target}>\n")
+        endif()
+    endforeach()
+    file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/prebuilt-export/targets-$<CONFIG>.txt" CONTENT "${_shadow_export}")
 endif()

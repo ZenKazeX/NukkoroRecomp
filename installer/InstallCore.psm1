@@ -8,6 +8,12 @@ $script:RepoRoot = Split-Path -Parent $PSScriptRoot
 $script:Shards = 48
 $script:GameExe = 'ShadowTheHedgehog.exe'
 $script:ConfigExe = 'ShadowPadConfig.exe'
+# Everything the build puts in the install folder, in one place: the programs the build writes beside the game
+# (.build\release\bin\Release). The copy step, the install record and the uninstaller all follow this list.
+$script:InstalledPrograms = @($script:GameExe, $script:ConfigExe)
+# Folders of this package copied as they are into the install folder (source folder relative to the package root =
+# destination relative to the install folder). None yet.
+$script:InstalledFolders = [ordered]@{}
 
 function Get-RepoRoot { $script:RepoRoot }
 
@@ -167,12 +173,29 @@ function Test-InstallFolder([string]$path, [string]$discRoot, [double]$assetByte
 
 # ---- steps run as child processes ---------------------------------------------
 
+# How many compilers to run at once: two threads stay free for the desktop, each compiler is budgeted 2 GB of free
+# memory, and 12 is the ceiling (beyond it the compilers mostly add heat, measured on a 32-thread CPU).
+function Get-InstallJobs {
+    $byMemory = [int][Math]::Floor((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory * 1KB / 2GB)
+    return [Math]::Max(2, [Math]::Min(12, [Math]::Min([Environment]::ProcessorCount - 2, $byMemory)))
+}
+
+# The release package's prebuilt game-code-free parts (dev/Package-Release.ps1), or $null in a clone. CMake decides
+# whether this PC's compiler can use them (docs/BUILDING.md "Prebuilt parts"); otherwise it builds everything.
+function Get-PrebuiltFolder {
+    $folder = Join-Path $script:RepoRoot 'prebuilt'
+    if (Test-Path -LiteralPath $folder -PathType Container) { return $folder }
+    return $null
+}
+
 # Each step: Name, File, Arguments, WorkingDirectory, MaxExit (highest exit code that means success).
 function Get-BuildSteps([string]$discRoot, [string]$python, [int]$jobs = 2) {
     $dol = (Join-Path $discRoot 'sys\main.dol') -replace '\\', '/'
+    $prebuilt = Get-PrebuiltFolder
+    $prebuiltArgument = if ($prebuilt) { " `"-DSHADOW_PREBUILT_DIR=$($prebuilt -replace '\\', '/')`"" } else { '' }
     @(
         [pscustomobject]@{ Name = 'Configure'; File = 'cmake'; WorkingDirectory = $script:RepoRoot; MaxExit = 0
-            Arguments = "--preset release `"-DSHADOW_RECOMP_DOL=$dol`" -DSHADOW_RECOMP_COMPILE_JOBS=$jobs `"-DPython3_EXECUTABLE=$python`"" },
+            Arguments = "--preset release `"-DSHADOW_RECOMP_DOL=$dol`" -DSHADOW_RECOMP_COMPILE_JOBS=$jobs `"-DPython3_EXECUTABLE=$python`"$prebuiltArgument" },
         [pscustomobject]@{ Name = 'Build'; File = 'cmake'; WorkingDirectory = $script:RepoRoot; MaxExit = 0
             Arguments = "--build --preset release --parallel $jobs -- /nodeReuse:false" }
     )
@@ -183,7 +206,7 @@ function Get-InstallSteps([string]$discRoot, [string]$target) {
     @(
         # robocopy copies bytes as they are; exit codes below 8 are success.
         [pscustomobject]@{ Name = 'Copy game'; File = 'robocopy'; WorkingDirectory = $script:RepoRoot; MaxExit = 7
-            Arguments = "`"$binDir`" `"$target`" $script:GameExe $script:ConfigExe /COPY:DAT /R:2 /W:1 /NP /NJH" },
+            Arguments = "`"$binDir`" `"$target`" $($script:InstalledPrograms -join ' ') /COPY:DAT /R:2 /W:1 /NP /NJH" },
         [pscustomobject]@{ Name = 'Copy game files'; File = 'robocopy'; WorkingDirectory = $script:RepoRoot; MaxExit = 7
             Arguments = "`"$(Join-Path $discRoot 'files')`" `"$(Join-Path $target 'files')`" /E /COPY:DAT /R:2 /W:1 /NP /NJH /NDL /NFL" }
     )
@@ -224,15 +247,39 @@ function Read-LogTail([string]$log, [long]$offset) {
     } finally { $stream.Dispose() }
 }
 
-# Build progress 0..1 from the highest recompiled shard the compiler has reported.
-function Get-BuildFraction([string]$text, [double]$previous) {
-    $best = $previous
-    foreach ($m in [regex]::Matches($text, 'recomp_(\d{3})\.cpp')) {
-        $f = ([int]$m.Groups[1].Value + 1) / $script:Shards * 0.9
-        if ($f -gt $best) { $best = $f }
+# Build progress counts every source file the compiler reports, so the bar moves from the first second. A recompiled
+# shard costs about nine ordinary files (measured). A full build compiles OrdinaryFiles ordinary files besides the shards
+# and their table; with the prebuilt parts only PrebuiltOrdinaryFiles (the empty stand-ins, the ISA gate, the launcher).
+$script:OrdinaryBuildFiles = 217
+$script:PrebuiltOrdinaryBuildFiles = 15
+$script:ShardWeight = 9
+
+function New-BuildProgress([bool]$prebuilt = $false) {
+    @{ Units = 0; Partial = ''; Fraction = 0.0; Ordinary = $(if ($prebuilt) { $script:PrebuiltOrdinaryBuildFiles } else { $script:OrdinaryBuildFiles }) }
+}
+
+# Adds what the log gained to $progress. A line cut off at the end of $text is kept for the next call.
+function Update-BuildProgress($progress, [string]$text) {
+    $lines = ($progress.Partial + $text) -split "`r?`n"
+    $progress.Partial = $lines[-1]
+    $total = $progress.Ordinary + ($script:Shards + 1) * $script:ShardWeight
+    foreach ($line in ($lines | Select-Object -SkipLast 1)) {
+        if ($line -match '^\s*(?:\d+>)?\s*([\w.\-]+)\.(?:cpp|cxx|c)\s*$') {
+            $progress.Units += $(if ($Matches[1] -match '^recomp_(?:\d{3}|table)$') { $script:ShardWeight } else { 1 })
+            $progress.Fraction = [Math]::Max($progress.Fraction, [Math]::Min(0.99, $progress.Units / $total))
+        } elseif ($line -match 'ShadowTheHedgehog\.vcxproj -> ') {
+            $progress.Fraction = 1.0
+        }
     }
-    if ($text -match 'ShadowTheHedgehog\.vcxproj -> ') { $best = 1.0 }
-    return [Math]::Min($best, 1.0)
+}
+
+# The prebuilt set the configured tree links, read from its CMake cache (empty: everything is built here).
+function Get-PrebuiltUsed {
+    $cache = Join-Path $script:RepoRoot '.build\release\CMakeCache.txt'
+    if (-not (Test-Path -LiteralPath $cache)) { return '' }
+    $line = Select-String -LiteralPath $cache -Pattern '^SHADOW_PREBUILT_USED:INTERNAL=(.*)$' | Select-Object -First 1
+    if ($line) { return $line.Matches[0].Groups[1].Value }
+    return ''
 }
 
 # ---- finishing touches --------------------------------------------------------
@@ -261,7 +308,8 @@ function Get-BuildConfiguration {
     $cache = Join-Path $script:RepoRoot '.build\release\CMakeCache.txt'
     if (-not (Test-Path -LiteralPath $cache)) { return $config }
     $wanted = 'SHADOW_SHIPPING', 'SHADOW_RENDER_LIFTED', 'SHADOW_ENABLE_PLUME', 'SHADOW_ENABLE_TRACY', 'SHADOW_BUILD_TESTS',
-              'SHADOW_BUILD_REFERENCE', 'SHADOW_RECOMP_SHARDS', 'CMAKE_GENERATOR', 'CMAKE_CXX_COMPILER'
+              'SHADOW_BUILD_REFERENCE', 'SHADOW_RECOMP_SHARDS', 'SHADOW_RECOMP_COMPILE_JOBS', 'SHADOW_PREBUILT_USED',
+              'CMAKE_GENERATOR', 'CMAKE_CXX_COMPILER'
     foreach ($line in [System.IO.File]::ReadAllLines($cache)) {
         if ($line -match '^([A-Z0-9_]+):[A-Z]+=(.*)$' -and $wanted -contains $Matches[1]) { $config[$Matches[1]] = $Matches[2] }
     }
@@ -288,12 +336,18 @@ function Write-InstallManifest([string]$target, [string]$discRoot, [string[]]$sh
     $path = Join-Path $target 'install-manifest.json'
     $files = New-Object System.Collections.ArrayList
     $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
-    $exe = Get-Item -LiteralPath (Join-Path $target $script:GameExe)
-    [void]$files.Add([ordered]@{ path = $script:GameExe; size = $exe.Length; sha256 = (Get-FileHash -LiteralPath $exe.FullName -Algorithm SHA256).Hash.ToLowerInvariant() })
-    [void]$seen.Add($script:GameExe)
-    $config = Get-Item -LiteralPath (Join-Path $target $script:ConfigExe)
-    [void]$files.Add([ordered]@{ path = $script:ConfigExe; size = $config.Length; sha256 = (Get-FileHash -LiteralPath $config.FullName -Algorithm SHA256).Hash.ToLowerInvariant() })
-    [void]$seen.Add($script:ConfigExe)
+    $packaged = @($script:InstalledPrograms)
+    foreach ($destination in $script:InstalledFolders.Values) {
+        $root = (Join-Path $target $destination).TrimEnd('\')
+        foreach ($file in (Get-ChildItem -LiteralPath $root -Recurse -File -Force)) {
+            $packaged += $destination.TrimEnd('\') + $file.FullName.Substring($root.Length)
+        }
+    }
+    foreach ($relative in $packaged) {
+        $item = Get-Item -LiteralPath (Join-Path $target $relative)
+        [void]$files.Add([ordered]@{ path = $relative; size = $item.Length; sha256 = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant() })
+        [void]$seen.Add($relative)
+    }
     $source = (Join-Path $discRoot 'files').TrimEnd('\')
     foreach ($file in (Get-ChildItem -LiteralPath $source -Recurse -File -Force)) {
         $relative = 'files' + $file.FullName.Substring($source.Length)
@@ -380,8 +434,9 @@ function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$j
     catch { & $fail -1 "Cannot create $($targetPath): $($_.Exception.Message)"; return $false }
 
     $assetBytes = Get-FolderSize (Join-Path $disc.Root 'files')
+    if ($jobs -lt 1) { $jobs = Get-InstallJobs }
     $steps = @(Get-BuildSteps $disc.Root $python $jobs) + @(Get-InstallSteps $disc.Root $targetPath)
-    $buildFraction = 0.0
+    $buildProgress = New-BuildProgress
     for ($i = 0; $i -lt $steps.Count; $i++) {
         $step = $steps[$i]
         & $OnEvent @{ type = 'stage'; index = $i; name = $script:StageNames[$i]; state = 'run' }
@@ -396,8 +451,8 @@ function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$j
             $ticks++
             switch ($i) {
                 0 { & $OnEvent @{ type = 'progress'; value = 0.02 } }
-                1 { $buildFraction = Get-BuildFraction $tail.Text $buildFraction
-                    & $OnEvent @{ type = 'progress'; value = 0.03 + 0.82 * $buildFraction } }
+                1 { Update-BuildProgress $buildProgress $tail.Text
+                    & $OnEvent @{ type = 'progress'; value = 0.03 + 0.82 * $buildProgress.Fraction } }
                 2 { & $OnEvent @{ type = 'progress'; value = 0.85 } }
                 3 { # robocopy prints no running total; measure the copy every few seconds.
                     if (($ticks % 6 -eq 0 -or $exited) -and $assetBytes -gt 0) {
@@ -412,11 +467,17 @@ function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$j
             return $false
         }
         & $OnEvent @{ type = 'stage'; index = $i; name = $script:StageNames[$i]; state = 'ok' }
+        if ($i -eq 0) { $buildProgress = New-BuildProgress ([bool](Get-PrebuiltUsed)) }
     }
 
     $last = $steps.Count
     & $OnEvent @{ type = 'stage'; index = $last; name = $script:StageNames[$last]; state = 'run' }
     try {
+        foreach ($source in $script:InstalledFolders.Keys) {
+            $destination = Join-Path $targetPath $script:InstalledFolders[$source]
+            New-Item -ItemType Directory -Force -Path $destination | Out-Null
+            Copy-Item -Path (Join-Path (Join-Path $script:RepoRoot $source) '*') -Destination $destination -Recurse -Force
+        }
         Write-InstallInfo $targetPath $disc
         foreach ($name in @('Uninstall.ps1', 'Uninstall.cmd')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $targetPath -Force }
         $shortcuts = @(New-GameShortcuts $targetPath $desktop $startMenu $desktopDir $startMenuDir)
@@ -434,7 +495,8 @@ function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$j
 }
 
 Export-ModuleMember -Function Get-RepoRoot, Get-BuiltExe, Get-DefaultInstallFolder, Format-Size, Test-Prerequisites,
-    Resolve-DiscFolder, Test-DiscFolder, Get-FolderSize, Test-InstallFolder, Get-BuildSteps, Get-InstallSteps,
-    Start-Step, Test-StepSucceeded, Stop-Step, Read-LogTail, Get-BuildFraction, Write-InstallInfo, Write-InstallManifest,
+    Resolve-DiscFolder, Test-DiscFolder, Get-FolderSize, Test-InstallFolder, Get-InstallJobs, Get-PrebuiltFolder,
+    Get-BuildSteps, Get-InstallSteps, Start-Step, Test-StepSucceeded, Stop-Step, Read-LogTail, New-BuildProgress,
+    Update-BuildProgress, Get-PrebuiltUsed, Write-InstallInfo, Write-InstallManifest,
     Get-SourceRevision, Get-BuildConfiguration, New-GameShortcuts,
     Invoke-GameInstall

@@ -3,7 +3,7 @@
 #   defaults                        -> {target}
 #   check-disc <path>               -> {ok, message, root, gameId, sha1, assetBytes}
 #   check-target <path> <discRoot>  -> {ok, message, path, existing, neededBytes, freeBytes}
-#   install <disc> <target> <desktop 0|1> <startMenu 0|1> [jobs]
+#   install <disc> <target> <desktop 0|1> <startMenu 0|1> [jobs, 0 = chosen from this PC]
 #                                   -> one JSON object per line (see Invoke-GameInstall), last is 'done' or 'error'
 param(
     [Parameter(Mandatory = $true, Position = 0)][string]$Command,
@@ -11,7 +11,7 @@ param(
     [Parameter(Position = 2)][string]$B,
     [Parameter(Position = 3)][string]$C,
     [Parameter(Position = 4)][string]$D,
-    [Parameter(Position = 5)][int]$Jobs = 2
+    [Parameter(Position = 5)][int]$Jobs = 0
 )
 
 $ErrorActionPreference = 'Stop'

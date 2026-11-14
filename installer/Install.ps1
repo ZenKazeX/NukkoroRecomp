@@ -14,7 +14,7 @@ param(
     [Parameter(Mandatory = $true)][string]$DiscPath,
     [Parameter(Mandatory = $true)][string]$InstallPath,
     [switch]$NoShortcuts,
-    [ValidateRange(1, 64)][int]$Jobs = 2,
+    [ValidateRange(0, 64)][int]$Jobs = 0,  # 0 = chosen from this PC's processors and free memory
     [string]$DesktopFolder = [Environment]::GetFolderPath('Desktop'),
     [string]$StartMenuFolder = (Join-Path ([Environment]::GetFolderPath('Programs')) 'Shadow the Hedgehog Recompiled')
 )
