@@ -200,6 +200,14 @@ set(SHADOW_PREBUILT_LIBRARIES shadow_native_execution shadow_native_memory shado
 # OBJECT libraries whose objects the static libraries above already hold (shadow_runtime holds shadow_runtime_common's).
 set(SHADOW_PREBUILT_FOLDED_OBJECT_LIBRARIES shadow_runtime_common)
 set(SHADOW_PREBUILT_PROGRAMS ppcrecomp ShadowPadConfig)
+# Sources of those libraries that are never prebuilt: they hold data taken from the game (dev/scan_game_code.py found
+# their objects sharing bytes with the disc), so they are compiled on the player's PC from this package's source, as
+# before. The prebuilt archives lack their objects; the player's tree compiles them into the same targets.
+#   native_audio_mixer.cpp: the AX compressor's gain table (main.dol 0x80563420..0x80564E5F).
+#   button_glyphs.cpp (button_glyph_data.inc): palettes and texel blocks that match the game's button sheets.
+set(SHADOW_PREBUILT_LOCAL_SOURCES
+    runtime/src/native_audio_mixer.cpp
+    runtime/src/gekko/button_glyphs.cpp)
 set(SHADOW_PREBUILT_DIR "" CACHE PATH "Folder of prebuilt game-code-free parts (the release package's prebuilt/)")
 option(SHADOW_PREBUILT_EXPORT "Release step: build the prebuilt parts (requires an empty SHADOW_RECOMP_DOL)" OFF)
 
@@ -3979,23 +3987,36 @@ if(SHADOW_PREBUILT_USED)
     set(SHADOW_PREBUILT_STUB "${CMAKE_BINARY_DIR}/prebuilt_stub.cpp")
     file(WRITE "${SHADOW_PREBUILT_STUB}" "// Empty: this target's code is the prebuilt archive merged into it.\n")
     set(_shadow_prebuilt_archives "")
-    foreach(_target IN LISTS SHADOW_PREBUILT_LIBRARIES)
+    foreach(_target IN LISTS SHADOW_PREBUILT_LIBRARIES SHADOW_PREBUILT_FOLDED_OBJECT_LIBRARIES)
         if(NOT TARGET ${_target})
             continue()
         endif()
-        set(_archive "${SHADOW_PREBUILT_USED}/${_target}.lib")
-        set_property(TARGET ${_target} PROPERTY SOURCES "${SHADOW_PREBUILT_STUB}")
-        # LNK4221: the empty object defines no symbol, which is the point.
-        set_property(TARGET ${_target} APPEND PROPERTY STATIC_LIBRARY_OPTIONS "${_archive}" /IGNORE:4221)
-        list(APPEND _shadow_prebuilt_archives "${_archive}")
-    endforeach()
-    foreach(_target IN LISTS SHADOW_PREBUILT_FOLDED_OBJECT_LIBRARIES)
-        if(TARGET ${_target})
-            set_property(TARGET ${_target} PROPERTY SOURCES "${SHADOW_PREBUILT_STUB}")
+        # The sources that are never prebuilt stay in their target and are compiled here.
+        get_target_property(_sources ${_target} SOURCES)
+        set(_local "")
+        foreach(_source IN LISTS _sources)
+            if("${_source}" IN_LIST SHADOW_PREBUILT_LOCAL_SOURCES)
+                list(APPEND _local "${_source}")
+            endif()
+        endforeach()
+        set_property(TARGET ${_target} PROPERTY SOURCES "${SHADOW_PREBUILT_STUB}" ${_local})
+        if("${_target}" IN_LIST SHADOW_PREBUILT_LIBRARIES)
+            set(_archive "${SHADOW_PREBUILT_USED}/${_target}.lib")
+            # LNK4221: the empty object defines no symbol, which is the point.
+            set_property(TARGET ${_target} APPEND PROPERTY STATIC_LIBRARY_OPTIONS "${_archive}" /IGNORE:4221)
+            list(APPEND _shadow_prebuilt_archives "${_archive}")
         endif()
     endforeach()
     set_property(SOURCE "${SHADOW_PREBUILT_STUB}" PROPERTY OBJECT_DEPENDS "${_shadow_prebuilt_archives}")
 elseif(SHADOW_PREBUILT_EXPORT)
+    # The sources that are never prebuilt are left out of the exported archives.
+    foreach(_target IN LISTS SHADOW_PREBUILT_LIBRARIES SHADOW_PREBUILT_FOLDED_OBJECT_LIBRARIES)
+        if(TARGET ${_target})
+            get_target_property(_sources ${_target} SOURCES)
+            list(REMOVE_ITEM _sources ${SHADOW_PREBUILT_LOCAL_SOURCES})
+            set_property(TARGET ${_target} PROPERTY SOURCES ${_sources})
+        endif()
+    endforeach()
     # The release step reads this list: target name and built file, one per line.
     set(_shadow_export "")
     foreach(_target IN LISTS SHADOW_PREBUILT_LIBRARIES SHADOW_PREBUILT_PROGRAMS)

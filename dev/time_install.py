@@ -63,7 +63,11 @@ def source_owners(build: Path):
     return owners
 
 
-def analyse(stamped, t0, build: Path):
+def analyse(stamped, t0, build: Path, t0_wall=None):
+    """Phases on the build's critical path, from fixed events of the stamped log (seconds from the unpack's start).
+
+    The build runs projects in parallel, so per-project spans overlap; the phases below are consecutive instead:
+    each ends where the next event the game's executable waits for happens."""
     rel = [(t - t0, line) for t, line in stamped]
     marks = {}
     for t, line in rel:
@@ -71,73 +75,96 @@ def analyse(stamped, t0, build: Path):
         if m:
             marks.setdefault(m.group(1), t)
     end = rel[-1][0] if rel else 0.0
+    done = {}
+    first_file = {}
     owners = source_owners(build)
-    spans = {}
-
-    def touch(name, t):
-        s = spans.setdefault(name, [t, t])
-        s[0] = min(s[0], t)
-        s[1] = max(s[1], t)
-
     for t, line in rel:
         s = line.strip()
-        m = re.match(r'^(?:\d+>)?\s*([\w.\-]+\.(?:cpp|c|cxx))$', s)
-        if m:
-            touch(owners.get(m.group(1).lower(), '?' + m.group(1)), t)
-            continue
         m = re.match(r'^(?:\d+>)?\s*(\w+)\.vcxproj -> ', s)
         if m:
-            touch(m.group(1), t)
+            done.setdefault(m.group(1), t)
             continue
-        if 'Compiling renderer shader' in s:
-            touch('shadow_render_shaders', t)
-        elif 'Recompiling PowerPC functions' in s:
-            touch('ppcrecomp_run', t)
-        elif s.startswith('PASS ') or s.startswith('{"errors"') or s.startswith('Pinned '):
-            touch('post_link_checks', t)
-    build_start = marks.get('Build', 0.0)
-    build_end = marks.get('Copy game', end)
-    shard = spans.get('shadow_recomp')
-    first_shard = min((t for t, line in rel if re.match(r'^\s*(?:\d+>)?\s*recomp_\d{3}\.cpp$', line.strip())), default=None)
-    translate = None
-    if 'ppcrecomp_run' in spans and first_shard is not None:
-        translate = [spans['ppcrecomp_run'][0], first_shard]
-    exe_done = spans.get('ShadowTheHedgehog', [None, None])[1]
-    shard_done = spans.get('shadow_recomp', [None, None])[1]
-    free = [spans[n] for n in GAME_FREE_TARGETS if n in spans]
+        m = re.match(r'^(?:\d+>)?\s*([\w.\-]+\.(?:cpp|c|cxx))$', s)
+        if m:
+            first_file.setdefault(owners.get(m.group(1).lower(), '?'), t)
+    def first(pattern):
+        return min((t for t, line in rel if re.search(pattern, line)), default=None)
+    def last(pattern):
+        return max((t for t, line in rel if re.search(pattern, line)), default=None)
+    build_start = marks.get('Build')
+    translate_start = first(r'Recompiling PowerPC functions')
+    translate_end = None
+    stamp = build / 'generated' / 'recomp.stamp'
+    if t0_wall is not None and stamp.exists():
+        translate_end = stamp.stat().st_mtime - t0_wall
+    first_shard = first(r'^\s*(?:\d+>)?\s*recomp_(?:\d{3}|table)\.cpp$')
+    shards_done = done.get('shadow_recomp')
+    exe_done = done.get('ShadowTheHedgehog')
+    checks_done = last(r'^\s*(PASS |Pinned |\{"errors")')
+    pad_done = done.get('ShadowPadConfig')
+    free_libs = [done[n] for n in GAME_FREE_TARGETS if n in done and n != 'ShadowPadConfig']
+    def span(a, b):
+        return None if a is None or b is None else [a, b]
     phases = {
         'unpack_and_checks': [0.0, marks.get('Configure', 0.0)],
-        'configure': [marks.get('Configure', 0.0), build_start],
-        'build_total': [build_start, build_end],
-        'game_code_free_libraries': [min(s[0] for s in free), max(s[1] for s in free)] if free else None,
-        'ppcrecomp_compile': spans.get('ppcrecomp'),
-        'shaders': spans.get('shadow_render_shaders'),
-        'shard_translation': translate,
-        'shard_compile': [first_shard, shard_done] if first_shard is not None and shard_done else None,
-        'link': [max(shard_done, max((s[1] for s in free), default=0.0)), exe_done] if exe_done and shard_done else None,
-        'post_link_checks': spans.get('post_link_checks'),
-        'copy_exe': [marks.get('Copy game', end), marks.get('Copy game files', end)],
-        'copy_game_files_and_finish': [marks.get('Copy game files', end), end],
+        'configure': span(marks.get('Configure'), build_start),
+        'before_translation (game-code-free libraries, ppcrecomp, shaders)': span(build_start, translate_start),
+        'shard_translation (ppcrecomp run)': span(translate_start, translate_end),
+        'wait_for_libraries (shards need shadow_render_lifted)': span(translate_end, first_shard),
+        'shard_compile': span(first_shard, shards_done),
+        'link (launcher + exe)': span(shards_done, exe_done),
+        'post_link_checks': span(exe_done, checks_done) if checks_done and exe_done and checks_done > exe_done else None,
+        'ShadowPadConfig': span(checks_done if checks_done and exe_done and checks_done > exe_done else exe_done, pad_done),
+        'copy_and_finish': span(marks.get('Copy game'), end),
+    }
+    info = {
+        'game_code_free_libraries_done_at': round(max(free_libs), 1) if free_libs else None,
+        'ppcrecomp_done_at': round(done['ppcrecomp'], 1) if 'ppcrecomp' in done else None,
+        'shaders': [round(x, 1) for x in (first('Compiling renderer shader'), last('Compiling renderer shader'))] if first('Compiling renderer shader') else None,
+        'project_done_at': {k: round(v, 1) for k, v in sorted(done.items(), key=lambda kv: kv[1])},
+        'project_first_file_at': {k: round(v, 1) for k, v in sorted(first_file.items(), key=lambda kv: kv[1])},
     }
     return {'phases': {k: (None if v is None else {'start': round(v[0], 1), 'end': round(v[1], 1),
                                                     'seconds': round(v[1] - v[0], 1)}) for k, v in phases.items()},
-            'projects': {k: {'start': round(v[0], 1), 'end': round(v[1], 1)} for k, v in sorted(spans.items(), key=lambda kv: kv[1][0])},
-            'total_seconds': round(end, 1)}
+            'build_seconds': round((marks.get('Copy game', end) - build_start), 1) if build_start else None,
+            'info': info, 'total_seconds': round(end, 1)}
+
+
+def reanalyse(work: Path):
+    """Recomputes phases.json from a finished run's stamped.log."""
+    stamped = []
+    for line in (work / 'stamped.log').read_text(encoding='utf-8').splitlines():
+        stamped.append((float(line[:9]), line[11:]))
+    old = json.loads((work / 'phases.json').read_text(encoding='utf-8'))
+    t0_wall = old.get('t0_wall')
+    if t0_wall is None:  # older runs: stamped.log was written right at the end
+        t0_wall = (work / 'stamped.log').stat().st_mtime - stamped[-1][0]
+    result = analyse(stamped, 0.0, work / 'src' / '.build' / 'release', t0_wall)
+    for k in ('exit_code', 'unpack_seconds', 'package', 'jobs_argument'):
+        result[k] = old.get(k)
+    result['t0_wall'] = t0_wall
+    (work / 'phases.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
+    return result
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--package', required=True)
+    ap.add_argument('--package')
     ap.add_argument('--work', required=True)
-    ap.add_argument('--disc', required=True)
+    ap.add_argument('--disc')
     ap.add_argument('--jobs', type=int, default=0)
+    ap.add_argument('--reanalyse', action='store_true', help='recompute phases.json of a finished run')
     args = ap.parse_args()
     work = Path(args.work)
+    if args.reanalyse:
+        print(json.dumps(reanalyse(work)['phases'], indent=1))
+        return
     if work.exists():
         sys.exit(f'{work} exists: every timed install starts from nothing')
     src = work / 'src'
     src.mkdir(parents=True)
     t0 = time.monotonic()
+    t0_wall = time.time()
     subprocess.run([os.path.join(os.environ['SystemRoot'], 'System32', 'tar.exe'), '-xf', str(Path(args.package).resolve()),
                     '--strip-components=1'], cwd=src, check=True)
     t_unpacked = time.monotonic()
@@ -159,7 +186,8 @@ def main():
     with open(work / 'stamped.log', 'w', encoding='utf-8') as f:
         for t, line in stamped:
             f.write(f'{t - t0:9.2f}  {line}\n')
-    result = analyse(stamped, t0, src / '.build' / 'release')
+    result = analyse(stamped, t0, src / '.build' / 'release', t0_wall)
+    result['t0_wall'] = t0_wall
     result['exit_code'] = rc
     result['unpack_seconds'] = round(t_unpacked - t0, 1)
     result['package'] = str(Path(args.package).resolve())

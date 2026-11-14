@@ -5,13 +5,18 @@
 Three checks, every file of the given folders:
   1. Byte runs shared with the disc: every 32-byte window of every disc file (sys/main.dol, sys/*.bin, the whole files/
      tree), at every offset, is looked up among the scanned files' windows (taken every 16 bytes, so any shared run of
-     47 bytes or more is found). Windows with fewer than 8 distinct byte values (padding, fills) are not indexed. Every
-     hit is verified byte for byte and grown to its full length; the report lists each with the bytes as text.
+     47 bytes or more is found). The scanned files are indexed as they are and byte-swapped in 16- and 32-bit units at
+     every alignment (the console is big-endian: a table copied into x64 code is usually swapped). Windows with fewer
+     than 8 distinct byte values (padding, fills) are not indexed. Every hit is verified byte for byte and grown to its
+     full length. A run whose bytes are an arithmetic sequence of 8-, 16- or 32-bit numbers (0, 1, 2, 3, ...: identity
+     and counting tables any program has) is reported as trivial.
   2. Translated game functions: the recompiler names each translated guest function fn_XXXXXXXX (its address). With
-     --dumpbin, every archive's and program's symbol table is read and any DEFINED fn_8xxxxxxx symbol is a failure
-     (an undefined one is only a reference to code the player's build provides).
+     --dumpbin, every archive's symbol table is read and any DEFINED symbol naming fn_8xxxxxxx is a failure (an
+     undefined one is only a reference to code the player's build provides; a string literal that mentions the name,
+     ??_C@..., is listed apart).
   3. Personal paths: the user name and profile folder of the machine that ran the release step must not appear.
-Exit code 0: no disc run of 64 bytes or more, no defined translated function, no personal path.
+Exit code 0 when: no non-trivial shared run of 64 bytes or more, no file with 256 or more non-trivial shared bytes in
+all, no defined translated function, no personal path.
 """
 import argparse
 import json
@@ -23,10 +28,11 @@ from pathlib import Path
 
 import numpy as np
 
-W = 32          # window length
-STRIDE = 16     # index stride in the scanned files
+W = 32            # window length
+STRIDE = 16       # index stride in the scanned files
 MIN_DISTINCT = 8
-FAIL_RUN = 64   # a verified shared run this long fails the scan
+FAIL_RUN = 64     # a verified non-trivial shared run this long fails the scan
+FAIL_TOTAL = 256  # so do this many non-trivial shared bytes in one scanned file
 K = np.array([0x9E3779B97F4A7C15, 0xC2B2AE3D27D4EB4F, 0x165667B19E3779F9, 0x27D4EB2F165667C5], dtype=np.uint64)
 
 
@@ -57,28 +63,56 @@ def all_files(paths):
             yield p
 
 
+def views(raw: bytes):
+    """The file as it is, and byte-swapped in 16- and 32-bit units at every alignment: (name, phase, bytes)."""
+    yield 'as is', 0, raw
+    for width in (2, 4):
+        for phase in range(width):
+            body = raw[phase:]
+            body = body[:len(body) - len(body) % width]
+            a = np.frombuffer(body, dtype=np.uint8).reshape(-1, width)[:, ::-1]
+            yield f'swap{8 * width}+{phase}', phase, a.tobytes()
+
+
 def build_index(files):
-    blobs, hashes, owners, offs = [], [], [], []
+    blobs, hashes, owners, offs = [], [], [], []  # blobs: (file number, view name, phase, bytes)
     for n, f in enumerate(files):
-        raw = f.read_bytes()
-        blobs.append(raw)
-        data = np.frombuffer(raw + bytes(W), dtype=np.uint8)
-        if len(raw) < W:
-            continue
-        o = np.arange(0, len(raw) - W + 1, STRIDE, dtype=np.int64)
-        keep = np.zeros(len(o), dtype=bool)
-        for s in range(0, len(o), 1 << 20):
-            keep[s:s + (1 << 20)] = distinct_ok(data, o[s:s + (1 << 20)])
-        o = o[keep]
-        for s in range(0, len(o), 1 << 20):
-            hashes.append(window_hashes(data, o[s:s + (1 << 20)]))
-        owners.append(np.full(len(o), n, dtype=np.int32))
-        offs.append(o)
+        for name, phase, raw in views(f.read_bytes()):
+            b = len(blobs)
+            blobs.append((n, name, phase, raw))
+            if len(raw) < W:
+                continue
+            data = np.frombuffer(raw + bytes(W), dtype=np.uint8)
+            o = np.arange(0, len(raw) - W + 1, STRIDE, dtype=np.int64)
+            keep = np.zeros(len(o), dtype=bool)
+            for s in range(0, len(o), 1 << 20):
+                keep[s:s + (1 << 20)] = distinct_ok(data, o[s:s + (1 << 20)])
+            o = o[keep]
+            for s in range(0, len(o), 1 << 20):
+                hashes.append(window_hashes(data, o[s:s + (1 << 20)]))
+            owners.append(np.full(len(o), b, dtype=np.int32))
+            offs.append(o)
     h = np.concatenate(hashes) if hashes else np.zeros(0, dtype=np.uint64)
     own = np.concatenate(owners) if owners else np.zeros(0, dtype=np.int32)
     off = np.concatenate(offs) if offs else np.zeros(0, dtype=np.int64)
-    order = np.argsort(h, kind='stable')
-    return blobs, h[order], own[order], off[order]
+    # One location per distinct window is enough to find and grow a shared run (archives repeat many windows).
+    h, first = np.unique(h, return_index=True)
+    return blobs, h, own[first], off[first]
+
+
+def trivial(run: bytes) -> bool:
+    """An arithmetic sequence of 8-, 16- or 32-bit numbers, either byte order, any phase."""
+    for width in (1, 2, 4):
+        for order in ('little', 'big'):
+            for phase in range(width):
+                body = run[phase:]
+                vals = [int.from_bytes(body[i:i + width], order) for i in range(0, len(body) - width + 1, width)]
+                if len(vals) >= 4:
+                    mod = 1 << (8 * width)
+                    step = (vals[1] - vals[0]) % mod
+                    if all((vals[i + 1] - vals[i]) % mod == step for i in range(len(vals) - 1)):
+                        return True
+    return False
 
 
 def grow(a: bytes, ai: int, b: bytes, bi: int):
@@ -100,6 +134,8 @@ def scan_disc(disc: Path, index, files, report):
     chunk = 8 << 20
     for df in disc_files:
         raw = df.read_bytes()
+        if (total + len(raw)) >> 28 != total >> 28:
+            print(f'  ... {(total + len(raw)) >> 20} MB of the disc scanned', file=sys.stderr, flush=True)
         total += len(raw)
         if len(raw) < W or len(h) == 0:
             continue
@@ -109,19 +145,21 @@ def scan_disc(disc: Path, index, files, report):
             hh = window_hashes(data, o)
             pos = np.searchsorted(h, hh)
             pos[pos >= len(h)] = len(h) - 1
+            covered = -1  # disc bytes before this are inside a run already grown
             for i in np.nonzero(h[pos] == hh)[0]:
                 p = pos[i]
-                while p < len(h) and h[p] == hh[i]:
-                    blob = blobs[own[p]]
-                    bi, di = int(off[p]), int(o[i])
-                    if blob[bi:bi + W] == raw[di:di + W]:
-                        b0, d0, n = grow(blob, bi, raw, di)
-                        key = (int(own[p]), b0)
-                        if key not in found or found[key]['length'] < n:
-                            found[key] = {'file': str(files[own[p]]), 'offset': b0, 'length': n,
-                                          'disc_file': str(df.relative_to(disc)), 'disc_offset': d0,
-                                          'text': blob[b0:b0 + min(n, 96)].decode('latin-1').encode('unicode_escape').decode()}
-                    p += 1
+                fileno, view, phase, blob = blobs[own[p]]
+                bi, di = int(off[p]), int(o[i])
+                if di < covered or blob[bi:bi + W] != raw[di:di + W]:
+                    continue
+                b0, d0, n = grow(blob, bi, raw, di)
+                covered = d0 + n - W + 1
+                key = (int(own[p]), b0)
+                if key not in found or found[key]['length'] < n:
+                    found[key] = {'file': str(files[fileno]), 'view': view, 'offset': phase + b0, 'length': n,
+                                  'disc_file': str(df.relative_to(disc)), 'disc_offset': d0,
+                                  'trivial': trivial(blob[b0:b0 + n]),
+                                  'text': blob[b0:b0 + min(n, 96)].decode('latin-1').encode('unicode_escape').decode()}
     report['disc_bytes_scanned'] = total
     report['disc_files_scanned'] = len(disc_files)
     report['shared_runs'] = sorted(found.values(), key=lambda r: -r['length'])
@@ -129,25 +167,26 @@ def scan_disc(disc: Path, index, files, report):
 
 
 def translated_symbols(files, dumpbin, report):
-    defined, undefined = [], 0
-    pattern = re.compile(r'\b(SECT[0-9A-F]+|UNDEF)\b.*\b(fn_8[0-9A-Fa-f]{7}\w*)')
+    defined, literals, undefined = [], [], 0
+    name_re = re.compile(r'fn_8[0-9A-Fa-f]{7}')
     for f in files:
-        if f.suffix.lower() not in ('.lib', '.exe', '.obj'):
-            continue
-        if f.suffix.lower() == '.exe':
-            text = f.read_bytes()
-            hits = sorted(set(m.decode() for m in re.findall(rb'fn_8[0-9A-Fa-f]{7}\w*', text)))
-            report.setdefault('program_strings', {})[str(f)] = hits[:20]
+        if f.suffix.lower() not in ('.lib', '.obj'):
             continue
         out = subprocess.run([dumpbin, '/symbols', str(f)], capture_output=True, text=True, errors='replace').stdout
         for line in out.splitlines():
-            m = pattern.search(line)
-            if m:
-                if m.group(1) == 'UNDEF':
-                    undefined += 1
-                else:
-                    defined.append(f'{f.name}: {m.group(2)}')
-    report['translated_functions_defined'] = defined
+            if '|' not in line or not name_re.search(line):
+                continue
+            symbol = line.split('|', 1)[1].strip().split(' ', 1)[0]
+            if not name_re.search(symbol):
+                continue
+            if ' UNDEF ' in line:
+                undefined += 1
+            elif symbol.startswith('??_C@'):
+                literals.append(f'{f.name}: {symbol}')
+            else:
+                defined.append(f'{f.name}: {symbol}')
+    report['translated_functions_defined'] = sorted(set(defined))
+    report['translated_function_name_strings'] = sorted(set(literals))
     report['translated_function_references'] = undefined
     return report
 
@@ -161,7 +200,7 @@ def main():
     args = ap.parse_args()
     files = list(all_files(args.paths))
     report = {'files': [{'path': str(f), 'size': f.stat().st_size} for f in files],
-              'window': W, 'stride': STRIDE, 'min_distinct': MIN_DISTINCT, 'fail_run': FAIL_RUN}
+              'window': W, 'stride': STRIDE, 'min_distinct': MIN_DISTINCT, 'fail_run': FAIL_RUN, 'fail_total': FAIL_TOTAL}
     index = build_index(files)
     report['indexed_windows'] = int(len(index[1]))
     scan_disc(Path(args.disc), index, files, report)
@@ -169,25 +208,38 @@ def main():
         translated_symbols(files, args.dumpbin, report)
     personal = [s for s in {os.environ.get('USERNAME', ''), os.environ.get('USERPROFILE', '')} if len(s) >= 3]
     hits = []
-    for f, blob in zip(files, index[0]):
+    for fileno, view, _, blob in index[0]:
+        if view != 'as is':
+            continue
         for s in personal:
             for enc in ('utf-8', 'utf-16-le'):
                 if s.encode(enc) in blob or s.lower().encode(enc) in blob.lower():
-                    hits.append(f'{f.name} ({enc})')
+                    hits.append(f'{files[fileno].name} ({enc})')
     report['personal_path_hits'] = hits
-    long_runs = [r for r in report['shared_runs'] if r['length'] >= FAIL_RUN]
-    report['ok'] = not long_runs and not report.get('translated_functions_defined') and not hits
+    real = [r for r in report['shared_runs'] if not r['trivial']]
+    long_runs = [r for r in real if r['length'] >= FAIL_RUN]
+    per_file = {}
+    for r in real:
+        per_file[r['file']] = per_file.get(r['file'], 0) + r['length']
+    heavy = {k: v for k, v in per_file.items() if v >= FAIL_TOTAL}
+    report['nontrivial_shared_bytes_per_file'] = per_file
+    report['ok'] = not long_runs and not heavy and not report.get('translated_functions_defined') and not hits
     if args.json:
         Path(args.json).write_text(json.dumps(report, indent=1), encoding='utf-8')
-    print(f"{len(files)} files, {sum(f['size'] for f in report['files'])} bytes; {report['indexed_windows']} windows indexed; "
-          f"{report['disc_files_scanned']} disc files / {report['disc_bytes_scanned']} bytes scanned")
-    print(f"shared runs >= {W} bytes: {len(report['shared_runs'])}, longest "
-          f"{report['shared_runs'][0]['length'] if report['shared_runs'] else 0}; >= {FAIL_RUN}: {len(long_runs)}")
-    for r in report['shared_runs'][:15]:
-        print(f"  {r['length']:6d}  {Path(r['file']).name}+{r['offset']:#x}  {r['disc_file']}+{r['disc_offset']:#x}  {r['text'][:70]}")
+    print(f"{len(files)} files, {sum(f['size'] for f in report['files'])} bytes; {report['indexed_windows']} windows indexed "
+          f"(7 views each); {report['disc_files_scanned']} disc files / {report['disc_bytes_scanned']} bytes scanned")
+    print(f"shared runs >= {W} bytes: {len(report['shared_runs'])} ({len(real)} non-trivial, longest "
+          f"{max((r['length'] for r in real), default=0)}); non-trivial >= {FAIL_RUN}: {len(long_runs)}; "
+          f"files with >= {FAIL_TOTAL} non-trivial shared bytes: {len(heavy)}")
+    for r in report['shared_runs'][:40]:
+        print(f"  {r['length']:6d} {'trivial' if r['trivial'] else 'REAL   '} {Path(r['file']).name}+{r['offset']:#x} "
+              f"({r['view']})  {r['disc_file']}+{r['disc_offset']:#x}  {r['text'][:60]}")
+    for k, v in per_file.items():
+        print(f"  non-trivial shared bytes in {Path(k).name}: {v}")
     if args.dumpbin:
-        print(f"translated functions defined: {len(report['translated_functions_defined'])}; "
-              f"references (undefined): {report['translated_function_references']}")
+        print(f"translated functions defined: {report['translated_functions_defined']}; "
+              f"references (undefined): {report['translated_function_references']}; "
+              f"string literals naming one: {report['translated_function_name_strings']}")
     print(f"personal path hits: {hits}")
     print('OK' if report['ok'] else 'FAILED')
     sys.exit(0 if report['ok'] else 1)

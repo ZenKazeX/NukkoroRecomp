@@ -46,12 +46,65 @@ The output is `.build/release/bin/Release/ShadowTheHedgehog.exe`. Copy it next t
 
 Notes:
 
-- Builds use 2 parallel jobs (`jobs` in the build preset, `SHADOW_RECOMP_COMPILE_JOBS`). The recompiled code is large;
-  more jobs mostly add heat.
+- Developer builds use 2 parallel jobs (`jobs` in the build preset, `SHADOW_RECOMP_COMPILE_JOBS`). The recompiled code
+  is large; more jobs mostly add heat. The setup program picks up to 12 from the PC's processors and free memory.
 - If you leave out `SHADOW_RECOMP_DOL`, the preset uses `game/sys/main.dol` inside this repository. `game/` is git-ignored.
 - `host-tools` builds `ppcrecomp` alone. `android-arm64` and `android-x86_64` cross-build the Vulkan backend. They
   expect the NDK at the paths in `CMakePresets.json`; see the comments in `CMakeLists.txt`.
 - Builds never deploy anywhere: `SHADOW_DEPLOY_DIR` is empty.
+
+## Prebuilt parts
+
+A release package can carry, in `prebuilt/`, the parts of the build that contain no game code, compiled once by the
+release step. The setup program passes `-DSHADOW_PREBUILT_DIR=<package>/prebuilt`, and the build then compiles only the
+code that comes from your disc. Your PC still builds, from your own `main.dol`:
+
+- `ppcrecomp`'s output: every recompiled shard, the function table and everything else under `.build/release/generated/`;
+- `shadow_recomp.lib`, compiled from that output;
+- `ShadowTheHedgehog.exe`, which links all of it and embeds your `sys/main.dol`, `sys/boot.bin` and `sys/bi2.bin`.
+
+What is prebuilt, all from this repository's own sources (`CMakeLists.txt` names them in `SHADOW_PREBUILT_LIBRARIES`
+and `SHADOW_PREBUILT_PROGRAMS`, the only list):
+
+| Part | Built from |
+| --- | --- |
+| `shadow_runtime` (with `shadow_runtime_common`), `shadow_render`, `shadow_render_lifted`, `shadow_rwim`, `shadow_d3d12ma`, `shadow_lift`, `shadow_assets`, `shadow_motion`, `shadow_msl`, `shadow_native_execution`, `shadow_native_memory`, `shadow_native_gameplay` | `runtime/`, `thirdparty/plume/contrib/D3D12MemoryAllocator`; `shadow_render` includes the renderer's shaders, compiled by DXC from `runtime/lift/render/shaders` |
+| `ppcrecomp.exe` | `tools/ppcrecomp/main.cpp` (the recompiler itself; it reads your DOL only when it runs on your PC) |
+| `ShadowPadConfig.exe` | `tools/padconfig/`, `runtime/lift/peripheral/gamepad_binding.cpp` |
+
+**How they are made.** `dev/Package-Release.ps1` unpacks the source package it is about to publish, configures it with
+the release preset and an empty `SHADOW_RECOMP_DOL` plus `SHADOW_PREBUILT_EXPORT=ON` (CMake refuses the export when a
+DOL is given, so that tree has no game input at all), builds exactly the listed targets and writes
+`prebuilt/<set>/prebuilt.json`: the key below, every file's size and SHA-256, and the toolchain's versions. It then runs
+`dev/scan_game_code.py` over every prebuilt file against the PAL disc: every 32-byte window of `sys/` and of the whole
+`files/` tree, at every offset, is looked up among the prebuilt files; no shared run of 64 bytes or more, no defined
+translated function (`fn_8xxxxxxx`) in any symbol table and no path of the release machine's user may appear, or the
+release stops.
+
+**When they are used.** At configure time CMake computes the key of the player's tree, one line each: the compiler
+and its exact version, the platform toolset, the Windows SDK, the generator and platform, `CMAKE_CXX_FLAGS`,
+`CMAKE_CXX_FLAGS_RELEASE`, `CMAKE_RC_FLAGS`, the build options that change compiled code (`SHADOW_X64_ARCH`,
+`SHADOW_SHIPPING`, `SHADOW_RENDER_LIFTED`, `SHADOW_ENABLE_PLUME`, `SHADOW_ENABLE_TRACY`, `SHADOW_WATCH_SYMBOLS`,
+`SHADOW_BUILD_TESTS`, `SHADOW_BUILD_REFERENCE`) and a SHA-256 over every file of `runtime/`, `rwcore/`, `rpworld/`,
+`tools/`, `thirdparty/`, `CMakeLists.txt` and `CMakePresets.json`. A prebuilt set is used only when every line is
+equal and every file has its recorded SHA-256; the configure output says which set, or why none fits. Otherwise the
+tree builds everything, exactly as without `prebuilt/`. An exact compiler match is required, not only a compatible
+one: MSVC can link objects of an older compiler, but then the game would contain code that compiler generated rather
+than the code the player's compiler generates from the same source, and the project keeps the game's behaviour
+bit-exact. With an exact match the prebuilt objects are the ones the player's compiler would produce (the release
+validation compares them object by object).
+
+**How they are linked.** Each prebuilt library keeps its CMake target and therefore its usage requirements (include
+folders, definitions, link order). The target compiles one empty file and its archive step merges the prebuilt archive
+into it (`lib.exe` accepts a `.lib` as input; `STATIC_LIBRARY_OPTIONS`), so the executable's link line is the same,
+item for item, as a full build's. `ppcrecomp` becomes an imported executable, as in cross builds, and
+`ShadowPadConfig` a copy of the prebuilt program. The renderer's shaders are not compiled, since only
+`shadow_render` uses them.
+
+To add a part (it must take no input from the disc or from `extract/`): build it as a target, add its name to
+`SHADOW_PREBUILT_LIBRARIES` (a static library) or `SHADOW_PREBUILT_PROGRAMS` (a program the game does not link; give
+it the substitution `ShadowPadConfig` has), and, if the install should copy it, to `$script:InstalledPrograms` in
+`installer/InstallCore.psm1`. Folders copied into the install as they are go in `$script:InstalledFolders` there.
 
 ## What is in this repository
 
@@ -62,7 +115,7 @@ Notes:
 | `tools/` | Other build-time generators and checks, plus the stage launcher, comparator and diagnostic scripts |
 | `extract/` | Function table, site lists and disc catalogue that drive the recompiler (addresses only, no code) |
 | `thirdparty/` | plume (with D3D12MemoryAllocator and Vulkan headers), stb, Tracy; each keeps its own license |
-| `dev/` | `Build.ps1`, the developer build behind `Build.cmd` |
+| `dev/` | `Build.ps1`, the developer build behind `Build.cmd`; `Package-Release.ps1`, the release package with its prebuilt parts; `scan_game_code.py`, `compare_libs.py` and `time_install.py`, the checks and timing the release validation runs |
 | `installer/` | The setup window (Win32 + WebView2; its SDK is downloaded from NuGet at configure time), its art pack (`installer/art/`, also the game's icon; see `installer/ART_PACK.md`), its PowerShell backend, and the console installer |
 
 Not included:
