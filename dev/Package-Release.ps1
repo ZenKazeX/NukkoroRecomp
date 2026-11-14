@@ -25,6 +25,11 @@ param(
     [string]$OutDir,
     [string]$ScanDisc,
     [ValidateRange(1, 64)][int]$Jobs = 8,
+    # Where the package is unpacked and the prebuilt parts compiled: by default the folder the downloadable setup
+    # unpacks this version into on a player's PC (%PUBLIC%\NukkoroRecomp\<version>). MSVC names anonymous namespaces
+    # (?A0x<hash>, also in RTTI names) from each source file's full path, so compiling there gives the objects a
+    # player's own build there would have. It must not exist; it is removed afterwards.
+    [string]$StageDir,
     [switch]$NoPrebuilt
 )
 
@@ -53,10 +58,13 @@ if ($NoPrebuilt) {
 if (-not $ScanDisc) { throw '-ScanDisc <extracted PAL disc> is required: every prebuilt file is checked against it' }
 
 # ---- build the prebuilt parts from the package itself, with no game input --------------------------------------------
+if (-not $StageDir) { $StageDir = Join-Path $env:PUBLIC "NukkoroRecomp\$Version" }
+if (Test-Path -LiteralPath $StageDir) { throw "$StageDir exists: remove it, or choose another -StageDir" }
+$src = $StageDir
+New-Item -ItemType Directory -Force -Path $src | Out-Null
 $stage = Join-Path $OutDir "$prefix-stage"
 if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
-$src = Join-Path $stage 'src'
-New-Item -ItemType Directory -Force -Path $src | Out-Null
+New-Item -ItemType Directory -Force -Path $stage | Out-Null
 Push-Location $src
 try { Invoke-Native 'Unpack the source package' (Join-Path $env:SystemRoot 'System32\tar.exe') @('-xf', $base, '--strip-components=1') }
 finally { Pop-Location }
@@ -130,5 +138,6 @@ try {
     }
 } finally { $archive.Dispose() }
 Remove-Item -LiteralPath $base -Force
+Remove-Item -LiteralPath $src -Recurse -Force
 Write-Host "Package: $zip ($([Math]::Round((Get-Item $zip).Length / 1MB, 1)) MB), prebuilt set $setName"
 Write-Host "Scan report: $scanReport"
