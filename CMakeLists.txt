@@ -195,7 +195,8 @@ endif()
 # of every source file); otherwise it builds them, as before. The recompiled game code, everything generated from the
 # player's main.dol and the executable that embeds it are always built on the player's PC. The two lists below are the
 # only place the prebuilt parts are named: the release step exports exactly these targets.
-set(SHADOW_PREBUILT_LIBRARIES shadow_native_execution shadow_native_memory shadow_native_gameplay shadow_msl shadow_lift
+# (shadow_msl is not one: fdlibm's constant tables, the digits of 2/pi among them, are byte for byte the game's.)
+set(SHADOW_PREBUILT_LIBRARIES shadow_native_execution shadow_native_memory shadow_native_gameplay shadow_lift
     shadow_assets shadow_motion shadow_d3d12ma shadow_render shadow_rwim shadow_render_lifted shadow_runtime)
 # OBJECT libraries whose objects the static libraries above already hold (shadow_runtime holds shadow_runtime_common's).
 set(SHADOW_PREBUILT_FOLDED_OBJECT_LIBRARIES shadow_runtime_common)
@@ -205,9 +206,11 @@ set(SHADOW_PREBUILT_PROGRAMS ppcrecomp ShadowPadConfig)
 # before. The prebuilt archives lack their objects; the player's tree compiles them into the same targets.
 #   native_audio_mixer.cpp: the AX compressor's gain table (main.dol 0x80563420..0x80564E5F).
 #   button_glyphs.cpp (button_glyph_data.inc): palettes and texel blocks that match the game's button sheets.
+#   native_boot.cpp: the OS exception vector page's PowerPC words it writes into guest memory, and a table of the OS's.
 set(SHADOW_PREBUILT_LOCAL_SOURCES
     runtime/src/native_audio_mixer.cpp
-    runtime/src/gekko/button_glyphs.cpp)
+    runtime/src/gekko/button_glyphs.cpp
+    runtime/src/gekko/native_boot.cpp)
 set(SHADOW_PREBUILT_DIR "" CACHE PATH "Folder of prebuilt game-code-free parts (the release package's prebuilt/)")
 option(SHADOW_PREBUILT_EXPORT "Release step: build the prebuilt parts (requires an empty SHADOW_RECOMP_DOL)" OFF)
 

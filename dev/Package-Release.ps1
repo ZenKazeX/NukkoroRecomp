@@ -124,8 +124,16 @@ $manifest = [ordered]@{
 
 # ---- prove: no game code, no disc data -------------------------------------------------------------------------------
 $scanReport = Join-Path $stage 'scan_game_code.json'
-Invoke-Native 'Scan the prebuilt parts against the disc' 'python' @((Join-Path $PSScriptRoot 'scan_game_code.py'),
-    '--disc', $ScanDisc, '--dumpbin', (Join-Path $tools 'dumpbin.exe'), '--json', $scanReport, (Join-Path $pkgRoot 'prebuilt'))
+# The C runtime every program these tools link carries (its case tables match the game's own C library's): runs found
+# there are reported as toolchain bytes, not counted against the parts.
+$msvcLib = Join-Path (Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $tools))) 'lib\x64'
+$kits = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows Kits\Installed Roots').KitsRoot10
+$references = @((Join-Path $kits "Lib\$sdk\ucrt\x64\libucrt.lib")) +
+    @('libcmt.lib', 'libcpmt.lib', 'libvcruntime.lib' | ForEach-Object { Join-Path $msvcLib $_ })
+$scanArgs = @((Join-Path $PSScriptRoot 'scan_game_code.py'), '--disc', $ScanDisc, '--dumpbin', (Join-Path $tools 'dumpbin.exe'),
+    '--json', $scanReport)
+foreach ($reference in $references) { $scanArgs += @('--toolchain-reference', $reference) }
+Invoke-Native 'Scan the prebuilt parts against the disc' 'python' ($scanArgs + @((Join-Path $pkgRoot 'prebuilt')))
 
 # ---- the package -----------------------------------------------------------------------------------------------------
 Copy-Item -LiteralPath $base -Destination $zip -Force

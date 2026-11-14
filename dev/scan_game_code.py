@@ -9,13 +9,15 @@ Three checks, every file of the given folders:
      every alignment (the console is big-endian: a table copied into x64 code is usually swapped). Windows with fewer
      than 8 distinct byte values (padding, fills) are not indexed. Every hit is verified byte for byte and grown to its
      full length. A run whose bytes are an arithmetic sequence of 8-, 16- or 32-bit numbers (0, 1, 2, 3, ...: identity
-     and counting tables any program has) is reported as trivial.
+     and counting tables any program has) is reported as trivial, and one whose bytes occur as they are in a
+     --toolchain-reference file (the compiler's and the Windows SDK's C runtime libraries, which every program they link
+     carries: case tables, and so on) as toolchain.
   2. Translated game functions: the recompiler names each translated guest function fn_XXXXXXXX (its address). With
      --dumpbin, every archive's symbol table is read and any DEFINED symbol naming fn_8xxxxxxx is a failure (an
      undefined one is only a reference to code the player's build provides; a string literal that mentions the name,
      ??_C@..., is listed apart).
   3. Personal paths: the user name and profile folder of the machine that ran the release step must not appear.
-Exit code 0 when: no non-trivial shared run of 64 bytes or more, no file with 256 or more non-trivial shared bytes in
+Exit code 0 when: no other (real) shared run of 64 bytes or more, no file with 256 or more real shared bytes in
 all, no defined translated function, no personal path.
 """
 import argparse
@@ -33,6 +35,7 @@ STRIDE = 16       # index stride in the scanned files
 MIN_DISTINCT = 8
 FAIL_RUN = 64     # a verified non-trivial shared run this long fails the scan
 FAIL_TOTAL = 256  # so do this many non-trivial shared bytes in one scanned file
+REFERENCES = {}   # Path -> bytes: --toolchain-reference files
 K = np.array([0x9E3779B97F4A7C15, 0xC2B2AE3D27D4EB4F, 0x165667B19E3779F9, 0x27D4EB2F165667C5], dtype=np.uint64)
 
 
@@ -50,8 +53,25 @@ def window_hashes(data: np.ndarray, offsets: np.ndarray) -> np.ndarray:
 
 
 def distinct_ok(data: np.ndarray, offsets: np.ndarray) -> np.ndarray:
-    rows = np.sort(data[offsets[:, None] + np.arange(W)[None, :]], axis=1)
-    return (1 + (np.diff(rows, axis=1) != 0).sum(axis=1)) >= MIN_DISTINCT
+    """Windows worth indexing: 8 or more distinct byte values, and not an arithmetic sequence of 8-, 16- or 32-bit
+    numbers (counting and identity tables, found in any program and in audio data alike)."""
+    rows = data[offsets[:, None] + np.arange(W)[None, :]]
+    srt = np.sort(rows, axis=1)
+    ok = (1 + (np.diff(srt, axis=1) != 0).sum(axis=1)) >= MIN_DISTINCT
+    r64 = rows.astype(np.uint64)
+    for width in (1, 2, 4):
+        mod = np.uint64((1 << (8 * width)) - 1)
+        for phase in range(width):
+            count = (W - phase) // width
+            cols = r64[:, phase:phase + count * width].reshape(len(rows), count, width)
+            for big in (False, True):
+                v = np.zeros((len(rows), count), dtype=np.uint64)
+                for b in range(width):
+                    shift = np.uint64(8 * (width - 1 - b) if big else 8 * b)
+                    v |= cols[:, :, b] << shift
+                d = (v[:, 1:] - v[:, :-1]) & mod
+                ok &= ~(d == d[:, :1]).all(axis=1)
+    return ok
 
 
 def all_files(paths):
@@ -156,9 +176,11 @@ def scan_disc(disc: Path, index, files, report):
                 covered = d0 + n - W + 1
                 key = (int(own[p]), b0)
                 if key not in found or found[key]['length'] < n:
+                    run = blob[b0:b0 + n]
                     found[key] = {'file': str(files[fileno]), 'view': view, 'offset': phase + b0, 'length': n,
                                   'disc_file': str(df.relative_to(disc)), 'disc_offset': d0,
-                                  'trivial': trivial(blob[b0:b0 + n]),
+                                  'trivial': trivial(run),
+                                  'toolchain': [r.name for r in REFERENCES if run in REFERENCES[r]],
                                   'text': blob[b0:b0 + min(n, 96)].decode('latin-1').encode('unicode_escape').decode()}
     report['disc_bytes_scanned'] = total
     report['disc_files_scanned'] = len(disc_files)
@@ -196,8 +218,11 @@ def main():
     ap.add_argument('--disc', required=True)
     ap.add_argument('--dumpbin')
     ap.add_argument('--json')
+    ap.add_argument('--toolchain-reference', action='append', default=[])
     ap.add_argument('paths', nargs='+')
     args = ap.parse_args()
+    for ref in args.toolchain_reference:
+        REFERENCES[Path(ref)] = Path(ref).read_bytes()
     files = list(all_files(args.paths))
     report = {'files': [{'path': str(f), 'size': f.stat().st_size} for f in files],
               'window': W, 'stride': STRIDE, 'min_distinct': MIN_DISTINCT, 'fail_run': FAIL_RUN, 'fail_total': FAIL_TOTAL}
@@ -216,26 +241,28 @@ def main():
                 if s.encode(enc) in blob or s.lower().encode(enc) in blob.lower():
                     hits.append(f'{files[fileno].name} ({enc})')
     report['personal_path_hits'] = hits
-    real = [r for r in report['shared_runs'] if not r['trivial']]
+    report['toolchain_references'] = [str(r) for r in REFERENCES]
+    real = [r for r in report['shared_runs'] if not r['trivial'] and not r['toolchain']]
     long_runs = [r for r in real if r['length'] >= FAIL_RUN]
     per_file = {}
     for r in real:
         per_file[r['file']] = per_file.get(r['file'], 0) + r['length']
     heavy = {k: v for k, v in per_file.items() if v >= FAIL_TOTAL}
-    report['nontrivial_shared_bytes_per_file'] = per_file
+    report['real_shared_bytes_per_file'] = per_file
     report['ok'] = not long_runs and not heavy and not report.get('translated_functions_defined') and not hits
     if args.json:
         Path(args.json).write_text(json.dumps(report, indent=1), encoding='utf-8')
     print(f"{len(files)} files, {sum(f['size'] for f in report['files'])} bytes; {report['indexed_windows']} windows indexed "
           f"(7 views each); {report['disc_files_scanned']} disc files / {report['disc_bytes_scanned']} bytes scanned")
-    print(f"shared runs >= {W} bytes: {len(report['shared_runs'])} ({len(real)} non-trivial, longest "
-          f"{max((r['length'] for r in real), default=0)}); non-trivial >= {FAIL_RUN}: {len(long_runs)}; "
-          f"files with >= {FAIL_TOTAL} non-trivial shared bytes: {len(heavy)}")
+    print(f"shared runs >= {W} bytes: {len(report['shared_runs'])} ({len(real)} real, longest "
+          f"{max((r['length'] for r in real), default=0)}); real >= {FAIL_RUN}: {len(long_runs)}; "
+          f"files with >= {FAIL_TOTAL} real shared bytes: {len(heavy)}")
     for r in report['shared_runs'][:40]:
-        print(f"  {r['length']:6d} {'trivial' if r['trivial'] else 'REAL   '} {Path(r['file']).name}+{r['offset']:#x} "
+        kind = 'trivial  ' if r['trivial'] else 'toolchain' if r['toolchain'] else 'REAL     '
+        print(f"  {r['length']:6d} {kind} {Path(r['file']).name}+{r['offset']:#x} "
               f"({r['view']})  {r['disc_file']}+{r['disc_offset']:#x}  {r['text'][:60]}")
     for k, v in per_file.items():
-        print(f"  non-trivial shared bytes in {Path(k).name}: {v}")
+        print(f"  real shared bytes in {Path(k).name}: {v}")
     if args.dumpbin:
         print(f"translated functions defined: {report['translated_functions_defined']}; "
               f"references (undefined): {report['translated_function_references']}; "

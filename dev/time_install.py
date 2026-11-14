@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -139,8 +140,9 @@ def reanalyse(work: Path):
     t0_wall = old.get('t0_wall')
     if t0_wall is None:  # older runs: stamped.log was written right at the end
         t0_wall = (work / 'stamped.log').stat().st_mtime - stamped[-1][0]
-    result = analyse(stamped, 0.0, work / 'src' / '.build' / 'release', t0_wall)
-    for k in ('exit_code', 'unpack_seconds', 'package', 'jobs_argument'):
+    src = Path(old.get('src') or work / 'src')
+    result = analyse(stamped, 0.0, src / '.build' / 'release', t0_wall)
+    for k in ('exit_code', 'unpack_seconds', 'package', 'jobs_argument', 'src', 'drop_prebuilt'):
         result[k] = old.get(k)
     result['t0_wall'] = t0_wall
     (work / 'phases.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
@@ -153,6 +155,8 @@ def main():
     ap.add_argument('--work', required=True)
     ap.add_argument('--disc')
     ap.add_argument('--jobs', type=int, default=0)
+    ap.add_argument('--src', help='unpack here instead of <work>/src (must not exist)')
+    ap.add_argument('--drop-prebuilt', action='store_true', help='delete the package prebuilt/ before installing')
     ap.add_argument('--reanalyse', action='store_true', help='recompute phases.json of a finished run')
     args = ap.parse_args()
     work = Path(args.work)
@@ -161,12 +165,17 @@ def main():
         return
     if work.exists():
         sys.exit(f'{work} exists: every timed install starts from nothing')
-    src = work / 'src'
+    src = Path(args.src) if args.src else work / 'src'
+    if src.exists():
+        sys.exit(f'{src} exists')
+    work.mkdir(parents=True)
     src.mkdir(parents=True)
     t0 = time.monotonic()
     t0_wall = time.time()
     subprocess.run([os.path.join(os.environ['SystemRoot'], 'System32', 'tar.exe'), '-xf', str(Path(args.package).resolve()),
                     '--strip-components=1'], cwd=src, check=True)
+    if args.drop_prebuilt:
+        shutil.rmtree(src / 'prebuilt', ignore_errors=True)
     t_unpacked = time.monotonic()
     log = src / '.build' / 'install.log'
     stamped = [(t0, '==== Unpack: tar'), (t_unpacked, '==== Checks: Install.ps1')]
@@ -192,6 +201,8 @@ def main():
     result['unpack_seconds'] = round(t_unpacked - t0, 1)
     result['package'] = str(Path(args.package).resolve())
     result['jobs_argument'] = args.jobs
+    result['src'] = str(src)
+    result['drop_prebuilt'] = args.drop_prebuilt
     (work / 'phases.json').write_text(json.dumps(result, indent=2), encoding='utf-8')
     print(json.dumps({'exit_code': rc, 'total_seconds': result['total_seconds'],
                       'phases': {k: (v or {}).get('seconds') for k, v in result['phases'].items()}}, indent=1))
