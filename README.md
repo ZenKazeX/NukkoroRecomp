@@ -84,7 +84,34 @@ button on the picture, press the button you want on your controller, then Save. 
 time it starts.
 
 By default the face buttons follow their position on a modern controller. The GameCube pad's B is on the left button
-(X on an Xbox controller) and its X is on the right button (B). Keyboard keys cannot be changed yet.
+(X on an Xbox controller) and its X is on the right button (B).
+
+The game can also be played with keyboard and mouse. The keys and the mouse are set in `controls.cfg` in the install
+folder; [docs/controls/KEYBOARD_MOUSE_BINDINGS.md](docs/controls/KEYBOARD_MOUSE_BINDINGS.md) lists the defaults and
+every setting.
+
+## Settings
+
+The Options screen is the game's own. The window, the picture and the volumes are set in `display.cfg` and
+`options.cfg` in the install folder; [docs/PC_SETTINGS_FILES.md](docs/PC_SETTINGS_FILES.md) describes every line.
+Alt+Enter switches between a window and fullscreen.
+
+## Mods
+
+The game loads mods from the `mods` folder in the install folder. Mods that replace the game's files (models, stages,
+textures, text, sounds, movies) and Dolphin texture packs work.
+
+1. Run `ShadowModManager.exe` in the install folder, or use the *Mod Manager* shortcut in the Start menu.
+2. Drop a downloaded mod (`.zip`, `.7z`, `.rar`, or a folder) on the window, or click *Install...*. The manager puts
+   each file where the game expects it and says what it left out.
+3. Tick the mods you want. The list's order is the priority: when two mods change the same file, the higher one wins,
+   and the manager shows every such conflict.
+4. Click *Play*, or start the game as usual.
+
+Code patches (Gecko and Action Replay codes, patched `main.dol` files) are recognised and kept with the mod, but they
+are not applied. Programs and save files in a download are never installed. To play without mods, switch off *Load
+mods* in the manager, or start the game with `--no-mods`. `ShadowModManager.exe help` lists the command-line use, and
+[docs/mods/DESIGN.md](docs/mods/DESIGN.md) describes the folder layout and the rules.
 
 ## Saves
 
@@ -94,13 +121,14 @@ releases can be imported with `--memory-card <file>` the first time you start th
 ## Uninstall
 
 Run `Uninstall.cmd` in the install folder, or use the uninstall shortcut in the Start menu. It removes only what the
-setup installed and keeps your saves and settings. `Uninstall.cmd -RemoveSaves` deletes those as well.
+setup installed, the mod manager included, and keeps your saves, settings and mods. `Uninstall.cmd -RemoveSaves`
+deletes those as well.
 
 ## Known limitations
 
 - The game is still partly static recompiled code, and some features are unfinished.
 - Only the PAL release can be installed.
-- The Hungarian language is switched off for now.
+- Mods made for the North American release may show its stage layouts or fonts; the manager points these out.
 
 ## For developers
 

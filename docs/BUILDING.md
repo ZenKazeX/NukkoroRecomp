@@ -68,14 +68,16 @@ and `SHADOW_PREBUILT_PROGRAMS`, the only list):
 
 | Part | Built from |
 | --- | --- |
-| `shadow_runtime` (with `shadow_runtime_common`), `shadow_render`, `shadow_render_lifted`, `shadow_rwim`, `shadow_d3d12ma`, `shadow_lift`, `shadow_assets`, `shadow_motion`, `shadow_native_execution`, `shadow_native_memory`, `shadow_native_gameplay` | `runtime/`, `thirdparty/plume/contrib/D3D12MemoryAllocator`; `shadow_render` includes the renderer's shaders, compiled by DXC from `runtime/lift/render/shaders` |
+| `shadow_runtime` (with `shadow_runtime_common`), `shadow_render`, `shadow_render_lifted`, `shadow_rwim`, `shadow_d3d12ma`, `shadow_lift`, `shadow_assets`, `shadow_mods`, `shadow_motion`, `shadow_native_execution`, `shadow_native_memory`, `shadow_native_gameplay` | `runtime/`, `thirdparty/plume/contrib/D3D12MemoryAllocator`; `shadow_render` includes the renderer's shaders, compiled by DXC from `runtime/lift/render/shaders`; `shadow_mods` is the mod loader (`runtime/mods`) |
 | `ppcrecomp.exe` | `tools/ppcrecomp/main.cpp` (the recompiler itself; it reads your DOL only when it runs on your PC) |
 | `ShadowPadConfig.exe` | `tools/padconfig/`, `runtime/lift/peripheral/gamepad_binding.cpp` |
+| `ShadowModManager.exe` | `tools/mod_manager/mod_manager.cpp`, `runtime/mods` |
 
 Some sources of this repository carry data taken from the game, and the scan finds their objects: they are never
 prebuilt. `SHADOW_PREBUILT_LOCAL_SOURCES` lists them (`native_audio_mixer.cpp`: the AX compressor's gain table;
 `button_glyphs.cpp`: palettes and texel blocks matching the game's button sheets; `native_boot.cpp` and `os_exception_entry.cpp`: the 38
-PowerPC words of the SDK's exception vector, `gekko/os_exception_vector.h`). The release step leaves their objects out of the
+PowerPC words of the SDK's exception vector, `gekko/os_exception_vector.h`; `runtime/mods/afs.cpp`: the names of the
+memory-card banner and icon files it checks, which the compiler lays out in the order of the disc's file table). The release step leaves their objects out of the
 archives and your build compiles them into the same targets. `shadow_msl` (fdlibm, whose constant tables are the
 game's C library's byte for byte) is not prebuilt at all.
 
@@ -83,10 +85,11 @@ game's C library's byte for byte) is not prebuilt at all.
 the release preset and an empty `SHADOW_RECOMP_DOL` plus `SHADOW_PREBUILT_EXPORT=ON` (CMake refuses the export when a
 DOL is given, so that tree has no game input at all), builds exactly the listed targets and writes
 `prebuilt/<set>/prebuilt.json`: the key below, every file's size and SHA-256, and the toolchain's versions. It then runs
-`dev/scan_game_code.py` over every prebuilt file against the PAL disc: every 32-byte window of `sys/` and of the whole
-`files/` tree, at every offset, is looked up among the prebuilt files, taken as they are and byte-swapped in 16- and
-32-bit units (the console is big-endian). Counting and identity tables, and runs that occur as they are in the C
-runtime libraries the toolchain links into every program, are listed apart. Any other shared run of 64 bytes or more,
+`dev/scan_game_code.py` over every prebuilt file, and over the mod manager's `mods-data/` (installed as it is), against
+the PAL disc: every 32-byte window of `sys/` and of the whole `files/` tree, at every offset, is looked up among the
+prebuilt files, taken as they are and byte-swapped in 16- and 32-bit units (the console is big-endian). Counting
+and identity tables, and runs that occur as they are in the C runtime libraries the toolchain links into every
+program, are listed apart. Any other shared run of 64 bytes or more,
 256 shared bytes in one file, a defined translated function (`fn_8xxxxxxx`) in a symbol table or a path of the
 release machine's user stops the release. The prebuilt parts are compiled in the folder the setup unpacks the
 package into (`%PUBLIC%\NukkoroRecomp\<version>`), because MSVC derives the names of anonymous namespaces (which also
@@ -109,7 +112,8 @@ validation compares them object by object).
 folders, definitions, link order). The target compiles one empty file and its archive step merges the prebuilt archive
 into it (`lib.exe` accepts a `.lib` as input; `STATIC_LIBRARY_OPTIONS`), so the executable's link line is the same,
 item for item, as a full build's. `ppcrecomp` becomes an imported executable, as in cross builds, and
-`ShadowPadConfig` a copy of the prebuilt program. The renderer's shaders are not compiled, since only
+`ShadowPadConfig` and `ShadowModManager` copies of the prebuilt programs (the manager's `mods-data/` is copied beside
+it from `test_data/mods` either way). The renderer's shaders are not compiled, since only
 `shadow_render` uses them. The build-time string the runtime shows (`__DATE__ __TIME__` in `system.cpp`) is then the
 release step's. `prebuilt/` may hold several sets, one per toolchain (run the release step with each); CMake takes the
 first whose key matches.
@@ -137,8 +141,6 @@ Not included:
   the game, so the `tests` preset is removed and `SHADOW_BUILD_TESTS=ON` stops configuration with an explanation.
 - **Disassembly, strings and symbol dumps from the DOL**. The build does not use them.
 - **Research material and session notes.**
-- **`tools/options_menu_sim/generated/`**: the Options menu simulator's textures and data, extracted from the disc.
-  `python tools/options_menu_sim/build_sim_data.py` rebuilds them from your own copy.
 
 ## Regression tests
 
