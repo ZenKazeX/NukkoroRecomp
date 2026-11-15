@@ -28,6 +28,8 @@ your disc, so please keep it to yourself.
 
 - Windows 10 or 11, 64-bit, with a Direct3D 12 graphics card
 - Shadow the Hedgehog for GameCube, the **PAL** release (game ID **GUPP8P**), extracted with [Dolphin](https://dolphin-emu.org/)
+- Optional, for Japanese voices: the **Japanese** release (game ID **GUPJ8P**), extracted into a different folder (see
+  [Japanese voices](#japanese-voices))
 - [Visual Studio 2026](https://visualstudio.microsoft.com/downloads/) with the *Desktop development with C++* workload
 - [CMake](https://cmake.org/download/) 3.25 or newer
 - [Python 3](https://www.python.org/downloads/)
@@ -39,7 +41,8 @@ your disc, so please keep it to yourself.
    choose *Extract Entire Disc...*. [Extracting the disc](#extracting-the-disc) shows this with pictures.
 2. Download `NukkoroRecomp-<version>-Setup.exe` from [Releases](https://github.com/ZenKazeX/NukkoroRecomp/releases) and run
    it. Windows may warn about an unknown publisher, because the file is unsigned. Choose *More info*, then *Run anyway*.
-3. Choose the extracted disc folder, the install location and the shortcuts you want, then start the install.
+3. Choose the extracted disc folder, the install location and the shortcuts you want, then start the install. On the
+   *Japanese Voices* page you can also choose an extracted Japanese disc, or leave it empty.
 
 The first build takes about 5 to 20 minutes. Afterwards the extracted disc folder is no longer needed, and you can delete
 the build files in `C:\Users\Public\NukkoroRecomp`. Running the setup again on the same folder updates the game and keeps
@@ -49,6 +52,23 @@ From a copy of this repository, run `Install.cmd` instead. To install from a con
 
 ```powershell
 .\Install.cmd -DiscPath "D:\Dumps\Shadow PAL" -InstallPath "D:\Games\Shadow the Hedgehog Recompiled"
+```
+
+### Japanese voices
+
+The PAL disc has the Japanese menu and subtitle text, but not the Japanese voices of the events (cutscenes) and dialogue.
+Those are only on the Japanese disc. For the events to play in Japanese:
+
+1. Extract your Japanese disc (GUPJ8P) with Dolphin the same way, into a **different folder** than the PAL disc.
+2. Choose that folder on the setup's *Japanese Voices* page, and keep *Speak Japanese* ticked.
+
+The setup checks the disc and copies only its voice files (about 470 MB) into the `voice_jp` folder of the install
+folder; nothing else from the Japanese disc is used. To switch the spoken language later, set `voice` in `options.cfg`
+(`0` Japanese, `1` English). To add the voices to an existing install, run the setup again with the Japanese disc
+chosen; your saves and settings are kept. From a console:
+
+```powershell
+.\Install.cmd -DiscPath "D:\Dumps\Shadow PAL" -JapaneseDiscPath "D:\Dumps\Shadow JP" -InstallPath "D:\Games\Shadow the Hedgehog Recompiled"
 ```
 
 ### Extracting the disc
@@ -121,7 +141,7 @@ releases can be imported with `--memory-card <file>` the first time you start th
 ## Uninstall
 
 Run `Uninstall.cmd` in the install folder, or use the uninstall shortcut in the Start menu. It removes only what the
-setup installed, the mod manager included, and keeps your saves, settings and mods. `Uninstall.cmd -RemoveSaves`
+setup installed, the mod manager and the Japanese voices included, and keeps your saves, settings and mods. `Uninstall.cmd -RemoveSaves`
 deletes those as well.
 
 ## Known limitations

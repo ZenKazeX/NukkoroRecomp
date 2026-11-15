@@ -299,6 +299,7 @@ public:
     std::wstring folderId;
     std::wstring folderInitial;
     bool folderForDisc = false;
+    bool folderForJapaneseDisc = false;
 
     // The running install, if any.
     HANDLE installJob = nullptr;
@@ -309,7 +310,7 @@ public:
     // Self-test: hidden window, scripted pages, snapshots into selftestDir.
     bool selftest = false;
     fs::path selftestDir;
-    std::wstring selftestDisc, selftestTarget;
+    std::wstring selftestDisc, selftestTarget, selftestJapaneseDisc;
     bool selftestInstall = false;
 
     void Fail(HRESULT result, const wchar_t* operation) {
@@ -344,8 +345,9 @@ public:
             FILEOPENDIALOGOPTIONS options{};
             hr = dialog->GetOptions(&options);
             if (SUCCEEDED(hr)) hr = dialog->SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_NOCHANGEDIR);
-            dialog->SetTitle(folderForDisc ? L"Choose the folder Dolphin extracted the disc into (it holds sys and files)"
-                                           : L"Choose where to install Shadow the Hedgehog Recompiled");
+            dialog->SetTitle(folderForJapaneseDisc ? L"Choose the folder Dolphin extracted the Japanese disc into (not the PAL one)"
+                             : folderForDisc ? L"Choose the folder Dolphin extracted the disc into (it holds sys and files)"
+                                             : L"Choose where to install Shadow the Hedgehog Recompiled");
             // Start at the typed folder, or the nearest existing parent of it.
             fs::path start = folderInitial;
             std::error_code error;
@@ -403,13 +405,16 @@ public:
 
     void StartInstall(const std::wstring& id, const std::vector<std::wstring>& fields) {
         if (installRunning) { Reply(id, L"\"error\":\"An installation is already running.\""); return; }
-        if (fields.size() != 4) { Reply(id, L"\"error\":\"Bad install request.\""); return; }
+        if (fields.size() != 6) { Reply(id, L"\"error\":\"Bad install request.\""); return; }
         if (installJob) { CloseHandle(installJob); installJob = nullptr; }
         installJob = CreateJobObjectW(nullptr, nullptr);
         JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
         limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
         SetInformationJobObject(installJob, JobObjectExtendedLimitInformation, &limits, sizeof(limits));
-        const std::wstring line = PowerShellLine(installer, {L"install", fields[0], fields[1], fields[2] == L"1" ? L"1" : L"0", fields[3] == L"1" ? L"1" : L"0"});
+        // fields[4]: the Japanese disc folder or "-" (none); fields[5]: the spoken language, "0" Japanese, "1" English, "-" unchanged.
+        const std::wstring voice = fields[5] == L"0" || fields[5] == L"1" ? fields[5] : L"-";
+        const std::wstring line = PowerShellLine(installer, {L"install", fields[0], fields[1], fields[2] == L"1" ? L"1" : L"0", fields[3] == L"1" ? L"1" : L"0",
+                                                             fields[4].empty() ? L"-" : fields[4], voice});
         PROCESS_INFORMATION process{};
         HANDLE readPipe = nullptr;
         if (!StartPiped(line, installer, installJob, process, readPipe)) { Reply(id, L"\"error\":\"Could not start the installation.\""); return; }
@@ -521,14 +526,15 @@ public:
                       L",\"selftest\":" + (selftest ? L"true" : L"false"));
         } else if (command == L"music") {
             MusicCommand(id, payload);
-        } else if (command == L"folder" || command == L"disc-folder") {
+        } else if (command == L"folder" || command == L"disc-folder" || command == L"jpdisc-folder") {
             if (folderPending) { Reply(id, L"\"error\":\"The folder chooser is already open.\""); return; }
-            folderPending = true; folderId = id; folderInitial = payload; folderForDisc = command == L"disc-folder";
+            folderPending = true; folderId = id; folderInitial = payload;
+            folderForDisc = command != L"folder"; folderForJapaneseDisc = command == L"jpdisc-folder";
             PostMessageW(window, PickFolderMessage, 0, 0);
         } else if (command == L"backend") {
             const auto fields = Split(payload, L'\t');
             const auto& name = fields[0];
-            const size_t expected = name == L"prereqs" || name == L"defaults" ? 1 : name == L"check-disc" ? 2 : name == L"check-target" ? 3 : 0;
+            const size_t expected = name == L"prereqs" || name == L"defaults" ? 1 : name == L"check-disc" ? 2 : name == L"check-target" || name == L"check-jpdisc" ? 3 : 0;
             if (expected == 0 || fields.size() != expected) { Reply(id, L"\"error\":\"Unknown backend request.\""); return; }
             RunBackend(id, fields);
         } else if (command == L"install") {
@@ -549,7 +555,7 @@ public:
             Reply(id, L"\"ok\":true");
         } else if (selftest && command == L"selftest-config") {
             Reply(id, L"\"disc\":" + JsonString(selftestDisc) + L",\"target\":" + JsonString(selftestTarget) +
-                      L",\"install\":" + (selftestInstall ? L"true" : L"false"));
+                      L",\"jpdisc\":" + JsonString(selftestJapaneseDisc) + L",\"install\":" + (selftestInstall ? L"true" : L"false"));
         } else if (selftest && command == L"selftest-snapshot" && !payload.empty() && payload.size() <= 40 &&
                    payload.find_first_not_of(L"abcdefghijklmnopqrstuvwxyz0123456789-") == std::wstring::npos) {
             Snapshot(id, payload);
@@ -688,7 +694,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     SetCurrentProcessExplicitAppUserModelID(L"Nukkoro.ShadowRecompiled.Setup");
     SetupHost host;
 
-    // --installer-dir <dir>; --selftest <out dir> --disc <dir> --target <dir> [--install]
+    // --installer-dir <dir>; --selftest <out dir> --disc <dir> [--jpdisc <dir>] --target <dir> [--install]
     int argc = 0;
     LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
     for (int i = 1; i < argc; ++i) {
@@ -698,6 +704,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
         else if (argument == L"--selftest" && hasValue) { host.selftest = true; host.selftestDir = argv[++i]; }
         else if (argument == L"--disc" && hasValue) host.selftestDisc = argv[++i];
         else if (argument == L"--target" && hasValue) host.selftestTarget = argv[++i];
+        else if (argument == L"--jpdisc" && hasValue) host.selftestJapaneseDisc = argv[++i];
         else if (argument == L"--install") host.selftestInstall = true;
     }
     LocalFree(argv);

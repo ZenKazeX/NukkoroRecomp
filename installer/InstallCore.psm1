@@ -127,6 +127,123 @@ function Test-DiscFolder([string]$path) {
     return $result
 }
 
+# ---- the Japanese disc (optional: the Japanese event and dialogue voices) --------
+#
+# The PAL disc carries the Japanese menu and subtitle text and the game keeps its voice-language switch, but the
+# Japanese cutscene (event) and dialogue voices are only on the Japanese disc (GUPJ8P). The game serves them from
+# <install>\voice_jp (runtime/src/gekko/voice_language.cpp): PRS_VOICE_J.afs and the Japanese twin of every PAL
+# sng_*_E.adx / sng_*_e.adx, all of them or the game stays on English; the three sound\B*_J.mlt character banks are
+# optional, all three or none. Setup copies exactly that set.
+
+$script:JapaneseVoiceFolder = 'voice_jp'
+$script:JapaneseBanks = @('B3_SHADOW_J.mlt', 'B4_SUBHERO_J.mlt', 'B5_SUBDARK_J.mlt')
+
+# The files (relative to the Japanese disc's files folder) the game needs, worked out from the PAL disc as the game does.
+function Get-JapaneseVoiceNames([string]$palRoot) {
+    $names = @('PRS_VOICE_J.afs')
+    foreach ($file in (Get-ChildItem -LiteralPath (Join-Path $palRoot 'files') -File -Filter 'sng_*.adx' -Force)) {
+        if ($file.Name -cmatch '^(sng_.+)_E\.adx$') { $names += "$($Matches[1])_J.adx" }
+        elseif ($file.Name -cmatch '^(sng_.+)_e\.adx$') { $names += "$($Matches[1])_j.adx" }
+    }
+    return $names
+}
+
+# $path empty: no Japanese disc (Given = $false, Ok = $true). Otherwise Ok only for an unmodified GUPJ8P extraction,
+# in another folder than the PAL one, holding every voice file the PAL disc calls for.
+function Test-JapaneseDiscFolder([string]$path, [string]$palRoot) {
+    $r = [pscustomobject]@{ Ok = $false; Given = $false; Message = ''; Root = $null; GameId = $null; Sha1 = $null
+                            Files = @(); Bytes = 0.0; Banks = $false }
+    if (-not $path -or -not $path.Trim().Trim('"')) {
+        $r.Ok = $true
+        $r.Message = 'No Japanese disc: the game speaks English (Japanese text still works).'
+        return $r
+    }
+    $r.Given = $true
+    $root = Resolve-DiscFolder $path
+    if (-not (Test-Path -LiteralPath $root -PathType Container)) { $r.Message = "Folder not found: $root."; return $r }
+    $r.Root = $root
+    if (-not $palRoot) { $r.Message = 'Choose the PAL disc first.'; return $r }
+    $pal = [System.IO.Path]::GetFullPath($palRoot).TrimEnd('\')
+    if ($root.TrimEnd('\') -ieq $pal) {
+        $r.Message = 'This is the PAL disc folder. Extract the Japanese disc into a different folder and choose that.'; return $r
+    }
+    $dol = Join-Path $root 'sys\main.dol'
+    $boot = Join-Path $root 'sys\boot.bin'
+    if (-not (Test-Path -LiteralPath $dol -PathType Leaf) -or -not (Test-Path -LiteralPath $boot -PathType Leaf) -or
+        -not (Test-Path -LiteralPath (Join-Path $root 'files') -PathType Container)) {
+        $r.Message = "No sys and files folders here. Choose the folder Dolphin's 'Extract Entire Disc' wrote for the Japanese disc."
+        return $r
+    }
+    $bootBytes = [System.IO.File]::ReadAllBytes($boot)
+    if ($bootBytes.Length -lt 8) { $r.Message = 'sys\boot.bin is too short.'; return $r }
+    $r.GameId = [System.Text.Encoding]::ASCII.GetString($bootBytes, 0, 6)
+    $catalog = Get-Content -LiteralPath (Join-Path $script:RepoRoot 'extract\discs.json') -Raw | ConvertFrom-Json
+    $r.Sha1 = (Get-FileHash -LiteralPath $dol -Algorithm SHA1).Hash.ToLowerInvariant()
+    $known = $catalog.discs | Where-Object { $_.main_dol.sha1 -eq $r.Sha1 } | Select-Object -First 1
+    if ($null -eq $known) {
+        $r.Message = "Unknown or modified main.dol (game ID '$($r.GameId)'). Use an unmodified dump of the Japanese disc."; return $r
+    }
+    if ($known.game_id -ne 'GUPJ8P') {
+        $r.Message = "This is the $($known.region) release ($($known.game_id)). Japanese voices come from the Japanese release (GUPJ8P)."; return $r
+    }
+    if ($r.GameId -ne 'GUPJ8P') {
+        $r.Message = "main.dol is the Japanese one, but sys\boot.bin says '$($r.GameId)': the sys folder is mixed from different dumps."; return $r
+    }
+
+    $files = Join-Path $root 'files'
+    $wanted = @(Get-JapaneseVoiceNames $palRoot)
+    $missing = @($wanted | Where-Object { -not (Test-Path -LiteralPath (Join-Path $files $_) -PathType Leaf) })
+    if ($missing) {
+        $shown = ($missing | Select-Object -First 3) -join ', '
+        $r.Message = "The Japanese disc's files folder lacks $($missing.Count) voice file(s) ($shown). Extract the entire disc."
+        return $r
+    }
+    $banks = @($script:JapaneseBanks | ForEach-Object { "sound\$_" })
+    $r.Banks = @($banks | Where-Object { Test-Path -LiteralPath (Join-Path $files $_) -PathType Leaf }).Count -eq $banks.Count
+    $r.Files = @($wanted) + $(if ($r.Banks) { $banks } else { @() })
+    foreach ($relative in $r.Files) { $r.Bytes += (Get-Item -LiteralPath (Join-Path $files $relative) -Force).Length }
+    $r.Ok = $true
+    $r.Message = "Japan (GUPJ8P), verified: $($r.Files.Count) voice files ($(Format-Size $r.Bytes)) to copy."
+    return $r
+}
+
+# Copies the Japanese voice files into <target>\voice_jp; returns their paths relative to <target>.
+function Copy-JapaneseVoices($japanese, [string]$target) {
+    $source = Join-Path $japanese.Root 'files'
+    $copied = @()
+    foreach ($relative in $japanese.Files) {
+        $destination = Join-Path (Join-Path $target $script:JapaneseVoiceFolder) $relative
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
+        Copy-Item -LiteralPath (Join-Path $source $relative) -Destination $destination -Force
+        if ((Get-Item -LiteralPath $destination -Force).Length -ne (Get-Item -LiteralPath (Join-Path $source $relative) -Force).Length) {
+            throw "The copy of $relative has the wrong size"
+        }
+        $copied += Join-Path $script:JapaneseVoiceFolder $relative
+    }
+    return $copied
+}
+
+# Sets the spoken language (options.cfg 'voice': 0 Japanese, 1 English) in <target>\options.cfg, keeping every other
+# line of an existing file as it is (docs/PC_SETTINGS_FILES.md).
+function Set-SpokenLanguage([string]$target, [int]$voice) {
+    $path = Join-Path $target 'options.cfg'
+    $line = "voice = $voice"
+    $text = ''
+    if (Test-Path -LiteralPath $path -PathType Leaf) { $text = [System.IO.File]::ReadAllText($path) }
+    $newline = if ($text.Contains("`r`n")) { "`r`n" } else { "`n" }
+    $lines = [System.Collections.Generic.List[string]]::new()
+    if ($text) { foreach ($l in ($text -split "`r?`n")) { $lines.Add($l) } }
+    if ($lines.Count -gt 0 -and $lines[$lines.Count - 1] -eq '') { $lines.RemoveAt($lines.Count - 1) }
+    $found = $false
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match '^\s*voice\s*=') {
+            if ($found) { $lines[$i] = '# ' + $lines[$i] } else { $lines[$i] = $line; $found = $true }
+        }
+    }
+    if (-not $found) { $lines.Add($line) }
+    [System.IO.File]::WriteAllText($path, ($lines -join $newline) + $newline, [System.Text.UTF8Encoding]::new($false))
+}
+
 function Get-FolderSize([string]$path) {
     $sum = (Get-ChildItem -LiteralPath $path -Recurse -File -Force -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum
     if ($null -eq $sum) { return 0 }
@@ -317,11 +434,13 @@ function Get-BuildConfiguration {
     return $config
 }
 
-function Write-InstallInfo([string]$target, $disc) {
+function Write-InstallInfo([string]$target, $disc, $japanese = $null) {
     $info = [ordered]@{
         installed = (Get-Date).ToString('s')
         disc_game_id = $disc.GameId
         disc_main_dol_sha1 = $disc.Sha1
+        japanese_voices = $(if ($japanese -and $japanese.Given -and $japanese.Ok) {
+            [ordered]@{ disc_game_id = $japanese.GameId; disc_main_dol_sha1 = $japanese.Sha1; files = $japanese.Files.Count; character_banks = $japanese.Banks } } else { $null })
         source = $script:RepoRoot
         source_revision = Get-SourceRevision
         build = Get-BuildConfiguration
@@ -333,7 +452,8 @@ function Write-InstallInfo([string]$target, $disc) {
 # Records exactly what setup put in the folder, which is all the uninstaller will ever remove. Only files setup copied
 # are listed, so anything else in the folder (saves, settings, the player's own files) is never in the record. Entries
 # from an earlier install that are still on disk are carried over, so an update cannot orphan them.
-function Write-InstallManifest([string]$target, [string]$discRoot, [string[]]$shortcuts, [string[]]$shortcutFolders) {
+function Write-InstallManifest([string]$target, [string]$discRoot, [string[]]$shortcuts, [string[]]$shortcutFolders,
+                               [string[]]$copiedFiles = @()) {
     $path = Join-Path $target 'install-manifest.json'
     $files = New-Object System.Collections.ArrayList
     $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
@@ -357,6 +477,11 @@ function Write-InstallManifest([string]$target, [string]$discRoot, [string[]]$sh
         $size = (Get-Item -LiteralPath $copied -Force).Length
         if ($size -ne $file.Length) { throw "The copy of $relative has the wrong size" }
         [void]$files.Add([ordered]@{ path = $relative; size = $size })
+        [void]$seen.Add($relative)
+    }
+    # Files copied from another disc (the Japanese voices): recorded by size, like the PAL files.
+    foreach ($relative in @($copiedFiles | Where-Object { $_ })) {
+        [void]$files.Add([ordered]@{ path = $relative; size = (Get-Item -LiteralPath (Join-Path $target $relative) -Force).Length })
         [void]$seen.Add($relative)
     }
     $allShortcuts = @($shortcuts | Where-Object { $_ })
@@ -429,7 +554,9 @@ $script:StageNames = @('Configure the build', 'Translate and compile the game', 
 function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$jobs, [bool]$desktop, [bool]$startMenu,
                             [scriptblock]$OnEvent,
                             [string]$desktopDir = [Environment]::GetFolderPath('Desktop'),
-                            [string]$startMenuDir = (Join-Path ([Environment]::GetFolderPath('Programs')) 'Shadow the Hedgehog Recompiled')) {
+                            [string]$startMenuDir = (Join-Path ([Environment]::GetFolderPath('Programs')) 'Shadow the Hedgehog Recompiled'),
+                            $japanese = $null, [int]$voice = -1) {
+    # $japanese: a Test-JapaneseDiscFolder result (or $null); $voice: options.cfg 'voice' to set (-1 leaves it alone).
     $log = Join-Path $script:RepoRoot '.build\install.log'
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $log) | Out-Null
     Set-Content -LiteralPath $log -Value "Install started $(Get-Date -Format s)" -Encoding UTF8
@@ -486,11 +613,20 @@ function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$j
             New-Item -ItemType Directory -Force -Path $destination | Out-Null
             Copy-Item -Path (Join-Path (Join-Path $script:RepoRoot $source) '*') -Destination $destination -Recurse -Force
         }
-        Write-InstallInfo $targetPath $disc
+        $japaneseFiles = @()
+        if ($japanese -and $japanese.Given -and $japanese.Ok) {
+            & $OnEvent @{ type = 'log'; text = "Copying the Japanese voices ($($japanese.Files.Count) files, $(Format-Size $japanese.Bytes)) to $($script:JapaneseVoiceFolder)`n" }
+            $japaneseFiles = @(Copy-JapaneseVoices $japanese $targetPath)
+        }
+        if ($voice -ge 0) {
+            Set-SpokenLanguage $targetPath $voice
+            & $OnEvent @{ type = 'log'; text = "Spoken language: $(if ($voice -eq 0) { 'Japanese' } else { 'English' }) (options.cfg voice = $voice)`n" }
+        }
+        Write-InstallInfo $targetPath $disc $japanese
         foreach ($name in @('Uninstall.ps1', 'Uninstall.cmd')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $targetPath -Force }
         $shortcuts = @(New-GameShortcuts $targetPath $desktop $startMenu $desktopDir $startMenuDir)
         foreach ($made in $shortcuts) { & $OnEvent @{ type = 'log'; text = "Shortcut: $made`n" } }
-        Write-InstallManifest $targetPath $disc.Root $shortcuts $(if ($startMenu) { @($startMenuDir) } else { @() })
+        Write-InstallManifest $targetPath $disc.Root $shortcuts $(if ($startMenu) { @($startMenuDir) } else { @() }) $japaneseFiles
         Copy-Item -LiteralPath $log -Destination (Join-Path $targetPath 'install.log') -Force
     } catch {
         & $fail $last "Finishing failed: $($_.Exception.Message)"
@@ -503,7 +639,8 @@ function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$j
 }
 
 Export-ModuleMember -Function Get-RepoRoot, Get-BuiltExe, Get-DefaultInstallFolder, Format-Size, Test-Prerequisites,
-    Resolve-DiscFolder, Test-DiscFolder, Get-FolderSize, Test-InstallFolder, Get-InstallJobs, Get-PrebuiltFolder,
+    Resolve-DiscFolder, Test-DiscFolder, Get-JapaneseVoiceNames, Test-JapaneseDiscFolder, Copy-JapaneseVoices,
+    Set-SpokenLanguage, Get-FolderSize, Test-InstallFolder, Get-InstallJobs, Get-PrebuiltFolder,
     Get-BuildSteps, Get-InstallSteps, Start-Step, Test-StepSucceeded, Stop-Step, Read-LogTail, New-BuildProgress,
     Update-BuildProgress, Get-PrebuiltUsed, Write-InstallInfo, Write-InstallManifest,
     Get-SourceRevision, Get-BuildConfiguration, New-GameShortcuts,

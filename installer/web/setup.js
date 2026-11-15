@@ -1,5 +1,6 @@
-// Shadow the Hedgehog Recompiled setup page. Four steps: Welcome (the extracted disc), Install Location,
-// Components (shortcuts + build tools), Install (review, then the real build and copy via the host).
+// Shadow the Hedgehog Recompiled setup page. Five steps: Welcome (the extracted disc), Japanese Voices (the optional
+// Japanese disc), Install Location, Components (shortcuts + build tools), Install (review, then the real build and copy
+// via the host).
 'use strict';
 
 // ---- native bridge ---------------------------------------------------------------------
@@ -32,10 +33,13 @@ const native = (() => {
 })();
 
 // ---- state -------------------------------------------------------------------------------
-const steps = ['Welcome', 'Install Location', 'Components', 'Install'];
+const steps = ['Welcome', 'Voices', 'Install Location', 'Components', 'Install'];
 const state = {
   step: 1,
   disc: { path: '', result: null, checking: false },
+  // Optional: the Japanese disc, for the Japanese event and dialogue voices (copied to voice_jp).
+  jp: { path: '', result: null, checking: false },
+  speakJapanese: true,
   target: { path: '', result: null, checking: false },
   launch: true, desktop: true, startMenu: true,
   prereqs: null,
@@ -48,6 +52,10 @@ const escapeText = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':
 const size = bytes => bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : `${Math.round(bytes / 1024 ** 2)} MB`;
 const prereqsOk = () => Array.isArray(state.prereqs) && state.prereqs.every(p => p.ok);
 const discOk = () => !!(state.disc.result && state.disc.result.ok);
+// No Japanese disc is fine; a folder that was typed must check out (or be cleared) before going on.
+const jpGiven = () => !!state.jp.path.trim();
+const jpOk = () => !jpGiven() || !!(state.jp.result && state.jp.result.ok && !state.jp.checking);
+const jpUsed = () => jpGiven() && jpOk();
 const targetOk = () => !!(state.target.result && state.target.result.ok);
 
 // ---- art pack ----------------------------------------------------------------------------
@@ -100,7 +108,33 @@ function fit() {
 }
 
 // ---- checks (through Backend.ps1) -----------------------------------------------------------
-let discTimer = null, targetTimer = null, discSerial = 0, targetSerial = 0;
+let discTimer = null, targetTimer = null, discSerial = 0, targetSerial = 0, jpTimer = null, jpSerial = 0;
+function checkJapanese(delay = 400) {
+  clearTimeout(jpTimer);
+  state.jp.result = null;
+  const path = state.jp.path.trim();
+  if (!path) { state.jp.checking = false; updateStatus(); return; }
+  if (!discOk()) { state.jp.checking = false; state.jp.result = { ok: false, message: 'Choose the PAL disc above first.' }; updateStatus(); return; }
+  state.jp.checking = true;
+  updateStatus();
+  jpTimer = setTimeout(async () => {
+    const serial = ++jpSerial;
+    let result;
+    try { result = await native.backend('check-jpdisc', path, state.disc.result.root); }
+    catch (e) { result = { ok: false, message: e.message }; }
+    if (serial !== jpSerial) return;
+    state.jp.checking = false;
+    // The disc is optional: a refusal says how to go on without it.
+    if (!result.ok) result = { ...result, message: `${result.message} Or clear the field to go on with English voices.` };
+    state.jp.result = result;
+    if (result.ok && result.root && result.root !== path) {
+      state.jp.path = result.root;
+      const input = $('#jp-path');
+      if (input) input.value = result.root;
+    }
+    updateStatus();
+  }, delay);
+}
 function checkDisc(delay = 400) {
   clearTimeout(discTimer);
   state.disc.result = null;
@@ -124,6 +158,8 @@ function checkDisc(delay = 400) {
       if (input) input.value = result.root;
     }
     updateStatus();
+    // The Japanese disc is checked against the PAL one (its voice files follow the PAL disc's).
+    if (jpGiven()) checkJapanese(0);
   }, delay);
 }
 function checkTarget(delay = 300) {
@@ -147,7 +183,7 @@ function checkTarget(delay = 300) {
 async function checkPrereqs() {
   state.prereqs = null;
   // Only the Components page shows them; re-rendering another page would reset what the user is typing.
-  const refresh = () => { if (state.step === 3) render(); else updateButtons(); };
+  const refresh = () => { if (state.step === 4) render(); else updateButtons(); };
   refresh();
   try { state.prereqs = await native.backend('prereqs'); }
   catch (e) { state.prereqs = [{ name: 'Build tools check', ok: false, detail: e.message, url: '' }]; }
@@ -155,6 +191,13 @@ async function checkPrereqs() {
 }
 async function browse(kind) {
   const isDisc = kind === 'disc';
+  if (kind === 'jp') {
+    try {
+      const reply = await native.request('jpdisc-folder', state.jp.path);
+      if (reply.path) { state.jp.path = reply.path; $('#jp-path').value = reply.path; checkJapanese(0); }
+    } catch (e) { showDialog('Folder chooser', e.message, [{ label: 'OK' }]); }
+    return;
+  }
   const current = isDisc ? state.disc.path : state.target.path;
   try {
     const reply = await native.request(isDisc ? 'disc-folder' : 'folder', current);
@@ -171,9 +214,12 @@ function statusLine(id, entry, idle) {
   return `<p class="status ${entry.result.ok ? 'ok' : 'bad'}" id="${id}">${escapeText(entry.result.message)}</p>`;
 }
 function updateStatus() {
-  const disc = $('#disc-status'), target = $('#target-status');
+  const disc = $('#disc-status'), target = $('#target-status'), jp = $('#jp-status');
   if (disc) disc.outerHTML = statusLine('disc-status', state.disc, '');
   if (target) target.outerHTML = statusLine('target-status', state.target, '');
+  if (jp) jp.outerHTML = statusLine('jp-status', state.jp, jpIdle);
+  const speak = $('#speak-row');
+  if (speak) speak.hidden = !jpUsed() || !state.jp.result;
   updateButtons();
 }
 function check(key, label, extra = '', disabled = false) {
@@ -193,6 +239,22 @@ function renderWelcome() {
   $('#disc-path').addEventListener('input', e => { state.disc.path = e.target.value; checkDisc(); });
   $('#disc-browse').addEventListener('click', () => browse('disc'));
 }
+function renderJapanese() {
+  content.innerHTML = `
+    <h1>Japanese Voices <small class="optional">optional</small></h1>
+    <div class="card caution"><strong>Caution:</strong> the PAL disc has no Japanese voices for the events (cutscenes) and dialogue.
+      For them to play in Japanese, also extract your Japanese disc (GUPJ8P) into a <em>different</em> folder and choose it below.
+      Without it the game speaks English.</div>
+    <label class="field-label" for="jp-path">Extracted Japanese disc folder</label>
+    <div class="folder-row"><input id="jp-path" spellcheck="false" placeholder="Leave empty for English voices" value="${escapeText(state.jp.path)}">
+      <button class="button" id="jp-browse">Browse...</button></div>
+    ${statusLine('jp-status', state.jp, jpIdle)}
+    <div id="speak-row" ${jpUsed() && state.jp.result ? '' : 'hidden'}>${check('speakJapanese', 'Speak Japanese', '(changeable later: voice in options.cfg)')}</div>`;
+  $('#jp-path').addEventListener('input', e => { state.jp.path = e.target.value; checkJapanese(); });
+  $('#jp-browse').addEventListener('click', () => browse('jp'));
+  bindChecks();
+}
+const jpIdle = 'Its voice files are copied to the voice_jp folder of the game. Nothing in it is changed.';
 function renderLocation() {
   content.innerHTML = `
     <h1>Install Location</h1>
@@ -211,14 +273,14 @@ function renderComponents() {
     ? '<div class="busy">Checking the build tools...</div>'
     : state.prereqs.map(p => `<div><span class="mark ${p.ok ? 'ok' : 'bad'}">${p.ok ? '✔' : '✖'}</span><span>${escapeText(p.name)}</span>` +
         (p.ok ? '' : ` <a data-url="${escapeText(p.url)}">Get it</a>`) + '</div>').join('');
-  const assets = discOk() ? state.disc.result.assetBytes : 0;
+  const assets = (discOk() ? state.disc.result.assetBytes : 0) + (jpUsed() && state.jp.result ? state.jp.result.bytes || 0 : 0);
   content.innerHTML = `
     <h1>Components</h1>
     ${check('game', 'Game, built from your disc', '(required)', true)}
     ${check('desktop', 'Desktop shortcut')}
     ${check('startMenu', 'Start menu shortcut')}
-    <div class="tools"><strong>Build tools</strong> ${prereqsOk() ? '' : '<a id="recheck">Check again</a>'}${tools}</div>
-    <div class="card"><strong>Space:</strong> ${assets ? size(assets + 150 * 1024 ** 2) : '-'} in the install folder, plus about 1.3 GB of build files next to this setup.</div>`;
+    <div class="tools compact"><strong>Build tools</strong> ${prereqsOk() ? '' : '<a id="recheck">Check again</a>'}${tools}</div>
+    <div class="card compact"><strong>Space:</strong> ${assets ? size(assets + 150 * 1024 ** 2) : '-'} in the install folder, plus about 1.3 GB of build files next to this setup.</div>`;
   bindChecks();
   content.querySelectorAll('a[data-url]').forEach(a => a.addEventListener('click', () => native.request('open-url', a.dataset.url).catch(() => {})));
   const recheck = $('#recheck');
@@ -232,9 +294,12 @@ function renderReview() {
     <p class="description">Review your settings, then select Install. The first build takes about 5-20 minutes.</p>
     <dl class="summary">
       <dt>Disc</dt><dd title="${escapeText(state.disc.result.root)}">${escapeText(state.disc.result.root)}</dd>
+      <dt>Voices</dt><dd${jpUsed() ? ` title="${escapeText(state.jp.result.root)}"` : ''}>${jpUsed()
+        ? `${state.speakJapanese ? 'Japanese' : 'English (Japanese voices copied too)'} · ${escapeText(state.jp.result.root)}`
+        : 'English (no Japanese disc)'}</dd>
       <dt>Destination</dt><dd title="${escapeText(target.path)}">${escapeText(target.path)}</dd>
       <dt>Options</dt><dd>${escapeText(options.join(' · ') || 'None')}</dd>
-      <dt>Space</dt><dd>${size(target.neededBytes || 0)}${target.existing ? ' (updates the existing install; saves are kept)' : ''}</dd>
+      <dt>Space</dt><dd>${size((target.neededBytes || 0) + (jpUsed() ? state.jp.result.bytes || 0 : 0))}${target.existing ? ' (updates the existing install; saves are kept)' : ''}</dd>
     </dl>`;
 }
 function renderProgress() {
@@ -266,8 +331,9 @@ function render() {
     button.disabled = state.phase === 'running' || state.phase === 'complete' || !canReach(n);
   });
   if (state.step === 1) renderWelcome();
-  else if (state.step === 2) renderLocation();
-  else if (state.step === 3) renderComponents();
+  else if (state.step === 2) renderJapanese();
+  else if (state.step === 3) renderLocation();
+  else if (state.step === 4) renderComponents();
   else if (state.phase === 'review') renderReview();
   else renderProgress();
   updateButtons();
@@ -276,23 +342,25 @@ function updateButtons() {
   const running = state.phase === 'running';
   back.textContent = running ? 'Cancel' : 'Back';
   back.disabled = (state.step === 1 && !running) || state.phase === 'complete' || state.cancelling;
-  next.textContent = state.phase === 'complete' ? 'Finish' : state.step < 4 ? 'Next'
+  next.textContent = state.phase === 'complete' ? 'Finish' : state.step < 5 ? 'Next'
     : state.phase === 'failed' || state.phase === 'cancelled' ? 'Retry' : 'Install';
-  next.disabled = running || (state.step < 4 && !canReach(state.step + 1));
+  next.disabled = running || (state.step < 5 && !canReach(state.step + 1));
 }
 function canReach(step) {
   if (step <= 1) return true;
   if (!discOk()) return false;
   if (step === 2) return true;
-  if (!targetOk()) return false;
+  if (!jpOk()) return false;
   if (step === 3) return true;
+  if (!targetOk()) return false;
+  if (step === 4) return true;
   return prereqsOk();
 }
 function go(step) {
   if (state.phase === 'running' || state.phase === 'complete' || !canReach(step)) return;
   state.step = step;
-  if (step < 4) state.phase = 'review';
-  if (step === 3 && state.prereqs === null) checkPrereqs();
+  if (step < 5) state.phase = 'review';
+  if (step === 4 && state.prereqs === null) checkPrereqs();
   render();
 }
 
@@ -300,7 +368,9 @@ function go(step) {
 async function startInstall() {
   Object.assign(state, { phase: 'running', progress: 0, stageIndex: 0, stageName: '', log: '', error: '', logPath: '', cancelling: false });
   render();
-  const payload = [state.disc.result.root, state.target.result.path, state.desktop ? 1 : 0, state.startMenu ? 1 : 0].join('\t');
+  const japanese = jpUsed() ? state.jp.result.root : '-';
+  const voice = jpUsed() ? (state.speakJapanese ? '0' : '1') : '-';
+  const payload = [state.disc.result.root, state.target.result.path, state.desktop ? 1 : 0, state.startMenu ? 1 : 0, japanese, voice].join('\t');
   try { await native.request('install', payload); }
   catch (e) { state.phase = 'failed'; state.error = e.message; render(); }
 }
@@ -314,7 +384,7 @@ native.on(message => {
     else if (e.type === 'log') state.log = (state.log + e.text).slice(-60000);
     else if (e.type === 'error') { state.error = e.message; state.logPath = e.log || ''; }
     else if (e.type === 'done') state.progress = 1;
-    if (state.step === 4) queueRender();
+    if (state.step === 5) queueRender();
   } else if (message.type === 'install-exit') {
     state.phase = message.code === 0 ? 'complete' : state.cancelling ? 'cancelled' : 'failed';
     if (state.phase === 'failed' && !state.error) state.error = `The installer stopped (code ${message.code}).`;
@@ -368,12 +438,12 @@ back.addEventListener('click', async () => {
     if (answer && state.phase === 'running') cancelInstall();
     return;
   }
-  if (state.step === 4 && state.phase !== 'review') state.phase = 'review';
+  if (state.step === 5 && state.phase !== 'review') state.phase = 'review';
   go(state.step - 1);
 });
 next.addEventListener('click', () => {
   if (state.phase === 'complete') finish();
-  else if (state.step < 4) go(state.step + 1);
+  else if (state.step < 5) go(state.step + 1);
   else startInstall();
 });
 document.querySelectorAll('.step').forEach(button => button.addEventListener('click', () => go(Number(button.dataset.step))));
@@ -406,25 +476,36 @@ async function selftest() {
     await until(() => state.disc.result); report.discAccepted = discOk(); report.discRoot = state.disc.result.root;
     await snap('1-welcome-valid');
     next.click(); await wait(100);
+    await snap('2-japanese-empty');
+    state.jp.path = config.disc; render(); checkJapanese(0);
+    await until(() => state.jp.result && !state.jp.checking); report.palAsJapaneseRefused = !jpOk() && !canReach(3);
+    await snap('2-japanese-refused');
+    if (config.jpdisc) {
+      state.jp.path = config.jpdisc; render(); checkJapanese(0);
+      await until(() => state.jp.result && !state.jp.checking); report.japaneseAccepted = jpUsed() && canReach(3);
+      await snap('2-japanese-valid');
+    } else { state.jp.path = ''; render(); checkJapanese(0); }
+    next.click(); await wait(100);
     state.target.path = config.target; render(); checkTarget(0);
     await until(() => state.target.result); report.targetAccepted = targetOk();
-    await snap('2-location');
+    await snap('3-location');
     next.click();
     await until(() => state.prereqs !== null); render(); report.prereqsOk = prereqsOk();
-    await snap('3-components');
+    await snap('4-components');
     state.desktop = false; state.startMenu = false; state.launch = false;
     next.click(); await wait(100);
-    await snap('4-ready');
+    await snap('5-ready');
     report.musicLoops = (await musicState()).loops;
-    report.passed = report.badDiscRejected && report.discAccepted && report.targetAccepted && report.prereqsOk &&
+    report.passed = report.badDiscRejected && report.discAccepted && report.palAsJapaneseRefused &&
+                    (!config.jpdisc || report.japaneseAccepted) && report.targetAccepted && report.prereqsOk &&
                     (!musicExpected || report.musicPlaying);
     if (config.install && report.passed) {
       const exited = new Promise(resolve => { selftestHooks.onExit = resolve; });
       next.click();
       await until(() => state.phase === 'running', 5000);
-      await wait(4000); await snap('4-installing');
+      await wait(4000); await snap('5-installing');
       await exited;
-      await snap(`4-${state.phase}`);
+      await snap(`5-${state.phase}`);
       report.installPhase = state.phase;
       report.passed = state.phase === 'complete';
     }
