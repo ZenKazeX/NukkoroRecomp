@@ -268,8 +268,24 @@ void wait_point_contract(System& system, RecompiledCode& code) {
         // SelectThread polls with interrupts enabled (OSEnableInterrupts at
         // 0x803788F8, the call before the loop).
         c.set_msr(c.msr() | kMsrEE);
+        // A System starts with decrementer delivery off (NativeBoot::install: this game's boot arms no alarm) and only a
+        // guest mtdec turns it on. The cases below arm the edge from C++ (set_decrementer), standing in for a guest
+        // that wrote DEC, so they turn delivery on as that mtdec would (as gekko_core_tests does). Without it the edge
+        // is dropped at the latch and the generated idle loop waits for ever: the test hung with no output from
+        // 2026-11-07 (a7da0b9) on. RC-tests-3.
+        c.set_decrementer_delivery(true);
         c.mem_write32(kRunQueueBits, run_queue_bits);
         c.set_verify_recompiled(verify);
+    };
+    // The bound on every wait below: the armed edge is 501 ticks out, so a loop still waiting after two seconds of game
+    // time has lost its event. The host service (every 5 ms of game time) then stops the machine and the case fails with
+    // this text instead of spinning until ctest's timeout.
+    const auto arm_wait_watchdog = [&](u64 from) {
+        system.set_host_service([&system, &c, from](u64) {
+            if (system.game_ticks() > from + 2u * kGameTicksPerSecond)
+                c.request_stop(StopReason::ExecutionFault,
+                               "test watchdog: the idle loop waited 2 s of game time and the event it was armed for never became deliverable");
+        });
     };
 
     // No thread is ready. Every taken back edge waits (System::idle_wait: the
@@ -286,6 +302,7 @@ void wait_point_contract(System& system, RecompiledCode& code) {
         const u64 armed = system.game_ticks();
         c.set_decrementer_delivery(true);  // as a guest mtdec does (a System starts with delivery off)
         c.set_decrementer(kIdleEdge);
+        arm_wait_watchdog(armed);
         u64 reads = 0;
         system.guest_memory().set_access_trace([&reads](u32 address, std::size_t size, bool writing) {
             if (!writing && size == 4u && address == kRunQueueBits) ++reads;
@@ -293,6 +310,7 @@ void wait_point_contract(System& system, RecompiledCode& code) {
         const u64 waits_before = system.idle_waits();
         const u64 steps = c.run_steps(1u);
         system.guest_memory().set_access_trace({});
+        system.set_host_service({});
         const u64 waits = system.idle_waits() - waits_before;
         require(steps == 1u && !c.stopped() && c.pc == kIdleLoop,
                 "the waiting idle loop must hand back at its head" + mode + ": " + c.stop().detail);
@@ -369,6 +387,9 @@ void wait_point_contract(System& system, RecompiledCode& code) {
 }
 }
 int main(int argc, char** argv) {
+    // Every PASS line reaches the log when it is printed: a run that ctest has to kill used to lose all of them in the
+    // stream's buffer (RC-tests-3).
+    std::cout << std::unitbuf;
     RecompiledCode code;
     std::unique_ptr<System> system;
     try {
@@ -385,8 +406,10 @@ int main(int argc, char** argv) {
         // The compiler intrinsics that served the tick wrapper and the TB->us
         // scaling were deleted with the instruction clock, and the divide
         // intrinsics are off: no host hook may serve any body verified here.
-        for (u32 entry : {0x80051BBCu, 0x80051414u, 0x803A1F54u, 0x803A2040u, 0x803C5B2Cu, 0x803C5D8Cu,
-                          0x803C607Cu})
+        // 0x803C5B2C (the ADX stereo 4-bit decoder) is a native owner (extract/native-owners.txt): the generator
+        // emits no body for it, so this fixture cannot verify one; adx_decode_contract_tests runs its ORIGINAL words
+        // against the owner instead.
+        for (u32 entry : {0x80051BBCu, 0x80051414u, 0x803A1F54u, 0x803A2040u, 0x803C5D8Cu, 0x803C607Cu})
             require(!system->cpu().has_hle(entry), "a host hook serves a guest body this fixture verifies");
     } catch (const std::exception& e) { std::cerr << "FAIL " << e.what() << '\n'; return 1; }
     // Each body and the wait-point contract report on their own, so one
@@ -401,7 +424,7 @@ int main(int argc, char** argv) {
     };
     for (u32 entry : {0x80051BBCu, 0x80051414u, 0x803A1F54u, 0x803A2040u})
         run("helper " + hex(entry), [&] { verify_compiler_helper(*system, code, entry); });
-    for (u32 entry : {0x803C5B2Cu, 0x803C5D8Cu, 0x803C607Cu})
+    for (u32 entry : {0x803C5D8Cu, 0x803C607Cu})
         run("audio " + hex(entry), [&] { verify_audio_decoder(*system, code, entry); });
     // The polling-loop contract that replaced the coalesced RAM poll, on the
     // generated SelectThread idle loop.

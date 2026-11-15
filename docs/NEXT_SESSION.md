@@ -1,3 +1,9 @@
+# 2026-11-14: native keyboard and mouse (branch input/kbm)
+
+Native keyboard and mouse controls (built 2026-11-10) are ported onto the release line: docs/controls/INPUT_IMPLEMENTATION_STATUS.md
+is the entry point, INPUT_PARITY_VALIDATION.md has the evidence. Bindings come from controls.cfg (no in-game page). Not done:
+native player/camera reconstruction, mouse yaw above 150 deg/s, generic HID pads. Not deployed.
+
 # Next session
 
 ## START HERE FIRST: native player reconstruction (handoff 2026-11-03, late)

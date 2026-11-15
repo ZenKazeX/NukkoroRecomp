@@ -1,0 +1,4085 @@
+{
+ "1": {
+  "name": "SPRING",
+  "params": [
+   [
+    4,
+    "level"
+   ],
+   [
+    4,
+    "nocontrol time (sec)"
+   ]
+  ]
+ },
+ "2": {
+  "name": "LONGSPRING",
+  "params": [
+   [
+    4,
+    "level"
+   ],
+   [
+    4,
+    "nocontrol time (sec)"
+   ]
+  ]
+ },
+ "3": {
+  "name": "DASHPANEL",
+  "params": [
+   [
+    4,
+    "level"
+   ],
+   [
+    4,
+    "nocontrol time (sec)"
+   ]
+  ]
+ },
+ "4": {
+  "name": "JUMP_BOARD",
+  "params": [
+   [
+    4,
+    "level"
+   ],
+   [
+    4,
+    "angle"
+   ],
+   [
+    4,
+    "nocontrol time (sec)"
+   ]
+  ]
+ },
+ "5": {
+  "name": "SAVEPOINT",
+  "params": [
+   [
+    1,
+    "priority"
+   ]
+  ]
+ },
+ "6": {
+  "name": "DASHRING",
+  "params": [
+   [
+    4,
+    "level"
+   ],
+   [
+    4,
+    "nocontrol time (sec)"
+   ]
+  ]
+ },
+ "7": {
+  "name": "CAGE",
+  "params": [
+   [
+    1,
+    "model"
+   ],
+   [
+    4,
+    "scale X"
+   ],
+   [
+    4,
+    "scale Y"
+   ],
+   [
+    4,
+    "scale Z"
+   ]
+  ]
+ },
+ "8": {
+  "name": "UD_REEL",
+  "params": [
+   [
+    4,
+    "length"
+   ],
+   [
+    4,
+    "pos"
+   ],
+   [
+    4,
+    "angle"
+   ],
+   [
+    4,
+    "power"
+   ]
+  ]
+ },
+ "9": {
+  "name": "CONTAINER",
+  "params": [
+   [
+    1,
+    "model"
+   ],
+   [
+    1,
+    "select"
+   ],
+   [
+    1,
+    "value"
+   ]
+  ]
+ },
+ "10": {
+  "name": "HRD_CONTAINER",
+  "params": [
+   [
+    1,
+    "model"
+   ],
+   [
+    1,
+    "select"
+   ],
+   [
+    1,
+    "value"
+   ]
+  ]
+ },
+ "11": {
+  "name": "UNBRK_CONTAINER",
+  "params": [
+   [
+    1,
+    "kind"
+   ]
+  ]
+ },
+ "12": {
+  "name": "WEAPON_CONTAINER",
+  "params": [
+   [
+    1,
+    "kind"
+   ],
+   [
+    1,
+    "weapon"
+   ]
+  ]
+ },
+ "13": {
+  "name": "BOMB",
+  "params": []
+ },
+ "14": {
+  "name": "ROCKET",
+  "params": [
+   [
+    4,
+    "angle"
+   ],
+   [
+    4,
+    "distance"
+   ]
+  ]
+ },
+ "15": {
+  "name": "MOVE_FOOTING",
+  "params": [
+   [
+    1,
+    "model"
+   ],
+   [
+    1,
+    "type"
+   ],
+   [
+    4,
+    "spd"
+   ],
+   [
+    4,
+    "acc"
+   ],
+   [
+    4,
+    "pause"
+   ],
+   [
+    4,
+    "pos"
+   ],
+   [
+    4,
+    "param0"
+   ],
+   [
+    4,
+    "param1"
+   ],
+   [
+    4,
+    "param2"
+   ],
+   [
+    4,
+    "pause damage"
+   ]
+  ]
+ },
+ "16": {
+  "name": "RING",
+  "params": [
+   [
+    1,
+    "type"
+   ],
+   [
+    1,
+    "num"
+   ],
+   [
+    4,
+    "param0"
+   ],
+   [
+    4,
+    "param1"
+   ],
+   [
+    1,
+    "ghost"
+   ]
+  ]
+ },
+ "17": {
+  "name": "HINTRING",
+  "params": [
+   [
+    1,
+    "Message Id"
+   ],
+   [
+    1,
+    "Brunch"
+   ],
+   [
+    4,
+    "range"
+   ],
+   [
+    4,
+    "sec"
+   ],
+   [
+    1,
+    "navi"
+   ]
+  ]
+ },
+ "18": {
+  "name": "ITEM_BOX",
+  "params": [
+   [
+    1,
+    "item"
+   ]
+  ]
+ },
+ "19": {
+  "name": "BALLOON",
+  "params": [
+   [
+    1,
+    "type"
+   ],
+   [
+    1,
+    "item"
+   ],
+   [
+    4,
+    "sec"
+   ],
+   [
+    4,
+    "radius"
+   ],
+   [
+    4,
+    "X"
+   ],
+   [
+    4,
+    "Y"
+   ],
+   [
+    4,
+    "Z"
+   ]
+  ]
+ },
+ "20": {
+  "name": "GOALRING",
+  "params": [
+   [
+    1,
+    "color"
+   ]
+  ]
+ },
+ "21": {
+  "name": "SWITCH",
+  "params": [
+   [
+    1,
+    "type"
+   ]
+  ]
+ },
+ "22": {
+  "name": "TARGETSWITCH",
+  "params": [
+   [
+    4,
+    "X"
+   ],
+   [
+    4,
+    "Y"
+   ],
+   [
+    4,
+    "Z"
+   ],
+   [
+    4,
+    "sec"
+   ],
+   [
+    4,
+    "pause"
+   ],
+   [
+    1,
+    "hitpoint"
+   ]
+  ]
+ },
+ "25": {
+  "name": "WEIGHT",
+  "params": [
+   [
+    1,
+    "type"
+   ],
+   [
+    4,
+    "height"
+   ],
+   [
+    4,
+    "intv upper(sec)"
+   ],
+   [
+    4,
+    "intv lower(sec)"
+   ],
+   [
+    4,
+    "intv damage(sec)"
+   ],
+   [
+    1,
+    "sw"
+   ],
+   [
+    4,
+    "scale X"
+   ],
+   [
+    4,
+    "scale Y"
+   ],
+   [
+    4,
+    "scale Z"
+   ]
+  ]
+ },
+ "26": {
+  "name": "FAN",
+  "params": [
+   [
+    1,
+    "type"
+   ],
+   [
+    1,
+    "form"
+   ],
+   [
+    4,
+    "X"
+   ],
+   [
+    4,
+    "Y"
+   ],
+   [
+    4,
+    "Z"
+   ],
+   [
+    4,
+    "power"
+   ],
+   [
+    4,
+    "sec_active"
+   ],
+   [
+    4,
+    "sec_negative"
+   ],
+   [
+    1,
+    "disp"
+   ],
+   [
+    1,
+    "Id"
+   ]
+  ]
+ },
+ "27": {
+  "name": "BRK_OBJ",
+  "params": [
+   [
+    1,
+    "kind"
+   ]
+  ]
+ },
+ "28": {
+  "name": "BREAK_BLAST",
+  "params": []
+ },
+ "29": {
+  "name": "SECRETKEY",
+  "params": []
+ },
+ "30": {
+  "name": "SECRETDOOR",
+  "params": []
+ },
+ "31": {
+  "name": "WARP_HOLE",
+  "params": []
+ },
+ "32": {
+  "name": "SET_WEAPON",
+  "params": [
+   [
+    1,
+    "weapon"
+   ]
+  ]
+ },
+ "33": {
+  "name": "TANK",
+  "params": [
+   [
+    1,
+    "model"
+   ],
+   [
+    1,
+    "blast"
+   ]
+  ]
+ },
+ "34": {
+  "name": "Fruit",
+  "params": []
+ },
+ "35": {
+  "name": "TURNOVER",
+  "params": [
+   [
+    1,
+    "model"
+   ],
+   [
+    1,
+    "blast"
+   ]
+  ]
+ },
+ "51": {
+  "name": "ENERGY_CORE",
+  "params": [
+   [
+    1,
+    "type"
+   ]
+  ]
+ },
+ "52": {
+  "name": "FIRE",
+  "params": [
+   [
+    4,
+    "scale X"
+   ],
+   [
+    4,
+    "scale Y"
+   ],
+   [
+    4,
+    "scale Z"
+   ]
+  ]
+ },
+ "53": {
+  "name": "POISON_GAS",
+  "params": [
+   [
+    4,
+    "scale X"
+   ],
+   [
+    4,
+    "scale Y"
+   ],
+   [
+    4,
+    "scale Z"
+   ]
+  ]
+ },
+ "55": {
+  "name": "CAPTURE_CAGE",
+  "params": [
+   [
+    4,
+    "N/A"
+   ],
+   [
+    4,
+    "N/A"
+   ],
+   [
+    4,
+    "N/A"
+   ]
+  ]
+ },
+ "56": {
+  "name": "HEALING_UNIT",
+  "params": []
+ },
+ "58": {
+  "name": "SECRET CONTAINER",
+  "params": [
+   [
+    1,
+    "weapon"
+   ]
+  ]
+ },
+ "70": {
+  "name": "Noraml Car",
+  "params": []
+ },
+ "71": {
+  "name": "Open Car",
+  "params": []
+ },
+ "72": {
+  "name": "Armed Car",
+  "params": []
+ },
+ "73": {
+  "name": "Bike",
+  "params": []
+ },
+ "79": {
+  "name": "SET_VEHICLE",
+  "params": [
+   [
+    1,
+    "Vehicle"
+   ]
+  ]
+ },
+ "80": {
+  "name": "SETCOLLISION",
+  "params": [
+   [
+    1,
+    "kind"
+   ],
+   [
+    1,
+    "form"
+   ],
+   [
+    4,
+    "X"
+   ],
+   [
+    4,
+    "Y"
+   ],
+   [
+    4,
+    "Z"
+   ],
+   [
+    1,
+    "Id"
+   ],
+   [
+    1,
+    "appear"
+   ]
+  ]
+ },
+ "81": {
+  "name": "HINT COLLISION",
+  "params": [
+   [
+    1,
+    "form"
+   ],
+   [
+    4,
+    "X"
+   ],
+   [
+    4,
+    "Y"
+   ],
+   [
+    4,
+    "Z"
+   ],
+   [
+    1,
+    "Message Id"
+   ],
+   [
+    1,
+    "Brunch"
+   ],
+   [
+    4,
+    "range"
+   ],
+   [
+    4,
+    "sec"
+   ],
+   [
+    1,
+    "flag"
+   ],
+   [
+    1,
+    "appear"
+   ]
+  ]
+ },
+ "89": {
+  "name": "BlockChange",
+  "params": [
+   [
+    1,
+    "Type"
+   ],
+   [
+    1,
+    "On/Off"
+   ],
+   [
+    4,
+    "Radius"
+   ],
+   [
+    1,
+    "BLOCK"
+   ],
+   [
+    1,
+    "BLOCK"
+   ],
+   [
+    1,
+    "BLOCK"
+   ],
+   [
+    1,
+    "BLOCK"
+   ]
+  ]
+ },
+ "90": {
+  "name": "CATCHSTICK",
+  "params": [
+   [
+    4,
+    "length"
+   ]
+  ]
+ },
+ "97": {
+  "name": "DARKSPINENTRANCE",
+  "params": [
+   [
+    4,
+    "radius"
+   ]
+  ]
+ },
+ "98": {
+  "name": "LIGHT_COLI",
+  "params": [
+   [
+    1,
+    "Type"
+   ],
+   [
+    1,
+    "Shape"
+   ],
+   [
+    1,
+    "LightFlag"
+   ],
+   [
+    1,
+    "LightNumber"
+   ],
+   [
+    1,
+    "EffectFlag"
+   ],
+   [
+    1,
+    "EffectNumber"
+   ],
+   [
+    4,
+    "ScaleX"
+   ],
+   [
+    4,
+    "ScaleY"
+   ],
+   [
+    4,
+    "ScaleZ"
+   ]
+  ]
+ },
+ "100": {
+  "name": "GUN_SOLDIER",
+  "params": [
+   [
+    4,
+    "MoveRange"
+   ],
+   [
+    4,
+    "SearchRange"
+   ],
+   [
+    4,
+    "SearchAngle"
+   ],
+   [
+    4,
+    "SearchWidth"
+   ],
+   [
+    4,
+    "SearchHeight"
+   ],
+   [
+    4,
+    "SearchHeightOffset"
+   ],
+   [
+    4,
+    "MoveSpeedRatio"
+   ],
+   [
+    1,
+    "HaveShield"
+   ],
+   [
+    1,
+    "WeaponType"
+   ],
+   [
+    1,
+    "AppearType"
+   ],
+   [
+    1,
+    "Pos0_WaitType"
+   ],
+   [
+    4,
+    "Pos0_WaitSec"
+   ],
+   [
+    4,
+    "Pos0_MoveSpeedRatio"
+   ],
+   [
+    4,
+    "Pos1_X"
+   ],
+   [
+    4,
+    "Pos1_Z"
+   ],
+   [
+    1,
+    "Pos1_WaitType"
+   ],
+   [
+    4,
+    "Pos1_WaitSec"
+   ],
+   [
+    4,
+    "Pos1_MoveSpeedRatio"
+   ],
+   [
+    4,
+    "Pos2_X"
+   ],
+   [
+    4,
+    "Pos2_Z"
+   ],
+   [
+    1,
+    "Pos2_WaitType"
+   ],
+   [
+    4,
+    "Pos2_WaitSec"
+   ],
+   [
+    4,
+    "Pos2_MoveSpeedRatio"
+   ]
+  ]
+ },
+ "101": {
+  "name": "GUN_BEETLE",
+  "params": [
+   [
+    4,
+    "MoveRange"
+   ],
+   [
+    4,
+    "SearchRange"
+   ],
+   [
+    4,
+    "SearchAngle"
+   ],
+   [
+    4,
+    "SearchWidth"
+   ],
+   [
+    4,
+    "SearchHeight"
+   ],
+   [
+    4,
+    "SearchHeightOffset"
+   ],
+   [
+    4,
+    "MoveSpeedRatio"
+   ],
+   [
+    1,
+    "AppearType"
+   ],
+   [
+    1,
+    "ActionType"
+   ],
+   [
+    1,
+    ""
+   ],
+   [
+    4,
+    "FloatWidth"
+   ],
+   [
+    4,
+    "AttackStart"
+   ],
+   [
+    4,
+    "AttackEnd"
+   ],
+   [
+    1,
+    "PathMirror"
+   ],
+   [
+    1,
+    "BodyType"
+   ],
+   [
+    1,
+    "WeaponType"
+   ],
+   [
+    4,
+    "SparkDischarge"
+   ],
+   [
+    4,
+    "SparkWait"
+   ]
+  ]
+ },
+ "102": {
+  "name": "GUN_BIGFOOT",
+  "params": [
+   [
+    4,
+    "MoveRange"
+   ],
+   [
+    4,
+    "SearchRange"
+   ],
+   [
+    4,
+    "SearchAngle"
+   ],
+   [
+    4,
+    "SearchWidth"
+   ],
+   [
+    4,
+    "SearchHeight"
+   ],
+   [
+    4,
+    "SearchHeightOffset"
+   ],
+   [
+    4,
+    "MoveSpeedRatio"
+   ],
+   [
+    1,
+    "AppearType"
+   ],
+   [
+    1,
+    "WeaponType"
+   ],
+   [
+    4,
+    "OffsetPos_Y"
+   ]
+  ]
+ },
+ "104": {
+  "name": "GUN_ROBOT",
+  "params": [
+   [
+    4,
+    "MoveRange"
+   ],
+   [
+    4,
+    "SearchRange"
+   ],
+   [
+    4,
+    "SearchAngle"
+   ],
+   [
+    4,
+    "SearchWidth"
+   ],
+   [
+    4,
+    "SearchHeight"
+   ],
+   [
+    4,
+    "SearchHeightOffset"
+   ],
+   [
+    4,
+    "MoveSpeedRatio"
+   ],
+   [
+    1,
+    "AppearType"
+   ],
+   [
+    1,
+    "WeaponType"
+   ],
+   [
+    1,
+    "BodyType"
+   ],
+   [
+    4,
+    "OffsetPos_X"
+   ],
+   [
+    4,
+    "OffsetPos_Y"
+   ],
+   [
+    4,
+    "OffsetPos_Z"
+   ],
+   [
+    1,
+    "WaitActMoveType"
+   ],
+   [
+    4,
+    "Pos0_ActionTime"
+   ],
+   [
+    1,
+    "Pos0_ActionType"
+   ],
+   [
+    4,
+    "Pos0_MoveSpeedRatio"
+   ],
+   [
+    4,
+    "Pos1_X"
+   ],
+   [
+    4,
+    "Pos1_Z"
+   ],
+   [
+    4,
+    "Pos1_ActionTime"
+   ],
+   [
+    1,
+    "Pos1_ActionType"
+   ],
+   [
+    4,
+    "Pos1_MoveSpeedRatio"
+   ],
+   [
+    4,
+    "Pos2_X"
+   ],
+   [
+    4,
+    "Pos2_Z"
+   ],
+   [
+    4,
+    "Pos2_ActionTime"
+   ],
+   [
+    1,
+    "Pos2_ActionType"
+   ],
+   [
+    4,
+    "Pos2_MoveSpeedRatio"
+   ]
+  ]
+ },
+ "120": {
+  "name": "EGG_PIERROT",
+  "params": [
+   [
+    4,
+    "MoveRange"
+   ],
+   [
+    4,
+    "SearchRange"
+   ],
+   [
+    4,
+    "SearchAngle"
+   ],
+   [
+    4,
+    "SearchWidth"
+   ],
+   [
+    4,
+    "SearchHeight"
+   ],
+   [
+    4,
+    "SearchHeightOffset"
+   ],
+   [
+    4,
+    "MoveSpeedRatio"
+   ],
+   [
+    1,
+    "AppearType"
+   ],
+   [
+    1,
+    "NOT_USE"
+   ],
+   [
+    4,
+    "BakudanTime"
+   ],
+   [
+    4,
+    "OffsetPos_X"
+   ],
+   [
+    4,
+    "OffsetPos_Y"
+   ],
+   [
+    4,
+    "OffsetPos_Z"
+   ]
+  ]
+ },
+ "121": {
+  "name": "EGG_PAWN",
+  "params": [
+   [
+    4,
+    "MoveRange"
+   ],
+   [
+    4,
+    "SearchRange"
+   ],
+   [
+    4,
+    "SearchAngle"
+   ],
+   [
+    4,
+    "SearchWidth"
+   ],
+   [
+    4,
+    "SearchHeight"
+   ],
+   [
+    4,
+    "SearchHeightOffset"
+   ],
+   [
+    4,
+    "MoveSpeedRatio"
+   ],
+   [
+    1,
+    "HaveShield"
+   ],
+   [
+    1,
+    "WeaponType"
+   ],
+   [
+    1,
+    "AppearType"
+   ],
+   [
+    4,
+    "OffsetPos_X"
+   ],
+   [
+    4,
+    "OffsetPos_Z"
+   ],
+   [
+    4,
+    "OffsetPos_Y"
+   ],
+   [
+    1,
+    "WaitActMoveType"
+   ],
+   [
+    4,
+    "Pos0_ActionTime"
+   ],
+   [
+    1,
+    "Pos0_ActionType"
+   ],
+   [
+    4,
+    "Pos0_MoveSpeedRatio"
+   ],
+   [
+    4,
+    "Pos1_X"
+   ],
+   [
+    4,
+    "Pos1_Z"
+   ],
+   [
+    4,
+    "Pos1_ActionTime"
+   ],
+   [
+    1,
+    "Pos1_ActionType"
+   ],
+   [
+    4,
+    "Pos1_MoveSpeedRatio"
+   ],
+   [
+    4,
+    "Pos2_X"
+   ],
+   [
+    4,
+    "Pos2_Z"
+   ],
+   [
+    4,
+    "Pos2_ActionTime"
+   ],
+   [
+    1,
+    "Pos2_ActionType"
+   ],
+   [
+    4,
+    "Pos2_MoveSpeedRatio"
+   ]
+  ]
+ },
+ "122": {
+  "name": "EGG_SHADOWANDROID",
+  "params": [
+   [
+    4,
+    "MoveRange"
+   ],
+   [
+    4,
+    "SearchRange"
+   ],
+   [
+    4,
+    "SearchAngle"
+   ],
+   [
+    4,
+    "SearchWidth"
+   ],
+   [
+    4,
+    "SearchHeight"
+   ],
+   [
+    4,
+    "SearchHeightOffset"
+   ],
+   [
+    4,
+    "MoveSpeedRatio"
+   ],
+   [
+    1,
+    "AppearType"
+   ],
+   [
+    4,
+    "OffsetPos_X"
+   ],
+   [
+    4,
+    "OffsetPos_Y"
+   ],
+   [
+    4,
+    "OffsetPos_Z"
+   ]
+  ]
+ },
+ "140": {
+  "name": "BK_GIANT",
+  "params": [
+   [
+    4,
+    "MoveRange"
+   ],
+   [
+    4,
+    "SearchRange"
+   ],
+   [
+    4,
+    "SearchAngle"
+   ],
+   [
+    4,
+    "SearchWidth"
+   ],
+   [
+    4,
+    "SearchHeight"
+   ],
+   [
+    4,
+    "SearchHeightOffset"
+   ],
+   [
+    4,
+    "MoveSpeedRatio"
+   ],
+   [
+    1,
+    "AppearType"
+   ],
+   [
+    1,
+    "WeaponType"
+   ],
+   [
+    4,
+    "OffsetPos_Y"
+   ],
+   [
+    1,
+    "Gurad : ON"
+   ]
+  ]
+ },
+ "141": {
+  "name": "BK_SOLDIER",
+  "params": [
+   [
+    4,
+    "MoveRange"
+   ],
+   [
+    4,
+    "SearchRange"
+   ],
+   [
+    4,
+    "SearchAngle"
+   ],
+   [
+    4,
+    "SearchWidth"
+   ],
+   [
+    4,
+    "SearchHeight"
+   ],
+   [
+    4,
+    "SearchHeightOffset"
+   ],
+   [
+    4,
+    "MoveSpeedRatio"
+   ],
+   [
+    1,
+    "HaveShield"
+   ],
+   [
+    1,
+    "WeaponType"
+   ],
+   [
+    1,
+    "AppearType"
+   ],
+   [
+    1,
+    "Pos0_WaitType"
+   ],
+   [
+    4,
+    "Pos0_WaitSec"
+   ],
+   [
+    4,
+    "Pos0_MoveSpeedRatio"
+   ],
+   [
+    4,
+    "Pos1_X"
+   ],
+   [
+    4,
+    "Pos1_Z"
+   ],
+   [
+    1,
+    "Pos1_WaitType"
+   ],
+   [
+    4,
+    "Pos1_WaitSec"
+   ],
+   [
+    4,
+    "Pos1_MoveSpeedRatio"
+   ],
+   [
+    4,
+    "Pos2_X"
+   ],
+   [
+    4,
+    "Pos2_Z"
+   ],
+   [
+    1,
+    "Pos2_WaitType"
+   ],
+   [
+    4,
+    "Pos2_WaitSec"
+   ],
+   [
+    4,
+    "Pos2_MoveSpeedRatio"
+   ],
+   [
+    1,
+    "RideAirSaucer"
+   ]
+  ]
+ },
+ "142": {
+  "name": "BK_WINGLARGE",
+  "params": [
+   [
+    4,
+    "MoveRange"
+   ],
+   [
+    4,
+    "SearchRange"
+   ],
+   [
+    4,
+    "SearchAngle"
+   ],
+   [
+    4,
+    "SearchWidth"
+   ],
+   [
+    4,
+    "SearchHeight"
+   ],
+   [
+    4,
+    "SearchHeightOffset"
+   ],
+   [
+    4,
+    "MoveSpeedRatio"
+   ],
+   [
+    1,
+    "AppearType"
+   ],
+   [
+    1,
+    "ActionType"
+   ],
+   [
+    1,
+    ""
+   ],
+   [
+    4,
+    "FloatWidth"
+   ],
+   [
+    4,
+    "AttackStart"
+   ],
+   [
+    4,
+    "AttackEnd"
+   ],
+   [
+    1,
+    "PathMirror"
+   ],
+   [
+    3,
+    "Type"
+   ]
+  ]
+ },
+ "143": {
+  "name": "BK_WINGSMALL",
+  "params": [
+   [
+    4,
+    "MoveRange"
+   ],
+   [
+    4,
+    "SearchRange"
+   ],
+   [
+    4,
+    "SearchAngle"
+   ],
+   [
+    4,
+    "SearchWidth"
+   ],
+   [
+    4,
+    "SearchHeight"
+   ],
+   [
+    4,
+    "SearchHeightOffset"
+   ],
+   [
+    4,
+    "MoveSpeedRatio"
+   ],
+   [
+    1,
+    "AppearType"
+   ],
+   [
+    1,
+    "ActionType"
+   ],
+   [
+    1,
+    ""
+   ],
+   [
+    4,
+    "FloatWidth"
+   ],
+   [
+    4,
+    "AttackStart"
+   ],
+   [
+    4,
+    "AttackEnd"
+   ],
+   [
+    1,
+    "PathMirror"
+   ]
+  ]
+ },
+ "144": {
+  "name": "BK_WORM",
+  "params": [
+   [
+    4,
+    "MoveRange"
+   ],
+   [
+    4,
+    "SearchRange"
+   ],
+   [
+    4,
+    "SearchAngle"
+   ],
+   [
+    4,
+    "SearchWidth"
+   ],
+   [
+    4,
+    "SearchHeight"
+   ],
+   [
+    4,
+    "SearchHeightOffset"
+   ],
+   [
+    4,
+    "MoveSpeedRatio"
+   ],
+   [
+    1,
+    "WeaponType"
+   ],
+   [
+    1,
+    "AttackTimes"
+   ],
+   [
+    4,
+    "IntervalSec"
+   ]
+  ]
+ },
+ "145": {
+  "name": "BK_LARVA",
+  "params": [
+   [
+    4,
+    "MoveRange"
+   ],
+   [
+    4,
+    "SearchRange"
+   ],
+   [
+    4,
+    "SearchAngle"
+   ],
+   [
+    4,
+    "SearchWidth"
+   ],
+   [
+    4,
+    "SearchHeight"
+   ],
+   [
+    4,
+    "SearchHeightOffset"
+   ],
+   [
+    4,
+    "MoveSpeedRatio"
+   ],
+   [
+    1,
+    "Num"
+   ],
+   [
+    4,
+    "AppearRange"
+   ],
+   [
+    1,
+    "AppearType"
+   ],
+   [
+    4,
+    "Offset_Y"
+   ]
+  ]
+ },
+ "146": {
+  "name": "BK_CHAOS",
+  "params": [
+   [
+    4,
+    "MoveRange"
+   ],
+   [
+    4,
+    "SearchRange"
+   ],
+   [
+    4,
+    "SearchAngle"
+   ],
+   [
+    4,
+    "SearchWidth"
+   ],
+   [
+    4,
+    "SearchHeight"
+   ],
+   [
+    4,
+    "SearchHeightOffset"
+   ],
+   [
+    4,
+    "MaxLife"
+   ],
+   [
+    1,
+    "ShapeType"
+   ],
+   [
+    1,
+    "ChibiNum"
+   ],
+   [
+    4,
+    "MoveHeight"
+   ],
+   [
+    4,
+    "MoveHeightOffset"
+   ],
+   [
+    4,
+    "CombineStartTime"
+   ],
+   [
+    4,
+    "CombineTime"
+   ]
+  ]
+ },
+ "147": {
+  "name": "BK_NINJA",
+  "params": [
+   [
+    4,
+    "MoveRange"
+   ],
+   [
+    4,
+    "SearchRange"
+   ],
+   [
+    4,
+    "SearchAngle"
+   ],
+   [
+    4,
+    "SearchWidth"
+   ],
+   [
+    4,
+    "SearchHeight"
+   ],
+   [
+    4,
+    "SearchHeightOffset"
+   ],
+   [
+    4,
+    "MoveSpeedRatio"
+   ],
+   [
+    1,
+    "AppearType"
+   ],
+   [
+    1,
+    "ShootCount"
+   ],
+   [
+    4,
+    "AttackInterval"
+   ],
+   [
+    4,
+    "WaitInterval"
+   ],
+   [
+    4,
+    "Pos0_X"
+   ],
+   [
+    4,
+    "Pos0_Y"
+   ],
+   [
+    4,
+    "Pos0_Z"
+   ],
+   [
+    4,
+    "Pos0_AngY"
+   ],
+   [
+    1,
+    "Pos0_WaitType"
+   ],
+   [
+    4,
+    "Pos0_DisappearTime"
+   ],
+   [
+    4,
+    "Pos1_X"
+   ],
+   [
+    4,
+    "Pos1_Y"
+   ],
+   [
+    4,
+    "Pos1_Z"
+   ],
+   [
+    4,
+    "Pos1_AngY"
+   ],
+   [
+    1,
+    "Pos1_WaitType"
+   ],
+   [
+    4,
+    "Pos1_DisappearTime"
+   ]
+  ]
+ },
+ "180": {
+  "name": "BLACK_BULL_0210",
+  "params": []
+ },
+ "181": {
+  "name": "BLACK_BULL_0412",
+  "params": []
+ },
+ "182": {
+  "name": "HEAVY_DOG_0410",
+  "params": []
+ },
+ "183": {
+  "name": "HEAVY_DOG_0510",
+  "params": []
+ },
+ "184": {
+  "name": "BLACK_DOOM",
+  "params": []
+ },
+ "185": {
+  "name": "EGG_MECA_0310",
+  "params": []
+ },
+ "186": {
+  "name": "EGG_MECA_0411",
+  "params": []
+ },
+ "187": {
+  "name": "EGG_MECA_0511",
+  "params": []
+ },
+ "189": {
+  "name": "EGG_LASTMECH",
+  "params": []
+ },
+ "190": {
+  "name": "DEVIL_DOOM",
+  "params": []
+ },
+ "300": {
+  "name": "STICK",
+  "params": [
+   [
+    1,
+    "model"
+   ],
+   [
+    1,
+    "weapon"
+   ]
+  ]
+ },
+ "400": {
+  "name": "SET_CHARACTOR",
+  "params": [
+   [
+    1,
+    "Characotr"
+   ],
+   [
+    4,
+    "ContactRange(m)"
+   ]
+  ]
+ },
+ "401": {
+  "name": "Sonic",
+  "params": []
+ },
+ "402": {
+  "name": "Tails",
+  "params": []
+ },
+ "403": {
+  "name": "Knuckles",
+  "params": []
+ },
+ "404": {
+  "name": "Amy",
+  "params": []
+ },
+ "405": {
+  "name": "Rouge",
+  "params": []
+ },
+ "406": {
+  "name": "Omega",
+  "params": []
+ },
+ "407": {
+  "name": "Vector",
+  "params": []
+ },
+ "408": {
+  "name": "Espio",
+  "params": []
+ },
+ "409": {
+  "name": "Maria",
+  "params": []
+ },
+ "410": {
+  "name": "Charmy",
+  "params": []
+ },
+ "411": {
+  "name": "Eggman",
+  "params": []
+ },
+ "412": {
+  "name": "DoomsEye",
+  "params": []
+ },
+ "1000": {
+  "name": "CityChaosEmerald",
+  "params": []
+ },
+ "1001": {
+  "name": "FallBuilding",
+  "params": [
+   [
+    1,
+    "0:ANT15 1:ANT30 2:BLDG"
+   ]
+  ]
+ },
+ "1002": {
+  "name": "CityLaser",
+  "params": [
+   [
+    1,
+    "0:NORMAL 1:RENDITION"
+   ],
+   [
+    4,
+    "RANGE_LENGTH (m)"
+   ],
+   [
+    4,
+    "TIMER (sec)"
+   ]
+  ]
+ },
+ "2000": {
+  "name": "ELEC_CIRCUIT",
+  "params": []
+ },
+ "2001": {
+  "name": "ELEC_LIGHT",
+  "params": [
+   [
+    1,
+    "Type"
+   ],
+   [
+    4,
+    "RotateRange"
+   ],
+   [
+    4,
+    "RotateSpeed"
+   ],
+   [
+    4,
+    "LightLength"
+   ]
+  ]
+ },
+ "2002": {
+  "name": "ELEC_PANEL",
+  "params": [
+   [
+    1,
+    "Color"
+   ],
+   [
+    1,
+    "Type"
+   ],
+   [
+    4,
+    "Accell"
+   ],
+   [
+    4,
+    "MoveVectorX"
+   ],
+   [
+    4,
+    "MoveVectorY"
+   ],
+   [
+    4,
+    "MoveVectorZ"
+   ]
+  ]
+ },
+ "2003": {
+  "name": "ELEC_BAR",
+  "params": [
+   [
+    2,
+    ""
+   ],
+   [
+    4,
+    "scale"
+   ],
+   [
+    4,
+    "offset"
+   ],
+   [
+    4,
+    "moving second"
+   ],
+   [
+    4,
+    "hiding second"
+   ],
+   [
+    4,
+    "appearing ratio"
+   ],
+   [
+    4,
+    "synchronize"
+   ],
+   [
+    1,
+    "number of bars"
+   ]
+  ]
+ },
+ "2004": {
+  "name": "ELEC_SECURITY",
+  "params": [
+   [
+    1,
+    "type"
+   ],
+   [
+    4,
+    "range"
+   ]
+  ]
+ },
+ "2005": {
+  "name": "ELEC_BIGBLOCK",
+  "params": [
+   [
+    1,
+    "BlockType"
+   ],
+   [
+    4,
+    "Scale X"
+   ],
+   [
+    4,
+    "Scale Y"
+   ],
+   [
+    4,
+    "Scale Z"
+   ],
+   [
+    4,
+    "SearchRange"
+   ],
+   [
+    4,
+    "Initial Y"
+   ],
+   [
+    1,
+    "CollisionFlag"
+   ]
+  ]
+ },
+ "2007": {
+  "name": "ELEC_WALL",
+  "params": [
+   [
+    1,
+    ""
+   ],
+   [
+    4,
+    "AppearAngleX"
+   ],
+   [
+    4,
+    "AppearAngleY"
+   ]
+  ]
+ },
+ "2008": {
+  "name": "ELEC_BARRIER",
+  "params": [
+   [
+    1,
+    "BarrierType"
+   ]
+  ]
+ },
+ "2010": {
+  "name": "ELEC_FAN",
+  "params": [
+   [
+    4,
+    "height"
+   ],
+   [
+    4,
+    "radius"
+   ],
+   [
+    4,
+    "power"
+   ]
+  ]
+ },
+ "2011": {
+  "name": "ELEC_CORE",
+  "params": []
+ },
+ "2012": {
+  "name": "ELEC_BOMB",
+  "params": []
+ },
+ "2013": {
+  "name": "ELEC_ACCESS",
+  "params": []
+ },
+ "2014": {
+  "name": "ELEC_SPRING",
+  "params": [
+   [
+    4,
+    "level"
+   ],
+   [
+    4,
+    "nocontrol time (sec)"
+   ]
+  ]
+ },
+ "2015": {
+  "name": "ELEC_FIREWALL",
+  "params": [
+   [
+    4,
+    "Scale X"
+   ],
+   [
+    4,
+    "Scale Y"
+   ],
+   [
+    4,
+    "Scale Z"
+   ],
+   [
+    4,
+    "SearchRange"
+   ],
+   [
+    4,
+    "Initial Y"
+   ]
+  ]
+ },
+ "2016": {
+  "name": "ELEC_ENTRANCE",
+  "params": []
+ },
+ "2017": {
+  "name": "ELEC_WALLSWITCH",
+  "params": [
+   [
+    4,
+    "range"
+   ]
+  ]
+ },
+ "2018": {
+  "name": "ELEC_CUBE",
+  "params": [
+   [
+    4,
+    "Scale"
+   ]
+  ]
+ },
+ "2019": {
+  "name": "ELEC_PILLAR",
+  "params": []
+ },
+ "2020": {
+  "name": "ELEC_SMALLCUBE",
+  "params": []
+ },
+ "2021": {
+  "name": "ELEC_WAKKA",
+  "params": []
+ },
+ "2023": {
+  "name": "ELEC_SMALLPILLAR",
+  "params": []
+ },
+ "2024": {
+  "name": "ELEC_ROLLHEXA",
+  "params": [
+   [
+    4,
+    "RotateSpeed"
+   ]
+  ]
+ },
+ "2025": {
+  "name": "ELEC_COREWALL",
+  "params": []
+ },
+ "2026": {
+  "name": "ELEC_EXIT",
+  "params": []
+ },
+ "2027": {
+  "name": "ELEC_FOOTINGROTATE",
+  "params": [
+   [
+    2,
+    "OBJ_NUM"
+   ],
+   [
+    4,
+    "RADIUS m"
+   ],
+   [
+    4,
+    "CIRCLE_SPD deg/sec"
+   ]
+  ]
+ },
+ "2028": {
+  "name": "ELEC_CIRCUITCOLLI",
+  "params": []
+ },
+ "2100": {
+  "name": "TORNADO",
+  "params": [
+   [
+    2,
+    "TURN 0:L 1:R"
+   ],
+   [
+    4,
+    "TURN_SPEED m/s"
+   ],
+   [
+    4,
+    "UP_SPEED m/s"
+   ],
+   [
+    4,
+    "CYLINDER_R m"
+   ],
+   [
+    4,
+    "CYLINDER_Y m"
+   ],
+   [
+    4,
+    "CYLINDER_OFFSET_Y m"
+   ],
+   [
+    4,
+    "LAUNCH_X deg"
+   ],
+   [
+    4,
+    "LAUNCH_Y deg"
+   ],
+   [
+    4,
+    "LAUNCH_SPEED m/s"
+   ],
+   [
+    4,
+    "NO_CONTROL sec"
+   ]
+  ]
+ },
+ "2101": {
+  "name": "TORNADO_COLLI",
+  "params": [
+   [
+    4,
+    "Radius"
+   ]
+  ]
+ },
+ "2102": {
+  "name": "ROLL_CIRCLE",
+  "params": [
+   [
+    2,
+    "MODEL 0:Big 1:Sml 2:Head"
+   ],
+   [
+    2,
+    "OBJ_NUM"
+   ],
+   [
+    4,
+    "RADIUS m"
+   ],
+   [
+    4,
+    "CIRCLE_SPD deg/sec"
+   ],
+   [
+    4,
+    "OBJ_ANGSPD_X deg/sec"
+   ],
+   [
+    4,
+    "OBJ_ANGSPD_Y deg/sec"
+   ],
+   [
+    4,
+    "OBJ_ANGSPD_Z deg/sec"
+   ]
+  ]
+ },
+ "2103": {
+  "name": "STONE_POLE",
+  "params": [
+   [
+    2,
+    "0:FLAT 1:SLOPE 2:AIR"
+   ],
+   [
+    2,
+    "FALL L/R 0:L 1:R"
+   ],
+   [
+    4,
+    "RANGE_R m"
+   ],
+   [
+    4,
+    "RANGE_HEIGHT m"
+   ],
+   [
+    4,
+    "ROLLING_SPD m/sec"
+   ],
+   [
+    4,
+    "ROLLING_DISTANCE m"
+   ],
+   [
+    2,
+    "STEP_2 0:SOFT 1:HARD"
+   ],
+   [
+    2,
+    "STEP_3 0:SOFT 1:HARD"
+   ],
+   [
+    2,
+    "STEP_4 0:SOFT 1:HARD"
+   ],
+   [
+    2,
+    "STEP_5 0:SOFT 1:HARD"
+   ],
+   [
+    2,
+    "STEP_6 0:SOFT 1:HARD"
+   ]
+  ]
+ },
+ "2104": {
+  "name": "STONE_STATUE",
+  "params": [
+   [
+    2,
+    "ACTIVE 0:off 1:On"
+   ],
+   [
+    2,
+    "MIRROR 0:off 1:On"
+   ],
+   [
+    4,
+    "RANGE_RADIUS m"
+   ],
+   [
+    4,
+    "RANGE_HEIGHT m"
+   ]
+  ]
+ },
+ "2105": {
+  "name": "POWER_DEVICE_CAGE",
+  "params": [
+   [
+    2,
+    "MODEL 0:Out 1:In"
+   ]
+  ]
+ },
+ "2122": {
+  "name": "ELEC_KYUU",
+  "params": []
+ },
+ "2200": {
+  "name": "BK_TANK",
+  "params": []
+ },
+ "2201": {
+  "name": "BK_TANK_COLI",
+  "params": [
+   [
+    4,
+    "X"
+   ],
+   [
+    4,
+    "Y"
+   ],
+   [
+    4,
+    "Z"
+   ],
+   [
+    1,
+    "type"
+   ],
+   [
+    4,
+    "sec"
+   ],
+   [
+    4,
+    "Not in Use"
+   ]
+  ]
+ },
+ "2202": {
+  "name": "FALL_HIWAY",
+  "params": [
+   [
+    1,
+    "Road Type"
+   ]
+  ]
+ },
+ "2203": {
+  "name": "GUN_BUILDING",
+  "params": []
+ },
+ "2204": {
+  "name": "FALL_LARGE",
+  "params": [
+   [
+    4,
+    "Height"
+   ]
+  ]
+ },
+ "3003": {
+  "name": "CandleStick",
+  "params": [
+   [
+    1,
+    "SAME_COMID_SWITCH_NUM"
+   ]
+  ]
+ },
+ "3004": {
+  "name": "ThreatObj",
+  "params": [
+   [
+    2,
+    "MODEL_TYPE"
+   ],
+   [
+    4,
+    "RANGE_RADIUS m"
+   ]
+  ]
+ },
+ "3005": {
+  "name": "Cream",
+  "params": []
+ },
+ "3006": {
+  "name": "Chao",
+  "params": [
+   [
+    2,
+    "0:CHAO 1:CHEEZ"
+   ],
+   [
+    4,
+    "MOVE_RADIUS m"
+   ],
+   [
+    4,
+    "MOVE_SPPED m/sec"
+   ]
+  ]
+ },
+ "3015": {
+  "name": "Monster",
+  "params": [
+   [
+    4,
+    "MIN_SPPED m/sec"
+   ],
+   [
+    4,
+    "MAX_SPPED m/sec"
+   ],
+   [
+    4,
+    "ACCEL m/sec^2"
+   ],
+   [
+    4,
+    "DECEL m/sec^2"
+   ]
+  ]
+ },
+ "3016": {
+  "name": "MonsterControl",
+  "params": [
+   [
+    1,
+    "0:START 1:MISS 2:END"
+   ],
+   [
+    4,
+    "X_LENGTH m"
+   ],
+   [
+    4,
+    "Y_LENGTH m"
+   ],
+   [
+    4,
+    "Z_LENGTH m"
+   ]
+  ]
+ },
+ "3017": {
+  "name": "GiantLantern",
+  "params": []
+ },
+ "3200": {
+  "name": "CIRCUS_BALL",
+  "params": [
+   [
+    1,
+    "type"
+   ],
+   [
+    4,
+    "level"
+   ],
+   [
+    4,
+    "nocontrol time (sec)"
+   ],
+   [
+    4,
+    "angle"
+   ]
+  ]
+ },
+ "3201": {
+  "name": "GONG",
+  "params": [
+   [
+    4,
+    "speed"
+   ]
+  ]
+ },
+ "3202": {
+  "name": "PARK_BALLOON",
+  "params": [
+   [
+    4,
+    "Height"
+   ],
+   [
+    4,
+    "Radius"
+   ],
+   [
+    4,
+    "MinSpeed"
+   ],
+   [
+    4,
+    "MaxSpeed"
+   ],
+   [
+    1,
+    "Num"
+   ],
+   [
+    1,
+    "MaxNum"
+   ],
+   [
+    3,
+    "Rate"
+   ],
+   [
+    4,
+    "Sec"
+   ],
+   [
+    1,
+    "Id"
+   ]
+  ]
+ },
+ "3203": {
+  "name": "SHOOTING_PANEL",
+  "params": [
+   [
+    1,
+    "Id"
+   ]
+  ]
+ },
+ "3205": {
+  "name": "FIRE_RING",
+  "params": []
+ },
+ "3207": {
+  "name": "CIRCUS_POLE",
+  "params": [
+   [
+    4,
+    "scale Y"
+   ]
+  ]
+ },
+ "3208": {
+  "name": "Coaster",
+  "params": [
+   [
+    2,
+    "PATH_NO"
+   ],
+   [
+    4,
+    "MOVE_SPPED m/sec"
+   ],
+   [
+    4,
+    "LAUNCH_SPD m/sec"
+   ],
+   [
+    4,
+    "LAUNCH_ANG deg"
+   ],
+   [
+    4,
+    "LAUNCH_NO_CTRL_TIME sec"
+   ]
+  ]
+ },
+ "3209": {
+  "name": "MORPHDOOR",
+  "params": [
+   [
+    1,
+    "type"
+   ],
+   [
+    1,
+    "model"
+   ],
+   [
+    4,
+    "width"
+   ],
+   [
+    4,
+    "height"
+   ],
+   [
+    4,
+    "depth"
+   ],
+   [
+    4,
+    "X"
+   ],
+   [
+    4,
+    "Y"
+   ],
+   [
+    4,
+    "Z"
+   ]
+  ]
+ },
+ "4000": {
+  "name": "CITY_BOMB_BIG",
+  "params": []
+ },
+ "4001": {
+  "name": "CITY_BOMB_SMALL",
+  "params": [
+   [
+    4,
+    "Range (point)"
+   ]
+  ]
+ },
+ "4002": {
+  "name": "Helicopter",
+  "params": [
+   [
+    2,
+    "MoveType"
+   ],
+   [
+    4,
+    "MoveParam0"
+   ],
+   [
+    4,
+    "MoveParam1"
+   ],
+   [
+    4,
+    "MoveParam2"
+   ],
+   [
+    4,
+    "MoveSec"
+   ],
+   [
+    4,
+    "PauseSec"
+   ]
+  ]
+ },
+ "4004": {
+  "name": "CITYGADGET",
+  "params": [
+   [
+    2,
+    "Type"
+   ],
+   [
+    4,
+    "ScaleX"
+   ],
+   [
+    4,
+    "ScaleY"
+   ],
+   [
+    4,
+    "ScaleZ"
+   ]
+  ]
+ },
+ "4100": {
+  "name": "BombingWall",
+  "params": [
+   [
+    2,
+    "Type 0:Out 1:In"
+   ],
+   [
+    4,
+    "Range (point)"
+   ]
+  ]
+ },
+ "4101": {
+  "name": "Researcher",
+  "params": [
+   [
+    2,
+    "Type 0:FaceUp 1:FaceDown"
+   ]
+  ]
+ },
+ "4102": {
+  "name": "BombServer",
+  "params": [
+   [
+    2,
+    "Type 0:Bomb 1:HealUnit"
+   ]
+  ]
+ },
+ "4201": {
+  "name": "EggFleet",
+  "params": [
+   [
+    2,
+    "0:BATTLE 1:MOTHER"
+   ],
+   [
+    4,
+    "RANGE_R m"
+   ],
+   [
+    4,
+    "RANGE_HEIGHT m"
+   ],
+   [
+    4,
+    "MOVE_LENGHT m"
+   ],
+   [
+    4,
+    "MOVE_SPEED m/s"
+   ],
+   [
+    4,
+    "FIRE_TIMING s"
+   ]
+  ]
+ },
+ "4204": {
+  "name": "POWER_DEVICE_NAKED",
+  "params": [
+   [
+    2,
+    "MODEL 0:Out 1:In"
+   ]
+  ]
+ },
+ "4205": {
+  "name": "RainEffect",
+  "params": [
+   [
+    4,
+    "COLLI_WIDTH m"
+   ],
+   [
+    4,
+    "COLLI_HEIGHT m"
+   ],
+   [
+    4,
+    "COLLI_DEPTH m"
+   ]
+  ]
+ },
+ "4400": {
+  "name": "FOOTING",
+  "params": [
+   [
+    1,
+    "model"
+   ]
+  ]
+ },
+ "4401": {
+  "name": "FIRE_VINE",
+  "params": [
+   [
+    4,
+    "radius"
+   ],
+   [
+    4,
+    "attack sec"
+   ],
+   [
+    4,
+    "revive sec"
+   ]
+  ]
+ },
+ "4402": {
+  "name": "ELEVATOR",
+  "params": [
+   [
+    1,
+    "model"
+   ],
+   [
+    4,
+    "distance"
+   ],
+   [
+    4,
+    "speed"
+   ],
+   [
+    4,
+    "range"
+   ]
+  ]
+ },
+ "4403": {
+  "name": "DOOR",
+  "params": [
+   [
+    1,
+    "type"
+   ],
+   [
+    1,
+    "model"
+   ],
+   [
+    4,
+    "width"
+   ],
+   [
+    4,
+    "height"
+   ],
+   [
+    4,
+    "depth"
+   ],
+   [
+    4,
+    "X"
+   ],
+   [
+    4,
+    "Y"
+   ],
+   [
+    4,
+    "Z"
+   ]
+  ]
+ },
+ "4404": {
+  "name": "DAMAGE BLOCK",
+  "params": [
+   [
+    1,
+    "kind"
+   ]
+  ]
+ },
+ "4405": {
+  "name": "BREAKWALL",
+  "params": [
+   [
+    1,
+    "model"
+   ]
+  ]
+ },
+ "4407": {
+  "name": "NOBI_KUSA",
+  "params": [
+   [
+    4,
+    "level"
+   ],
+   [
+    4,
+    "angle"
+   ],
+   [
+    4,
+    "sec"
+   ],
+   [
+    4,
+    "length"
+   ],
+   [
+    4,
+    "charge"
+   ]
+  ]
+ },
+ "4408": {
+  "name": "CATAPULT",
+  "params": [
+   [
+    1,
+    "model"
+   ],
+   [
+    4,
+    "level"
+   ],
+   [
+    4,
+    "nocontrol time (sec)"
+   ],
+   [
+    4,
+    "X"
+   ],
+   [
+    4,
+    "Y"
+   ],
+   [
+    4,
+    "Z"
+   ]
+  ]
+ },
+ "5000": {
+  "name": "DEFENSE_SYSTEM",
+  "params": []
+ },
+ "5001": {
+  "name": "DEFENSE_SHIELD",
+  "params": []
+ },
+ "5002": {
+  "name": "METEOR_L",
+  "params": [
+   [
+    4,
+    "RANGE m"
+   ],
+   [
+    4,
+    "MOVE_SPD m/s"
+   ],
+   [
+    4,
+    "DIRECTION_X deg"
+   ],
+   [
+    4,
+    "DIRECTION_Y deg"
+   ],
+   [
+    4,
+    "ROT_SPD_X deg/s"
+   ],
+   [
+    4,
+    "ROT_SPD_Z deg/s"
+   ],
+   [
+    4,
+    "ROT_SPD_Y deg/s"
+   ],
+   [
+    4,
+    "LIFETIME s"
+   ]
+  ]
+ },
+ "5003": {
+  "name": "METEOR_S",
+  "params": [
+   [
+    4,
+    "RANGE m"
+   ],
+   [
+    4,
+    "MOVE_SPD m/s"
+   ],
+   [
+    4,
+    "DIRECTION_X deg"
+   ],
+   [
+    4,
+    "DIRECTION_Y deg"
+   ],
+   [
+    4,
+    "ROT_SPD_X deg/s"
+   ],
+   [
+    4,
+    "ROT_SPD_Z deg/s"
+   ],
+   [
+    4,
+    "ROT_SPD_Y deg/s"
+   ],
+   [
+    4,
+    "LIFETIME s"
+   ]
+  ]
+ },
+ "5005": {
+  "name": "GRINDGADGET",
+  "params": []
+ },
+ "5006": {
+  "name": "ARKCANNON",
+  "params": [
+   [
+    2,
+    "0:GRAND 1:AIR"
+   ],
+   [
+    4,
+    "RANGE m"
+   ]
+  ]
+ },
+ "5010": {
+  "name": "SPACEGADGET",
+  "params": [
+   [
+    2,
+    "Model"
+   ],
+   [
+    4,
+    "RotDegSpdX"
+   ],
+   [
+    4,
+    "RotDegSpdY"
+   ],
+   [
+    4,
+    "RotDegSpdZ"
+   ]
+  ]
+ },
+ "5100": {
+  "name": "ESCAPE_PLANE",
+  "params": []
+ },
+ "5101": {
+  "name": "RAIL SWITCH",
+  "params": [
+   [
+    1,
+    "route"
+   ]
+  ]
+ },
+ "5103": {
+  "name": "SECURITY LASER",
+  "params": [
+   [
+    1,
+    "model"
+   ],
+   [
+    4,
+    "length"
+   ],
+   [
+    4,
+    "rot time(sec)"
+   ],
+   [
+    4,
+    "rot Y(deg)"
+   ],
+   [
+    4,
+    "move sec"
+   ],
+   [
+    4,
+    "X"
+   ],
+   [
+    4,
+    "Y"
+   ],
+   [
+    4,
+    "Z"
+   ],
+   [
+    1,
+    "type"
+   ]
+  ]
+ },
+ "5104": {
+  "name": "POP FOOTING",
+  "params": [
+   [
+    1,
+    "model"
+   ],
+   [
+    4,
+    "sec_begin"
+   ],
+   [
+    4,
+    "sec_wait"
+   ]
+  ]
+ },
+ "5105": {
+  "name": "BASE DOOR",
+  "params": [
+   [
+    1,
+    "type"
+   ],
+   [
+    1,
+    "model"
+   ],
+   [
+    4,
+    "width"
+   ],
+   [
+    4,
+    "height"
+   ],
+   [
+    4,
+    "depth"
+   ],
+   [
+    4,
+    "X"
+   ],
+   [
+    4,
+    "Y"
+   ],
+   [
+    4,
+    "Z"
+   ]
+  ]
+ },
+ "5106": {
+  "name": "E_P_COLI",
+  "params": [
+   [
+    4,
+    "X"
+   ],
+   [
+    4,
+    "Y"
+   ],
+   [
+    4,
+    "Z"
+   ],
+   [
+    1,
+    "type"
+   ],
+   [
+    4,
+    "sec"
+   ],
+   [
+    4,
+    "Not in Use"
+   ]
+  ]
+ },
+ "5107": {
+  "name": "PLANE RAIL",
+  "params": [
+   [
+    4,
+    "dist"
+   ],
+   [
+    4,
+    "speed"
+   ]
+  ]
+ },
+ "5200": {
+  "name": "EGG_BALLOON",
+  "params": []
+ },
+ "5201": {
+  "name": "E_B_COLI",
+  "params": [
+   [
+    4,
+    "X"
+   ],
+   [
+    4,
+    "Y"
+   ],
+   [
+    4,
+    "Z"
+   ],
+   [
+    1,
+    "type"
+   ],
+   [
+    4,
+    "sec"
+   ],
+   [
+    4,
+    "N/A"
+   ]
+  ]
+ },
+ "5203": {
+  "name": "SECRET DISK",
+  "params": []
+ },
+ "5300": {
+  "name": "GravityChangeSwitch",
+  "params": [
+   [
+    1,
+    "GRAVITY"
+   ]
+  ]
+ },
+ "5301": {
+  "name": "GravityChangeZone",
+  "params": [
+   [
+    1,
+    "GRAVITY"
+   ]
+  ]
+ },
+ "5302": {
+  "name": "GravityChangeCollision",
+  "params": [
+   [
+    4,
+    "SIZE X m"
+   ],
+   [
+    4,
+    "SIZE Y m"
+   ],
+   [
+    4,
+    "SIZE Z m"
+   ],
+   [
+    1,
+    "GRAVITY"
+   ]
+  ]
+ },
+ "5303": {
+  "name": "GravitySignBoard",
+  "params": []
+ },
+ "5310": {
+  "name": "ArkLaser",
+  "params": [
+   [
+    4,
+    "Length point"
+   ],
+   [
+    4,
+    "ShotSec"
+   ],
+   [
+    4,
+    "WaitSec"
+   ]
+  ]
+ },
+ "5400": {
+  "name": "GunLift",
+  "params": []
+ },
+ "6000": {
+  "name": "WATCH CAMERA",
+  "params": [
+   [
+    4,
+    "posX"
+   ],
+   [
+    4,
+    "posY"
+   ],
+   [
+    4,
+    "posZ"
+   ],
+   [
+    4,
+    "angX"
+   ],
+   [
+    4,
+    "angY"
+   ],
+   [
+    4,
+    "angZ"
+   ],
+   [
+    4,
+    "width"
+   ],
+   [
+    4,
+    "height"
+   ],
+   [
+    4,
+    "depth"
+   ],
+   [
+    4,
+    "lookPosX"
+   ],
+   [
+    4,
+    "lookPosY"
+   ],
+   [
+    4,
+    "lookPosZ"
+   ],
+   [
+    4,
+    "lookAngX"
+   ],
+   [
+    4,
+    "lookAngY"
+   ],
+   [
+    4,
+    "lookAngZ"
+   ]
+  ]
+ },
+ "6001": {
+  "name": "SUPER COMPUTER",
+  "params": []
+ },
+ "6002": {
+  "name": "DEFENSE WALL",
+  "params": [
+   [
+    4,
+    "width"
+   ],
+   [
+    4,
+    "height"
+   ],
+   [
+    4,
+    "depth"
+   ],
+   [
+    4,
+    "speed"
+   ]
+  ]
+ },
+ "6003": {
+  "name": "CLOSE WALL",
+  "params": [
+   [
+    4,
+    "width"
+   ],
+   [
+    4,
+    "speed"
+   ]
+  ]
+ },
+ "6100": {
+  "name": "BA GUNSHIP",
+  "params": [
+   [
+    4,
+    "radius"
+   ],
+   [
+    4,
+    "height"
+   ],
+   [
+    4,
+    "second"
+   ],
+   [
+    1,
+    "attack"
+   ],
+   [
+    4,
+    "N/A"
+   ],
+   [
+    1,
+    "ComId"
+   ],
+   [
+    1,
+    "num"
+   ],
+   [
+    4,
+    "delay"
+   ],
+   [
+    4,
+    "interval"
+   ]
+  ]
+ },
+ "6101": {
+  "name": "BA Mine",
+  "params": [
+   [
+    4,
+    "X"
+   ],
+   [
+    4,
+    "Y"
+   ],
+   [
+    4,
+    "Z"
+   ],
+   [
+    4,
+    "second"
+   ]
+  ]
+ },
+ "6200": {
+  "name": "MAGMA GUARD",
+  "params": []
+ },
+ "6201": {
+  "name": "MAGMA",
+  "params": [
+   [
+    1,
+    "model"
+   ],
+   [
+    4,
+    "Y"
+   ],
+   [
+    4,
+    "speed"
+   ]
+  ]
+ },
+ "6300": {
+  "name": "BACKDROP",
+  "params": []
+ },
+ "6302": {
+  "name": "FootingBreak",
+  "params": [
+   [
+    2,
+    "Type 0:Burst 1:Hover"
+   ],
+   [
+    4,
+    "WaitSec"
+   ],
+   [
+    4,
+    "HoverLength point"
+   ],
+   [
+    4,
+    "HoverSec"
+   ],
+   [
+    4,
+    "MoveLengthX point"
+   ],
+   [
+    4,
+    "MoveLengthY point"
+   ],
+   [
+    4,
+    "MoveLengthZ point"
+   ],
+   [
+    4,
+    "MoveSec"
+   ]
+  ]
+ },
+ "6303": {
+  "name": "FootingRoll",
+  "params": [
+   [
+    2,
+    "Model 0:Small 1:Large"
+   ],
+   [
+    4,
+    "MoveLengthX point"
+   ],
+   [
+    4,
+    "MoveLengthY point"
+   ],
+   [
+    4,
+    "MoveLengthZ point"
+   ],
+   [
+    4,
+    "MoveSec"
+   ],
+   [
+    4,
+    "MovePauseSec"
+   ],
+   [
+    2,
+    "RotType 0:OneWay 1:RT"
+   ],
+   [
+    2,
+    "RotAxis 0:X 1:Y 2:Z"
+   ],
+   [
+    4,
+    "RotSpd deg/sec"
+   ],
+   [
+    4,
+    "RotMax(RT Only) deg"
+   ]
+  ]
+ },
+ "6400": {
+  "name": "BA Switch",
+  "params": []
+ },
+ "6401": {
+  "name": "BA Shield",
+  "params": [
+   [
+    1,
+    "type"
+   ]
+  ]
+ },
+ "6402": {
+  "name": "SUCTION PILLAR",
+  "params": []
+ },
+ "6403": {
+  "name": "BD Hologram",
+  "params": [
+   [
+    4,
+    "distance"
+   ],
+   [
+    1,
+    "voice id"
+   ]
+  ]
+ },
+ "7000": {
+  "name": "BD True",
+  "params": []
+ },
+ "9606": {
+  "name": "Sample",
+  "params": [
+   [
+    4,
+    "Single"
+   ],
+   [
+    3,
+    "Hex"
+   ],
+   [
+    2,
+    "Uint32"
+   ],
+   [
+    1,
+    "Sint32"
+   ],
+   [
+    1,
+    "Sint32"
+   ],
+   [
+    1,
+    "Sint32"
+   ],
+   [
+    1,
+    "Sint32"
+   ],
+   [
+    1,
+    "Sint32"
+   ],
+   [
+    1,
+    "Sint32"
+   ],
+   [
+    1,
+    "Sint32"
+   ],
+   [
+    1,
+    "Sint32"
+   ],
+   [
+    1,
+    "Sint32"
+   ],
+   [
+    1,
+    "Sint32"
+   ],
+   [
+    1,
+    "Sint32"
+   ],
+   [
+    1,
+    "Sint32"
+   ],
+   [
+    1,
+    "Sint32"
+   ]
+  ]
+ },
+ "9607": {
+  "name": "TESTNAKAZAWA",
+  "params": []
+ },
+ "9608": {
+  "name": "ART WORK",
+  "params": [
+   [
+    1,
+    "model"
+   ],
+   [
+    4,
+    "scale X"
+   ],
+   [
+    4,
+    "scale Y"
+   ],
+   [
+    4,
+    "scale Z"
+   ]
+  ]
+ },
+ "9609": {
+  "name": "ART GADGET",
+  "params": [
+   [
+    1,
+    "model"
+   ]
+  ]
+ },
+ "9610": {
+  "name": "PARTICLE",
+  "params": [
+   [
+    1,
+    "number"
+   ],
+   [
+    4,
+    "scale X"
+   ],
+   [
+    4,
+    "scale Y"
+   ],
+   [
+    4,
+    "scale Z"
+   ]
+  ]
+ },
+ "9616": {
+  "name": "ART WORK ZONE",
+  "params": [
+   [
+    1,
+    "model"
+   ],
+   [
+    4,
+    "scale X"
+   ],
+   [
+    4,
+    "scale Y"
+   ],
+   [
+    4,
+    "scale Z"
+   ]
+  ]
+ },
+ "9617": {
+  "name": "ART GADGET ZONE",
+  "params": [
+   [
+    1,
+    "model"
+   ]
+  ]
+ },
+ "9618": {
+  "name": "DebugDebugMissionClearCollision",
+  "params": [
+   [
+    2,
+    "0:DK 1:NM 2:HR 3:BOSS"
+   ]
+  ]
+ },
+ "9619": {
+  "name": "SET GENERATOR",
+  "params": [
+   [
+    1,
+    "ComId"
+   ],
+   [
+    1,
+    "Id"
+   ],
+   [
+    1,
+    "num"
+   ],
+   [
+    4,
+    "delay"
+   ],
+   [
+    1,
+    "scoreId"
+   ]
+  ]
+ },
+ "9620": {
+  "name": "FAN STAGE",
+  "params": [
+   [
+    1,
+    "type"
+   ],
+   [
+    1,
+    "form"
+   ],
+   [
+    4,
+    "X"
+   ],
+   [
+    4,
+    "Y"
+   ],
+   [
+    4,
+    "Z"
+   ],
+   [
+    4,
+    "power"
+   ],
+   [
+    4,
+    "sec_active"
+   ],
+   [
+    4,
+    "sec_negative"
+   ],
+   [
+    1,
+    "disp"
+   ],
+   [
+    1,
+    "Id"
+   ]
+  ]
+ },
+ "9621": {
+  "name": "MissionClearCollision",
+  "params": [
+   [
+    2,
+    "0:DK 1:NM 2:HR"
+   ],
+   [
+    4,
+    "COLLI_RADIUS point"
+   ]
+  ]
+ },
+ "9622": {
+  "name": "HINT CONTROLLER",
+  "params": []
+ },
+ "9623": {
+  "name": "SET_SE_LOOP",
+  "params": [
+   [
+    3,
+    "SEID"
+   ],
+   [
+    1,
+    "TYPE"
+   ],
+   [
+    1,
+    "RangeType"
+   ],
+   [
+    4,
+    "ColliParam0"
+   ],
+   [
+    4,
+    "ColliParam1"
+   ],
+   [
+    4,
+    "ColliParam2"
+   ],
+   [
+    4,
+    "DampingRate"
+   ]
+  ]
+ },
+ "9624": {
+  "name": "SET_SE_ONESHOT",
+  "params": [
+   [
+    3,
+    "SEID"
+   ],
+   [
+    1,
+    "TYPE"
+   ],
+   [
+    1,
+    "RangeType"
+   ],
+   [
+    4,
+    "ColliParam0"
+   ],
+   [
+    4,
+    "ColliParam1"
+   ],
+   [
+    4,
+    "ColliParam2"
+   ]
+  ]
+ }
+}

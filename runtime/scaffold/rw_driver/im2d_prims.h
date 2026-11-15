@@ -1,4 +1,4 @@
-// SCAFFOLDING (R2): the Im2D line and triangle emitters of the RenderWare driver - deleted by R6: the lift of RenderWare's immediate mode owns them
+// SCAFFOLDING (R2): the RenderWare GameCube driver's Im2D line and triangle emitters on the native immediate path - deleted by R6: RenderWare's lift removes the translated callers (with the rest of the driver scaffold)
 #pragma once
 
 // The Im2D emitters the device's function table reaches (data words 0x8056F524 / 0x8056F528), owned natively

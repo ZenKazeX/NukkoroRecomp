@@ -15,6 +15,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "gekko/asset_namespace.h"
@@ -33,6 +34,11 @@ struct StorageOptions {
     // host-directory: host files served at the tree's root under their own names when the tree lacks those names
     // (the Japanese voice files from the player's Japanese disc, gekko/voice_language.h). Never replaces a file.
     std::vector<std::filesystem::path> extra_files;
+    // host-directory: the enabled mods' files (shadow/mods/mods.h, prepare_runtime), applied once to the scanned
+    // tree: a disc path that exists (matched without regard to case) is served from the host file instead, keeping
+    // its disc spelling; a path that does not exist is added, with any missing directories. Empty = the tree exactly
+    // as scanned (the default: no mod loaded).
+    std::vector<std::pair<std::string, std::filesystem::path>> overlays;
 };
 
 // The names create_storage accepts, in registry order.

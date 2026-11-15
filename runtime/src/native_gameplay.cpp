@@ -298,14 +298,6 @@ bool TaskSystem::set_enabled(TaskId id, bool enabled) {
                                                      : (node->flags | kDisabled));
     return true;
 }
-bool TaskSystem::set_pause_policy(TaskId id, bool update_while_paused) {
-    impl_->check_owner();
-    auto node = impl_->lookup(id);
-    if (!node || Impl::destroyed(*node)) return false;
-    node->flags = static_cast<std::uint16_t>(update_while_paused ? (node->flags | kFlagRunsWhilePaused)
-                                                                 : (node->flags & ~kFlagRunsWhilePaused));
-    return true;
-}
 bool TaskSystem::reparent(TaskId id, TaskId parent) {
     impl_->check_owner();
     auto node = impl_->lookup(id), owner = impl_->lookup(parent);
@@ -315,12 +307,6 @@ bool TaskSystem::reparent(TaskId id, TaskId parent) {
     Impl::detach(*node);
     Impl::attach(*node, *owner);
     return true;
-}
-void TaskSystem::request_destroy_children(TaskId parent) {
-    impl_->check_owner();
-    auto node = impl_->lookup(parent);
-    if (!node) throw std::invalid_argument("invalid task owner");
-    impl_->mark_children(*node);
 }
 void TaskSystem::set_paused(bool value) { impl_->check_owner(); impl_->paused = value; }
 bool TaskSystem::paused() const { impl_->check_owner(); return impl_->paused; }

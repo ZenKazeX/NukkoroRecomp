@@ -58,6 +58,8 @@ OsHeapsCensus census_os_heaps(const GuestRead32& read32, std::uint32_t sda_base 
 // Call tick() from the game thread's host service; it reads guest memory only on the second boundaries.
 class HeapTrace {
 public:
+    // GEKKO_HEAP_TRACE is set (read once). Callers test this once and skip tick() otherwise.
+    static bool enabled() noexcept;
     static void tick(std::uint64_t game_ticks, const GuestRead32& read32);
 };
 

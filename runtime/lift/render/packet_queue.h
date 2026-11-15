@@ -40,13 +40,21 @@ public:
     }
 
     // Game thread. Does not wait for the consumer; false after close(), leaving packet owned by the caller.
-    bool push(FramePacket&& packet) {
+    // give_back / gave (headless only: nothing ever pops, so every push past the depth drops the oldest packet): the
+    // newest packet this push dropped is moved to *give_back (*gave = true) instead of being destroyed, so its vectors'
+    // capacity can serve the next frame (FrameBuilder::recycle), as the rendered packets' do in the windowed game.
+    bool push(FramePacket&& packet, FramePacket* give_back = nullptr, bool* gave = nullptr) {
         {
             std::lock_guard<std::mutex> lock(mutex_);
             if (closed_)
                 return false;
             while (packets_.size() >= depth_) {
                 present_trace::record(present_trace::Ev::DropOnPush, packets_.front().tick);
+                if (give_back != nullptr) {
+                    *give_back = std::move(packets_.front());
+                    if (gave != nullptr)
+                        *gave = true;
+                }
                 packets_.pop_front();
                 ++dropped_;
             }

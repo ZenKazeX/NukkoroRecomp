@@ -68,9 +68,7 @@ public:
     std::vector<TaskId> children(TaskId task) const;
     bool request_destroy(TaskId task);
     bool set_enabled(TaskId task, bool enabled);
-    bool set_pause_policy(TaskId task, bool update_while_paused);
     bool reparent(TaskId task, TaskId parent);
-    void request_destroy_children(TaskId parent);
     void set_paused(bool paused);
     bool paused() const;
     void tick(float delta_seconds);

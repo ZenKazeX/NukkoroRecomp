@@ -1199,10 +1199,17 @@ inline void write_spr(Cpu& c, u32 number, u32 value) noexcept {
         case SPR_TBU_WRITE:
             c.set_time_base((c.time_base() & 0x00000000ffffffffull) | (static_cast<u64>(value) << 32));
             break;
-        case SPR_DEC:
-            c.set_decrementer(value);
+        case SPR_DEC: {
+            // The exception condition is DEC[0] changing 0 -> 1 (PAGE 159 Table 4-2), by the count or by this write
+            // (Dolphin: "Software triggered Decrementer exception"): a value with the sign set over a DEC whose sign
+            // is clear is an edge now. Latched before the re-arm, which then replaces the deadline latch_decrementer
+            // advanced.
+            const bool software_edge = (c.decrementer() & 0x80000000u) == 0u && (value & 0x80000000u) != 0u;
             c.set_decrementer_delivery(true);  // the guest arms the decrementer: its handler is part of the program
+            if (software_edge) c.latch_decrementer();
+            c.set_decrementer(value);
             break;
+        }
         case SPR_HID2: c.write_hid2(value); break;
         default:
             // The BATs are plain storage here: GuestMemory's views decide

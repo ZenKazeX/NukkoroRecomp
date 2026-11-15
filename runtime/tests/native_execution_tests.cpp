@@ -294,10 +294,45 @@ void indirect(bool call) {
     if (call) expected.lr = kThunk + 4u;
     f->cpu.run();
     native_fault(*f, kMissing); expected.check(*f); f->no_fetch();
-    require(f->cpu.fallback_total(FallbackReason::NotRecompiled) == 1u &&
+    // RC-gen-7: a computed target with no native entry has its own reason, and the call names its site (link - 4).
+    // (It was counted as NotRecompiled with site 0; the hand-back itself - once, at the target - is unchanged.)
+    require(f->cpu.fallback_total(FallbackReason::IndirectTarget) == 1u &&
+                f->cpu.fallback_total(FallbackReason::NotRecompiled) == 0u &&
                 f->cpu.native_transfer_leaves == (call ? 0u : 1u),
-            "a missing indirect target must hand back exactly once, as NotRecompiled");
+            "a missing indirect target must hand back exactly once, as IndirectTarget");
 }
+
+// RC-gen-7: each hand-back is recorded under its own reason at the instruction that gave up.
+void fp_fault_at_site(Cpu& c) { recomp::fp_unavailable(c, kThunk); }
+void illegal_at_site(Cpu& c) { recomp::illegal_instruction(c, kThunk); }
+void jump_missing_with_site(Cpu& c) { recomp::jump_indirect(c, kMissing, kThunk); }
+void recorded_reason(RecompiledCode::Fn body, FallbackReason reason, u32 site, const char* what) {
+    ThunkTable table(body);
+    auto f = std::make_unique<Fixture>(&table.code, kThunk);
+    f->cpu.set_record_fallbacks(true);
+    f->cpu.run();
+    const auto sites = f->cpu.fallback_sites();
+    std::size_t matches = 0;
+    for (const auto& s : sites) matches += s.reason == reason && s.caller == site && s.count == 1u ? 1u : 0u;
+    require(f->cpu.fallback_total(reason) == 1u && matches == 1u, what);
+    for (std::size_t r = 1; r < static_cast<std::size_t>(FallbackReason::Count); ++r) {
+        const FallbackReason other = static_cast<FallbackReason>(r);
+        const std::string also = std::string(what) + ": also counted as " + fallback_reason_name(other);
+        if (other != reason && other != FallbackReason::Yield) require(f->cpu.fallback_total(other) == 0u, also.c_str());
+    }
+}
+// A loop closed by a bctr with its real site (the bctr is a later instruction than the head it jumps to): progress
+// every lap, exactly as with no site. The same shape whose FIRST instruction is the bctr to itself has executed
+// nothing when it hands back: that is the stall, whatever reason it carries.
+void counting_loop_with_site(Cpu& c) {
+    ++c.gpr[4];
+    if (c.gpr[4] >= c.gpr[5]) {
+        c.pc = c.lr;
+        return;
+    }
+    c.leave_to_dispatcher(c.pc, FallbackReason::IndirectTarget, c.pc + 12u);  // what jump_indirect(c, head, bctr) does
+}
+void self_jump_at_entry(Cpu& c) { c.leave_to_dispatcher(c.pc, FallbackReason::IndirectTarget, c.pc); }
 void untranslated_hle(RecompiledCode& code, bool served) {
     auto f = std::make_unique<Fixture>(&code);
     State before(*f);
@@ -861,6 +896,31 @@ int main() {
         native_fault(*f, kMissing); expected.check(*f); f->no_fetch();
         require(f->cpu.fallback_total(FallbackReason::NotRecompiled) == 2u,
                 "two laps must hand back to the dispatcher and the third reach the exit");
+    });
+    test("native loop through a sited bctr is progress", [] {
+        ThunkTable table(counting_loop_with_site);
+        auto f = std::make_unique<Fixture>(&table.code, kThunk);
+        f->cpu.gpr[4] = 0x32C08A91u;
+        f->cpu.gpr[5] = 0x32C08A94u;
+        f->cpu.lr = kMissing;
+        State expected(*f);
+        expected.dispatched(3u);
+        expected.gpr[4] = 0x32C08A94u;
+        expected.lr = kMissing;
+        f->cpu.run();
+        native_fault(*f, kMissing); expected.check(*f); f->no_fetch();
+        require(f->cpu.fallback_total(FallbackReason::IndirectTarget) == 2u,
+                "two laps must hand back at the bctr's site and the third reach the exit");
+    });
+    test("a bctr to itself at the dispatch entry is a stall", [] {
+        ThunkTable table(self_jump_at_entry);
+        (void)missing(&table.code, kThunk, 1u);
+    });
+    test("fallback reasons name the instruction that gave up", [] {
+        recorded_reason(fp_fault_at_site, FallbackReason::FpUnavailable, kThunk, "FP unavailable is recorded as FpUnavailable at its site");
+        recorded_reason(illegal_at_site, FallbackReason::Program, kThunk, "an illegal instruction is recorded as Program at its site");
+        recorded_reason(call_missing, FallbackReason::IndirectTarget, kThunk, "a computed call is recorded as IndirectTarget at the bctrl");
+        recorded_reason(jump_missing_with_site, FallbackReason::IndirectTarget, kThunk, "a computed jump is recorded as IndirectTarget at the bctr");
     });
     test("native host stop after work", [] { native_control(host_stop<true>, 1u, 0u, 1u, "native host stop"); });
     test("native host stop without work", [] { native_control(host_stop<false>, 1u, 0u, 0u, "native host stop"); });

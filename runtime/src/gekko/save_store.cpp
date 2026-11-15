@@ -59,6 +59,12 @@ constexpr u32 kGameDataPointer = 0x2BB4u;  // r13 + : GameData (0x800BBB34's sin
 constexpr u32 kAfterBootLoad = 0x8035AA28u;
 constexpr u32 kAfterOptionsLoad = 0x8035B414u;
 constexpr u32 kOptionsExit = 0x802B90B0u;  // Options state 5 (impl): substate impl + 8, motion busy impl + 0x1C
+// The Options apply 0x802B85D8's last call (bl 0x802BE860 at 0x802B8810, the per-language Loading CSD): G holds the
+// applied values and the save object has their copies by then.
+constexpr u32 kApplyLastCall = 0x802BE860u;
+constexpr u32 kApplyLastCallReturn = 0x802B8814u;
+constexpr u32 kSpeaker = 0x8057E7D8u;       // G + 0x78: 0 stereo, 1 mono, 2 Dolby Pro Logic II
+constexpr u32 kVibration = 0x8057E7DCu;     // G + 0x7C (byte): 1 on
 constexpr u32 kSaveEnabled = 0x8057E7DDu;  // G + 0x7D (byte)
 constexpr u32 kVoiceLanguage = 0x8057E7BCu;  // G + 0x5C: 0 Japanese, 1 English
 constexpr u32 kTextLanguage = 0x8057E7B8u;   // G + 0x58: 0 JP, 1 EN, 2 FR, 3 SP, 4 GE, 5 IT
@@ -287,7 +293,12 @@ void SaveStore::after_load(Cpu& c) {
     if (data == 0u) return;
     PcSettings pc = pc_settings().current();
     bool taken = false;
-    if (pc.language < 0) pc.language = static_cast<int>(c.mem_read32(data + 0x18)), taken = true;
+    if (pc.language < 0) {
+        // A record language outside the game's six reads as English (the PC builds' Hungarian ran on English).
+        const u32 recorded = c.mem_read32(data + 0x18);
+        pc.language = recorded <= 5u ? static_cast<int>(recorded) : 1;
+        taken = true;
+    }
     if (pc.speaker < 0) pc.speaker = static_cast<int>(c.mem_read32(data + 0x20)), taken = true;
     if (pc.vibration < 0) pc.vibration = c.mem_read8(data + 0x24) != 0u ? 1 : 0, taken = true;
     if (pc.voice < 0) pc.voice = c.mem_read32(data + 0x1C) == 0u ? 0 : 1, taken = true;
@@ -296,10 +307,7 @@ void SaveStore::after_load(Cpu& c) {
         if (pc_settings().apply(pc, &error) && pc_settings().save(&error)) ++stats_.options_taken;
         else std::cerr << "Options from the save could not be kept: " << error << "\n";
     }
-    // 6 = Hungarian: the game runs in English (1), its fonts / texts swapped at the mount; the save keeps 1 so it
-    // stays valid on a console or in Dolphin.
-    if (pc.language >= 0 && pc.language <= 6)
-        c.mem_write32(data + 0x18, static_cast<u32>(pc.language == 6 ? 1 : pc.language));
+    if (pc.language >= 0 && pc.language <= 5) c.mem_write32(data + 0x18, static_cast<u32>(pc.language));
     if (pc.speaker >= 0 && pc.speaker <= 2) c.mem_write32(data + 0x20, static_cast<u32>(pc.speaker));
     if (pc.vibration >= 0) c.mem_write8(data + 0x24, pc.vibration != 0 ? 1u : 0u);
     // The voice language (0 Japanese, 1 English): the record's + 0x1C and the game's G + 0x5C, which the loaders
@@ -343,8 +351,8 @@ void SaveStore::boot_language(Cpu& c) {
     if (!found) return;
     const int pc = pc_settings().current().language;
     u32 language = 1u;
-    if (pc >= 0 && pc <= 6) {
-        language = static_cast<u32>(pc == 6 ? 1 : pc);  // 6 = Hungarian: the game's English, fonts swapped at mount
+    if (pc >= 0 && pc <= 5) {
+        language = static_cast<u32>(pc);
     } else {
         static constexpr u32 kFromOs[5] = {1u, 4u, 2u, 3u, 5u};
         const u32 os = c.mem_read8(kScbLanguage);
@@ -366,6 +374,29 @@ void SaveStore::options_exit(Cpu& c) {
     c.mem_write8(kSaveEnabled, 0u);
     save_flag_cleared_ = true;
     ++stats_.options_exit_saves_skipped;
+}
+
+// The Options screen applied a change (its apply's last call, see kApplyLastCall): the text language, speaker mode and
+// vibration it left in G go to options.cfg, the store the boot and every load apply (decision C). Only what differs
+// is written.
+void SaveStore::options_applied(Cpu& c) {
+    if (c.lr != kApplyLastCallReturn) return;
+    PcSettings pc = pc_settings().current();
+    const PcSettings before = pc;
+    const u32 language = c.mem_read32(kTextLanguage);
+    const u32 speaker = c.mem_read32(kSpeaker);
+    if (language <= 5u) pc.language = static_cast<int>(language);
+    if (speaker <= 2u) pc.speaker = static_cast<int>(speaker);
+    pc.vibration = c.mem_read8(kVibration) != 0u ? 1 : 0;
+    if (pc == before) return;
+    std::string error;
+    if (pc_settings().apply(pc, &error) && pc_settings().save(&error)) {
+        ++stats_.options_screen_saves;
+        std::cerr << "[options] the Options screen's choice saved to options.cfg: language " << pc.language
+                  << ", speaker " << pc.speaker << ", vibration " << pc.vibration << "\n";
+    } else {
+        std::cerr << "[options] the Options screen's choice could not be saved: " << error << "\n";
+    }
 }
 
 void SaveStore::restore_save_flag() {
@@ -438,6 +469,7 @@ void SaveStore::install() {
     observe(kAfterBootLoad, "options after the boot load", [this](Cpu& c) { after_load(c); });
     observe(kAfterOptionsLoad, "options after Options' load", [this](Cpu& c) { after_load(c); });
     observe(kOptionsExit, "Options' exit without the card save", [this](Cpu& c) { options_exit(c); });
+    observe(kApplyLastCall, "the Options screen's applied choices to options.cfg", [this](Cpu& c) { options_applied(c); });
 }
 
 }  // namespace gekko

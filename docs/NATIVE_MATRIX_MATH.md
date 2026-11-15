@@ -11,9 +11,9 @@ particular, a destination inside a later part of the source can propagate an
 earlier element through subsequent elements. An unconditional memmove would
 change this behavior.
 
-There are two direct call sites: `0x8040CB44` in matrix multiplication copies
-the left operand to temporary storage, and `0x8040D004` in matrix inversion
-copies a matrix in the singular-determinant branch. The evidence gate checks
+There was a second direct call site, `0x8040D004` in the out-of-place matrix inversion (singular-determinant branch);
+the inversion is a native owner now (docs/agents/opt-matrix.md) and the site left the list with its body. The remaining
+direct call site is `0x8040CB44` in matrix multiplication, which copies the left operand to temporary storage. The evidence gate checks
 all direct entries and rejects data pointers into the retired body. Recovering
 and replacing the enclosing multiply/inverse algorithms is separate work.
 

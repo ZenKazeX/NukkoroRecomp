@@ -52,6 +52,26 @@ int main() {
         setup();
         require(guest_call(cpu, kClobber, kLink, {}, r) && r == 9u, "the clobbering callee's result");
         require(unchanged(), "the callee's r14 or LR save leaked into the caller");
+        // Every register the return restores - r1, r2, r13 and r14-r31 - comes back, whatever the callee wrote; the volatile r0 and
+        // r4-r12 are the callee's (the caller sees the clobber, as with any call). guest_call saves exactly those 21.
+        {
+            constexpr u32 kClobberAll = 0x81700600u;
+            u32 address = kClobberAll;
+            const auto li = [&](u32 reg, u32 value) { memory.write32(address, 0x38000000u | (reg << 21) | value); address += 4u; };
+            li(2u, 0x22u); li(13u, 0x23u);
+            for (u32 reg = 14u; reg < 32u; ++reg) li(reg, 0x40u + reg);
+            li(4u, 0x44u); li(12u, 0x4Cu); li(3u, 0x33u);
+            memory.write32(address, 0x4E800020u);  // blr
+            setup();
+            for (u32 reg = 14u; reg < 32u; ++reg) cpu.gpr[reg] = 0xBB000000u | reg;
+            cpu.gpr[2] = 0xBB000002u; cpu.gpr[13] = 0xBB00000Du;
+            cpu.gpr[4] = 0xBB000004u; cpu.gpr[12] = 0xBB00000Cu;
+            require(guest_call(cpu, kClobberAll, kLink, {}, r) && r == 0x33u, "the clobber-all callee's result");
+            bool restored = cpu.gpr[1] == kStack && cpu.gpr[2] == 0xBB000002u && cpu.gpr[13] == 0xBB00000Du;
+            for (u32 reg = 14u; reg < 32u; ++reg) restored = restored && cpu.gpr[reg] == (0xBB000000u | reg);
+            require(restored, "a register the return restores (r1, r2, r13, r14-r31) was left clobbered");
+            require(cpu.gpr[4] == 0x44u && cpu.gpr[12] == 0x4Cu, "the volatile registers are the callee's: the test callee's writes must be visible");
+        }
         // The same two leaf patterns as the translated-branch test (guest_call_translated_tests), here as words in the interpreter.
         for (u32 k : guest_call_cases::kImmediates) {
             memory.write32(kLeaf, guest_call_cases::kLiR3 | (k & 0xFFFFu));

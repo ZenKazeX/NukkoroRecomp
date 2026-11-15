@@ -15,6 +15,15 @@ namespace {
 constexpr std::uint64_t kStagingChunk = 16ull << 20;
 constexpr std::uint64_t kOwnAllocationTexture = 1ull << 20;
 
+// cs2 gpu RAM trims (small UPLOAD ring start, READBACK committed): ON unless GEKKO_CS2_GPU_RAM=0.
+bool cs2_gpu_ram_on() {
+    static const bool on = [] {
+        const char* v = std::getenv("GEKKO_CS2_GPU_RAM");
+        return v == nullptr || v[0] != '0';
+    }();
+    return on;
+}
+
 bool fail(std::string* error, const std::string& what, HRESULT hr) {
     if (error != nullptr)
         *error = what + ": " + hresult_text(hr);
@@ -41,7 +50,9 @@ bool create_buffer(Device& device, std::uint64_t size, D3D12_HEAP_TYPE heap, D3D
     // Large host-transfer buffers own their allocation. In a shared block an
     // upload leaves unused capacity, and a one-shot screenshot readback leaves
     // an 8 MiB empty block cached after its fence-complete retirement.
-    if ((heap == D3D12_HEAP_TYPE_UPLOAD || heap == D3D12_HEAP_TYPE_READBACK) && desc.Width >= (1ull << 20))
+    // cs2 gpu: a READBACK buffer of any size (the unorm calibration's) owns its allocation, so no empty 8 MiB block stays.
+    if (((heap == D3D12_HEAP_TYPE_UPLOAD || heap == D3D12_HEAP_TYPE_READBACK) && desc.Width >= (1ull << 20)) ||
+        (heap == D3D12_HEAP_TYPE_READBACK && cs2_gpu_ram_on()))
         allocation.Flags = static_cast<D3D12MA::ALLOCATION_FLAGS>(allocation.Flags | D3D12MA::ALLOCATION_FLAG_COMMITTED);
     if (heap == D3D12_HEAP_TYPE_UPLOAD)
         initial_state = D3D12_RESOURCE_STATE_GENERIC_READ;
@@ -448,6 +459,11 @@ bool UploadStream::create(Device& device, std::uint64_t ring_bytes, std::string*
     device_ = &device;
     // A multiple of 64 KiB keeps every ring offset's alignment (texture placements need 512 bytes).
     ring_size_ = align_up(std::max<std::uint64_t>(ring_bytes, 1u << 16), 1u << 16);
+    max_ring_size_ = ring_size_;
+    // cs2 gpu: start at 2 MiB (peak use measured ~53 KB per submission) and grow on demand back to ring_bytes;
+    // GEKKO_CS2_GPU_RAM=0 keeps the full ring from the start (the old behaviour).
+    if (cs2_gpu_ram_on() && ring_size_ > (2u << 20))
+        ring_size_ = 2u << 20;
     if (!create_buffer(device, ring_size_, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE,
                        D3D12_RESOURCE_STATE_GENERIC_READ, L"shadow.upload_stream", &ring_, error))
         return false;
@@ -533,6 +549,8 @@ void UploadStream::reclaim(bool wait) {
 
 bool UploadStream::reserve(std::uint64_t bytes, std::uint64_t alignment, std::uint8_t** cpu, ID3D12Resource** buffer,
                            std::uint64_t* offset, std::string* error) {
+    if (bytes > ring_size_ && ring_size_ < max_ring_size_ && bytes <= max_ring_size_)
+        grow(bytes);  // on failure the dedicated path below serves it, as for any upload larger than the ring
     if (bytes > ring_size_) {
         GpuBuffer staging;
         if (!create_buffer(*device_, bytes, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE,
@@ -566,7 +584,10 @@ bool UploadStream::reserve(std::uint64_t bytes, std::uint64_t alignment, std::ui
             stats_.staged_bytes += bytes;
             return true;
         }
-        // Full: what is recorded goes to the GPU, then the oldest submission's space comes back.
+        // Full: a ring below its full size grows (one drain); else what is recorded goes to the GPU and the oldest
+        // submission's space comes back.
+        if (ring_size_ < max_ring_size_ && grow(ring_size_ + 1))
+            continue;
         if (recorded_)
             flush();
         if (in_flight_.empty()) {
@@ -577,6 +598,42 @@ bool UploadStream::reserve(std::uint64_t bytes, std::uint64_t alignment, std::ui
         ++stats_.ring_waits;
         reclaim(true);
     }
+}
+
+bool UploadStream::grow(std::uint64_t at_least) {
+    std::uint64_t size = ring_size_;
+    while (size < at_least && size < max_ring_size_)
+        size *= 2;
+    size = std::min(size, max_ring_size_);
+    if (size <= ring_size_)
+        return false;
+    GpuBuffer next;
+    std::string why;
+    if (!create_buffer(*device_, size, D3D12_HEAP_TYPE_UPLOAD, D3D12_RESOURCE_FLAG_NONE,
+                       D3D12_RESOURCE_STATE_GENERIC_READ, L"shadow.upload_stream", &next, &why))
+        return false;
+    const D3D12_RANGE nothing_read{0, 0};
+    void* mapped = nullptr;
+    if (FAILED(next.resource->Map(0, &nothing_read, &mapped)))
+        return false;
+    gpu_memory::note_map(L"shadow.upload_stream", mapped, size);
+    // Everything recorded reads the old ring: submit it and wait until the copy queue is done with it.
+    flush();
+    if (last_fence_ != 0)
+        device_->copy().wait(last_fence_);
+    reclaim(false);
+    if (!in_flight_.empty()) {  // cannot happen once the fence is reached; keep the old ring if it does
+        gpu_memory::note_unmap(mapped);
+        next.resource->Unmap(0, nullptr);
+        return false;
+    }
+    gpu_memory::note_unmap(ring_cpu_);
+    ring_.resource->Unmap(0, nullptr);
+    ring_ = std::move(next);
+    ring_cpu_ = static_cast<std::uint8_t*>(mapped);
+    ring_size_ = size;
+    head_ = tail_ = 0;
+    return true;
 }
 
 bool UploadStream::upload_buffer(ID3D12Resource* dst, std::uint64_t dst_offset, const void* data, std::uint64_t bytes,

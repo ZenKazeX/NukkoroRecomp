@@ -82,6 +82,7 @@
 #include "gekko/native_os_machine_check.h"
 #include "gekko/native_ax_mix_alloc.h"
 #include "gekko/native_math_affine.h"
+#include "gekko/native_adx_decode.h"
 #include "gekko/native_rw_image.h"
 #include "gekko/native_rw_image.h"
 #include "gekko/native_rw_pixel.h"
@@ -91,12 +92,17 @@
 #include "gekko/native_rw_matrix.h"
 #include "gekko/native_rw_view_cache.h"
 #include "gekko/native_vec_math.h"
+#include "gekko/native_mtn_track.h"
+#include "gekko/native_mtn_pose.h"
+#include "gekko/native_s1_core.h"
+#include "gekko/native_s1_target2.h"
+#include "gekko/native_s1_shptr.h"
+#include "gekko/native_s1_chars.h"
+#include "gekko/native_effect_update.h"
 #include "gekko/native_mix_entries.h"
 #include "gekko/native_sound_tables.h"
 #include "gekko/native_gcax_midi.h"
 #include "gekko/native_se_manager.h"
-#include "gekko/native_options_display.h"
-#include "gekko/native_options_menu.h"
 #include "gekko/button_glyphs.h"
 
 namespace gekko {
@@ -315,9 +321,12 @@ public:
     // event, delivering each event at its own time. It returns true when the
     // clock is at target, false as soon as the guest has to run first: an
     // interrupt became deliverable, or a stop was requested. The idle wait
-    // passes kNoDeadline and so returns after the first event that gives the
-    // guest something to do. With nothing scheduled at all the game cannot
-    // continue, and the machine stops.
+    // (advance_to_next_event) passes the next event's own time, one event per
+    // wait, and stops the machine itself when nothing is scheduled; a caller
+    // that passes kNoDeadline with nothing scheduled gets the same stop.
+    // The host-service grid (GameEvent::Frame) is always scheduled, so "no
+    // event" does not detect a wait whose waker never comes: the native
+    // OSSleepThread bounds its own wait in game time (native_os_threads.h).
     bool advance_game_time(u64 target);
     u64 game_ticks() const noexcept { return cpu_.game_clock().now(); }
     u64 idle_waits() const noexcept { return idle_waits_; }
@@ -478,8 +487,6 @@ public:
     u64 health_bar_camera_declines() const noexcept { return health_bar_camera_declines_; }
     bool native_visibility() const noexcept { return native_visibility_; }
 
-    // The PC Options menu (gekko/native_options_menu.h): six categories on the game's Options screen.
-    const options_menu::Menu& options_display() const noexcept { return options_display_; }
     // The prompts' controller buttons (gekko/button_glyphs.h): configure before mount_assets, which attaches them.
     button_glyphs::ButtonGlyphs& button_glyphs() noexcept { return button_glyphs_; }
 
@@ -734,6 +741,7 @@ public:
         u32 characters[2] = {14, 14}; // the 2P character words 0x8057E89C / 0x8057E8A0 (14 + cursor, 14..19)
         u32 expert_index = 0;         // PlayHard: the save block's run position (0x80577A18 + 0x9C), stage 0..22
         bool cutscene_handed = false;
+        bool story_stage_play_handed = false;  // --boot-story-stage: the second query (play) answered
         bool fired = false;
         u64 fired_at_ticks = 0;  // game time
         u32 hz_choice = 0;  // 0 = no PAL screen seen, 60 = PAL60 accepted
@@ -1070,10 +1078,8 @@ private:
     gcax_midi::Report midi_report_;
     se_manager::Report se_manager_report_;
     se_manager::Services se_services_{se_manager_report_, midi_report_, sound_table_report_};
-    options_menu::Menu options_display_{};
     bool voice_archive_ready_ = false;  // the switchable dialogue-voice archive is served (gekko/voice_language.h)
     button_glyphs::ButtonGlyphs button_glyphs_{};
-    static void play_menu_sound(void* system, Cpu& cpu, u32 id);
     void advance_ax_accepted_voices();
     void run_ax_mix(u32 command_list);
     MovieTraceCounts movie_counts_;

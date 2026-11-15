@@ -118,7 +118,7 @@ bool poll_xinput_gamepad(unsigned user_index, shadow::peripheral::GamepadState& 
 }
 
 namespace {
-// The player's controller preferences (Options > Controls / Gameplay, gekko/pc_settings.h), any thread.
+// The player's controller preferences (options.cfg, gekko/pc_settings.h), any thread.
 std::atomic<unsigned> g_rumble_percent{100u};
 std::atomic<bool> g_invert_camera_x{false}, g_invert_camera_y{false};
 }  // namespace

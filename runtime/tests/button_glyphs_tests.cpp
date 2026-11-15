@@ -14,11 +14,13 @@
 #include "gekko/button_glyphs.h"
 #include "gekko/gx_texture_decode.h"
 #include "gekko/texture_overrides.h"
+#include "../lift/render/view.h"
 #include "peripheral/gamepad_binding.h"
 
 namespace {
 
 int g_failures = 0;
+unsigned long long g_sharp_digest = 1469598103934665603ull;
 
 void check(bool ok, const std::string& what) {
     if (!ok) {
@@ -330,6 +332,235 @@ void sharp(const std::filesystem::path& files) {
     }
 }
 
+// Every glyph the player can be shown is the same size in every layout (user request 2026-11-13). Measured on what
+// the game receives: the visible box (alpha above 24 of 255) of every button cell in the paletted sheet the game
+// reads and in the sharp sheet the native renderer draws, for each of the 3 layouts, per sheet.
+//  * the same cell: every layout's glyph has the same box within 2 px (the caps are identical; a start prompt's
+//    word under its cap is a different length per layout, so only its height is compared) and the same centre;
+//  * one layout, one sheet: every plain face cap (A / B / X / Y) is the same size within 1 px, whichever disc glyph
+//    it replaced (the disc's own varied from 21 to 26 px).
+struct Box {
+    int x0 = 1 << 20, y0 = 1 << 20, x1 = -1, y1 = -1;
+    bool empty() const { return x1 < 0; }
+    int w() const { return x1 - x0; }
+    int h() const { return y1 - y0; }
+    double cx() const { return (x0 + x1) / 2.0; }
+    double cy() const { return (y0 + y1) / 2.0; }
+};
+
+Box visible_box(const std::vector<gekko::u8>& rgba, gekko::u32 stride, gekko::u32 x0, gekko::u32 y0, gekko::u32 x1,
+                gekko::u32 y1) {
+    Box b;
+    for (gekko::u32 y = y0; y < y1; ++y) {
+        for (gekko::u32 x = x0; x < x1; ++x) {
+            if (rgba[(static_cast<std::size_t>(y) * stride + x) * 4u + 3u] <= 24u) continue;
+            b.x0 = std::min(b.x0, static_cast<int>(x - x0));
+            b.y0 = std::min(b.y0, static_cast<int>(y - y0));
+            b.x1 = std::max(b.x1, static_cast<int>(x - x0) + 1);
+            b.y1 = std::max(b.y1, static_cast<int>(y - y0) + 1);
+        }
+    }
+    return b;
+}
+
+std::string box_text(const Box& b) { return std::to_string(b.w()) + "x" + std::to_string(b.h()); }
+
+// How the game draws a button cell: screen px per texel (x, y). Every cast of every .gncp was measured (quad over
+// texels, docs/agents/button-glyphs/draw_scale.py): 1:1 except the vehicle arrow's button (quad 36 x 33.48 for its
+// 36 x 36 cell), its outline disc (46.2 x 42 for 42 x 42) and the cutscene skip button (46 x 29 for 45 x 28 and 46 x 28).
+void draw_scale(const ButtonGlyphs::CellInfo& c, double& sx, double& sy) {
+    sx = sy = 1.0;
+    if (c.kind == 4u && c.x0 == 36u && c.y0 == 25u) {
+        sx = 46.0 / 45.0;
+        sy = 29.0 / 28.0;
+    }
+    if (c.kind == 4u && c.x0 == 82u && c.y0 == 27u) {
+        sx = 1.0;
+        sy = 29.0 / 28.0;
+    }
+    if (c.kind <= 3u && c.x0 == 48u && c.y0 == 0u) {
+        sx = 1.0;
+        sy = 0.93;
+    }
+    if (c.kind == 5u && c.x0 == 2u && c.y0 == 0u) {
+        sx = 46.2 / 42.0;
+        sy = 1.0;
+    }
+}
+
+// The cap's diameters in px, to a fraction of a pixel (make_modern_buttons.py cap_diameters is the same measure): the
+// cap is the opaque pixels (alpha >= 200: the drop shadow is translucent) of the rows from the top of the first opaque
+// run down to the first row with none near the middle (a word under the cap is another run); for a disc the standard
+// deviation of those pixels along an axis is a quarter of its diameter.
+bool cap_diameters(const std::vector<gekko::u8>& rgba, gekko::u32 stride, gekko::u32 x0, gekko::u32 y0, gekko::u32 x1,
+                   gekko::u32 y1, double& dx, double& dy) {
+    auto opaque = [&](gekko::u32 x, gekko::u32 y) {
+        return rgba[(static_cast<std::size_t>(y) * stride + x) * 4u + 3u] >= 200u;
+    };
+    const gekko::u32 w = x1 - x0;
+    gekko::u32 top = y0;
+    auto row_has = [&](gekko::u32 y, gekko::u32 a, gekko::u32 b) {
+        for (gekko::u32 x = a; x < b; ++x) {
+            if (opaque(x, y)) return true;
+        }
+        return false;
+    };
+    while (top < y1 && !row_has(top, x0, x1)) ++top;
+    if (top >= y1) return false;
+    gekko::u32 end = top;
+    while (end + 1u < y1 && row_has(end + 1u, x0 + w / 4u, x1 - w / 4u)) ++end;
+    double n = 0.0, sx = 0.0, sy = 0.0, sxx = 0.0, syy = 0.0;
+    for (gekko::u32 y = top; y <= end; ++y) {
+        for (gekko::u32 x = x0; x < x1; ++x) {
+            if (!opaque(x, y)) continue;
+            n += 1.0;
+            sx += x;
+            sy += y;
+            sxx += static_cast<double>(x) * x;
+            syy += static_cast<double>(y) * y;
+        }
+    }
+    dx = 4.0 * std::sqrt(sxx / n - (sx / n) * (sx / n));
+    dy = 4.0 * std::sqrt(syy / n - (sy / n) * (sy / n));
+    return true;
+}
+
+// The native renderer puts the game's 640 x 480 canvas on the output with one scale in x and y (canvas_fit): at every
+// output aspect and anchor a canvas px is as wide as it is tall, so a quad the game draws square stays square.
+void canvas_is_square() {
+    using shadow::render::Anchor;
+    for (const float aspect : {0.75f, 1.0f, 4.0f / 3.0f, 16.0f / 10.0f, 16.0f / 9.0f, 21.0f / 9.0f, 3.2f, 32.0f / 9.0f}) {
+        for (const Anchor anchor : {Anchor::Left, Anchor::Center, Anchor::Right, Anchor::Projected, Anchor::Continued}) {
+            const shadow::render::CanvasFit fit =
+                shadow::render::canvas_fit(640.0f, 480.0f, 4.0f / 3.0f, anchor, aspect);
+            const double view_h = 1000.0, view_w = view_h * aspect;
+            const double px_x = fit.sx * 0.5 * view_w, px_y = -fit.sy * 0.5 * view_h;
+            check(std::fabs(px_x / px_y - 1.0) < 1e-4,
+                  "a canvas px is square on screen at aspect " + std::to_string(aspect));
+        }
+    }
+}
+
+void equal_sizes(const std::filesystem::path& files) {
+    using Info = ButtonGlyphs::CellInfo;
+    std::size_t compared_cells = 0, compared_sheets = 0, compared_caps = 0;
+    for (const int swapped : {0, 1}) {
+        gekko::assets::AssetSystem assets;
+        if (!mount(assets, files)) return;
+        ButtonGlyphs glyphs;
+        GamepadBinding binding;
+        if (swapped == 1) {
+            binding.b = shadow::peripheral::kGamepadWest;
+            binding.x = shadow::peripheral::kGamepadEast;
+        }
+        glyphs.configure(ButtonStyle::Xbox, binding);
+        glyphs.attach(assets);
+        for (gekko::u32 sheet = 0; sheet < 64u; ++sheet) {
+            std::vector<Info> cells;
+            if (!ButtonGlyphs::sheet_cells(sheet, cells)) break;
+            // [layout][cell] -> box on the sharp sheet / on the paletted sheet
+            std::vector<Box> sharp_box[3], pal_box[3];
+            bool have = true;
+            for (gekko::u32 f = 0; f < 3u && have; ++f) {
+                ButtonGlyphs::SharpSheet s;
+                if (!glyphs.sharp_sheet(sheet, static_cast<Family>(f + 1u), s)) {
+                    have = false;
+                    break;
+                }
+                // cs2/ram: a digest of every sharp sheet's bytes (the whole rgba8), printed at the end: the run with
+                // GEKKO_CS2_RAM=0 (scaled art made at attach by a worker) and the default (made at first use) must match.
+                for (const gekko::u8 byte : s.rgba8) g_sharp_digest = (g_sharp_digest ^ byte) * 1099511628211ull;
+                g_sharp_digest = (g_sharp_digest ^ sheet) * 1099511628211ull;
+                std::vector<gekko::u8> pal(static_cast<std::size_t>(s.width) * s.height * 4u);
+                check(gekko::gx_decode_texture(s.gx_format, s.width, s.height, s.texels, s.texel_bytes, s.palette,
+                                               s.tlut_format, static_cast<gekko::u32>(s.palette_bytes / 2u),
+                                               pal.data()),
+                      "the patched sheet decodes (sheet " + std::to_string(sheet) + ")");
+                for (const Info& c : cells) {
+                    const gekko::u32 sx0 = c.x0 * s.sharp_width / s.width, sy0 = c.y0 * s.sharp_height / s.height,
+                                     sx1 = (c.x1 * s.sharp_width + s.width - 1u) / s.width,
+                                     sy1 = (c.y1 * s.sharp_height + s.height - 1u) / s.height;
+                    sharp_box[f].push_back(visible_box(s.rgba8, s.sharp_width, sx0, sy0, sx1, sy1));
+                    pal_box[f].push_back(visible_box(pal, s.width, c.x0, c.y0, c.x1, c.y1));
+                    // Round on screen: the cap's width and height after the game's draw scale (canvas px; the sharp
+                    // sheet is sharp_width / width of the sheet), within 0.25 px on the sharp sheet and 1 px on the
+                    // paletted fallback (the vehicle arrow's outline disc is measured the same way).
+                    double dsx = 1.0, dsy = 1.0;
+                    draw_scale(c, dsx, dsy);
+                    const double k = static_cast<double>(s.sharp_width) / s.width;
+                    const std::string cell_text = "sheet " + std::to_string(sheet) + " layout " + std::to_string(f) +
+                                                  " cell " + std::to_string(c.x0) + "," + std::to_string(c.y0);
+                    for (const int sharp_pass : {1, 0}) {
+                        double dx = 0.0, dy = 0.0;
+                        bool ok = false;
+                        if (sharp_pass != 0) {
+                            ok = cap_diameters(s.rgba8, s.sharp_width, sx0, sy0, sx1, sy1, dx, dy);
+                        } else {
+                            ok = cap_diameters(pal, s.width, c.x0, c.y0, c.x1, c.y1, dx, dy);
+                        }
+                        check(ok, "a cap is found: " + cell_text);
+                        if (!ok) continue;
+                        const double unit = sharp_pass != 0 ? 1.0 / k : 1.0;
+                        const double on_x = dx * unit * dsx, on_y = dy * unit * dsy;
+                        check(std::fabs(on_x - on_y) <= (sharp_pass != 0 ? 0.25 : 1.0) + 1e-9,
+                              std::string("round on screen (") + (sharp_pass != 0 ? "sharp" : "paletted") + "): " +
+                                  cell_text + " draws " + std::to_string(on_x) + " x " + std::to_string(on_y) + " px");
+                        ++compared_caps;
+                    }
+                }
+            }
+            if (!have) continue;
+            ++compared_sheets;
+            std::vector<std::size_t> face;  // the plain face cells (GC A B X Y)
+            for (std::size_t i = 0; i < cells.size(); ++i) {
+                if (cells[i].kind <= 3u) face.push_back(i);
+            }
+            const std::string sheet_text = "sheet " + std::to_string(sheet) + (swapped ? " (swapped)" : "");
+            for (std::size_t i = 0; i < cells.size(); ++i) {
+                const bool start = cells[i].kind == 4u;
+                const std::string where = sheet_text + " cell " + std::to_string(cells[i].x0) + "," +
+                                          std::to_string(cells[i].y0);
+                for (const int sharp_pass : {1, 0}) {
+                    const auto* boxes = sharp_pass != 0 ? sharp_box : pal_box;
+                    const std::string what = sharp_pass != 0 ? "sharp" : "paletted";
+                    for (gekko::u32 f = 1; f < 3u; ++f) {
+                        const Box& a = boxes[0][i];
+                        const Box& b = boxes[f][i];
+                        check(!a.empty() && !b.empty(), what + " glyph present: " + where);
+                        if (a.empty() || b.empty()) continue;
+                        check(std::abs(a.h() - b.h()) <= 2 && (start || std::abs(a.w() - b.w()) <= 2),
+                              what + " box the same in every layout: " + where + " layout " + std::to_string(f) +
+                                  " " + box_text(b) + " vs Xbox " + box_text(a));
+                        check(std::fabs(a.cx() - b.cx()) <= 1.0 && std::fabs(a.cy() - b.cy()) <= 1.0,
+                              what + " centre the same in every layout: " + where + " layout " + std::to_string(f));
+                    }
+                }
+                ++compared_cells;
+            }
+            // One layout, one sheet: the plain face caps are one size.
+            for (gekko::u32 f = 0; f < 3u; ++f) {
+                for (const int sharp_pass : {1, 0}) {
+                    const auto* boxes = sharp_pass != 0 ? sharp_box : pal_box;
+                    for (const std::size_t i : face) {
+                        const Box& a = boxes[f][face[0]];
+                        const Box& b = boxes[f][i];
+                        if (a.empty() || b.empty()) continue;
+                        check(std::abs(a.w() - b.w()) <= 1 && std::abs(a.h() - b.h()) <= 1,
+                              std::string(sharp_pass != 0 ? "sharp" : "paletted") + " face caps one size, " +
+                                  sheet_text + " layout " + std::to_string(f) + " cell " +
+                                  std::to_string(cells[i].x0) + "," + std::to_string(cells[i].y0) + ": " +
+                                  box_text(b) + " vs " + box_text(a));
+                    }
+                }
+            }
+        }
+    }
+    check(compared_sheets >= 54u && compared_cells >= 200u,
+          "glyph sizes compared on 27 sheets x 2 bindings (" + std::to_string(compared_sheets) + " sheets, " +
+              std::to_string(compared_cells) + " cells)");
+    check(compared_caps >= 800u, "caps measured for roundness (" + std::to_string(compared_caps) + ")");
+}
+
 // BUTTON_GLYPHS_DUMP=<dir>: every sharp sheet as the runtime builds it, for each family and two bindings (label;
 // pad.cfg with GC B on west and GC X on east), as raw RGBA8 named <first file>__<family>_<binding>_<w>x<h>.rgba.
 void dump_all(const std::filesystem::path& files, const std::string& dir) {
@@ -368,11 +599,13 @@ void dump_all(const std::filesystem::path& files, const std::string& dir) {
 int main(int argc, char** argv) {
     style_key();
     families();
+    canvas_is_square();
     if (argc > 1) {
         const std::filesystem::path files = std::filesystem::path(argv[1]).parent_path().parent_path() / "files";
         if (std::filesystem::exists(files / "csdFiles")) {
             disc(files);
             sharp(files);
+            equal_sizes(files);
             if (const char* dir = std::getenv("BUTTON_GLYPHS_DUMP")) dump_all(files, dir);
         } else {
             std::printf("game data not found beside %s: the disc checks were skipped\n", argv[1]);
@@ -382,6 +615,7 @@ int main(int argc, char** argv) {
         std::printf("%d check(s) failed\n", g_failures);
         return 1;
     }
+    std::printf("sharp-sheet digest %016llx\n", g_sharp_digest);
     std::printf("button glyph checks passed\n");
     return 0;
 }

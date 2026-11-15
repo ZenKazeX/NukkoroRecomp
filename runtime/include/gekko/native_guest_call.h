@@ -71,6 +71,13 @@ private:
 // Defined in native_guest_call.cpp, compiled once per runtime build: the production library has no interpreter, the
 // reference library has no translated code, and a header-inline body would be compiled with the wrong choice by a
 // client that does not define SHADOW_CPU_REFERENCE_BUILD.
+// Continues the translated function that contains `entry` at that instruction (an address the generated code can be entered at:
+// the return address after one of its calls), with the registers as the caller has set them, until the function returns to
+// `return_pc` with r1 == `return_sp`. Unlike guest_call this may hand control back to the dispatcher: in production the code is
+// entered natively and a yield inside it leaves with the guest state consistent (the caller must then return at once; the
+// dispatcher resumes inside the function). The reference build runs the interpreter nested and stops the run on a yield.
+void guest_continue(Cpu& c, u32 entry, u32 return_pc, u32 return_sp);
+
 bool guest_call(Cpu& c, u32 target, u32 link, std::initializer_list<u32> args, u32& result,
                 u64 step_bound = kGuestCallStepBound);
 

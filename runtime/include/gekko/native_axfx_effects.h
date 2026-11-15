@@ -43,6 +43,11 @@ constexpr u32 kChorusInit = 0x80389464u;    // AXFXChorusInit(context)
 constexpr u32 kChorusShutdown = 0x803896ACu;
 constexpr u32 kDelayInit = 0x80389FF4u;     // AXFXDelayInit(context)
 constexpr u32 kDelayShutdown = 0x8038A03Cu;
+// The three aux callbacks the selector 0x8043F304 materializes for its modes 1, 3 and 4 (ReverbHi's, mode 2, is the
+// native effect of native_reverb_owner.h). Nothing can enter them (see below), so their owners stop the run.
+constexpr u32 kStdCallback = 0x803890B0u;     // mode 1: if byte +0x13C == 0, the ReverbStd comb / all-pass pass
+constexpr u32 kChorusCallback = 0x8038980Cu;  // mode 3
+constexpr u32 kDelayCallback = 0x80389B5Cu;   // mode 4
 
 // Parameter fields of the three objects, as the originals read them.
 constexpr u32 kStdParametersOffset = 0x140u;  // f32 at +0x140 coloration 0..1, +0x144 mix 0..1, +0x148 time 0.01..10, +0x14C damping 0..1, +0x150 pre-delay 0..0.1
@@ -63,7 +68,13 @@ bool serve_delay_init(Cpu& cpu) noexcept;
 // Shutdown (r3 = context): r3 = 1; nothing else.
 void serve_shutdown(Cpu& cpu) noexcept;
 
-// Installs the six owners on the CPU (System::start). An init whose object is not readable stops the run, as the
+// The aux callbacks: entered only through AXRegisterAuxA / BCallback with a callback the selector chose (modes 1, 3, 4
+// of a selector whose two callers pass 0 and 2) - unreachable. And with the init owned above the originals could not run:
+// they walk delay lines the owned init no longer builds. An entry therefore stops the run (never a silent return).
+// `serve_callback_entered` formats the stop detail for the effect at `address`.
+void serve_callback_entered(Cpu& cpu, u32 address) noexcept;
+
+// Installs the nine owners on the CPU (System::start). An init whose object is not readable stops the run, as the
 // original would fault on it.
 void install(Cpu& cpu);
 
@@ -76,7 +87,10 @@ struct Owners {
     static const Address* addresses(std::size_t& count) noexcept {
         static constexpr Address kAddresses[] = {{kStdInit, "AXFXReverbStdInit"},   {kStdShutdown, "AXFXReverbStdShutdown"},
                                                  {kChorusInit, "AXFXChorusInit"},   {kChorusShutdown, "AXFXChorusShutdown"},
-                                                 {kDelayInit, "AXFXDelayInit"},     {kDelayShutdown, "AXFXDelayShutdown"}};
+                                                 {kDelayInit, "AXFXDelayInit"},     {kDelayShutdown, "AXFXDelayShutdown"},
+                                                 {kStdCallback, "AXFXReverbStdCallback"},
+                                                 {kChorusCallback, "AXFXChorusCallback"},
+                                                 {kDelayCallback, "AXFXDelayCallback"}};
         count = sizeof(kAddresses) / sizeof(kAddresses[0]);
         return kAddresses;
     }

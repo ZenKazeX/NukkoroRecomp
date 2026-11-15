@@ -172,6 +172,12 @@ public:
     u8* fm_window() const noexcept { return fm_window_; }
     u8* fm_null_window() const noexcept { return fm_null_window_; }
     static constexpr u64 kFmWindowBytes = 0x100000000ull;
+    // RC-memory-1 (S3, 2026-11-12): each window is reserved kFmGuardBytes LONGER than the 4 GiB, no-access, so a
+    // guest access that starts in the window and runs past 0xFFFFFFFF (up to 8 bytes: lfd / stfd / 64-bit psq at
+    // 0xFFFFFFF9 and above) faults inside OUR reservation, never in whatever the process mapped after the window.
+    // The handler serves it through the same *_slow path as any other unmapped access (no region reaches the top
+    // page, so it stops the machine as unmapped, like the access at the window's last bytes always did).
+    static constexpr u64 kFmGuardBytes = 0x10000ull;
 
     // ---- guest-address accesses (the CPU slow path, instruments, fixtures) ---
     void register_mmio(u32 address, u32 size, MmioDevice* device);

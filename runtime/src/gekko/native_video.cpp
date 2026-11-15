@@ -379,6 +379,7 @@ bool NativeVideo::retrace_handler(Cpu& c, u32 frame, u32 step) {
                 break;
             }
             case kPhaseWakeup:
+                if (frame_hook_) frame_hook_(c);   // once per delivery: this case stores kPhaseTick and returns
                 c.mem_write32(phase_word, kPhaseTick);
                 interrupts_.call_guest(c, frame, kOsWakeupThread, sda + kSdaRetraceQueue, 0u);
                 return true;

@@ -4,6 +4,7 @@
 // verified formats this transcribes.
 
 #include "gekko/native_assets.h"
+#include "gekko/mod_overlay.h"
 #include "gekko/thread_name.h"  // ES-T1
 
 #include "gekko/gx_texture_decode.h"
@@ -523,7 +524,9 @@ void NativeAssetManager::parse_file(const std::string& guest_path) {
         ++stats_.files_parsed;
         GEKKO_PROFILE_PLOT("res/files-parsed", static_cast<double>(stats_.files_parsed));
     }
-    const std::filesystem::path file = root_ / "files" / guest_path;
+    // An enabled mod's replacement when there is one (gekko/mod_overlay.h): the same bytes the game reads.
+    const std::filesystem::path* modded = mod_overlay::find(guest_path);
+    const std::filesystem::path file = modded != nullptr ? *modded : root_ / "files" / guest_path;
     // Blocking host I/O of the ENTIRE archive into a Domain::Streaming buffer,
     // on the worker thread - a separate allocation and a separate read from the
     // mapped view FileProvider hands the guest for the same file, so the same

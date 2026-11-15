@@ -6,6 +6,8 @@
 #include "gekko/profiling.h"
 #include "gekko/native_failure_publication.h"
 #include "gekko/xinput_pad.h"
+#include "gekko/controls_settings.h"
+#include "peripheral/action_map.h"
 #include "peripheral/keyboard_layout.h"
 
 #include <algorithm>
@@ -13,6 +15,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <tuple>
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -252,6 +255,13 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
         }
         case WM_SYSCHAR:
             if (wparam == VK_RETURN) return 0;  // no "ding" for Alt+Enter
+            break;
+        case WM_SYSCOMMAND:
+            // Alt pressed and released alone: DefWindowProc would enter the system menu's modal loop (SC_KEYMENU with
+            // no mnemonic, lParam 0) and park this thread there - no frame is presented until another key or a click
+            // ends it. The window has no menu bar, so the tap does nothing. Alt+Space (lParam ' ') still opens the
+            // system menu; Alt+F4 (SC_CLOSE) and Alt+Enter (handled at WM_SYSKEYDOWN) are unaffected.
+            if ((wparam & 0xFFF0u) == SC_KEYMENU && lparam == 0) return 0;
             break;
         case WM_DPICHANGED: {
             // A move to a monitor of another scaling: a windowed client keeps its size in pixels (the display
@@ -569,21 +579,6 @@ bool HostWindow::minimized() const noexcept {
     return handle_ != nullptr && IsIconic(static_cast<HWND>(handle_)) != FALSE;
 }
 
-bool HostWindow::work_area_client(int& width, int& height) const noexcept {
-    width = 0;
-    height = 0;
-    if (handle_ == nullptr) return false;
-    MONITORINFO monitor{};
-    monitor.cbSize = sizeof(monitor);
-    if (!GetMonitorInfoW(MonitorFromWindow(static_cast<HWND>(handle_), MONITOR_DEFAULTTONEAREST), &monitor))
-        return false;
-    RECT frame{0, 0, 0, 0};
-    AdjustWindowRect(&frame, WS_OVERLAPPEDWINDOW, FALSE);
-    width = (monitor.rcWork.right - monitor.rcWork.left) - (frame.right - frame.left);
-    height = (monitor.rcWork.bottom - monitor.rcWork.top) - (frame.bottom - frame.top);
-    return width > 0 && height > 0;
-}
-
 bool HostWindow::take_fullscreen_toggle() noexcept {
     const bool pressed = g_fullscreen_toggles != 0u;
     g_fullscreen_toggles = 0u;
@@ -676,7 +671,39 @@ bool HostWindow::pump() {
     }
     const bool keyboard_active =
         handle_ != nullptr && GetForegroundWindow() == static_cast<HWND>(handle_);
-    escape_pressed_ = keyboard_active && g_key_held[VK_ESCAPE];
+    {
+        // Esc quits only while no action uses it (the default layout has it as Pause).
+        const auto controls = controls_settings().current();
+        const bool escape_is_bound =
+            !shadow::peripheral::bound_actions(*controls, shadow::peripheral::key_bind(VK_ESCAPE)).empty();
+        escape_pressed_ = keyboard_active && g_key_held[VK_ESCAPE] && !escape_is_bound;
+    }
+    // Back in front: the player may have edited controls.cfg while away.
+    if (keyboard_active && !was_keyboard_active_) controls_settings().reload_if_changed();
+    was_keyboard_active_ = keyboard_active;
+    // The cursor: hidden and held at the window's centre while the camera has the mouse and the window is in front.
+    if (handle_ != nullptr) {
+        const bool capture = keyboard_active && cursor_capture_wanted_.load(std::memory_order_relaxed);
+        if (capture) {
+            RECT client{};
+            POINT centre{};
+            if (GetClientRect(static_cast<HWND>(handle_), &client) && client.right > 0 && client.bottom > 0) {
+                centre.x = client.right / 2;
+                centre.y = client.bottom / 2;
+                ClientToScreen(static_cast<HWND>(handle_), &centre);
+                RECT point{centre.x, centre.y, centre.x + 1, centre.y + 1};
+                ClipCursor(&point);
+            }
+            if (!cursor_captured_) {
+                ShowCursor(FALSE);
+                cursor_captured_ = true;
+            }
+        } else if (cursor_captured_) {
+            ClipCursor(nullptr);
+            ShowCursor(TRUE);
+            cursor_captured_ = false;
+        }
+    }
     // Savestate / mark / snapshot hotkeys: one request per fresh key press (ES-W3: the window's own WM_KEYDOWN
     // messages, see window_proc). Key messages reach only the focused window, so typing N or M in another
     // application can never overwrite or reload the slot, and a key already held when focus returns arrives as an
@@ -826,12 +853,25 @@ shadow::peripheral::ControllerSample HostWindow::keyboard_controller() const {
     // another application owns focus so ordinary typing cannot steer the game
     // or contaminate an unattended benchmark.
     bool keyboard_active = handle_ != nullptr && GetForegroundWindow() == static_cast<HWND>(handle_);
-    return shadow::peripheral::sample_from_keyboard(
-        [](int key, void* context) {
-            // ES-W3: the level from the window's key messages (pump() ran first in this UI iteration).
-            return *static_cast<const bool*>(context) && g_key_held[key & 0xFF];
-        },
-        &keyboard_active);
+    shadow::peripheral::KeyMouseLevels levels;
+    if (keyboard_active) {
+        for (int key = 1; key < 0xFF; ++key) {
+            if (g_key_held[key]) levels.keys.set(static_cast<std::size_t>(key));
+        }
+        // Window messages say only VK_SHIFT / VK_CONTROL / VK_MENU, so a left or right binding follows the generic key.
+        for (const auto [generic, left, right] : {std::tuple{VK_SHIFT, VK_LSHIFT, VK_RSHIFT},
+                                                  std::tuple{VK_CONTROL, VK_LCONTROL, VK_RCONTROL},
+                                                  std::tuple{VK_MENU, VK_LMENU, VK_RMENU}}) {
+            if (g_key_held[generic]) {
+                levels.keys.set(static_cast<std::size_t>(left));
+                levels.keys.set(static_cast<std::size_t>(right));
+            }
+        }
+        if ((GetAsyncKeyState(VK_LBUTTON) & 0x8000) != 0) levels.mouse_buttons |= 1u << shadow::peripheral::kMouseLeft;
+        if ((GetAsyncKeyState(VK_RBUTTON) & 0x8000) != 0) levels.mouse_buttons |= 1u << shadow::peripheral::kMouseRight;
+    }
+    const auto controls = controls_settings().current();
+    return shadow::peripheral::sample_from_actions(*controls, shadow::peripheral::resolve_actions(*controls, levels));
 }
 
 #else
@@ -843,10 +883,6 @@ bool HostWindow::monitor_size(int& width, int& height) const noexcept {
     return false;
 }
 bool HostWindow::take_fullscreen_toggle() noexcept { return false; }
-bool HostWindow::work_area_client(int& width, int& height) const noexcept {
-    width = height = 0;
-    return false;
-}
 bool HostWindow::sizing() const noexcept { return false; }
 bool HostWindow::minimized() const noexcept { return false; }
 bool HostWindow::exclusive_active() const noexcept { return false; }

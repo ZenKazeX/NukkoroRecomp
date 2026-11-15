@@ -137,9 +137,18 @@ public:
     using RetraceTick = std::function<bool(Cpu& c, u32& frame)>;
     void set_retrace_tick(RetraceTick tick) { retrace_tick_ = std::move(tick); }
 
+    // The once-per-retrace point of the data-code engine (gekko/code_engine.h): called on the game thread in the retrace
+    // delivery, after the SDK's retrace work and just before the sleepers of VIWaitForRetrace are woken, so the game's
+    // next frame sees what a Gecko code handler hooked at the VI would have written. Empty (nothing installed, one
+    // untaken branch per retrace) unless a runnable code is configured.
+    using FrameHook = std::function<void(Cpu& c)>;
+    void set_frame_hook(FrameHook hook) { frame_hook_ = std::move(hook); }
+    bool has_frame_hook() const noexcept { return static_cast<bool>(frame_hook_); }
+
 private:
     bool retrace_handler(Cpu& c, u32 frame, u32 step);
     RetraceTick retrace_tick_;
+    FrameHook frame_hook_;
     void vi_init(Cpu& c);
     // The staging entry points (VIFlush, VISetNextFrameBuffer, VISetBlack, VISetPreRetraceCallback, VIGetTvFormat):
     // the guest words game code reads, nothing of the VI register image (docs/agents/vi.md).

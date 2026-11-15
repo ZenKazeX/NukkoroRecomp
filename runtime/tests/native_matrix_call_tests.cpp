@@ -25,7 +25,7 @@ void check_composition() {
     GuestMemory memory;
     Cpu cpu(memory);
     constexpr u32 base = 0x81001000u;
-    const std::array<std::pair<LiftSiteRecord::Lower, u32>, 68> sites{{
+    const std::array<std::pair<LiftSiteRecord::Lower, u32>, 67> sites{{
         {recomp::lift_site_80019448, 0x8001944Cu},
         {recomp::lift_site_80019490, 0x80019494u},
         {recomp::lift_site_8001951C, 0x80019520u},
@@ -92,7 +92,6 @@ void check_composition() {
         {recomp::lift_site_804195E8, 0x804195ECu},
         {recomp::lift_site_8041AA90, 0x8041AA94u},
         {recomp::lift_site_8041BAC0, 0x8041BAC4u},
-        {recomp::lift_site_8041F15C, 0x8041F160u},
         {recomp::lift_site_8041FF04, 0x8041FF08u},
     }};
     unsigned cases = 0, refused = 0;
@@ -208,8 +207,8 @@ int main(int argc, char** argv) {
             require(expected->second == recomp::kLiftSiteWords[i], "copy-site generated word differs from catalog");
             sites.emplace_back(site.lower, site.address + 4u);
         }
-        require(sites.size() == 684u && sites.size() == copy_words.size(),
-                "all 684 copy-family sites must be present");
+        require(sites.size() == 675u && sites.size() == copy_words.size(),
+                "all 675 copy-family sites must be present");
         std::array<u8, 256> initial{};
         for (unsigned i = 0; i < initial.size(); ++i) initial[i] = u8(i * 71u);
         unsigned cases = 0;
@@ -291,7 +290,7 @@ int main(int argc, char** argv) {
             require(actual == initial && accesses == 0 && cpu.pc == pc_before && cpu.lr == lr_before,
                     "cut copy accessed storage or changed the prior fault continuation");
         }
-        std::printf("PASS 684 generated matrix-copy sites: %u overlap/observation/journal cases; 2736 invalid-span refusals; 684 prior-fault cuts\n", cases);
+        std::printf("PASS 675 generated matrix-copy sites: %u overlap/observation/journal cases; 2700 invalid-span refusals; 675 prior-fault cuts\n", cases);
         return 0;
     } catch (const std::exception& error) {
         std::fprintf(stderr, "FAIL generated matrix callers: %s\n", error.what());

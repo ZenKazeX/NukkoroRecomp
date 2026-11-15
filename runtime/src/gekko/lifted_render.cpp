@@ -11,6 +11,8 @@
 #include "gekko/native_gx_display.h"
 #include "gekko/native_gx_texobj.h"
 #include "gekko/native_rw_node_stops.h"
+#include "gekko/native_rw_texbind.h"
+#include "gekko/native_driver_callbacks.h"
 
 #include <algorithm>
 #include <array>
@@ -34,7 +36,6 @@
 #include "gekko/cpu.h"
 #include "render/effect_layers.h"
 #include "src/gekko/effect_layer_overlay.h"
-#include "src/gekko/options_display_overlay.h"
 #include "render/packet_queue.h"
 #include "render/present_trace.h"
 #include "gekko/phase_lock.h"
@@ -66,7 +67,6 @@ struct LiftedRender::Impl {
     std::unique_ptr<scaffold::RwDriver> driver;
     std::unique_ptr<game::GameOwners> owners;  // NE-RW1: the game-level owners, reaching RenderWare through the driver
     EffectLayerOverlay effect_overlay;          // the effect layer list (UI thread)
-    OptionsDisplayOverlay options_overlay;      // the Options menu's Display page (UI thread)
     bool started = false;
     bool attached = false;
     std::uint32_t width = 0, height = 0;
@@ -353,16 +353,17 @@ LiftedRender::~LiftedRender() {
     stop();
 }
 
-bool LiftedRender::start(const LiftedRenderOptions& options, std::string* error) {
-    impl_->options = options;
-    gekko::phase_lock::display_paced().store(options.vsync, std::memory_order_relaxed);
+namespace {
+
+// start()'s renderer options from the options asked (the diagnostics' environment applied to `chosen` first).
+render::RendererOptions renderer_options_of(LiftedRenderOptions& chosen_options) {
     // Diagnostics: SHADOW_R2_WARP=1 renders on the software rasterizer, SHADOW_R2_DEBUG_LAYER=1 enables the D3D12
     // debug layer (its messages go to stderr as frames are rendered).
     if (const char* warp = std::getenv("SHADOW_R2_WARP"))
-        impl_->options.warp = impl_->options.warp || warp[0] == '1';
+        chosen_options.warp = chosen_options.warp || warp[0] == '1';
     if (const char* debug = std::getenv("SHADOW_R2_DEBUG_LAYER"))
-        impl_->options.debug_layer = impl_->options.debug_layer || debug[0] == '1';
-    const LiftedRenderOptions& chosen = impl_->options;
+        chosen_options.debug_layer = chosen_options.debug_layer || debug[0] == '1';
+    const LiftedRenderOptions& chosen = chosen_options;
     render::RendererOptions renderer_options;
     renderer_options.msaa_samples = std::max<std::uint32_t>(chosen.msaa_samples, 1u);
     renderer_options.max_anisotropy = std::clamp<std::uint32_t>(chosen.anisotropy, 1u, 16u);
@@ -388,8 +389,80 @@ bool LiftedRender::start(const LiftedRenderOptions& options, std::string* error)
     // Diagnostics: SHADOW_R2_MSAA=<samples> (1: no multisampling) for bisecting the GPU path.
     if (const char* msaa = std::getenv("SHADOW_R2_MSAA"))
         renderer_options.msaa_samples = static_cast<std::uint32_t>(std::max(1ul, std::strtoul(msaa, nullptr, 10)));
-    if (!impl_->renderer.create(renderer_options, error))
+    return renderer_options;
+}
+
+bool same_renderer(const LiftedRenderOptions& a, const LiftedRenderOptions& b) {
+    return a.warp == b.warp && a.debug_layer == b.debug_layer && a.msaa_samples == b.msaa_samples &&
+           a.anisotropy == b.anisotropy;
+}
+
+}  // namespace
+
+struct LiftedRender::Early {
+    std::mutex mutex;
+    std::thread thread;
+    LiftedRenderOptions options;     // as asked
+    std::unique_ptr<Impl> impl;      // its renderer created (or failed) by `thread`
+    bool ok = false;
+    std::string error;
+    ~Early() {
+        if (thread.joinable()) thread.join();
+        // Never taken over (the process is ending on an earlier error): left to the process's end, as a renderer that
+        // was never created has nothing to tear down.
+        (void)impl.release();
+    }
+};
+
+LiftedRender::Early& LiftedRender::early() {
+    static Early e;
+    return e;
+}
+
+void LiftedRender::start_early(const LiftedRenderOptions& options) {
+    if (const char* e = std::getenv("GEKKO_PF_LOAD_RENDER_EARLY"); e != nullptr && e[0] == '0' && e[1] == '\0') return;
+    Early& e = early();
+    std::lock_guard<std::mutex> lock(e.mutex);
+    if (e.impl != nullptr) return;
+    e.options = options;
+    e.impl = std::make_unique<Impl>();
+    Impl* impl = e.impl.get();
+    impl->options = options;
+    const render::RendererOptions renderer_options = renderer_options_of(impl->options);
+    e.thread = std::thread([&e, impl, renderer_options] { e.ok = impl->renderer.create(renderer_options, &e.error); });
+}
+
+bool LiftedRender::start(const LiftedRenderOptions& options, std::string* error) {
+    // pf-load: the creation start_early() began, taken over when it makes the same renderer.
+    bool taken = false, early_ok = false;
+    std::string early_error;
+    {
+        Early& e = early();
+        std::lock_guard<std::mutex> lock(e.mutex);
+        if (e.thread.joinable()) e.thread.join();
+        if (e.impl != nullptr) {
+            if (same_renderer(e.options, options)) {
+                impl_ = std::move(e.impl);
+                taken = true;
+                early_ok = e.ok;
+                early_error = std::move(e.error);
+            } else {
+                e.impl.reset();  // another renderer was asked: created below, as without the early start
+            }
+        }
+    }
+    impl_->options = options;
+    gekko::phase_lock::display_paced().store(options.vsync, std::memory_order_relaxed);
+    const render::RendererOptions renderer_options = renderer_options_of(impl_->options);
+    const LiftedRenderOptions& chosen = impl_->options;
+    if (taken) {
+        if (!early_ok) {
+            if (error != nullptr) *error = early_error;
+            return false;
+        }
+    } else if (!impl_->renderer.create(renderer_options, error)) {
         return false;
+    }
     // G10's proof hook: SHADOW_R2_CAPTURE_AT_RENDER_SIZE=1 renders captures at the render size and scales them into
     // their own size with the presented path's scale pass (the scaled picture read back; HW_REPORT N.2).
     if (const char* scaled = std::getenv("SHADOW_R2_CAPTURE_AT_RENDER_SIZE"); scaled != nullptr && scaled[0] == '1')
@@ -525,6 +598,8 @@ void LiftedRender::install_owners(Cpu& cpu) {
         [](Cpu& c, u32 pipeline, u32 data, u32 option) { return scaffold::rw_pipeline_execute_im3d_render(c, pipeline, data, option); });
     install_native_rw_world_owners(cpu);
     rw_node_stops::install_lifted(cpu);  // entries nothing enters (gekko/native_rw_node_stops.h)
+    rw_texbind::install_lifted(cpu);     // the texture bind, exact (gekko/native_rw_texbind.h)
+    driver_callbacks::install_lifted(cpu);  // the raster-render wrappers (gekko/native_driver_callbacks.h)
     rw_raster::install_lifted(cpu, [](Cpu& c, u32 texture, u32 bias_clamp, u32 edge_lod, u32 max_aniso, double lod_bias) {
         return scaffold::rw_native_texture_loaded(c, texture, bias_clamp, edge_lod, max_aniso, lod_bias);
     });   // GcnNativeTextureRead (extract/native-owners-r2.txt)
@@ -705,6 +780,7 @@ void LiftedRender::start_headless() {
     if (!impl_->started)
         return;
     impl_->headless = true;
+    impl_->driver->set_recycle_dropped(true);
     impl_->driver->set_frame_observer([impl = impl_.get()](const render::FramePacket& packet) {
         ++impl->headless_taken;
         impl->maybe_capture(packet);
@@ -884,7 +960,6 @@ bool LiftedRender::present_newest(std::chrono::milliseconds wait, std::string* e
     // The effect layer switches (render/effect_layers.h): what the player asked to see, for the picture and its captures.
     render::apply_effect_layers(packet, render::effect_layer_switches().state());
     impl_->capture_filtered(packet);
-    impl_->options_overlay.append(packet, impl_->renderer);
     impl_->effect_overlay.append(packet, impl_->renderer, impl_->width, impl_->height);
     const auto render_begin = timed ? Clock::now() : Clock::time_point{};
     const std::int64_t pushed_ns = packet.pushed_ns, anchor_shift_ns = packet.anchor_shift_ns;
@@ -1150,7 +1225,8 @@ std::string LiftedRender::report_text() const {
         << s.meshes_replaced_in_frame << "; draws with several morph targets " << s.morph_target_draws
         << "; skins posed from hierarchy matrices " << s.skins_from_matrices << "\n";
     out << "[lifted-render] textures built " << s.textures_built << " (" << s.textures_overridden
-        << " drawn from texture overrides) failed " << s.texture_failures << " released "
+        << " drawn from texture overrides, " << s.textures_from_packs << " from texture packs) failed "
+        << s.texture_failures << " released "
         << s.textures_released << "; meshes released " << s.meshes_released << "; atomics " << s.atomics
         << " im2d " << s.im2d_primitives << " im3d " << s.im3d_primitives << " copies " << s.copies << "\n";
     // The resource worker (render/resource_worker.h): what the game thread no longer does itself.

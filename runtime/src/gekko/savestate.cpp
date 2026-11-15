@@ -343,6 +343,13 @@ bool save_state(System& system, const std::filesystem::path& path, std::string* 
         fail(error, "savestate refused: a native event is running its callbacks inside a wait. Save between events.");
         return false;
     }
+    // The same event after a stop cut one of its callbacks short: sync_event_active() is false again, but the callback's
+    // half-run state is what would be saved (RC-kernel-2).
+    if (system.interrupts().event_abandoned()) {
+        GEKKO_PROFILE_MESSAGE_LITERAL("mem/savestate refused: abandoned native event");
+        fail(error, "savestate refused: a stop cut a native event's callback short inside a wait; the machine cannot be continued from here.");
+        return false;
+    }
 
     // The card's working image is the host file: commit what the persistence
     // debounce still holds, so the file matches the machine saved below.

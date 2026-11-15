@@ -102,6 +102,9 @@
 0x80464AAC RwGC all-in-one pipeline node body (stop owner)
 0x80464FF4 RwGC world-sector pipeline node body (stop owner)
 0x804A0B68 RwGC SubmitNoLight pipeline node body (stop owner)
+#
+# rw_texbind::install_lifted (docs/agents/axfx-effects.md, Step L): the RenderWare texture bind, an exact owner in the lifted tree only.
+0x8049AC88 RwGC texture bind (GcnTextureBind)
 
 # docs/agents/native-boot.md Step 7 (gx-rw-plan cluster rwR1): the device's render-state entries, exact owners
 # (runtime/src/gekko/native_rw_device_state.cpp, rw_device_state::install).
@@ -154,8 +157,11 @@
 
 # docs/agents/vi.md Step 17: VIWaitForRetrace and its two resume rows (the rows after the two interrupt gates), served in the same
 # single-thread configuration as OSSleepThread (runtime/src/gekko/native_vi_wait.cpp).
+# 0x8037ECFC (docs/agents/recomp-fix.md RC-kernel-1): the row after OSSleepThread, entered when a run that a host stop ended
+# inside the sleep (a savestate boundary) continues: the sleep hands back at its own entry with LR = 0x8037ECFC.
 0x8037ECD4 VIWaitForRetrace
 0x8037ECEC VIWaitForRetrace after OSDisableInterrupts
+0x8037ECFC VIWaitForRetrace after OSSleepThread
 0x8037ED10 VIWaitForRetrace after OSRestoreInterrupts
 
 # docs/agents/cri-threads.md "Thread lifecycle": the rest of the thread API in the single-thread configuration. Creating, ending,
@@ -204,6 +210,7 @@
 # point 0x803796FC is an owner entry inside this function, which kept the whole body alive. Faults if entered; its only caller is the
 # wrapper 0x803796AC (called from __start's owner only).
 0x803796CC __init_cpp
+0x803796FC entry: native boot: a constructor returned to the table walk (the native __init_cpp, docs/agents/cri-threads.md)
 # docs/agents/native-boot.md Step 12: the RenderWare math owners that have no decline path in the lifted build (native_rw_refusal.h: the FPU
 # off, GQR0 not float or an operation outside 0..2 is a loud stop in the single-thread configuration, the lifted build's only one), each
 # contract-tested against the original DOL (rw_matrix / rw_vector / rw_view_cache_contract_tests). RwV3dNormalize (0x8048327C) stays out:
@@ -224,3 +231,9 @@
 0x80483440 RwV2dLength
 0x804759B4 driver camera view offset
 0x80475A1C driver camera view-matrix cache
+
+# driver_callbacks::install_lifted (docs/agents/sdk-rwdrv.md, group C): the three wrappers of the raster render core 0x80499924
+# (device standard-function table words 0x8051D494 / 0x8051D49C / 0x8051D4A4).
+0x80499A9C RwRasterRender wrapper (scaled 0, fast 1)
+0x80499AC4 RwRasterRender wrapper (scaled 0, fast 0)
+0x80499AEC RwRasterRender wrapper (scaled 1, fast 1)

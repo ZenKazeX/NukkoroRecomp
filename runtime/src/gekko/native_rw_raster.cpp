@@ -66,6 +66,11 @@ const Address kAddresses[] = {
     {kRasterUnlock, "GcnRasterUnlock"},
     {kRasterLock, "GcnRasterLock"},
     {kClearRect, "GcnRasterClearRect"},
+    {0x8049A304u, "GcnRasterClearRect arm: 4-bit depth"},
+    {0x8049A364u, "GcnRasterClearRect arm: 8-bit depth"},
+    {0x8049A3B4u, "GcnRasterClearRect arm: 16-bit depth"},
+    {0x8049A41Cu, "GcnRasterClearRect arm: 32-bit depth"},
+    {0x8049A480u, "GcnRasterClearRect arm: unsupported depth"},
     {kClearWrapper, "GcnRasterClear"},
     {kRenderWrapper, "GcnRasterClearEntry"},
     {kRasterCreate, "GcnRasterCreate"},
@@ -737,6 +742,87 @@ void raster_clear_rect(Cpu& c, const Rect& rect, u32 pixel, u32 link, u32 rect_a
     finish();
 }
 
+// ---- the five interior entries of GcnRasterClearRect (0x8049A124) ------------------------------------------------------
+//
+// The original is one function: a prologue that saves r28..r31 and LR in a 0x30-byte frame (r28 = the device, r29 = the
+// rectangle, r30 = the pixel, r31 = "this call locked the raster"), the lock, and then a switch on the raster's depth
+// (*(raster + 0x14) - 4, table at 0x8056FC1C) whose arms are the entries below, each ending in the common tail: unlock
+// the raster if r31, r3 = 1, restore r28..r31 and LR, release the frame, return. The switch is reached only through the
+// body, which this build never runs (the owner above serves the whole call); the generator keeps the arms as rows because
+// the jump table's words are data and its conservative address pairing sees one of the game's own functions
+// (Random::NextFloat / NextFloatInclusive: `lis r4, 0x8057` ... `addi r0, r4, -0x388` = 0x8056FC78, a table slot) as a
+// reader of the table. Owning the arms retires the rows; each is served here as the CONTINUATION it is: entered with the
+// original's registers (r29 rectangle, r30 pixel, r31 unlock flag, r1 = the function's frame), it fills as the arm does,
+// finishes as the common tail does and returns for the function: r3 = 1, r28..r31 / LR / r1 from the frame.
+//  - depth 4 (0x8049A304): the pixel's low nibble in both halves of a byte, memset of (width >> 1) bytes at x >> 1
+//  - depth 8 (0x8049A364): the pixel's low byte, memset of width bytes at x
+//  - depth 16 (0x8049A3B4): halfwords of the pixel's low 16 bits, width of them at x * 2
+//  - depth 32 (0x8049A41C): words, width of them at x * 4
+//  - any other depth (0x8049A480): RwErrorSet(0x8000000C), nothing filled, the tail still answers 1
+// Every row re-reads the raster context, the stride, the pixel pointer and the rectangle from guest memory, as the
+// original does (the loop bounds too), so a fill that overwrote its own rectangle behaves the same. Rows run from y,
+// the count is the rectangle's height as a signed word (none for <= 0); a negative byte count would make the original's
+// memset write ~4 GiB: refused (stop), like the other owners' endless-loop cases.
+constexpr u32 kClearDepth4 = 0x8049A304u, kClearDepth8 = 0x8049A364u, kClearDepth16 = 0x8049A3B4u, kClearDepth32 = 0x8049A41Cu,
+              kClearDepthOther = 0x8049A480u;
+constexpr u32 kClearTailLink = 0x8049A4B4u;    // liveness-roots: value-only
+constexpr u32 kClearErrorLink = 0x8049A4A4u;   // liveness-roots: value-only
+
+void clear_arm(Cpu& c, u32 arm) {
+    const u32 rect = c.gpr[29];
+    const u32 context_at = c.gpr[13] + kSdaContext;
+    u32 pixel = c.gpr[30];
+    const auto as_signed = [](u32 value) { return static_cast<std::int32_t>(value); };
+    const auto row_address = [&](std::int32_t row, u32 x_offset) {   // pixels + stride * (y + row) + x_offset
+        const u32 raster = c.mem_read32(context_at);
+        return c.mem_read32(raster + kPixels) + c.mem_read32(raster + kStride) * (c.mem_read32(rect + 4u) + static_cast<u32>(row)) + x_offset;
+    };
+    bool ok = true;
+    if (arm == kClearDepth4 || arm == kClearDepth8) {
+        const bool nibbles = arm == kClearDepth4;
+        pixel = nibbles ? (((pixel & 0x0Fu) | (pixel << 4)) & 0xFFu) : (pixel & 0xFFu);
+        for (std::int32_t row = 0; row < as_signed(c.mem_read32(rect + 0xCu)); ++row) {
+            const std::int32_t x = as_signed(c.mem_read32(rect));
+            const std::int32_t w = as_signed(c.mem_read32(rect + 8u));
+            const std::int32_t bytes = nibbles ? (w >> 1) : w;
+            if (bytes < 0) {
+                stop(c, "GcnRasterClearRect fill with a negative byte count (the original's memset writes ~4 GiB)");
+                return;
+            }
+            fill_bytes(c, row_address(row, static_cast<u32>(nibbles ? (x >> 1) : x)), static_cast<u8>(pixel), static_cast<u32>(bytes));
+        }
+    } else if (arm == kClearDepth16 || arm == kClearDepth32) {
+        const bool halves = arm == kClearDepth16;
+        for (std::int32_t row = 0; row < as_signed(c.mem_read32(rect + 0xCu)); ++row) {
+            u32 at = row_address(row, c.mem_read32(rect) << (halves ? 1 : 2));
+            for (std::int32_t column = 0; column < as_signed(c.mem_read32(rect + 8u)); ++column) {
+                if (halves) {
+                    c.mem_write16(at, static_cast<u16>(pixel));
+                    at += 2u;
+                } else {
+                    c.mem_write32(at, pixel);
+                    at += 4u;
+                }
+            }
+        }
+    } else {
+        ok = report_error(c, kErrorDepth, kClearErrorLink);
+    }
+    if (!ok) return;
+    if (c.gpr[31] != 0u) {   // this call locked the raster: unlock it (the answer is not looked at)
+        u32 ignored = 0;
+        if (!guest_call(c, kRwRasterUnlock, kClearTailLink, {c.mem_read32(context_at)}, ignored)) return;
+    }
+    const u32 frame = c.gpr[1];   // the function's epilogue
+    c.gpr[3] = 1u;
+    c.gpr[28] = c.mem_read32(frame + 0x20u);
+    c.gpr[29] = c.mem_read32(frame + 0x24u);
+    c.gpr[30] = c.mem_read32(frame + 0x28u);
+    c.gpr[31] = c.mem_read32(frame + 0x2Cu);
+    c.lr = c.mem_read32(frame + 0x34u);
+    c.gpr[1] = frame + 0x30u;
+}
+
 // ---- GcnNativeTextureRead 0x8049A8DC: a texture from a stream -------------------------------------------------------
 //
 // RwStreamFindChunk (struct chunk, version 0x35000 .. 0x37002), a 0x58-byte platform block (id 6; filter word at +4, LOD
@@ -1067,6 +1153,8 @@ void install(Cpu& cpu, NativeGxSync& sync) {
                               static_cast<std::int32_t>(c.mem_read32(rect + 8u)), static_cast<std::int32_t>(c.mem_read32(rect + 12u))},
                           c.gpr[5], kClearRect + 4u, rect);
     });
+    for (const u32 arm : {kClearDepth4, kClearDepth8, kClearDepth16, kClearDepth32, kClearDepthOther})   // the body's switch arms
+        install_hle(arm, "GcnRasterClearRect arm", [arm](Cpu& c) { clear_arm(c, arm); });
     install_hle(kClearWrapper, "GcnRasterClear", [](Cpu& c) {   // the whole current raster
         const u32 raster = c.mem_read32(c.gpr[13] + kSdaContext);
         raster_clear_rect(c, {0, 0, static_cast<std::int32_t>(c.mem_read32(raster + kWidth)),

@@ -15,16 +15,19 @@ bool guest_call(Cpu& c, u32 target, u32 link, std::initializer_list<u32> args, u
         c.request_stop(StopReason::ExecutionFault, "guest_call: more than eight register arguments");
         return false;
     }
-    u32 saved_gpr[32];
-    std::memcpy(saved_gpr, c.gpr, sizeof(saved_gpr));
+    // Only what the return restores is saved: r1, r2, r13 and the non-volatile r14-r31 (the volatile r0, r3-r12 are the callee's
+    // to clobber and the caller's to have spilled; r3 is the result).
+    const u32 saved_r1 = c.gpr[1], saved_r2 = c.gpr[2], saved_r13 = c.gpr[13];
+    u32 saved_nonvolatile[18];
+    std::memcpy(saved_nonvolatile, &c.gpr[14], sizeof(saved_nonvolatile));
     const u32 saved_lr = c.lr, saved_ctr = c.ctr, saved_cr = c.cr, saved_pc = c.pc, saved_npc = c.npc;
 
     u32 arg_register = 3;
     for (u32 a : args) c.gpr[arg_register++] = a;
     // A frame for the callee to save its link register into (r1 + 4 of the frame it was called from); 16 bytes keep the
     // stack aligned and the back chain a valid word.
-    const u32 frame = (saved_gpr[1] - 0x10u) & ~0xFu;
-    c.mem_write32(frame, saved_gpr[1]);
+    const u32 frame = (saved_r1 - 0x10u) & ~0xFu;
+    c.mem_write32(frame, saved_r1);
     c.gpr[1] = frame;
     c.gpr[12] = target;
     c.ctr = target;
@@ -81,16 +84,45 @@ bool guest_call(Cpu& c, u32 target, u32 link, std::initializer_list<u32> args, u
         return false;
     }
     result = c.gpr[3];
-    for (unsigned r = 14; r < 32; ++r) c.gpr[r] = saved_gpr[r];
-    c.gpr[1] = saved_gpr[1];
-    c.gpr[2] = saved_gpr[2];
-    c.gpr[13] = saved_gpr[13];
+    std::memcpy(&c.gpr[14], saved_nonvolatile, sizeof(saved_nonvolatile));
+    c.gpr[1] = saved_r1;
+    c.gpr[2] = saved_r2;
+    c.gpr[13] = saved_r13;
     c.lr = saved_lr;
     c.ctr = saved_ctr;
     c.cr = saved_cr;
     c.pc = saved_pc;
     c.npc = saved_npc;
     return true;
+}
+
+void guest_continue(Cpu& c, u32 entry, u32 return_pc, u32 return_sp) {
+#if defined(SHADOW_CPU_REFERENCE_BUILD)
+    c.pc = entry;
+    c.npc = entry + 4u;
+    u64 steps = 0;
+    while (!(c.pc == return_pc && c.gpr[1] == return_sp) && !c.exiting() && !c.stopped()) {
+        if (steps++ >= kGuestCallStepBound) {
+            c.request_stop(StopReason::ExecutionFault, "guest_continue: the function did not return within the step bound");
+            return;
+        }
+        c.run_steps(1);
+    }
+    if ((c.exiting() || c.stopped()) && !c.stopped())
+        c.request_stop(StopReason::ExecutionFault, "guest_continue: the continued function left to the dispatcher in the reference build");
+#else
+    (void)return_pc;
+    (void)return_sp;
+    const RecompiledCode* table = c.recompiled();
+    const RecompiledCode::Range* range = table != nullptr ? table->find_range(entry) : nullptr;
+    if (range == nullptr) {
+        c.request_stop(StopReason::ExecutionFault, "guest_continue: no translated code for the entry");
+        return;
+    }
+    c.pc = entry;
+    c.npc = entry + 4u;
+    range->at(c, entry);
+#endif
 }
 
 }  // namespace gekko

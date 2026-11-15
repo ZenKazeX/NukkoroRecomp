@@ -45,6 +45,7 @@ std::atomic<Cpu*> g_fm_machines[kFmMachines];
 std::atomic<int> g_fm_registered{0};
 PVOID g_fm_handler = nullptr;
 std::atomic<u64> g_fm_faults{0};
+std::atomic<u64> g_fm_foreign{0};  // faults from a thread that does not run the machine (RC-memory-2): left unhandled
 // Handler entries by class (integrator 15:1x): the null window (a mode: MSR[DR]
 // off / user mode / journal / poll watch / access trace / latched fault), the
 // GameCube device-register window 0xCC000000-0xCDFFFFFF, an access split across
@@ -267,6 +268,22 @@ void Cpu::fm_unregister(Cpu* cpu) noexcept {
 #endif
 }
 
+u32 Cpu::fm_bind_thread() noexcept {
+#if defined(_WIN32)
+    return fm_thread_.exchange(GetCurrentThreadId(), std::memory_order_acq_rel);
+#else
+    return 0u;
+#endif
+}
+
+u64 Cpu::fm_foreign_fault_count() noexcept {
+#if defined(_WIN32)
+    return g_fm_foreign.load();
+#else
+    return 0;
+#endif
+}
+
 u64 Cpu::fm_fault_count() noexcept {
 #if defined(_WIN32)
     return g_fm_faults.load();
@@ -290,7 +307,7 @@ long Cpu::fm_fault(void* exception_pointers) noexcept {
         if (cpu == nullptr) continue;
         for (u8* w : {cpu->fm_window_, cpu->fm_null_window_}) {
             const u64 base = reinterpret_cast<u64>(w);
-            if (fault >= base && fault - base < GuestMemory::kFmWindowBytes) {
+            if (fault >= base && fault - base < GuestMemory::kFmWindowBytes + GuestMemory::kFmGuardBytes) {
                 owner = cpu;
                 window = w;
             }
@@ -298,11 +315,23 @@ long Cpu::fm_fault(void* exception_pointers) noexcept {
         if (owner != nullptr) break;
     }
     if (owner == nullptr) return EXCEPTION_CONTINUE_SEARCH;  // not a guest window: a host fault
+    // RC-memory-2: only the thread running this machine may have its fault resolved (cpu.h, fm_bind_thread).
+    if (const u32 bound = owner->fm_thread_.load(std::memory_order_acquire); bound != 0u && bound != GetCurrentThreadId()) {
+        g_fm_foreign.fetch_add(1, std::memory_order_relaxed);
+        std::fprintf(stderr,
+                     "[fm] access violation at 0x%016llX in a guest window from thread %lu while thread %u runs the "
+                     "machine: not resolved (a host thread must not touch guest memory through the window)\n",
+                     static_cast<unsigned long long>(fault), GetCurrentThreadId(), bound);
+        std::fflush(stderr);
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
     CONTEXT& context = *info->ContextRecord;
     const FmAccess a = fm_decode(reinterpret_cast<const u8*>(context.Rip), context);
     const u64 base = reinterpret_cast<u64>(window);
     if (!a.ok || a.address < base || a.address - base >= GuestMemory::kFmWindowBytes ||
-        a.address - base + a.width > GuestMemory::kFmWindowBytes) {
+        a.address - base + a.width > GuestMemory::kFmWindowBytes + GuestMemory::kFmGuardBytes) {
+        // (RC-memory-1: an operand that starts in the window and ends in the guard is a wrapping guest access: served
+        // below by the *_slow path, which stops the machine as unmapped; only an operand outside both is refused.)
         std::fprintf(stderr,
                      "[fm] access violation at 0x%016llX in a guest window from an instruction the flat-map "
                      "handler does not decode (rip 0x%016llX): refusing to guess\n",

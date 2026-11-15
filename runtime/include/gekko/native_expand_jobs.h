@@ -170,6 +170,7 @@ public:
 
 private:
     bool publish_queue(Cpu& c);
+    void install_load_stamps();
 
     Cpu& cpu_;
     bool enabled_ = false;

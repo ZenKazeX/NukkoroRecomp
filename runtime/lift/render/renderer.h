@@ -448,6 +448,9 @@ private:
     SlotTable<MeshSlot> meshes_;
     std::vector<std::uint32_t> free_meshes_;
     std::map<PipelineKey, Com<ID3D12PipelineState>> pipelines_;
+    // The last mesh_pipeline lookup (draws repeat their pipeline); reset with pipelines_. Render thread only.
+    PipelineKey last_pipeline_key_{};
+    ID3D12PipelineState* last_pipeline_ = nullptr;
     std::map<std::tuple<Screen, DXGI_FORMAT, std::uint32_t>, Com<ID3D12PipelineState>> screen_pipelines_;
     std::map<Compute, Com<ID3D12PipelineState>> compute_pipelines_;
     std::vector<History> histories_;  // by view index

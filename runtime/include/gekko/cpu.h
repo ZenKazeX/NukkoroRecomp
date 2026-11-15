@@ -13,6 +13,7 @@
 //   * an instruction this core does not implement stops the machine with a
 //     diagnostic instead of silently behaving like a nop.
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #if defined(_MSC_VER)
@@ -27,6 +28,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -225,6 +227,15 @@ enum class FallbackReason : u8 {
                         // point (loop edge, mtmsr, after a call returned)
     VerifyCut,          // --verify-recomp only: a nested call handed back so the
                         // differential oracle can verify it as its own segment
+    // RC-gen-7: the three hand-backs that used to be reported under a neighbour's name. Appended, so the values of
+    // the reasons above (recorded in reports and tapes of fallback sites) do not move.
+    FpUnavailable,      // an FP instruction with MSR[FP] = 0: the 0x800 exception was raised
+                        // (recomp::fp_unavailable; it was counted as Trap)
+    Program,            // an illegal-instruction program exception, 0x700: a Gekko extension
+                        // HID2 disables (recomp::illegal_instruction; it was counted as Trap)
+    IndirectTarget,     // a computed call or jump (bctrl, bctr, blr to a non-return target) whose
+                        // target has no native entry (recomp::call_indirect / jump_indirect; it was
+                        // NotRecompiled with no site: the direct-branch case keeps that name)
     Count
 };
 
@@ -334,14 +345,34 @@ public:
     Cpu& operator=(const Cpu&) = delete;
 
     // ---- architected state -------------------------------------------------
+    // MEMBER ORDER IS A CODE-SIZE DECISION (docs/agents/cs-layout.md). The generated bodies address the machine as
+    // [reg + member offset]; x64 encodes a displacement of 1..127 in one byte, 0 in none and anything else in four.
+    // The scalars the bodies touch on almost every guest instruction or call boundary come first, then the gpr array
+    // (all 32 gprs used to sit in the first 128 bytes, the scalars at 640..5200 behind the 512-byte fpr array).
+    // gpr[0..16] stay in one-byte reach; the generated code never reads a member by offset and nothing but the F1C
+    // canary scan (fm_window_ < fm_null_window_ < fm_base_) depends on this order.
+private:
+    u8* fm_window_ = nullptr;       // FM: GuestMemory's windows ...
+    u8* fm_null_window_ = nullptr;
+    u8* fm_base_ = nullptr;         // ... and the one the accessors use now (see set_msr, mem_read32)
+public:
+    u32 lr = 0;
+    u32 pc = 0;
+    u32 cr = 0;
+private:
+    u32 msr_ = 0;
+public:
+    u32 xer = 0;
+    u32 npc = 0;
+    u32 fpscr = 0;
+    u32 ctr = 0;
+private:
+    u8 exit_pending_ = 0;
+    u8 interrupt_lines_ = 0;
+    std::atomic<bool> stop_requested_{false};
+public:
     u32 gpr[32]{};
     FpReg fpr[32]{};
-    u32 pc = 0;
-    u32 npc = 0;
-    u32 lr = 0;
-    u32 ctr = 0;
-    u32 xer = 0;
-    u32 cr = 0;
     // MSR is private (C2, 2026-09-28): every write must go through set_msr(),
     // which re-selects the host page table for the data-translation mode.
     u32 msr() const noexcept { return msr_; }
@@ -353,7 +384,6 @@ public:
         // before is gone, FM step 2).
         fm_base_ = translated && serving_pages_ ? fm_window_ : fm_null_window_;
     }
-    u32 fpscr = 0;
     std::array<u32, 1024> spr{};
     std::array<u32, 16> sr{};  // segment registers
 
@@ -425,15 +455,48 @@ public:
     // hardware does not have, and cpu.cpp already notes that discarding the
     // snapshot "is exactly what the hardware does".
     //
-    // Default OFF as of 2026-09-05. Measured over the broadest route available
-    // (cold boot -> menus -> Lava Shelter -> 60 s gameplay, 400e9 retired,
-    // 1,922,305 exceptions): 1,141,282 restores performed, of which
-    // **0** changed a single register. It fires constantly and does nothing.
-    // Enable with --fpr-shadow to restore the old behaviour; the counters
-    // fpr_restore_changed / _changed_registers say whether it would have
-    // mattered on any route you try.
+    // A bare Cpu starts with it OFF (2026-09-05, measured with the original guest
+    // threads and the OS's lazy FPU switch: cold boot -> menus -> Lava Shelter ->
+    // 60 s gameplay, 1,141,282 restores, 0 changed a register).
+    //
+    // The single-thread configuration - the default since the native CRI servers
+    // and loaders (os_threads::single_thread_configuration) - turns it ON:
+    // os_set_current_context forces MSR[FP] there, so the lazy switch never runs
+    // and this snapshot is what keeps a delivery's callbacks out of the
+    // interrupted code's registers. NativeInterrupts::install sets it for every
+    // System (RC-kernel-5); --no-fpr-shadow is refused in that configuration and
+    // --fpr-shadow matters only with the original guest threads. The counters
+    // fpr_restore_changed / _changed_registers say whether it mattered on a route.
     void set_interrupt_fpr_shadow(bool enabled) noexcept { interrupt_fpr_shadow_ = enabled; }
     bool interrupt_fpr_shadow() const noexcept { return interrupt_fpr_shadow_; }
+
+    // The FPSCR policy's premise, enforced (RC-fp-3). Arithmetic here rounds to nearest and raises no FP exception:
+    // FPSCR[RN] and the enable bits VE/OE/UE/ZE/XE are stored but never acted on (ppc_ops.h, "still unmodelled"). That
+    // is exact only while the guest leaves them clear, which this game does. With the guard on, an instruction that
+    // writes FPSCR (mtfsf, mtfsfi, mtfsb1 - both engines call fpscr_written after the write) and leaves RN != 0 or an
+    // enable set stops the machine naming the value, instead of running on with silently different arithmetic, as
+    // write_hid2 refuses a value that would clear PSE / LSQE. Off for a bare Cpu (the instruction-level tests and the
+    // differential drivers write every FPSCR value on purpose); System::start turns it on for the game.
+    static constexpr u32 kFpscrUnmodelled = kFpscrVE | kFpscrOE | kFpscrUE | kFpscrZE | kFpscrXE | 0x00000003u;
+
+    // The host's floating-point environment (RC-fp-2). Every arithmetic fast path of both engines (ppc_ops.h: the
+    // double-to-single conversion, nearbyint, the fused multiply-add, sqrt) and every native owner's float code assume
+    // the SSE control word of a fresh thread: round to nearest, exceptions masked, flush-to-zero and
+    // denormals-are-zero off (0x1F80). The word is per thread and whatever runs on the game thread inherits and can
+    // change it - a driver callback, a library that turns FTZ / DAZ on for speed - and a changed word silently changes
+    // guest arithmetic (denormals, ties, fctiw) with no failing test. note_host_fp_control puts it back when it
+    // differs, counts that, and says so once per value found; run() does it on entry and System after every host
+    // service. On a host without SSE it does nothing.
+    static constexpr u32 kHostFpControl = 0x1F80u;
+    // The control bits found (kHostFpControl when nothing was wrong); the sticky status flags are left alone.
+    static u32 restore_host_fp_control() noexcept;
+    void note_host_fp_control(const char* where) noexcept;
+    u64 host_fp_control_restores() const noexcept { return host_fp_restores_; }
+    void set_fpscr_policy_guard(bool enabled) noexcept { fpscr_policy_guard_ = enabled; }
+    bool fpscr_policy_guard() const noexcept { return fpscr_policy_guard_; }
+    void fpscr_written() {
+        if ((fpscr & kFpscrUnmodelled) != 0u && fpscr_policy_guard_) fpscr_policy_stop();
+    }
 
     // Stops the machine at the next translated back edge or call boundary
     // (needs_dispatch() and stopped(), respectively). Must be called on the
@@ -446,7 +509,10 @@ public:
     // Discards the stop REPORT. A latched data-access fault (below) is machine
     // state, not a report: run() re-raises its stop until reset() or
     // load_state() replaces the machine.
-    void clear_stop() noexcept { stop_ = CpuStop{}; }
+    void clear_stop() noexcept {
+        stop_ = CpuStop{};
+        exit_pending_ = static_cast<u8>(exit_pending_ & ~kExitStop);  // kExitStop <=> stop_.reason != Running
+    }
     // A stop requested from a host thread other than the one executing guest
     // code (System's wait-point watchdog). The only cross-thread entry into
     // the core: it raises the flag translated back edges poll, and the
@@ -614,8 +680,12 @@ public:
     // is true when an interrupt is deliverable or a stop was requested, and the
     // loop then hands control back with the guest state consistent.
     bool needs_dispatch() const noexcept {
+        // interrupt_lines_ and msr_ are read through volatile: a guest loop without calls polls this at its back edge
+        // while a device access (the fault handler) may raise the line, so the read must never be hoisted or reused
+        // (it matters once the generated bodies take the Cpu as __restrict).
         return stop_requested_.load(std::memory_order_relaxed) ||
-               (interrupt_lines_ != 0u && (msr_ & kMsrEE) != 0u);
+               (*static_cast<const volatile u8*>(&interrupt_lines_) != 0u &&
+                (*static_cast<const volatile u32*>(&msr_) & kMsrEE) != 0u);
     }
 
     // The exception vector does not save FPRs. Handlers that use float as
@@ -772,6 +842,16 @@ public:
     // FM: accesses the window did not serve and the handler resolved (all
     // machines of the process; exit report and the fault-injection tests).
     static u64 fm_fault_count() noexcept;
+    // RC-memory-2: while a run is in progress the machine belongs to the thread running it. The fault handler is
+    // process-wide, and resolving a window fault runs mem_*_slow - it can latch the data fault, write DAR, request a
+    // stop, rebuild the HLE slots - so a fault raised by ANOTHER thread (a host thread dereferencing a window pointer)
+    // would mutate this state under the running guest. fm_fault leaves such a fault unhandled (the process's own
+    // crash handling reports it, after one line naming the address and both threads) and touches nothing.
+    // run() binds on entry and restores the previous binding on exit (0 = unbound: between runs any thread may use the
+    // accessors, as tests and the launcher's set-up do). The guest thread's own faults are resolved exactly as before.
+    u32 fm_bind_thread() noexcept;               // binds the calling thread; returns the previous binding
+    void fm_restore_thread(u32 previous) noexcept { fm_thread_.store(previous, std::memory_order_release); }
+    static u64 fm_foreign_fault_count() noexcept;  // faults left unhandled by this rule (all machines)
     // FM: this machine's flat window (tests address it directly).
     u8* fm_window() const noexcept { return fm_window_; }
 
@@ -791,12 +871,47 @@ public:
     // Host callbacks bound to guest addresses. A handler returning true means it
     // fully emulated the call and the interpreter must return to LR.
     using HleHandler = std::function<bool(Cpu&)>;
-    void install_hle(u32 address, HleHandler handler, std::string name);
+    // The invoker the dispatch paths call: a function pointer and the object it runs, not a std::function (whose call
+    // is impl pointer -> vtable -> _Do_call -> the callable: three dependent loads before the handler's own first).
+    // Two independent loads from the entry now, and for a callable with no captures the per-type invoker is the
+    // handler body itself and never reads ctx. owner keeps the callable alive: copies of a HleCallable (a chaining
+    // hook's `previous`, converted to a HleHandler) share it, so a retired entry's handler outlives its entry.
+    struct HleCallable {
+        bool (*invoke)(void* ctx, Cpu&) = nullptr;
+        void* ctx = nullptr;
+        std::shared_ptr<void> owner;
+        bool operator()(Cpu& cpu) const { return invoke(ctx, cpu); }
+        explicit operator bool() const noexcept { return invoke != nullptr; }
+    };
+    template <class F>
+    static HleCallable make_hle_callable(F&& callable) {
+        using D = std::decay_t<F>;
+        if constexpr (std::is_same_v<D, HleCallable>) {
+            return callable;
+        } else {
+            HleCallable out;
+            if constexpr (std::is_empty_v<D> && std::is_default_constructible_v<D>) {
+                out.invoke = [](void*, Cpu& cpu) -> bool { return static_cast<bool>(D{}(cpu)); };
+            } else {
+                auto object = std::make_shared<D>(std::forward<F>(callable));
+                out.ctx = object.get();
+                out.invoke = [](void* ctx, Cpu& cpu) -> bool { return static_cast<bool>((*static_cast<D*>(ctx))(cpu)); };
+                out.owner = std::move(object);
+            }
+            return out;
+        }
+    }
+    template <class F>
+    void install_hle(u32 address, F&& handler, std::string name) {
+        install_hle_callable(address, make_hle_callable(std::forward<F>(handler)), std::move(name));
+    }
+    void install_hle_callable(u32 address, HleCallable handler, std::string name);
     // Native code running the installed owner of `address` (one of this program's own native services, never a
     // guest body) with the registers as the caller set them. False when nothing owns the address.
     bool serve_owner(u32 address);
-    // 2026-09-05 audit: every installed hook with its hit count.
-    const auto& hle_entries() const noexcept { return hle_; }
+    // 2026-09-05 audit: every installed hook with its hit count, in address order. A view: the entries themselves
+    // live on the heap (see hle_), iteration and indexing give `const HleEntry&`.
+    auto hle_entries() const noexcept { return HleEntryView(hle_); }
     bool has_hle(u32 address) const;
     const std::string* hle_name(u32 address) const;
     // Generated entry thunks call this. A handler returning true has fully
@@ -815,8 +930,27 @@ public:
     // original body is not in the image, so the installed owner must serve the
     // call. A missing or declining owner stops the machine.
     void serve_native_owner(u32 address);
+    // cs2/cpu: the sorted addresses of guest functions the generator inlined into their callers
+    // (recomp::kInlinedLeaves). Installing a hook at one stops the machine: the inlined calls would skip it.
+    void set_inlined_leaves(const u32* sorted, std::size_t count) noexcept {
+        inlined_leaves_ = sorted;
+        inlined_leaf_count_ = count;
+    }
+    bool is_inlined_leaf(u32 address) const noexcept {
+        return inlined_leaf_count_ != 0u && std::binary_search(inlined_leaves_, inlined_leaves_ + inlined_leaf_count_, address);
+    }
+    // 2026-11-12 (opt-host2 round 3): the slot is a multiplicative hash of the address (kHleSlotMul, 8192 slots), not
+    // the low address bits. The game's hooked functions sit at the same offset in many 16 KiB blocks of the code, so
+    // the old (address >> 2) & 4095 shared a slot between 112 of 710 hooks, and 19 % of all hook calls of the
+    // benchmark (26.8 M of 138 M) took try_hle_slow + find_hle's shared scan. kHleSlotMul is the best constant of
+    // a search over 100,000 odd multipliers on the benchmark's hook set (12 shared slots, 48 calls in 138 M). Exactness never depends on it: a shared slot still takes the exact path. In the generated
+    // thunks the address is a literal, so the index is computed at compile time and costs nothing there.
+    static constexpr u32 kHleSlotBits = 13u;
+    static constexpr u32 kHleSlotCount = 1u << kHleSlotBits;
+    static constexpr u32 kHleSlotMul = 1214178991u;
+    static constexpr u32 hle_slot_of(u32 address) noexcept { return (address * kHleSlotMul) >> (32u - kHleSlotBits); }
     bool try_hle(u32 address) {
-        const u32 slot = hle_slots_[(address >> 2) & kHleSlotMask];
+        const u32 slot = hle_slots_[hle_slot_of(address)];
         if (slot != address && slot != kHleSlotAll) {
             return false;
         }
@@ -828,7 +962,7 @@ public:
     // the old one saved a register and adjusted the stack on every call only because try_hle_slow was a call in the
     // middle of it (2026-11-04 line profile: the thunk line was 0.40 ms/frame, 18 % of translated code).
     GEKKO_ALWAYS_INLINE bool hle_clear(u32 address) const noexcept {
-        const u32 slot = hle_slots_[(address >> 2) & kHleSlotMask];
+        const u32 slot = hle_slots_[hle_slot_of(address)];
         return slot != address && slot != kHleSlotAll;
     }
     using EntryBody = void (*)(Cpu&, u32);
@@ -995,7 +1129,10 @@ public:
     // (kExitInterrupt: pc is then the link address or wherever the callee
     // returned to, a precise R2 recognition point), when the callee published
     // a transfer (kExitTransfer, R12), or when the machine stopped.
-    bool exiting() const noexcept { return exit_pending_ != 0u || stopped(); }
+    // kExitStop mirrors "the machine stopped" (stop_.reason != Running) inside the exit word, so this is one byte test: every
+    // writer of stop_.reason (request_stop, clear_stop, reset) keeps the bit, and every write of exit_pending_ keeps it
+    // (native_entry_exit_state carries it into each re-arm).
+    bool exiting() const noexcept { return exit_pending_ != 0u; }
     // Native code entered from native code that did not come through the dispatcher (gekko::guest_call, a native owner calling
     // game functions) starts as a native entry does: the exit word re-armed from what is deliverable now. Without it a stale
     // kExitInterrupt - set while an earlier native frame ran with MSR[EE] set, since cleared at the source - makes the callee
@@ -1195,7 +1332,8 @@ private:
     // that is already deliverable (a handler the dispatcher ran after its
     // recognition check retired into an edge) is still requested.
     u8 native_entry_exit_state() const noexcept {
-        return interrupt_pending() ? kExitInterrupt : u8{0};
+        const u8 stop_bit = static_cast<u8>(exit_pending_ & kExitStop);  // a stop outlives every re-arm
+        return interrupt_pending() ? static_cast<u8>(stop_bit | kExitInterrupt) : stop_bit;
     }
     void record_fallback(u32 target, FallbackReason reason, u32 site);
     void open_interpreter_strand();
@@ -1330,20 +1468,18 @@ private:
 #endif
     static void fm_register(Cpu* cpu) noexcept;
     static void fm_unregister(Cpu* cpu) noexcept;
-    // FM: GuestMemory's two windows and the one the accessors use now.
-    u8* fm_window_ = nullptr;
-    u8* fm_null_window_ = nullptr;
-    u8* fm_base_ = nullptr;
+    std::atomic<u32> fm_thread_{0};  // the OS id of the thread inside run(), 0 = none (RC-memory-2)
+    // (fm_window_, fm_null_window_, fm_base_, msr_, exit_pending_, interrupt_lines_ and stop_requested_ are declared
+    // with the architected state at the top of the class: member order, see there.)
     // False while the journal, the poll watch, an access trace or a latched
     // data fault needs every access on the slow path (select_memory_window):
     // fm_base_ is then the null window, so every access reaches *_slow.
     bool serving_pages_ = true;
-    u32 msr_ = 0;
     CpuStop stop_;
     // kInterruptExternal | kInterruptDecrementer. One byte in the slot the
     // external-line bool had, so needs_dispatch/interrupt_pending compile to the
     // same single byte test they always were.
-    u8 interrupt_lines_ = 0;
+    // (interrupt_lines_: declared at the top of the class.)
     bool instruction_trace_ = false;
     RecompiledCode* recompiled_ = nullptr;
     IdleWorkHook idle_work_hook_;
@@ -1355,7 +1491,10 @@ private:
     // kExitTransfer: an LK=0 transfer was published (transfer_to); the frame
     // waiting for a return runs it (finish_transfers). R12.
     static constexpr u8 kExitTransfer = 0x04u;
-    u8 exit_pending_ = 0;
+    // kExitStop: stop_.reason != StopReason::Running (set by request_stop, cleared by clear_stop and reset). Unlike the
+    // three bits above it is machine state, not a native-frame request: nothing but those writers clears it.
+    static constexpr u8 kExitStop = 0x08u;
+    // (exit_pending_: declared at the top of the class.)
     u32 guest_call_depth_ = 0;
     std::optional<u32> pending_native_call_;
     // (The separate pending_decrementer_ bool that followed is folded into
@@ -1376,7 +1515,7 @@ private:
     // a run ends with it cleared. Atomic because request_stop_from_host raises
     // it from another thread; a relaxed load is the same one-byte load the
     // plain bool was, and the size and offset did not change.
-    std::atomic<bool> stop_requested_{false};
+    // (stop_requested_: declared at the top of the class.)
     bool record_fallbacks_ = false;
     std::array<u64, static_cast<std::size_t>(FallbackReason::Count)> fallback_totals_{};
     std::map<u64, FallbackSite> fallback_sites_;
@@ -1405,6 +1544,10 @@ private:
     PlatformWrite platform_write_;
     PlatformValue platform_value_;
     bool interrupt_fpr_shadow_ = false;
+    bool fpscr_policy_guard_ = false;
+    void fpscr_policy_stop();  // cold: the stop of fpscr_written
+    u64 host_fp_restores_ = 0;
+    u32 host_fp_reported_ = kHostFpControl;  // the last wrong value reported (one line per value)
     bool verifying_ = false;
     // Per-call verification protocol (see Cpu::try_hle). The dispatcher arms
     // this with the entry address it dispatches; only the thunk AT that
@@ -1468,21 +1611,57 @@ private:
     std::size_t history_head_ = 0;
     std::size_t history_size_ = 0;
 
-    struct HleEntry {
+    // One cache line per entry: the dispatch paths read invoke and ctx and write hits, all in the first 32 bytes.
+    struct alignas(64) HleEntry {
         u32 address;
-        HleHandler handler;
-        std::string name;
         u64 hits = 0;  // 2026-09-05 audit: calls this handler fully served
+        HleCallable handler;
+        std::string name;
     };
-    std::vector<HleEntry> hle_;
+    // RC-dispatch-1: every entry is its own heap object, and an entry that install_hle replaces is retired, not
+    // destroyed. A handler - or anything it calls: a host service inside a native wait, a capture arming its observers -
+    // may install or replace a hook while it runs. With the entries held by value in the sorted vector, that moved the
+    // std::function being executed (push_back reallocates, std::sort moves every element), so the running handler read
+    // its captures from moved-from or freed storage, and the dispatch paths then wrote `hits` through a pointer into
+    // the old buffer. Now install_hle only moves pointers; the entry a handler runs from stays where it is until the
+    // Cpu is destroyed, and the pointer a dispatch path holds across the call stays valid. Retired entries are kept
+    // for the Cpu's lifetime (one per replacement, an install-time event): no dispatch path pays for knowing whether
+    // a handler is running.
+    std::vector<std::unique_ptr<HleEntry>> hle_;          // sorted by address
+    std::vector<std::unique_ptr<HleEntry>> hle_retired_;  // replaced entries; a running handler may live in one
+    class HleEntryView {
+    public:
+        using Storage = std::vector<std::unique_ptr<HleEntry>>;
+        class iterator {
+        public:
+            explicit iterator(Storage::const_iterator at) noexcept : at_(at) {}
+            const HleEntry& operator*() const noexcept { return **at_; }
+            const HleEntry* operator->() const noexcept { return at_->get(); }
+            iterator& operator++() noexcept { ++at_; return *this; }
+            bool operator==(const iterator& other) const noexcept { return at_ == other.at_; }
+            bool operator!=(const iterator& other) const noexcept { return at_ != other.at_; }
+        private:
+            Storage::const_iterator at_;
+        };
+        explicit HleEntryView(const Storage& entries) noexcept : entries_(&entries) {}
+        iterator begin() const noexcept { return iterator(entries_->begin()); }
+        iterator end() const noexcept { return iterator(entries_->end()); }
+        std::size_t size() const noexcept { return entries_->size(); }
+        bool empty() const noexcept { return entries_->empty(); }
+        const HleEntry& operator[](std::size_t index) const noexcept { return *(*entries_)[index]; }
+        const HleEntry& front() const noexcept { return *entries_->front(); }
+    private:
+        const Storage* entries_;
+    };
     const HleEntry* find_hle(u32 address) const;
+    const u32* inlined_leaves_ = nullptr;
+    std::size_t inlined_leaf_count_ = 0;
     // Direct-mapped try_hle filter (see try_hle). 4096 slots = 16 KiB, one
     // cache line touched per call; two hooks in one slot mark it kHleSlotAll.
     // 2026-11-04: 1024 slots left 32 of ~250 hooks sharing a slot, and every
     // call to any address of a shared slot paid try_hle_slow plus a hash
     // lookup (find_hle + try_hle_slow 0.11 ms/frame); 4096 leaves ~7.
-    static constexpr u32 kHleSlotCount = 4096u;
-    static constexpr u32 kHleSlotMask = kHleSlotCount - 1u;
+    //
     static constexpr u32 kHleSlotEmpty = 1u;  // not word-aligned: never a call target
     static constexpr u32 kHleSlotAll = 3u;    // not word-aligned: never a call target
     // Recomputed on every hook install, verification switch and fault
@@ -1518,6 +1697,10 @@ private:
     // the game thread, net). Shared slots and verification (kHleSlotAll) keep
     // the hash path. Declared last: no offset the generated code reaches moves.
     u32 hle_slot_entry_[kHleSlotCount]{};
+    // The entry of the one hooked address a slot names (valid only when hle_slots_[i] is that address): the hot
+    // dispatch paths take it from here directly - slot -> entry, two dependent loads - instead of index ->
+    // hle_ data -> unique_ptr -> entry (RC-dispatch-1's added chain). Entries never move or die before the Cpu.
+    HleEntry* hle_slot_ptr_[kHleSlotCount]{};
     // A shared slot's hooks (kHleSlotAll outside verification / a fault): hle_slot_entry_ holds
     // first << 8 | count into hle_shared_, the hle_ indices of the hooks mapping to it, so find_hle scans those few
     // instead of hashing. hle_slots_all_ marks the verify / fault fill, where no slot has such a list.

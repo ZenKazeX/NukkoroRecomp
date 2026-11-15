@@ -1,0 +1,61 @@
+Stages in the guest table (bootable = launchable by --boot-stage):
+  stg0000  Practice               not bootable (practice/2P/event/last story)
+  stg0001  Practice01             not bootable (practice/2P/event/last story)
+  stg0002  Practice02             not bootable (practice/2P/event/last story)
+  stg0003  Practice03             not bootable (practice/2P/event/last story)
+  stg0005  EVENT                  not bootable (practice/2P/event/last story)
+  stg0100  City1                  bootable
+  stg0200  Circuit                bootable
+  stg0201  Canyon1                bootable
+  stg0202  Highway                bootable
+  stg0300  HorrorCastle           bootable
+  stg0301  PrisonIsland           bootable
+  stg0302  Circus                 bootable
+  stg0400  City2                  bootable
+  stg0401  ARKPast1               bootable
+  stg0402  canyon2                bootable
+  stg0403  eWorld                 bootable
+  stg0404  Ruins                  bootable
+  stg0500  ARKRuins1              bootable
+  stg0501  Sky                    bootable
+  stg0502  Jungle                 bootable
+  stg0503  Space                  bootable
+  stg0504  ARKPast2               bootable
+  stg0600  GunsBase               bootable
+  stg0601  DoomsBase1             bootable
+  stg0602  EggmansBase            bootable
+  stg0603  ARKRuins2              bootable
+  stg0604  DoomsBase2             bootable
+  stg0700  DoomsCore              not bootable (practice/2P/event/last story)
+  stg0210  BossBK1                bootable
+  stg0310  BossEggMeka1           bootable
+  stg0410  BossGUN1               bootable
+  stg0411  BossEggMeka2           bootable
+  stg0412  BossBK2                bootable
+  stg0510  BossGUN2               bootable
+  stg0511  BossEggMeka3           bootable
+  stg0610  BossBlack_0610         bootable
+  stg0611  BossSonic_0611         bootable
+  stg0612  BossEggmanRobbo_0612   bootable
+  stg0613  BossSonic_0613         bootable
+  stg0614  BossEggmanRobbo_0614   bootable
+  stg0615  BossEggmanRobbo_0615   bootable
+  stg0616  BossBlack_0616         bootable
+  stg0617  BossBlack_0617         bootable
+  stg0618  BossSonic_0618         bootable
+  stg0710  BossLast               not bootable (practice/2P/event/last story)
+  stg0800  GUN2P_0800             not bootable (practice/2P/event/last story)
+  stg0801  GUN2P_0801             not bootable (practice/2P/event/last story)
+  stg0802  GUN2P_0802             not bootable (practice/2P/event/last story)
+  stg0901  EVENT0901              not bootable (practice/2P/event/last story)
+  stg0902  EVENT0902              not bootable (practice/2P/event/last story)
+  stg0903  EVENT0903              not bootable (practice/2P/event/last story)
+  stg0904  EVENT0904              not bootable (practice/2P/event/last story)
+  stg0905  EVENT0905              not bootable (practice/2P/event/last story)
+  stg0906  EVENT0906              not bootable (practice/2P/event/last story)
+  stg0907  EVENT0907              not bootable (practice/2P/event/last story)
+  stg0908  EVENT0908              not bootable (practice/2P/event/last story)
+  stg0909  EVENT0909              not bootable (practice/2P/event/last story)
+  stg0910  EVENT0910              not bootable (practice/2P/event/last story)
+  stg0911  EVENT0911              not bootable (practice/2P/event/last story)
+[fm] flat-map handler entries: 0 (null window 0, device window 0, page split 0, unmapped 0)

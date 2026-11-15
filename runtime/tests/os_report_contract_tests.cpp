@@ -446,6 +446,63 @@ int main(int argc, char** argv) {
             std::printf("OSRegisterVersion: %u cases (console ok and failing) plus a negative control\n", version_cases);
         }
 
+        // RC-kernel-12: a field width or precision beyond the formatter's limit is refused with a reason. Formats and `*`
+        // arguments are guest data: a long digit run overflowed the host's int, `-w` of INT_MIN did too, and a huge
+        // width asked for gigabytes of padding. The limit itself still formats.
+        {
+            struct Bad { const char* text; u32 argument; const char* reason; };
+            const Bad bad[] = {
+                {"%*d|", 0x80000000u, "field width too large"},   // -INT_MIN
+                {"%*d|", 0x7FFFFFFFu, "field width too large"},
+                {"%*d|", 0xFFFFEFFFu, "field width too large"},   // -4097: left-justified, still too wide
+                {"%4097d|", 5u, "field width too large"},
+                {"%99999999999999999999d|", 5u, "field width too large"},
+                {"%.4097d|", 5u, "precision too large"},
+                {"%.99999999999999999999d|", 5u, "precision too large"},
+                {"%.*d|", 0x7FFFFFFFu, "precision too large"},
+            };
+            unsigned refused = 0;
+            for (const Bad& b : bad) {
+                original.zero_scratch();
+                original.memory.write_block(kFormat, b.text, std::strlen(b.text) + 1);
+                original.cpu.reset();
+                original.cpu.gpr[1] = kStack;
+                original.cpu.gpr[4] = b.argument;
+                original.cpu.gpr[5] = 7u;
+                std::string text, why;
+                ArgCursor cursor(original.cpu, 1u);
+                const bool ok = format(original.cpu, kFormat, cursor, text, why);
+                if (ok || why != b.reason)
+                    std::fprintf(stderr, "format %s argument 0x%08X: ok %d, why \"%s\", %zu characters\n", b.text, b.argument, ok ? 1 : 0,
+                                 why.c_str(), text.size());
+                require(!ok && why == b.reason, "an oversized field width / precision was not refused");
+                ++refused;
+            }
+            struct Good { const char* text; u32 argument; std::size_t length; char first, last; };
+            const Good good[] = {
+                {"%4096d", 5u, 4096u, ' ', '5'},
+                {"%*d", 4096u, 4096u, ' ', '7'},          // the width from r4, the value from r5
+                {"%*d", 0xFFFFF000u, 4096u, '7', ' '},    // -4096: left-justified
+                {"%.4096d", 5u, 4096u, '0', '5'},
+                {"%.*d", 0xFFFFFFFFu, 1u, '7', '7'},      // a negative precision is "none"
+            };
+            for (const Good& g : good) {
+                original.zero_scratch();
+                original.memory.write_block(kFormat, g.text, std::strlen(g.text) + 1);
+                original.cpu.reset();
+                original.cpu.gpr[1] = kStack;
+                original.cpu.gpr[4] = g.argument;
+                original.cpu.gpr[5] = 7u;
+                std::string text, why;
+                ArgCursor cursor(original.cpu, 1u);
+                const bool ok = format(original.cpu, kFormat, cursor, text, why);
+                require(ok && text.size() == g.length && text.front() == g.first && text.back() == g.last,
+                        "a field at the formatter's limit must still format");
+            }
+            std::printf("field limits: %u oversized widths / precisions refused, %zu at the limit formatted\n", refused,
+                        sizeof(good) / sizeof(good[0]));
+        }
+
         // Negative controls: the same comparison must catch a native formatter that reads a wrong input.
         {
             struct Control { const char* name; std::string format; std::vector<Arg> args; std::function<void(Cpu&)> perturb; bool floats; };

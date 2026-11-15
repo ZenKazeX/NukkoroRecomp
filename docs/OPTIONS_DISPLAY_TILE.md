@@ -1,5 +1,11 @@
 # The Options menu's Display tile (2026-10-28)
 
+> **Retired 2026-11-14.** The user switched back to the original retail Options menu ("switch back to the original
+> retail options menu") and dropped Hungarian. The PC menu described here, its Display tile, overlay, settings registry,
+> 15 s display confirmation and the Hungarian text are removed from the source (branch `retail/options`). The game's own
+> Options screen runs as on the disc (docs/OPTIONS_MENU_ORIGINAL_RE.md); every PC setting is a key of the settings files
+> (docs/PC_SETTINGS_FILES.md). Kept for the record of the user's directive and decisions.
+
 The user approved a PC "Display" tile for the Options menu, designed in `tools/options_menu_sim`. This is how it lives in
 the game. Code: `runtime/include/gekko/native_options_display.h` (game thread), `runtime/src/gekko/options_display_overlay.*`
 (the page's drawing, UI thread), `runtime/include/gekko/display_settings.h` (applying and saving).

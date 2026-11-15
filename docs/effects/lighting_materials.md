@@ -226,3 +226,19 @@ Treat this as an original-engine flaw candidate until a Dolphin check settles it
 - Q5: Which 2 materials are BUMPENVMAP, and what does the indirect stage look like (0x804A4E00 TEV dump)?
 - Q6: The LightColli shape kinds (+0x3C 0..2) and the exact field holding the target slot: one LightColli object dump.
 - Q7: The meaning of the 0x8057E760 byte copy and flag +0x1809 written by TFogSet (clear colour?).
+
+## Address notes for the lifted sources
+
+`runtime/lift` may not name a guest address or a console concept (`tools/lift/check_purity.py`, test `lift_purity`), so the
+evidence its comments used to carry lives here (moved 2026-11-12, RC-tests-7). PAL GUPP8P main.dol.
+
+| lifted source | what it implements | evidence in the original |
+|---|---|---|
+| `render/frame.h` `ExtraPass::Kind::BumpEnvironment`, `render/frame_math.h` `kBumpEnvironment`, `render/shaders/mesh.hlsl` `PSBase` | MatFX BUMPENVMAP as one pass | the GameCube driver's bump-environment pipeline 0x804A4E00 (entered with r7 = 1): one draw, a four-stage TEV combine (section 2 above) |
+| `render/frame.h` `ExtraPass::bump_shift` | the bump texgen's scale, -(coefficient x invBumpWidth) | the bump slot's set-up, 0x804A4FEC-0x804A5000 |
+| `render/frame_math.h` `out->cutoff = -1.0f` | the alpha compare of the bump-environment draw always passes | the driver calls its alpha-compare setter 0x804987C8 with argument 1 |
+| `effects/watch_camera_sheet.h` `kWatchSheetDistance` (1.1) | the watch camera's noise sheet distance in front of the eye | the float at [r2 - 0x19B0] = 0x805F8DD0 |
+| `effects/watch_camera_sheet.h` `kWatchSheetSpan` (2.0) | a window half-extent to the unit quad's whole extent | the float at [r2 - 0x19AC] = 0x805F8DD4 |
+| `effects/watch_camera_sheet.h` `watch_camera_sheet_scale` | span x (window x distance), each step one single-precision multiply | fn_80268660, the multiplies at 0x80268714..0x80268728, in that order |
+| `assets/geometry_import.h` `import_sector` | one atomic sector chunk as a native mesh | the disc's worlds are RenderWare GameCube-platform worlds: prepared vertex data, one array per attribute, indexed draw lists |
+| `math/msl.cpp` (pow's p_l + p_h note) | a sum of two products that can overflow with opposite signs gives the processor's default NaN | the Gekko's NaN rules (docs/NATIVE_MSL_MATH.md) |

@@ -30,8 +30,10 @@ LEAVES = (
 )
 
 
-def audit(raw, listed):
-    if hashlib.sha256(raw).hexdigest() != DOL_SHA256:
+def audit(raw, listed, variant=False):
+    # variant: a code-mod variant DOL (docs/mods/codemods/RECOMPILE.md) differs from the retail file by design; the
+    # per-leaf body hashes and direct-call counts below still pin everything this contract depends on.
+    if not variant and hashlib.sha256(raw).hexdigest() != DOL_SHA256:
         raise ValueError('empty-leaf contract requires the verified original DOL')
     addresses = [int(line.split('#')[0].strip(), 16) for line in listed.splitlines()
                  if line.split('#')[0].strip()]
@@ -139,9 +141,10 @@ def main():
     parser.add_argument('--generated', type=Path)
     parser.add_argument('--map', type=Path)
     parser.add_argument('--shipping', action='store_true')
+    parser.add_argument('--variant', action='store_true', help='the DOL is a code-mod variant of the retail PAL DOL')
     args = parser.parse_args()
     raw = args.dol.read_bytes()
-    records = audit(raw, args.leaves.read_text())
+    records = audit(raw, args.leaves.read_text(), args.variant)
     checked = None
     if args.jump_tables:
         if not args.functions:

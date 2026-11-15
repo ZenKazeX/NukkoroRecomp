@@ -3,21 +3,13 @@
 // The providers: the only code in the asset runtime that knows where bytes
 // physically live. Everything above them speaks AssetId.
 //
-// There are three, and the shape of each is dictated by what it can do without
+// There are two, and the shape of each is dictated by what it can do without
 // copying:
 //
 //   FileProvider     a host file, mapped. Serves in place, so a "load" is a
 //                    page fault and nothing else. No read-ahead, no residency
 //                    budget, no warm-up - the OS page cache is the cache, and
 //                    it is shared, evictable and already warm on the second run.
-//
-//   ArchiveProvider  a member of a ONE container. The container itself is a
-//                    mapped file, so an uncompressed member is ALSO served in
-//                    place, as a subspan. Only a compressed one costs anything.
-//
-//   PrsProvider      a compressed member, expanded once through the verified
-//                    prs_expand and then cached by the ResourceManager for as
-//                    long as a handle is held.
 //
 //   MemoryProvider   bytes the runtime itself owns: a game file replaced by
 //                    native content (asset_mount.h AssetSystem::replace).
@@ -139,61 +131,11 @@ private:
     std::atomic<bool> stop_{false};
 };
 
-// A member of a ONE container. The container is mapped once; an uncompressed
-// member is then a subspan of it and costs nothing at all.
-class ArchiveProvider final : public AssetProvider {
-public:
-    const char* name() const noexcept override { return "archive"; }
+// cs2/ram: drops the resident pages of [base, base + size) of a mapped host file from the process's working set (they stay
+// in the system file cache; a later read faults them back softly). For ranges read once at the mount. Windows: VirtualUnlock
+// on pages that are not locked removes them from the working set; elsewhere nothing.
+void release_view_pages(const void* base, u64 size) noexcept;
 
-    struct Member {
-        u64 container = 0;   // index into the container table
-        u64 offset = 0;      // byte offset of the member inside the container
-        u64 size = 0;        // stored size
-        u64 expanded = 0;    // 0 when the member is not compressed
-    };
-
-    u64 add_container(std::filesystem::path path);
-    u64 add_member(const Member& member);
-    const Member* member(u64 key) const noexcept;
-
-    ByteSpan map(u64 key, u64 size) override;
-    bool read(u64 key, u64 offset, u64 length, u8* dest, u64& got) override;
-
-    // The stored bytes of a member, mapped in place. The PRS provider reads
-    // its input through this, so a compressed member is never copied before
-    // being expanded.
-    ByteSpan stored(u64 key);
-
-private:
-    std::vector<std::unique_ptr<MappedFile>> containers_;
-    std::vector<std::filesystem::path> container_paths_;
-    std::vector<Member> members_;
-    mutable std::mutex mutex_;
-};
-
-// A compressed member, expanded through the verified PRS implementation.
-// Cannot serve in place, by definition - map() returns an invalid span and the
-// ResourceManager materialises it once.
-class PrsProvider final : public AssetProvider {
-public:
-    explicit PrsProvider(ArchiveProvider& archive) noexcept : archive_(archive) {}
-
-    const char* name() const noexcept override { return "prs"; }
-    ByteSpan map(u64, u64) override { return ByteSpan{}; }
-    bool read(u64 key, u64 offset, u64 length, u8* dest, u64& got) override;
-
-    struct Stats {
-        u64 expansions = 0;
-        u64 expanded_bytes = 0;
-        u64 failures = 0;
-    };
-    Stats stats() const noexcept;
-
-private:
-    ArchiveProvider& archive_;
-    mutable std::mutex mutex_;
-    Stats stats_{};
-};
 
 // Whole files held in memory. Added before the mount and never changed after,
 // so reads need no lock.
@@ -203,40 +145,56 @@ public:
 
     // Returns the key to store in the registry record.
     u64 add(std::vector<u8> bytes);
-    // Several contents for one file, one of them served at a time: `selector` is asked at every read or map and
-    // returns the index of the variant to serve (clamped). The registry's declared size for the file is the largest
-    // variant's; a shorter variant reads as zeros past its end (copy_with_zero_fill). Used where the content depends on
-    // a runtime setting (the Hungarian text files, gekko/native_hungarian_text.h) so the setting takes effect at the
-    // next read without a remount.
-    u64 add_switchable(std::vector<std::vector<u8>> variants, std::function<std::size_t()> selector,
-                       std::string name = {});
     // A file produced at every read by `reader` (AssetSystem::replace_virtual): nothing held, never mapped (map()
     // returns no span, so every access reads).
     using VirtualReader = std::function<bool(u64 offset, u64 length, u8* dest, u64& got)>;
     u64 add_virtual(u64 size, VirtualReader reader, std::string name = {});
+
+    // cs2/ram: a file that is `base`'s file `base_key` (exactly `size` bytes long) with `patches` laid over it - what a
+    // replacement that changes a few ranges of an original needs, instead of a private copy of the whole file. No
+    // patches at all = the original served unchanged. Reads reconstruct exactly the bytes a full copy would hold;
+    // map() returns no span (the bytes exist only as base + patches), so a whole-file acquire materialises.
+    struct Patch {
+        u64 offset = 0;
+        std::vector<u8> bytes;
+    };
+    u64 add_delta(AssetProvider* base, u64 base_key, u64 size, std::vector<Patch> patches);
+
+    // Accounting: bytes this provider holds privately, and how many files are held as deltas.
+    struct Held {
+        u64 files = 0, file_bytes = 0, deltas = 0, delta_bytes = 0, delta_logical_bytes = 0;
+    };
+    Held held() const noexcept;
+    // Every held content as (label, size, FNV-1a 64 of the bytes as
+    // reads return them): a diagnostic that proves two builds serve the same bytes. A virtual file is not listed.
+    void digests(const std::function<void(const std::string& label, u64 size, u64 fnv)>& sink);
 
     ByteSpan map(u64 key, u64 size) override;
     bool read(u64 key, u64 offset, u64 length, u8* dest, u64& got) override;
 
 private:
     // Not bit 63: the mount stores keys as s64 and treats a negative one as "not replaced" (AssetSystem::mount's
-    // replacement_of_entry), which served every switchable file from the disc, zero-padded to the largest variant.
-    static constexpr u64 kGroupBit = 1ull << 62;
-    struct Group {
-        std::vector<u64> files;
-        std::function<std::size_t()> selector;
-        std::string name;  // the file's path, for the log line when the chosen variant changes
-        std::unique_ptr<std::atomic<std::size_t>> chosen = std::make_unique<std::atomic<std::size_t>>(~std::size_t{0});
-    };
+    // replacement_of_entry).
     static constexpr u64 kVirtualBit = 1ull << 61;
+    static constexpr u64 kDeltaBit = 1ull << 60;
     struct Virtual {
         u64 size;
         VirtualReader reader;
         std::string name;
     };
-    const std::vector<u8>* file_of(u64 key) const;
+    struct Delta {
+        AssetProvider* base = nullptr;
+        u64 base_key = 0;
+        u64 size = 0;
+        std::vector<Patch> patches;  // sorted by offset, disjoint
+        u64 seq = 0;                 // creation number (shared with the plain files)
+    };
+    const std::vector<u8>* file_of(u64 key) const;  // a plain key's bytes; null for a delta, a virtual or a bad key
+    bool read_delta(const Delta& delta, u64 offset, u64 length, u8* dest, u64& got);
     std::vector<std::vector<u8>> files_;
-    std::vector<Group> groups_;
+    std::vector<u64> file_seq_;  // creation number of each plain file
+    std::vector<Delta> deltas_;
+    u64 next_seq_ = 0;
     std::vector<Virtual> virtuals_;
 };
 

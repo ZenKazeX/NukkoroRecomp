@@ -15,7 +15,10 @@
 //   E  MSR[DR] = 0: a translation fault (latched, unmapped = false), read 0 / store dropped;
 //   F  an access trace installed: values exact, and the trace sees every access as (address, size, writing),
 //      in order, exactly as GuestMemory::trace_access reported it for the slow path;
-//   G  the journal (journal_begin / journal_end): values exact while journaling.
+//   G  the journal (journal_begin / journal_end): values exact while journaling;
+//   W  RC-memory-1: accesses at / across the top of the window (0xFFFFFFF9..0xFFFFFFFF, every width, the 8-byte
+//      ones wrap past 0xFFFFFFFF): the same unserved stop as any hole, never a host fault or host memory, and both
+//      windows are reserved past 4 GiB (no-access guard) so the bytes after them are not another allocation.
 // usage: flat_memory_tests
 
 #include "gekko/cpu.h"
@@ -25,8 +28,11 @@
 #include <memory>
 #include <random>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <vector>
+
+#include <windows.h>
 
 namespace {
 using gekko::u16;
@@ -131,6 +137,26 @@ void case_unserved(const char* name, u32 ea, std::mt19937_64& random) {
     }
 }
 
+// W: the guard behind each window. The reservation after the 4 GiB must belong to the window's own allocation (a
+// reserved, no-access range of the same allocation), so a wrapping access can never land in a neighbour.
+void case_guard() {
+#if defined(_WIN32)
+    Machine m;
+    for (const u8* window : {m.bus.fm_window(), m.bus.fm_null_window()}) {
+        MEMORY_BASIC_INFORMATION info{};
+        const u8* const tail = window + gekko::GuestMemory::kFmWindowBytes;
+        const bool queried = VirtualQuery(tail, &info, sizeof(info)) != 0;
+        check(queried, "W guard: VirtualQuery of the byte after the window");
+        if (!queried) continue;
+        check(info.State == MEM_RESERVE && (info.AllocationProtect & PAGE_NOACCESS) != 0u,
+              "W guard: the byte after the window is a no-access reservation");
+        check(static_cast<const u8*>(info.BaseAddress) + info.RegionSize >=
+                  window + gekko::GuestMemory::kFmWindowBytes + gekko::GuestMemory::kFmGuardBytes,
+              "W guard: it covers kFmGuardBytes");
+    }
+#endif
+}
+
 void case_straddle() {
     for (unsigned width : {2u, 4u, 8u}) {
         for (unsigned inside = 1; inside < width; ++inside) {
@@ -208,16 +234,71 @@ void case_journal(std::mt19937_64& random) {
 }
 }  // namespace
 
+// RC-memory-2: while a thread runs the machine (Cpu::fm_bind_thread, what run() does), a window fault raised by
+// ANOTHER thread is not resolved: no Cpu state changes (no latched fault, no stop, no DAR), the faulting thread gets
+// its access violation, and the count of such faults goes up. The running thread's own fault at the same address is
+// resolved exactly as before; unbound (between runs) any thread's fault is resolved, as before.
+int seh_read(gekko::Cpu* cpu, u32 address, u32* value) {
+    __try {
+        *value = cpu->mem_read32(address);
+        return 0;
+    } __except (GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
+        return 1;
+    }
+}
+
+void case_foreign_thread() {
+    constexpr u32 kHole = 0x90000000u;
+    auto m = std::make_unique<Machine>();
+    const u64 foreign_before = gekko::Cpu::fm_foreign_fault_count();
+    const u64 handled_before = gekko::Cpu::fm_fault_count();
+    const u32 previous = m->cpu.fm_bind_thread();  // this thread runs the machine
+    check(previous == 0u, "I foreign: a fresh machine is unbound");
+    int raised = -1;
+    u32 value = 0xDEADBEEFu;
+    std::thread other([&] { raised = seh_read(&m->cpu, kHole, &value); });
+    other.join();
+    check(raised == 1, "I foreign: the other thread's window fault must reach it as an access violation");
+    check(!m->cpu.memory_fault().latched && !m->cpu.stopped() && !m->cpu.stop_requested(),
+          "I foreign: a fault from another thread must not latch a fault or stop the machine");
+    check(gekko::Cpu::fm_foreign_fault_count() == foreign_before + 1u && gekko::Cpu::fm_fault_count() == handled_before,
+          "I foreign: counted as foreign, not as a resolved fault");
+    // The running thread's own fault: resolved as case B (read 0, latched, stopped).
+    u32 own = 0xDEADBEEFu;
+    check(seh_read(&m->cpu, kHole, &own) == 0 && own == 0u && m->cpu.memory_fault().latched && m->cpu.stopped(),
+          "I foreign: the running thread's fault is resolved exactly as before");
+    m->cpu.fm_restore_thread(previous);
+    // Unbound again: another thread's fault is resolved (the machine is nobody's between runs).
+    auto idle = std::make_unique<Machine>();
+    raised = -1;
+    value = 0xDEADBEEFu;
+    std::thread later([&] { raised = seh_read(&idle->cpu, kHole, &value); });
+    later.join();
+    check(raised == 0 && value == 0u && idle->cpu.memory_fault().latched,
+          "I foreign: between runs any thread's fault is resolved, as before");
+    // run() itself binds and unbinds.
+    auto ran = std::make_unique<Machine>();
+    ran->cpu.request_stop(gekko::StopReason::HostRequest, "test: a run that ends at once");
+    (void)ran->cpu.run_steps(1u);
+    check(ran->cpu.fm_bind_thread() == 0u, "I foreign: a finished run leaves the machine unbound");
+}
+
 int main() {
     std::mt19937_64 random(20261020u);
     case_mapped(random);
     case_unserved("B hole", 0x90000000u, random);
     case_unserved("H retired device page", 0xCC008000u, random);
     case_unserved("C uncommitted tail", 0xA0008000u, random);
+    case_unserved("W top of the window 0xFFFFFFF9", 0xFFFFFFF9u, random);
+    case_unserved("W top of the window 0xFFFFFFFC", 0xFFFFFFFCu, random);
+    case_unserved("W top of the window 0xFFFFFFFE", 0xFFFFFFFEu, random);
+    case_unserved("W top of the window 0xFFFFFFFF", 0xFFFFFFFFu, random);
+    case_guard();
     case_straddle();
     case_translation_off();
     case_trace(random);
     case_journal(random);
+    case_foreign_thread();
     std::printf("flat_memory_tests: %ld checks, %d failures, %llu handler entries\n", g_checks, g_failures,
                 static_cast<unsigned long long>(gekko::Cpu::fm_fault_count()));
     return g_failures == 0 ? 0 : 1;

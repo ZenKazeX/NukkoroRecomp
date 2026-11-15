@@ -16,6 +16,8 @@
 // deliverable-interrupt rule are theirs) and the native OSSleepThread. Two resume rows exist because the gates can hand back
 // to the dispatcher: an interrupt that is deliverable at OSDisableInterrupts is taken at the gate's entry and the function
 // continues at 0x8037ECEC when the gate returns; an interrupt that the restore makes deliverable is taken before 0x8037ED10.
+// A third row, 0x8037ECFC, exists for a stop that ends the sleep (a savestate boundary, the development link): the sleep
+// hands back at its own entry with LR = 0x8037ECFC, and a run that continues enters the sleep again and then this row.
 // Registers on return: r0 = the saved LR, r1, LR, r30 and r31 as the caller had them, r3 / r4 / r5 / CR0 from the restore gate.
 
 #include "gekko/types.h"
@@ -28,6 +30,7 @@ namespace gekko::vi_wait {
 
 constexpr u32 kWaitForRetrace = 0x8037ECD4u;
 constexpr u32 kAfterDisable = 0x8037ECECu;   // the row after OSDisableInterrupts
+constexpr u32 kAfterSleep = 0x8037ECFCu;     // the row after OSSleepThread (a run that a stop interrupted resumes through it)
 constexpr u32 kAfterRestore = 0x8037ED10u;   // the row after OSRestoreInterrupts
 
 // Installed by os_threads::install_waits (the single-thread configuration only: the reference build keeps the guest body).

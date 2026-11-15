@@ -97,6 +97,14 @@ OsHeapsCensus census_os_heaps(const GuestRead32& read32, std::uint32_t sda_base)
     return out;
 }
 
+bool HeapTrace::enabled() noexcept {
+    static const bool on = [] {
+        const char* path = std::getenv("GEKKO_HEAP_TRACE");
+        return path != nullptr && path[0] != '\0';
+    }();
+    return on;
+}
+
 void HeapTrace::tick(std::uint64_t game_ticks, const GuestRead32& read32) {
     constexpr std::uint64_t kTicksPerSecond = 40'500'000u;
     static std::FILE* file = [] {

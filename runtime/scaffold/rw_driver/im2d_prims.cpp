@@ -1,4 +1,4 @@
-// SCAFFOLDING (R2): the Im2D line and triangle emitters of the RenderWare driver - deleted by R6: the lift of RenderWare's immediate mode owns them
+// SCAFFOLDING (R2): the Im2D line and triangle emitters (im2d_prims.h) - deleted by R6: RenderWare's lift removes the translated callers
 #include "im2d_prims.h"
 
 #include "gekko/cpu.h"

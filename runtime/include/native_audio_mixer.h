@@ -62,7 +62,7 @@ struct BusVolume {
     std::uint16_t delta = 0;  // signed per-sample step (two's complement), used when the bus ramps
 };
 
-// A host-side per-voice gain (Options > Audio category volumes, gekko/audio_categories.h): Q15, applied after the
+// A host-side per-voice gain (options.cfg category volumes, gekko/audio_categories.h): Q15, applied after the
 // voice's envelope and before its bus sends. Unity is skipped entirely, so the DSP's arithmetic is untouched.
 constexpr std::uint32_t kUnityVoiceGain = 0x8000u;
 

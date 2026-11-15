@@ -6,6 +6,7 @@
 #include <string>
 
 #include "gekko/cpu.h"
+#include "gekko/game_clock.h"
 #include "gekko/native_interrupts.h"
 #include "gekko/native_vi_wait.h"
 
@@ -65,7 +66,8 @@ bool serve_yield_thread(Cpu& c, u32 entry) {
     return true;
 }
 
-bool serve_sleep_thread(Cpu& c, NativeInterrupts& interrupts, MainWait& wait, const IdlePass& idle_pass, u32 entry) {
+bool serve_sleep_thread(Cpu& c, NativeInterrupts& interrupts, MainWait& wait, const IdlePass& idle_pass, u32 entry,
+                        u64 bound_ticks) {
     if (wait.active) return stop(c, "OSSleepThread inside a native wait");
     if (c.interrupt_pending()) {  // the original's OSDisableInterrupts takes it first; the wait starts afterwards
         c.leave_to_dispatcher(entry, FallbackReason::Yield, entry);
@@ -78,7 +80,17 @@ bool serve_sleep_thread(Cpu& c, NativeInterrupts& interrupts, MainWait& wait, co
         return stop(c, "OSSleepThread with interrupts enabled (the native wait serves callers that disabled them)");
     wait = MainWait{true, false, queue};
     interrupts.set_wait_active(true);
+    const u64 began = c.game_clock().now();
     while (!wait.woken && !c.stopped() && !c.stop_requested()) {
+        if (bound_ticks != 0u && c.game_clock().now() - began > bound_ticks) {
+            char text[200];
+            std::snprintf(text, sizeof(text),
+                          "OSSleepThread(0x%08X) was not woken in %.1f s of game time (nothing wakes this queue; "
+                          "GEKKO_NATIVE_WAIT_BOUND_S changes the bound)",
+                          queue, static_cast<double>(c.game_clock().now() - began) / static_cast<double>(kGameTicksPerSecond));
+            (void)stop(c, text);
+            break;
+        }
         if (interrupts.run_pending_event(c)) continue;  // one source's native work; its callbacks may wake the queue
         if (idle_pass && idle_pass(c, &wait.woken)) continue;  // the Idle thread's turn (CRI), as at the idle spin
         if (c.decrementer_pending() || c.external_interrupt()) {
@@ -89,7 +101,22 @@ bool serve_sleep_thread(Cpu& c, NativeInterrupts& interrupts, MainWait& wait, co
         c.idle_wait();  // the game clock runs to the next event and raises its source
     }
     interrupts.set_wait_active(false);
+    const bool woken = wait.woken;
     wait = MainWait{};
+    if (!woken) {
+        // A stop ended the wait before the queue was woken (a savestate boundary, the development link, a budget: the host
+        // service inside idle_wait asked for it; or a host thread's stop). The call has not happened yet as far as the
+        // caller can tell: hand back AT THE ENTRY with the argument the events' callbacks overwrote (drive_sync leaves a
+        // callback's result in r3), so a run that continues after clear_stop() enters the wait again. Without this the
+        // owner's thunk skipped pc = lr because the machine was stopped and pc stayed at whatever return site the caller
+        // chain had published last (RC-kernel-1).
+        c.gpr[3] = queue;
+        c.leave_to_dispatcher(entry, FallbackReason::Yield, entry);
+    } else if (c.stopped() || c.stop_requested()) {
+        // Woken and stopped in the same pass: the call is complete, so the resume point is the caller's return site
+        // (the thunk leaves pc alone once the machine is stopped).
+        c.leave_to_dispatcher(c.lr, FallbackReason::Yield, entry);
+    }
     return true;
 }
 
@@ -183,8 +210,18 @@ void install_waits(Cpu& cpu, NativeInterrupts& interrupts, IdlePass idle_pass) {
     const auto wait = std::make_shared<MainWait>();
     const auto idle = std::make_shared<IdlePass>(std::move(idle_pass));
     install_after_existing(cpu, kYieldThread, [](Cpu& c) { return serve_yield_thread(c, kYieldThread); }, "OSYieldThread (native)");
+    u64 bound = kDefaultSleepBoundTicks;
+    if (const char* value = std::getenv("GEKKO_NATIVE_WAIT_BOUND_S"); value != nullptr && value[0] != '\0') {
+        char* end = nullptr;
+        const unsigned long long seconds = std::strtoull(value, &end, 10);
+        if (end != value && *end == '\0' && seconds <= 1000000ull) {
+            bound = seconds * kGameTicksPerSecond;
+        } else {
+            std::fprintf(stderr, "os.threads: GEKKO_NATIVE_WAIT_BOUND_S=%s is not a number of seconds (0..1000000); the default bound stays\n", value);
+        }
+    }
     install_after_existing(cpu, kSleepThread,
-                           [wait, idle, &interrupts](Cpu& c) { return serve_sleep_thread(c, interrupts, *wait, *idle, kSleepThread); },
+                           [wait, idle, &interrupts, bound](Cpu& c) { return serve_sleep_thread(c, interrupts, *wait, *idle, kSleepThread, bound); },
                            "OSSleepThread (native)");
     struct Lifecycle { u32 address; const char* name; };
     for (const Lifecycle& row : {Lifecycle{kCreateThread, "OSCreateThread"}, Lifecycle{kExitThread, "OSExitThread"},

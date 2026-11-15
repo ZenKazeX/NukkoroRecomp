@@ -66,6 +66,12 @@ public:
     // Creates the device and the renderer and installs the scaffolding the lowered sites reach. Before guest code
     // runs.
     bool start(const LiftedRenderOptions& options, std::string* error);
+    // pf-load (GEKKO_PF_LOAD_RENDER_EARLY, default on; =0 does nothing): begins start()'s device and renderer creation
+    // on a host thread, before the asset mount. The next start() waits for it and takes it over when its options make
+    // the same renderer (msaa, anisotropy, WARP, debug layer), else creates the renderer itself as before; its result,
+    // error text and everything after the creation are start()'s own, at start()'s place. A creation never taken over
+    // ends with the process.
+    static void start_early(const LiftedRenderOptions& options);
     // After the game thread has stopped: uninstalls the scaffolding and releases the device.
     void stop();
     // The listener for System's 2D identity announcements (the scaffolding lays the 2D out with them); null before
@@ -192,6 +198,8 @@ public:
 
 private:
     struct Impl;
+    struct Early;
+    static Early& early();
     std::unique_ptr<Impl> impl_;
 };
 

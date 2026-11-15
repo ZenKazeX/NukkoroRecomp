@@ -106,6 +106,13 @@ public:
     bool sharp_sheet(u32 sheet, Family family, SharpSheet& out);
     // Tests: the table sheet a file's span belongs to, and the span's offset (false: not a listed file).
     static bool table_sheet_of(const char* path, u32& sheet, u64& span_at);
+    // Tests: the button cells of table sheet `sheet` on the unscaled sheet (kind: 0..3 GC A B X Y, 4 start,
+    // 5 the vehicle arrow's outline mask). False: no such sheet.
+    struct CellInfo {
+        u32 x0, y0, x1, y1;
+        u32 kind;
+    };
+    static bool sheet_cells(u32 sheet, std::vector<CellInfo>& cells);
 
 private:
     struct Hit {

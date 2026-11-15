@@ -9,14 +9,20 @@
 #include "gekko/pc_settings.h"
 #include "gekko/voice_language.h"
 #include "gekko/save_import.h"
-#include "gekko/settings_display.h"
-#include "gekko/settings_registry.h"
-#include "gekko/native_options_display.h"
 #include "gekko/render_geometry.h"
 #include "gekko/ui_test.h"
 #include "gekko/host_window.h"
 #include "peripheral/keyboard_layout.h"  // combine(): the input thread merges keyboard + XInput
-#include "gekko/raw_keyboard.h"           // the input thread's keyboard
+#if defined(SHADOW_RAM_PROBE)
+namespace ram_probe {
+void report();
+}
+#endif
+#include "gekko/raw_input.h"           // the input thread's keyboard and mouse
+#include "gekko/controls_settings.h"   // controls.cfg: the keyboard and mouse bindings
+#include "gekko/gameplay_camera.h"
+#include "peripheral/action_map.h"
+#include "peripheral/mouse_look.h"
 #include "gekko/heap_census.h"            // GEKKO_HEAP_TRACE
 #include "gekko/audio_runtime.h"
 #if !defined(SHADOW_RENDER_LIFTED)  // G5 (HW_REPORT T.1): the legacy renderer is not in the lifted build
@@ -26,6 +32,16 @@
 #endif
 #include "gekko/native_assets.h"
 #include "gekko/texture_overrides.h"
+#include "gekko/texture_packs.h"  // mods/texpacks: --texture-pack
+#include "gekko/code_engine.h"        // data-writing Gecko codes (docs/mods/codemods/ENGINE.md)
+#include "gekko/code_engine_guest.h"
+// A code-mod variant (tools/mods/codemods/build_variant.py) is built for one selection of chosen codes: the signature
+// of that selection. Its built-in code changes belong to that selection; the stock executable has none.
+#if defined(SHADOW_CODE_VARIANT)
+static constexpr const char* kCodeVariant = SHADOW_CODE_VARIANT;
+#else
+static constexpr const char* kCodeVariant = "";
+#endif
 #include "native_memory.h"
 #if !defined(SHADOW_RENDER_LIFTED)  // G5
 #include "gekko/rw_capture.h"
@@ -47,12 +63,15 @@
 #include "gekko/measure_probes.h"
 #include "gekko/system.h"
 #include "gekko/xinput_pad.h"
+#include "gekko/asset_mount.h"
 #if defined(SHADOW_RENDER_LIFTED)
 #include "gekko/lifted_render.h"
 #if defined(SHADOW_RENDER_LIFTED)
 #include "render/display_modes.h"
 #endif
 #endif
+// The message/voice owner is in every build (the exit report below calls it unconditionally).
+#include "gekko/native_message_voice_owner.h"
 // Header-only and used by the pacer in every configuration (the lifted renderer only feeds them).
 #include "render/present_trace.h"
 #include "render/packet_queue.h"  // phase_anchor_shift_ns: the shared phase controller's applied shift
@@ -60,6 +79,8 @@
 #include "gekko/schedule_offset.h"
 #include "embedded_game_data.h"
 #include "native_bootstrap.h"
+#include "shadow/mods/mods.h"
+#include "gekko/mod_overlay.h"
 
 static_assert(shadow::kProgramImageBase == gekko::GuestMemory::kImageBase &&
                   shadow::kProgramImageEnd == gekko::GuestMemory::kImageEnd,
@@ -368,6 +389,19 @@ double thread_cpu_seconds_now() noexcept {
 // measured on this path" so a zero can never be mistaken for a measurement.
 double g_guest_run_wall_seconds = -1.0;
 double g_guest_run_cpu_seconds = -1.0;
+// Cycles charged to the same thread over the same window (QueryThreadCycleTime: kernel + user, TSC rate). A
+// contention-robust companion to wall time: it does not count time the thread was descheduled (it still grows with
+// cache / SMT contention). Negative = not measured on this path. (s3/prof 2026-11-12)
+long long g_guest_run_cycles = -1;
+
+unsigned long long thread_cycles_now() noexcept {
+#ifdef _WIN32
+    ULONG64 cycles = 0;
+    return QueryThreadCycleTime(GetCurrentThread(), &cycles) != FALSE ? static_cast<unsigned long long>(cycles) : 0ull;
+#else
+    return 0ull;
+#endif
+}
 
 double process_cpu_seconds_now() noexcept {
 #ifdef _WIN32
@@ -555,6 +589,16 @@ struct Options {
     // <game data>/files, gamecube-disc reads a GameCube disc image (--disc-image).
     std::string storage_backend = "host-directory";
     std::optional<std::filesystem::path> disc_image;
+    // The mod loader (shadow/mods/mods.h): <executable dir>/mods unless --mods-dir names another; --no-mods loads none.
+    std::optional<std::filesystem::path> mods_dir;
+    std::optional<std::filesystem::path> mods_report;  // --mods-report: what the loader applied, as JSON (tests)
+    bool no_mods = false;
+    // Data-writing Gecko codes (gekko/code_engine.h). Nothing is installed unless one runnable code is enabled.
+    std::vector<std::filesystem::path> code_inis;    // --code-ini: Dolphin game ini, its [Gecko_Enabled] codes (or the names below)
+    std::vector<std::string> code_enable;            // --code-enable: also enable this code by name (or by its name before " [")
+    bool code_enable_all = false;                    // --code-enable-all: every code of the ini
+    std::vector<std::filesystem::path> code_files;   // --code-lines: a file of plain "XXXXXXXX XXXXXXXX" lines = one code
+    std::optional<std::filesystem::path> code_report;  // --code-report: what the engine classified and did, as JSON
     bool boot = true;
     bool trace = false;
     bool profile = false;
@@ -585,9 +629,11 @@ struct Options {
     bool chara_colli_pass = false;  // the manager's pair pass itself too (opt-in: not exact yet)
     bool chara_colli_bone_memo = true;  // GeneralBone runs reused (false: every update computed)
     bool chara_colli_bone_native = true;  // GeneralBone updates computed natively (false: by the guest)
-    // Host FPR snapshot across exceptions. Off: the hardware does not do it and
-    // it was measured to change nothing in 1,141,282 restores.
+    // Host FPR snapshot across exceptions. Always on in the single-thread configuration (the default: the native CRI
+    // servers and loaders), where MSR[FP] is forced and the snapshot replaces the OS's lazy FPU switch
+    // (NativeInterrupts::install). --fpr-shadow turns it on for the guest-thread modes of the reference build too.
     bool fpr_shadow = false;
+    bool no_fpr_shadow = false;  // --no-fpr-shadow: refused in the single-thread configuration
     bool window = true;
     bool xinput = true;
     bool pc_save_text = true;
@@ -725,6 +771,11 @@ struct Options {
     // A JSON state report at the end of the run, with these guest ranges (address:length, comma separated).
     std::optional<std::filesystem::path> state_report;
     std::vector<std::string> report_peeks;
+    // The behaviour trace (docs/agents/opt-behave-r3.md): the game state that defines "same behaviour", sampled at the
+    // host-service grid and written as JSONL; tools/behaviour_diff.py compares two traces. Off unless a file is given.
+    std::optional<std::filesystem::path> behaviour_trace;
+    std::optional<std::filesystem::path> behaviour_layout;  // field list (default: behaviour_layout.txt in the cwd)
+    gekko::u32 behaviour_every = 10;                         // full sample every N host services (5 ms of game time each)
     // One-button comparison snapshots (docs/comparator/README.md "One-button snapshots"): the window's snapshot key
     // (F1..F12, a letter or a digit, or "none"; default F5) saves this exact moment - the savestate, the input tape
     // that led here, a state report and the next frame - into a new folder under --snapshot-dir (default snapshots/
@@ -834,6 +885,7 @@ struct Options {
     std::optional<float> hud_inset;
     std::optional<std::filesystem::path> display_cfg;
     std::optional<std::filesystem::path> pad_cfg;
+    std::optional<std::filesystem::path> controls_cfg;
     // The prompts' controller buttons (gekko/button_glyphs.h); unset: pad.cfg's button_style (default auto).
     std::optional<shadow::peripheral::ButtonStyle> button_style;
     // Development savestate (gekko/savestate.h). --state-file overrides the
@@ -1085,6 +1137,264 @@ std::string state_report_json(gekko::System& system, gekko::u64 render_frames, g
     return report.str();
 }
 
+// ---- behaviour trace (docs/agents/opt-behave-r3.md) ---------------------------------------------------------------
+// The gate every "modern math" change must pass: the game state that defines "same behaviour" (player, rings, camera,
+// task counts, ...) sampled on the host-service grid, which is a fixed grid of game time, so two runs of the same tape
+// produce rows at the same ticks. The fields come from a layout file (one per line, `#` comments):
+//   anchor <name> <vtable word> <offset of that word in the object>     (an object found by scanning for its vtable)
+//   field <name> <address[>offset...]> <type> [count] [ev]              (address may be `$anchor+0xOFF` instead)
+// type: f32 f64 u8 s8 u16 s16 u32 s32 raw (raw: count = bytes, written as hex). A pointer path reads the 32-bit word at
+// the address, adds the next offset, and so on (as --report-peek). `ev`: also read at EVERY host service and written as
+// an event line when it changes. Off: the host-service hook is one flag test.
+class BehaviourTrace {
+public:
+    struct Field {
+        std::string name;
+        GuestRange range;
+        char kind = 'u';  // 'f' float, 'u' unsigned, 's' signed, 'r' raw bytes
+        gekko::u32 width = 4;
+        gekko::u32 count = 1;
+        bool event = false;
+        std::string last;  // the last text read for an event field
+        int anchor = -1;   // index into anchors_ when the address is `$name+off`
+        gekko::u32 anchor_off = 0;
+    };
+    struct Anchor {
+        std::string name;
+        gekko::u32 vtable = 0;
+        gekko::u32 word_offset = 0;
+        gekko::u32 object = 0;  // 0 until found
+    };
+
+    bool open(const std::filesystem::path& file, const std::filesystem::path& layout, gekko::u32 every, std::string* error) {
+        every_ = every == 0u ? 1u : every;
+        std::ifstream in(layout);
+        if (!in) {
+            *error = "behaviour layout not readable: " + layout.string();
+            return false;
+        }
+        std::string line;
+        std::size_t line_no = 0;
+        while (std::getline(in, line)) {
+            ++line_no;
+            if (const std::size_t hash = line.find('#'); hash != std::string::npos) line.erase(hash);
+            std::istringstream words(line);
+            std::string keyword, name, chain, type;
+            if (!(words >> keyword)) continue;
+            if (keyword == "anchor") {
+                std::string vt, off;
+                if (!(words >> name >> vt >> off)) {
+                    *error = layout.string() + ":" + std::to_string(line_no) + ": expected `anchor <name> <vtable> <offset>`";
+                    return false;
+                }
+                Anchor a;
+                a.name = name;
+                a.vtable = static_cast<gekko::u32>(std::strtoul(vt.c_str(), nullptr, 0));
+                a.word_offset = static_cast<gekko::u32>(std::strtoul(off.c_str(), nullptr, 0));
+                anchors_.push_back(a);
+                continue;
+            }
+            if (keyword != "field" || !(words >> name >> chain >> type)) {
+                *error = layout.string() + ":" + std::to_string(line_no) + ": expected `field <name> <chain> <type> [count] [ev]`";
+                return false;
+            }
+            Field field;
+            field.name = name;
+            std::string extra;
+            while (words >> extra) {
+                if (extra == "ev") field.event = true;
+                else field.count = static_cast<gekko::u32>(std::strtoul(extra.c_str(), nullptr, 0));
+            }
+            if (field.count == 0u) field.count = 1u;
+            if (type == "f32") { field.kind = 'f'; field.width = 4; }
+            else if (type == "f64") { field.kind = 'f'; field.width = 8; }
+            else if (type == "u8") { field.kind = 'u'; field.width = 1; }
+            else if (type == "s8") { field.kind = 's'; field.width = 1; }
+            else if (type == "u16") { field.kind = 'u'; field.width = 2; }
+            else if (type == "s16") { field.kind = 's'; field.width = 2; }
+            else if (type == "u32") { field.kind = 'u'; field.width = 4; }
+            else if (type == "s32") { field.kind = 's'; field.width = 4; }
+            else if (type == "raw") { field.kind = 'r'; field.width = 1; }
+            else {
+                *error = layout.string() + ":" + std::to_string(line_no) + ": unknown type '" + type + "'";
+                return false;
+            }
+            std::vector<GuestRange> parsed;
+            std::string range_error;
+            if (!chain.empty() && chain[0] == '$') {
+                const std::size_t plus = chain.find('+');
+                if (plus == std::string::npos) {
+                    *error = layout.string() + ":" + std::to_string(line_no) + ": expected `$anchor+offset`";
+                    return false;
+                }
+                const std::string aname = chain.substr(1, plus - 1);
+                for (std::size_t k = 0; k < anchors_.size(); ++k)
+                    if (anchors_[k].name == aname) field.anchor = static_cast<int>(k);
+                if (field.anchor < 0) {
+                    *error = layout.string() + ":" + std::to_string(line_no) + ": unknown anchor " + aname;
+                    return false;
+                }
+                std::string rest = chain.substr(plus + 1);
+                field.anchor_off = static_cast<gekko::u32>(std::strtoul(rest.c_str(), nullptr, 0));
+                const std::size_t gt = rest.find('>');
+                chain = "0x80000000" + (gt == std::string::npos ? std::string() : rest.substr(gt));
+            }
+            if (!parse_guest_ranges(chain + ":" + std::to_string(field.width * field.count), parsed, &range_error) ||
+                parsed.size() != 1u) {
+                *error = layout.string() + ":" + std::to_string(line_no) + ": " + range_error;
+                return false;
+            }
+            field.range = parsed[0];
+            fields_.push_back(std::move(field));
+        }
+        out_.open(file, std::ios::binary | std::ios::trunc);
+        if (!out_) {
+            *error = "behaviour trace not writable: " + file.string();
+            return false;
+        }
+        std::string header = "{\"k\":\"hdr\",\"format\":\"behaviour-trace 1\",\"every\":" + std::to_string(every_) +
+                             ",\"service_ticks\":" + std::to_string(gekko::System::kHostServiceTicks) + ",\"fields\":[";
+        for (std::size_t i = 0; i < fields_.size(); ++i) {
+            if (i != 0u) header += ",";
+            header += "{\"name\":" + gekko::dev::quote(fields_[i].name) + ",\"at\":" + gekko::dev::quote(fields_[i].range.key) +
+                      ",\"kind\":\"" + std::string(1, fields_[i].kind) + "\",\"width\":" + std::to_string(fields_[i].width) +
+                      ",\"count\":" + std::to_string(fields_[i].count) + ",\"ev\":" + (fields_[i].event ? "true" : "false") + "}";
+        }
+        header += "]}\n";
+        out_ << header;
+        active_ = true;
+        return true;
+    }
+    bool active() const noexcept { return active_; }
+
+    // One host service, on the game thread, all guest state committed.
+    void on_service(gekko::System& system, gekko::u64 game_ticks) {
+        const gekko::u64 index = services_++;
+        const bool full = index % every_ == 0u;
+        for (Field& field : fields_) {
+            if (!field.event) continue;
+            const std::string value = format(system, field);
+            if (value == field.last) continue;
+            if (!field.last.empty()) {
+                out_ << "{\"k\":\"e\",\"tick\":" << game_ticks << ",\"vi\":" << system.video().frames() << ",\"f\":"
+                     << gekko::dev::quote(field.name) << ",\"from\":" << field.last << ",\"to\":" << value << "}\n";
+            }
+            field.last = value;
+        }
+        if (!full) return;
+        std::string row = "{\"k\":\"s\",\"n\":" + std::to_string(index / every_) + ",\"tick\":" + std::to_string(game_ticks) +
+                          ",\"vi\":" + std::to_string(system.video().frames());
+        if (const gekko::GameplayScheduler* scheduler = system.gameplay_scheduler()) {
+            const gekko::GameplayScheduler::Stats st = scheduler->stats();
+            row += ",\"sched\":{\"traversals\":" + std::to_string(st.traversals) + ",\"nodes\":" + std::to_string(st.nodes_visited) +
+                   ",\"executes\":" + std::to_string(st.executes) + ",\"destroys\":" + std::to_string(st.destroys) + "}";
+        }
+        row += ",\"f\":{";
+        for (std::size_t i = 0; i < fields_.size(); ++i) {
+            if (i != 0u) row += ",";
+            row += gekko::dev::quote(fields_[i].name) + ":" +
+                   (fields_[i].event && !fields_[i].last.empty() ? fields_[i].last : format(system, fields_[i]));
+        }
+        row += "}}\n";
+        out_ << row;
+        ++rows_;
+    }
+    void close() {
+        if (!active_) return;
+        out_ << "{\"k\":\"end\",\"services\":" << services_ << ",\"rows\":" << rows_ << "}\n";
+        out_.close();
+        active_ = false;
+    }
+    ~BehaviourTrace() { close(); }
+
+private:
+    static std::string number(double v, bool single) {
+        if (std::isnan(v)) return "\"nan\"";
+        if (std::isinf(v)) return v < 0 ? "\"-inf\"" : "\"inf\"";
+        char buf[40];
+        std::snprintf(buf, sizeof(buf), single ? "%.9g" : "%.17g", v);
+        return buf;
+    }
+    static std::string element(const gekko::u8* p, const Field& f) {
+        if (f.kind == 'f') {
+            if (f.width == 4) {
+                const gekko::u32 bits = (static_cast<gekko::u32>(p[0]) << 24) | (static_cast<gekko::u32>(p[1]) << 16) |
+                                        (static_cast<gekko::u32>(p[2]) << 8) | p[3];
+                float v;
+                std::memcpy(&v, &bits, 4);
+                return number(v, true);
+            }
+            gekko::u64 bits = 0;
+            for (int i = 0; i < 8; ++i) bits = (bits << 8) | p[i];
+            double v;
+            std::memcpy(&v, &bits, 8);
+            return number(v, false);
+        }
+        gekko::u64 v = 0;
+        for (gekko::u32 i = 0; i < f.width; ++i) v = (v << 8) | p[i];
+        if (f.kind == 's') {
+            const gekko::u64 sign = 1ull << (f.width * 8u - 1u);
+            const long long sv = (v & sign) != 0u ? static_cast<long long>(v) - static_cast<long long>(sign << 1)
+                                                  : static_cast<long long>(v);
+            return std::to_string(sv);
+        }
+        return std::to_string(v);
+    }
+    // The object an anchor names: scan the game's memory for its vtable word once, re-check it at every use, rescan when
+    // it no longer holds (the object is gone or another took its place).
+    static gekko::u32 anchor_object(gekko::System& system, Anchor& a) {
+        const auto word_at = [&](gekko::u32 address, gekko::u32* out) {
+            const gekko::u8* p = system.guest_memory().peek(gekko::GcAddr(address), 4u);
+            if (p == nullptr) return false;
+            *out = (static_cast<gekko::u32>(p[0]) << 24) | (static_cast<gekko::u32>(p[1]) << 16) |
+                   (static_cast<gekko::u32>(p[2]) << 8) | p[3];
+            return true;
+        };
+        gekko::u32 w = 0;
+        if (a.object != 0u && word_at(a.object + a.word_offset, &w) && w == a.vtable) return a.object;
+        a.object = 0u;
+        const gekko::u8 pat[4] = {static_cast<gekko::u8>(a.vtable >> 24), static_cast<gekko::u8>(a.vtable >> 16),
+                                  static_cast<gekko::u8>(a.vtable >> 8), static_cast<gekko::u8>(a.vtable)};
+        for (const gekko::GuestMemory::Region& region : system.guest_memory().regions()) {
+            if (region.committed == 0u || region.base < 0x80000000u) continue;
+            const gekko::u8* bytes = system.guest_memory().peek(gekko::GcAddr(region.base), region.committed);
+            if (bytes == nullptr) continue;
+            for (std::size_t i = 0; i + 4u <= region.committed; i += 4u) {
+                if (std::memcmp(bytes + i, pat, 4) == 0) {
+                    a.object = region.base + static_cast<gekko::u32>(i) - a.word_offset;
+                    return a.object;
+                }
+            }
+        }
+        return 0u;
+    }
+    std::string format(gekko::System& system, Field& f) {
+        if (f.anchor >= 0) {
+            const gekko::u32 object = anchor_object(system, anchors_[static_cast<std::size_t>(f.anchor)]);
+            if (object == 0u) return "null";
+            f.range.address = object + f.anchor_off;
+        }
+        const gekko::u8* bytes = resolve_guest_range(system, f.range, nullptr);
+        if (bytes == nullptr) return "null";
+        if (f.kind == 'r') return "\"" + hex_bytes(bytes, f.count) + "\"";
+        if (f.count == 1u) return element(bytes, f);
+        std::string out = "[";
+        for (gekko::u32 i = 0; i < f.count; ++i) {
+            if (i != 0u) out += ",";
+            out += element(bytes + static_cast<std::size_t>(i) * f.width, f);
+        }
+        return out + "]";
+    }
+
+    std::vector<Field> fields_;
+    std::vector<Anchor> anchors_;
+    std::ofstream out_;
+    gekko::u32 every_ = 10;
+    gekko::u64 services_ = 0;
+    gekko::u64 rows_ = 0;
+    bool active_ = false;
+};
+
 // The Windows virtual key a --snapshot-key names: F1..F24, one letter or digit; 0 for "none"; -1 when unknown.
 int snapshot_virtual_key(const std::string& name) {
     std::string key;
@@ -1103,6 +1413,14 @@ void print_usage() {
     std::cout << "Usage: ShadowTheHedgehog.exe [options]\n"
                  "\n"
                  "  --game-data <directory>   Root holding sys/ and files/ from the original disc\n"
+                 "  --mods-dir <directory>    Installed mods and their load order (default: mods/ beside\n"
+                 "                            the executable; ShadowModManager.exe manages it)\n"
+                 "  --no-mods                 Load no mod this run\n"
+                 "  --code-ini <file.ini>     Data-writing Gecko codes from a Dolphin game ini ([Gecko_Enabled] ones,\n"
+                 "                            plus --code-enable <name> / --code-enable-all); --code-lines <file> one\n"
+                 "                            code from plain lines; --code-report <file> writes what ran (JSON)\n"
+                 "  --texture-pack <directory> Dolphin-named custom textures (tex1_*.png/dds), searched\n"
+                 "                            recursively; repeatable, the first given wins\n"
                  "  --save-file <file.gci>    The game's save (docs/SAVE_REROUTE_PLAN.md). Default:\n"
                  "                            save-data/<card stem>.gci for the card below, made\n"
                  "                            once from its working image or GCI (read only)\n"
@@ -1125,7 +1443,7 @@ void print_usage() {
                  "                            route is over well before that\n"
 
                  "  Display (docs/DISPLAY_SETTINGS_AUDIT.md). Every flag here is a session override: display.cfg\n"
-                 "  (the Options menu's store) is not changed by it.\n"
+                 "  (docs/PC_SETTINGS_FILES.md) is not changed by it.\n"
                  "  --width <pixels>          Window client width (default 1280); with --exclusive the mode's\n"
                  "  --height <pixels>         Window client height (default 720); with --exclusive the mode's\n"
                  "  --fullscreen / --borderless  Fullscreen at the desktop's size; --exclusive: a monitor mode\n"
@@ -1181,6 +1499,10 @@ void print_usage() {
                  "                            service at this game tick (a checkpoint's boundary)\n"
                  "  --state-report <file>     Write a JSON state report at the end of the run;\n"
                  "                            --report-peek <addr:len,...> adds guest ranges\n"
+                 "  --behaviour-trace <file>  JSONL of the gameplay state (player, rings, camera, ...) at the\n"
+                 "                            host-service grid, for tools/behaviour_diff.py;\n"
+                 "                            --behaviour-layout <file> names the fields,\n"
+                 "                            --behaviour-every <n> the sampling period in services\n"
                  "  --save-state-at-tick <ticks>:<file>  Also save at the boundary after that game\n"
                  "                            tick and run on (repeatable; headless)\n"
                  "  --capture-at-tick <ticks>:<file>  Write the first frame finished at or after\n"
@@ -1192,14 +1514,19 @@ void print_usage() {
                  "  --display-cfg <file>      Key=value display config (default display.cfg)\n"
                  "  --pad-cfg <file>          Controller mapping (default pad.cfg beside the\n"
                  "                            executable)\n"
+                 "  --controls-cfg <file>     Keyboard and mouse bindings (default controls.cfg\n"
+                 "                            beside the executable)\n"
                  "  --button-style <style>    Buttons the prompts show: auto (the connected\n"
                  "                            controller), original (the disc's), xbox,\n"
                  "                            playstation, switch. Overrides pad.cfg's\n"
                  "                            button_style\n"
                  "  --fpr-shadow              Restore a host snapshot of all 32 FPRs across\n"
-                 "                            exceptions. OFF by default: Gekko does not\n"
-                 "                            preserve FPRs across an exception, and the\n"
-                 "                            restore changed 0 of 1,141,282 values measured.\n"
+                 "                            exceptions. Always ON in the default single-\n"
+                 "                            thread configuration (it replaces the OS's lazy\n"
+                 "                            FPU switch there; --no-fpr-shadow is refused).\n"
+                 "                            The option matters only with the original guest\n"
+                 "                            threads (reference build), where it is OFF by\n"
+                 "                            default.\n"
                  "  --compiler-intrinsics     Also replace the tick wrapper and time-base\n"
                  "                            scaling helpers (0x80051BBC 0x80051414) with\n"
                  "                            host arithmetic. OFF by default: they read the\n"
@@ -1542,6 +1869,7 @@ gekko::DisplayConfig resolve_display_config(const Options& options) {
 }
 
 int run(Options options) {
+    gekko::assets::pf_load_stamp("run");  // GEKKO_PF_LOAD_STAMP=1 only (measurement)
     if (options.native_boot_contract_directory &&
         (!options.boot || options.load_state_at_start ||
          (!options.recompiled && !gekko::reference_execution_available()))) {
@@ -1677,6 +2005,9 @@ int run(Options options) {
     }
 
     gekko::System system;
+    gekko::codes::GuestCodeMemory code_memory(system.guest_memory());
+    gekko::codes::Engine code_engine(code_memory);
+    std::string code_report_extra;  // JSON array of the verdicts, for --code-report
     if (options.original_boot) {
         if (!reference_execution) {
             std::cerr << "ERROR: --original-boot is a reference-runner option (the native executable has no "
@@ -1701,8 +2032,8 @@ int run(Options options) {
         options.frame_interpolation = *display.frame_interpolation;
     if (display.draw_distance && !options.draw_distance_explicit) options.draw_distance = *display.draw_distance;
     if (display.fps_counter && !options.fps_counter_explicit) options.fps_counter = *display.fps_counter;
-    // The display settings while the game runs (gekko/display_settings.h): the ones in effect now, and the file the
-    // Options menu saves them to. Its owners pick changes up in the UI loop and at the host services below.
+    // The display settings while the game runs (gekko/display_settings.h): the ones in effect now, and the file
+    // Alt+Enter and a resized window save them to. Its owners pick changes up in the UI loop and at the host services below.
     {
         gekko::DisplaySettings settings;
         settings.fullscreen = display.fullscreen;
@@ -1745,13 +2076,30 @@ int run(Options options) {
         gekko::display_settings().initialize(settings, display_cfg_path(options), overrides);
         if (const std::string o = gekko::display_settings().session_overrides(); !o.empty())
             std::cout << "Display: the command line overrides display.cfg for this session: " << o
-                      << " (not saved unless changed in the Options menu)\n";
-        // The Options menu's settings registry (gekko/settings_registry.h): the Display and Graphics categories over
-        // the display settings just initialised.
-        gekko::settings::registry().add(gekko::settings::make_display_provider());
-        gekko::settings::registry().add(gekko::settings::make_graphics_provider());
+                      << " (not saved unless changed by Alt+Enter or a window resize)\n";
     }
     system.display().configure(display);
+#if defined(SHADOW_RENDER_LIFTED)
+    // The renderer's options (start() below, after the mount and the program image).
+    const auto lifted_render_options = [&options] {
+        gekko::LiftedRenderOptions lifted_options;
+        lifted_options.vsync = options.vsync;
+        lifted_options.collect_timing = options.telemetry_log.has_value() || options.performance_log.has_value();
+        lifted_options.game_framing = options.game_framing;
+        // G10: the render size comes from the display geometry when the game output is set (apply_resolution);
+        // until then the window's size.
+        lifted_options.render_width = 0u;
+        lifted_options.render_height = 0u;
+        // Image quality (display.cfg msaa / anisotropy, --msaa / --anisotropy).
+        lifted_options.msaa_samples = static_cast<std::uint32_t>(gekko::display_settings().current().msaa);
+        lifted_options.anisotropy = static_cast<std::uint32_t>(gekko::display_settings().current().anisotropy);
+        return lifted_options;
+    };
+    // pf-load (GEKKO_PF_LOAD_RENDER_EARLY): the device and renderer creation begins here on a host thread, beside the
+    // asset mount; start() below waits for it and takes it over (gekko/lifted_render.h start_early). No guest
+    // instruction runs before start() returns, as before.
+    if (gekko::recomp::kFunctionCount != 0u) gekko::LiftedRender::start_early(lifted_render_options());
+#endif
     // Internal scale. ONE control, and it means the same thing to both
     // backends: the integer, isotropic multiplier between the guest's 640x528
     // EFB and the physical render targets. It is deliberately not a renderer
@@ -1920,6 +2268,82 @@ int run(Options options) {
             std::cout << "Japanese voices: " << storage_options.extra_files.size() << " files from "
                       << storage_options.extra_files.front().parent_path().string() << "\n";
         if (options.disc_image) storage_options.disc_image = *options.disc_image;
+        // ---- mods (shadow/mods/mods.h) ----------------------------------------------------------------------------
+        // Applied once, to the storage tree at mount; with no enabled mod nothing below changes a single input.
+        std::vector<shadow::mods::RuntimeCode> mod_codes;  // the chosen codes' data codes, for the engine below
+        std::string mod_code_signature;
+        if (!options.no_mods) {
+            const std::filesystem::path mods_dir =
+                options.mods_dir ? *options.mods_dir : executable_directory() / "mods";
+            shadow::mods::RuntimeSetup mods = shadow::mods::prepare_runtime(mods_dir, *root / "files");
+            if (options.mods_report) {
+                // Exactly what is applied below (tools/mods/modtest.py checks it against the manager's plan and the
+                // game's reads). Written whether or not anything is active.
+                namespace mj = shadow::mods::json;
+                mj::Value report = mj::Value::object();
+                report.set("mods_dir", mj::Value::string(shadow::mods::utf8(mods_dir)));
+                report.set("active", mj::Value::boolean(mods.active));
+                mj::Value files = mj::Value::array();
+                for (const auto& [game_path, host] : mods.files) {
+                    mj::Value f = mj::Value::object();
+                    f.set("game_path", mj::Value::string(game_path));
+                    f.set("host", mj::Value::string(shadow::mods::utf8(host)));
+                    files.push(std::move(f));
+                }
+                report.set("files", std::move(files));
+                mj::Value packs = mj::Value::array();
+                for (const std::filesystem::path& d : mods.texture_dirs) packs.push(mj::Value::string(shadow::mods::utf8(d)));
+                report.set("texture_dirs", std::move(packs));
+                mj::Value active = mj::Value::array();
+                for (const std::string& m : mods.active_mods) active.push(mj::Value::string(m));
+                report.set("active_mods", std::move(active));
+                report.set("code_signature", mj::Value::string(mods.code_signature));
+                mj::Value code_names = mj::Value::array();
+                for (const shadow::mods::RuntimeCode& c : mods.codes) code_names.push(mj::Value::string(c.name));
+                report.set("codes", std::move(code_names));
+                mj::Value issues = mj::Value::array();
+                for (const shadow::mods::Issue& i : mods.issues) {
+                    mj::Value o = mj::Value::object();
+                    o.set("severity", mj::Value::string(shadow::mods::severity_name(i.severity)));
+                    o.set("mod", mj::Value::string(i.mod_id));
+                    o.set("message", mj::Value::string(i.message));
+                    issues.push(std::move(o));
+                }
+                report.set("issues", std::move(issues));
+                std::ofstream out(*options.mods_report, std::ios::binary | std::ios::trunc);
+                out << mj::write(report);
+            }
+            for (const shadow::mods::Issue& issue : mods.issues)
+                if (issue.severity != shadow::mods::Severity::Info)
+                    std::cerr << "[mods] " << shadow::mods::severity_name(issue.severity) << ": "
+                              << (issue.mod_id.empty() ? "" : issue.mod_id + ": ") << issue.message << "\n";
+            if (mods.active && options.storage_backend != "host-directory") {
+                std::cerr << "[mods] warning: mods apply to the host-directory storage backend only; none loaded\n";
+            } else if (mods.active) {
+                std::cout << "Mods: " << mods.active_mods.size() << " active from " << mods_dir.string() << " ("
+                          << mods.files.size() << " files, " << mods.texture_dirs.size() << " texture packs, "
+                          << mods.codes.size() << " data codes)\n";
+                for (const std::string& m : mods.active_mods) std::cout << "  mod: " << m << "\n";
+                storage_options.overlays = mods.files;
+                gekko::mod_overlay::set(mods.files);
+                // The switchable voice archive reads the English archive by path: give it the mods' version.
+                if (const std::filesystem::path* voices = gekko::mod_overlay::find("PRS_VOICE_E.afs"))
+                    gekko::override_english_voice_archive(*voices);
+                // The mods' Dolphin texture packs (gekko/texture_packs.h), below any --texture-pack given.
+                if (!mods.texture_dirs.empty()) {
+                    std::vector<std::filesystem::path> packs = gekko::texture_packs::texture_pack_directories();
+                    packs.insert(packs.end(), mods.texture_dirs.begin(), mods.texture_dirs.end());
+                    gekko::texture_packs::configure_texture_packs(std::move(packs));
+                }
+                mod_codes = mods.codes;
+            }
+            mod_code_signature = mods.code_signature;
+        }
+        if (*kCodeVariant != '\0' && mod_code_signature != kCodeVariant)
+            std::cerr << "[mods] warning: this executable was built for the code selection " << kCodeVariant
+                      << (mod_code_signature.empty() ? std::string(", but no code is chosen now")
+                                                     : ", but the chosen codes are " + mod_code_signature)
+                      << "; its built-in code changes run anyway. Build the chosen codes in the manager (Code mods...).\n";
         auto storage = shadow::backends::create_storage(options.storage_backend, storage_options, error);
         if (storage == nullptr) {
             std::cerr << "ERROR: storage backend: " << error << "\n";
@@ -1932,15 +2356,74 @@ int run(Options options) {
             std::cerr << "ERROR: could not mount game assets: " << error << "\n";
             return 4;
         }
+        if (!options.code_inis.empty() || !options.code_files.empty() || !mod_codes.empty()) {
+            // Data-writing codes (gekko/code_engine.h). Classification first: only runnable codes are installed.
+            std::vector<gekko::codes::Code> codes;
+            auto slurp = [](const std::filesystem::path& file, std::string& out) {
+                std::ifstream in(file, std::ios::binary);
+                if (!in) return false;
+                out.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+                return true;
+            };
+            for (const std::filesystem::path& file : options.code_inis) {
+                std::string text;
+                if (!slurp(file, text)) { std::cerr << "ERROR: --code-ini: cannot read " << file.string() << "\n"; return 2; }
+                gekko::codes::IniResult ini = gekko::codes::parse_ini(text);
+                for (const std::string& w : ini.warnings) std::cerr << "[codes] " << w << "\n";
+                for (gekko::codes::Code& c : ini.codes) {
+                    const std::string bare = c.name.substr(0, c.name.find(" ["));
+                    for (const std::string& n : options.code_enable)
+                        if (n == c.name || n == bare) c.enabled = true;
+                    if (options.code_enable_all) c.enabled = true;
+                    codes.push_back(std::move(c));
+                }
+            }
+            for (const std::filesystem::path& file : options.code_files) {
+                std::string text, why;
+                gekko::codes::Code c;
+                c.name = file.stem().string();
+                if (!slurp(file, text)) { std::cerr << "ERROR: --code-lines: cannot read " << file.string() << "\n"; return 2; }
+                if (!gekko::codes::parse_lines(text, c.lines, why)) { std::cerr << "ERROR: --code-lines: " << why << "\n"; return 2; }
+                codes.push_back(std::move(c));
+            }
+            // The mods' chosen codes, as the code-mod pipeline wrote them for this selection. A code whose feature
+            // also changes code runs only in the executable built for this selection (never half a feature).
+            for (const shadow::mods::RuntimeCode& m : mod_codes) {
+                if (m.needs_variant && mod_code_signature != kCodeVariant) {
+                    std::cout << "[codes] " << m.name << ": not run - its feature also changes code, which only the "
+                                 "executable built for these codes carries\n";
+                    continue;
+                }
+                gekko::codes::Code c;
+                c.name = m.name;
+                for (const auto& [a, b] : m.lines) c.lines.push_back({a, b});
+                codes.push_back(std::move(c));
+            }
+            const std::vector<gekko::codes::Verdict> verdicts = code_engine.configure(codes, gekko::codes::pal_layout());
+            code_report_extra = "[";
+            for (std::size_t i = 0; i < codes.size(); ++i) {
+                if (!codes[i].enabled) continue;
+                std::cout << "[codes] " << codes[i].name << ": " << gekko::codes::support_name(verdicts[i].support)
+                          << (verdicts[i].why.empty() ? "" : " - " + verdicts[i].why) << "\n";
+                if (code_report_extra.size() > 1) code_report_extra += ",";
+                code_report_extra += "{\"name\":\"";
+                for (char ch : codes[i].name) { if (ch == '"' || ch == '\\') code_report_extra += '\\'; if (static_cast<unsigned char>(ch) >= 0x20) code_report_extra += ch; }
+                code_report_extra += std::string("\",\"support\":\"") + gekko::codes::support_name(verdicts[i].support) + "\"}";
+            }
+            code_report_extra += "]";
+            if (code_engine.active()) {
+                std::cout << "[codes] " << code_engine.installed() << " data code(s) run once per retrace\n";
+                system.video().set_frame_hook([&code_engine](gekko::Cpu&) { code_engine.run_frame(); });
+            }
+        }
         if (system.save_store_active()) {
             // The game's own options live in the PC settings (options.cfg, loaded by the mount; the user's decision
             // C, docs/SAVE_REROUTE_PLAN.md): the language and sound mode the game reads from the console settings at
             // boot follow them, so the screens before the save loads match too. Game language 0 JP .. 5 IT ->
             // the OS's (0 English, 1 German, 2 French, 3 Spanish, 4 Italian); Japanese has no OS value (kept).
             const gekko::PcSettings pc = gekko::pc_settings().current();
-            // 6 = Hungarian: English to the game (its fonts / texts swapped at the mount).
-            static constexpr int kOsLanguage[7] = {-1, 0, 2, 3, 1, 4, 0};
-            const int language = pc.language >= 0 && pc.language <= 6 ? kOsLanguage[pc.language] : -1;
+            static constexpr int kOsLanguage[6] = {-1, 0, 2, 3, 1, 4};
+            const int language = pc.language >= 0 && pc.language <= 5 ? kOsLanguage[pc.language] : -1;
             const int stereo = pc.speaker < 0 ? -1 : (pc.speaker == 1 ? 0 : 1);
             system.ipl().override_console_settings(language, stereo);
         }
@@ -1950,9 +2433,25 @@ int run(Options options) {
                   << static_cast<double>(report.declared_bytes) / (1024.0 * 1024.0)
                   << " MiB across " << static_cast<double>(report.address_span) / (1024.0 * 1024.0)
                   << " MiB of token space (" << report.table_bytes / 1024 << " KiB of tables)\n";
-        std::cout << "Save text: " << (options.pc_save_text ? "PC wording (English)" : "original memory-card text")
-                  << "; Options Display tile: tile art and help line in 6 languages; "
+        std::cout << "Save text: " << (options.pc_save_text ? "PC wording" : "original memory-card text") << "; "
                   << system.assets().replaced_count() << " file(s) replaced\n";
+        {
+            // cs2/ram: what the replaced files hold privately (GEKKO_CS2_RAM=0: full copies only).
+            const gekko::assets::MemoryProvider::Held held = system.assets().replacement_held();
+            const double mib = 1.0 / (1024.0 * 1024.0);
+            std::cout << "Replacements: " << held.files << " held as copies (" << static_cast<double>(held.file_bytes) * mib
+                      << " MiB), " << held.deltas << " as patches over the original ("
+                      << static_cast<double>(held.delta_bytes) * mib << " MiB held for "
+                      << static_cast<double>(held.delta_logical_bytes) * mib << " MiB served)\n";
+            if (const char* digest_path = std::getenv("GEKKO_CS2_RAM_DIGESTS");
+                digest_path != nullptr && digest_path[0] != '\0') {
+                std::ofstream digests(digest_path);
+                system.assets().replacement_digests(
+                    [&digests](const std::string& label, std::uint64_t size, std::uint64_t fnv) {
+                        digests << label << " size " << size << " fnv " << std::hex << fnv << std::dec << "\n";
+                    });
+            }
+        }
         {
             const gekko::button_glyphs::ButtonGlyphs::Report& buttons = system.button_glyphs().report();
             std::cout << "Buttons: "
@@ -2326,6 +2825,9 @@ int run(Options options) {
     system.install_gx_sites(gekko::recomp::kGxSites, gekko::recomp::kGxSiteCount);
     system.install_platform_sites(gekko::recomp::kPlatformSites, gekko::recomp::kPlatformSiteCount);
     system.install_lift_sites(gekko::recomp::kLiftSites, gekko::recomp::kLiftSiteCount);
+    if (gekko::recomp::kInlinedLeafCount != 0) {
+        system.cpu().set_inlined_leaves(gekko::recomp::kInlinedLeaves, gekko::recomp::kInlinedLeafCount);
+    }
     gekko::RecompiledCode recompiled_code;
     if (options.recompiled && gekko::recomp::kFunctionCount != 0) {
         recompiled_code.install(gekko::recomp::kFunctions, gekko::recomp::kFunctionCount);
@@ -2456,6 +2958,13 @@ int run(Options options) {
     system.set_trace_stale_contacts(options.trace_stale_contacts);
     system.set_chara_colli_bone_native(options.chara_colli_bone_native);
     system.set_chara_colli_bone_memo(options.chara_colli_bone_memo);
+    if (options.no_fpr_shadow && gekko::os_threads::single_thread_configuration()) {
+        std::cerr << "ERROR: --no-fpr-shadow cannot be honoured in the single-thread configuration: MSR[FP] is forced there and "
+                     "the FPR snapshot is what keeps a delivery's callbacks out of the interrupted code's registers. It applies "
+                     "only with the original guest threads (SHADOW_NATIVE_CRI=0 / GEKKO_NATIVE_BG_READ=0 / "
+                     "GEKKO_NATIVE_EXPAND_JOBS=0 / GEKKO_NATIVE_ONE=0, reference build).\n";
+        return 2;
+    }
     system.cpu().set_interrupt_fpr_shadow(options.fpr_shadow || gekko::os_threads::single_thread_configuration());  // one thread: the host save / restore replaces the lazy FPU switch (native_interrupts.cpp os_set_current_context)
     system.set_sofdec_playend_stub(options.sofdec_playend_stub.value_or(false));
     std::vector<gekko::guest_watch::Range> deferred_watch_ranges;  // --watch-guest-from-tick
@@ -2676,25 +3185,16 @@ int run(Options options) {
     gekko::ThreadSampler thread_sampler;  // per-thread CPU rows for GEKKO_PRESENT_TRACE (inert otherwise)
     thread_sampler.start();
     {
-        gekko::LiftedRenderOptions lifted_options;
-        lifted_options.vsync = options.vsync;
-        lifted_options.collect_timing = options.telemetry_log.has_value() || options.performance_log.has_value();
-        lifted_options.game_framing = options.game_framing;
-        // G10: the render size comes from the display geometry when the game output is set (apply_resolution);
-        // until then the window's size.
-        lifted_options.render_width = 0u;
-        lifted_options.render_height = 0u;
-        // Image quality (display.cfg msaa / anisotropy, --msaa / --anisotropy); changed live by the Options page.
-        lifted_options.msaa_samples = static_cast<std::uint32_t>(gekko::display_settings().current().msaa);
-        lifted_options.anisotropy = static_cast<std::uint32_t>(gekko::display_settings().current().anisotropy);
+        const gekko::LiftedRenderOptions lifted_options = lifted_render_options();
         std::string lifted_error;
-        if (!lifted_render.start(lifted_options, &lifted_error)) {
+        gekko::assets::pf_load_stamp("renderer_begin");
+        const bool lifted_started = lifted_render.start(lifted_options, &lifted_error);
+        gekko::assets::pf_load_stamp("renderer_end");
+        if (!lifted_started) {
             std::cerr << "ERROR: native renderer: " << lifted_error << std::endl;
             return 4;
         }
-        // The Options page offers only the MSAA counts this GPU takes for the scene (a saved one it lacks is shown as
-        // such and the renderer keeps the one it can - msaa_note).
-        gekko::options_display::set_msaa_supported(lifted_render.msaa_supported_mask());
+        // A display.cfg MSAA count this GPU lacks for the scene: the renderer keeps the one it can (msaa_note).
         if (!lifted_render.msaa_note().empty()) std::cerr << "WARNING: " << lifted_render.msaa_note() << "\n";
         // The 2D identity hooks' announcements lay the game's 2D out for the real output (R2_DRIVER.md 4.8).
         system.set_hud_listener(lifted_render.hud_listener());
@@ -2831,6 +3331,13 @@ int run(Options options) {
                 return 6;
             }
         }
+        for (std::size_t index = 0; index < gekko::recomp::kInlinedLeafCount; ++index) {
+            if (system.cpu().has_hle(gekko::recomp::kInlinedLeaves[index])) {
+                std::cerr << "ERROR: hook at 0x" << std::hex << gekko::recomp::kInlinedLeaves[index] << std::dec
+                          << " names a function the generator inlined into its callers (--inline-leaves)\n";
+                return 6;
+            }
+        }
     }
     // Chained after the production hook owners, before any guest instruction.
     // Otherwise System::start can replace an observer's entry silently.
@@ -2949,6 +3456,18 @@ int run(Options options) {
             std::cerr << "ERROR: --report-peek: " << range_error << "\n";
             return 2;
         }
+    }
+    BehaviourTrace behaviour_trace;
+    if (options.behaviour_trace) {
+        std::string trace_error;
+        const std::filesystem::path layout =
+            options.behaviour_layout ? *options.behaviour_layout : std::filesystem::path("behaviour_layout.txt");
+        if (!behaviour_trace.open(*options.behaviour_trace, layout, options.behaviour_every, &trace_error)) {
+            std::cerr << "ERROR: --behaviour-trace: " << trace_error << "\n";
+            return 2;
+        }
+        std::cout << "[behaviour] tracing " << options.behaviour_trace->string() << " (layout " << layout.string()
+                  << ", every " << options.behaviour_every << " services)\n";
     }
     // Input tapes: playback latches the tape's samples where the run would latch its own; a recording starts here, at
     // the run's starting state (after --load-state).
@@ -3427,6 +3946,7 @@ int run(Options options) {
         std::cout << "Wait-point watchdog: " << options.wait_watchdog_ms << " ms of wall time\n";
     }
     std::cout << "\nExecuting the original PAL game image from its entry point...\n";
+    gekko::assets::pf_load_stamp("guest_start");
     // Game time: where this session started and where the budget ends it.
     const gekko::u64 initial_game_ticks = system.game_ticks();
     const gekko::u64 budget_end_ticks =
@@ -3853,22 +4373,55 @@ int run(Options options) {
                            std::chrono::steady_clock::now().time_since_epoch())
                     .count();
             };
+            // The keyboard and mouse (docs/controls/NATIVE_INPUT_ARCHITECTURE.md). The input thread owns the raw input
+            // window; the game thread only reads the mouse totals, which are atomics.
+            {
+                std::vector<std::string> warnings;
+                gekko::controls_settings().load(
+                    options.controls_cfg ? *options.controls_cfg : executable_directory() / "controls.cfg", &warnings);
+                for (const std::string& warning : warnings) std::cerr << "[controls] " << warning << "\n";
+            }
+            gekko::RawInput raw_input;
+            // Set by the game thread at each host service: the game is in play, so the camera may have the mouse.
+            std::atomic<bool> camera_wants_mouse{false};
+            std::atomic<bool> game_paused{false};
+            // Set by the input thread when the mouse is taken from the camera: what it had accumulated is dropped.
+            std::atomic<bool> mouse_look_reset{false};
+            shadow::peripheral::MouseLook mouse_look;
+            std::uint64_t mouse_look_generation = 0;
+            // On the game thread, where a sample enters the game: the camera stick from the mouse's counts.
+            const auto overlay_mouse_look = [&](shadow::peripheral::ControllerSample& pad) {
+                if (const std::uint64_t generation = gekko::controls_settings().generation();
+                    generation != mouse_look_generation) {
+                    mouse_look_generation = generation;
+                    const auto config = gekko::controls_settings().current();
+                    mouse_look.set_settings({config->mouse_sensitivity_x, config->mouse_sensitivity_y,
+                                             config->mouse_invert_x, config->mouse_invert_y});
+                }
+                // A positive camera stick orbits the eye to the right, which turns the view left (measured,
+                // tools/controls/camera_parity.py), so the mouse moving right is a negative stick: the view follows the
+                // hand. Mouse Y counts grow toward the player; the camera stick's Y grows away.
+                const std::int64_t total_x = -raw_input.mouse_total_x(), total_y = -raw_input.mouse_total_y();
+                if (mouse_look_reset.exchange(false, std::memory_order_acq_rel)) mouse_look.reset(total_x, total_y);
+                shadow::peripheral::apply_look_to_stick(pad, mouse_look.peek(total_x, total_y));
+            };
             std::jthread input_thread;
             if (input_thread_on) {
                 input_thread = std::jthread([&](std::stop_token stop) {
                     gekko::name_this_thread("input-poll");
-                    // The keyboard from raw input on this thread (gekko/raw_keyboard.h): a key change wakes the loop
+                    // The keyboard and mouse from raw input on this thread (gekko/raw_input.h): a change wakes the loop
                     // and is published at once. Without it, the UI thread's window-message level (keyboard_published).
-                    gekko::RawKeyboard raw_keyboard;
-                    const bool raw_keys = raw_keyboard.start();
-                    const auto raw_held = [](int key, void* context) {
-                        return static_cast<const gekko::RawKeyboard*>(context)->held(key);
-                    };
+                    const bool raw_keys = raw_input.start();
 #if defined(_WIN32)
                     HANDLE timer = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
                                                           TIMER_ALL_ACCESS);
 #endif
                     bool was_active = false;
+                    const bool input_idle_wait = [] {
+                        const char* v = std::getenv("GEKKO_CS2_PACE_INPUT_IDLE");
+                        return !(v != nullptr && v[0] == '0');
+                    }();
+                    bool mouse_accepted = false;
                     while (!stop.stop_requested()) {
                         std::array<shadow::peripheral::ControllerSample, 4> sampled{};
                         const shadow::peripheral::ControllerSample gamepad =
@@ -3879,6 +4432,7 @@ int run(Options options) {
                                 sampled[port] = gekko::poll_xinput_controller(port);
                         }
                         shadow::peripheral::ControllerSample raw_keyboard_sample{};
+                        raw_keyboard_sample.connected = true;
                         if (raw_keys) {
 #if defined(_WIN32)
                             // As the window path: the keyboard counts only while the game window is in front.
@@ -3887,12 +4441,30 @@ int run(Options options) {
 #else
                             const bool active = false;
 #endif
-                            // Back in front: drop keys released while the sink saw nothing (RawKeyboard::resync),
+                            // Back in front: drop keys released while the sink saw nothing (RawInput::resync),
                             // as the window path cleared its keys on WM_KILLFOCUS / WM_ACTIVATEAPP.
-                            if (active && !was_active) raw_keyboard.resync();
+                            if (active && !was_active) raw_input.resync();
                             was_active = active;
-                            raw_keyboard_sample = active ? shadow::peripheral::sample_from_keyboard(raw_held, &raw_keyboard)
-                                                         : shadow::peripheral::sample_from_keyboard(nullptr, nullptr);
+                            const auto controls = gekko::controls_settings().current();
+                            if (active) {
+                                shadow::peripheral::KeyMouseLevels levels;
+                                for (int key = 1; key < 0xFF; ++key) {
+                                    if (raw_input.held(key)) levels.keys.set(static_cast<std::size_t>(key));
+                                }
+                                levels.mouse_buttons = raw_input.mouse_buttons();
+                                const bool in_menu = !camera_wants_mouse.load(std::memory_order_relaxed);
+                                const bool back_means_b = in_menu && !game_paused.load(std::memory_order_relaxed);
+                                raw_keyboard_sample = shadow::peripheral::sample_from_actions(
+                                    *controls, shadow::peripheral::resolve_actions(*controls, levels, in_menu),
+                                    back_means_b);
+                            }
+                            const bool accept = active && camera_wants_mouse.load(std::memory_order_relaxed);
+                            if (accept != mouse_accepted) {
+                                mouse_accepted = accept;
+                                raw_input.accept_mouse(accept);
+                                mouse_look_reset.store(true, std::memory_order_release);
+                                window.request_cursor_capture(accept && controls->mouse_capture);
+                            }
                         }
                         const std::int64_t polled = steady_ns();
                         std::uint32_t live_controls = 0;
@@ -3911,18 +4483,26 @@ int run(Options options) {
                                                                   live_controls, 1u, raw_keys ? 1u : 0u);
                         }
 #if defined(_WIN32)
-                        if (timer != nullptr) {
+                        // GEKKO_CS2_PACE_INPUT_IDLE=0 keeps the 1 ms poll. With the keyboard from raw input (a key wakes this
+                        // wait by itself) and no pad on any polled port there is nothing to poll: wait for a key or 16 ms
+                        // (focus changes and a pad appearing are noticed within that; XInput's dead-port memo already
+                        // limits discovery to about a second). A connected pad keeps the 1 ms loop, so its latency is
+                        // unchanged, and a key still publishes at the wake it causes.
+                        if (raw_keys && input_idle_wait && !gamepad.connected && !sampled[1].connected &&
+                            !sampled[2].connected && !sampled[3].connected) {
+                            raw_input.wait_and_pump(nullptr, 16);  // wakes at a key, a button or mouse motion
+                        } else if (timer != nullptr) {
                             LARGE_INTEGER due{};
                             due.QuadPart = -10'000;  // 1 ms, relative, 100 ns units
                             SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE);
                             if (raw_keys)
-                                raw_keyboard.wait_and_pump(timer, 5);  // wakes at the timer or at a key
+                                raw_input.wait_and_pump(timer, 5);  // wakes at the timer or at a key
                             else
                                 WaitForSingleObject(timer, 5);
                         } else if (raw_keys) {
                             // No high-resolution timer (before Windows 10 1803, or creation failed): the raw keys
                             // must still be pumped, or the keyboard is dead for the whole run.
-                            raw_keyboard.wait_and_pump(nullptr, 1);
+                            raw_input.wait_and_pump(nullptr, 1);
                         } else {
                             std::this_thread::sleep_for(std::chrono::milliseconds(1));
                         }
@@ -4224,30 +4804,39 @@ int run(Options options) {
                 const char* v = std::getenv("GEKKO_INPUT_READ_LATCH");
                 return !(v != nullptr && v[0] == '0');
             }();
-            if (input_thread_on && read_latch && tape_recorder == nullptr) {
-                system.peripheral().set_live_source([&](shadow::peripheral::ManagerImpPc& peripheral) {
+            // The engine's read is also where the mouse's counts are spent: the sample it reads was built from them
+            // (MouseLook::commit), whether that sample was latched here or by the 5 ms grid of a recording.
+            if (input_thread_on) {
+                const bool latch_at_read = read_latch && tape_recorder == nullptr;
+                system.peripheral().set_live_source([&, latch_at_read](shadow::peripheral::ManagerImpPc& peripheral) {
                     if (input_tape.playing() || ui_test_active) return;  // the host service latched them
-                    std::array<shadow::peripheral::ControllerSample, 4> pads;
-                    std::int64_t polled_ns = 0;
-                    {
-                        std::lock_guard<std::mutex> guard(pad_mutex);
-                        pads = pads_published;
-                        polled_ns = pads_published_ns;
+                    if (latch_at_read) {
+                        std::array<shadow::peripheral::ControllerSample, 4> pads;
+                        std::int64_t polled_ns = 0;
+                        {
+                            std::lock_guard<std::mutex> guard(pad_mutex);
+                            pads = pads_published;
+                            polled_ns = pads_published_ns;
+                        }
+                        overlay_mouse_look(pads[0]);
+                        for (std::size_t port = 0; port < pads.size(); ++port) peripheral.latch(port, pads[port]);
+                        if (shadow::render::present_trace::enabled()) {
+                            shadow::render::present_trace::record(shadow::render::present_trace::Ev::InputLatch,
+                                                                  system.game_ticks(), 2u, pads[0].controls,
+                                                                  static_cast<std::uint64_t>(polled_ns));
+                        }
                     }
-                    for (std::size_t port = 0; port < pads.size(); ++port) peripheral.latch(port, pads[port]);
-                    if (shadow::render::present_trace::enabled()) {
-                        shadow::render::present_trace::record(shadow::render::present_trace::Ev::InputLatch,
-                                                              system.game_ticks(), 2u, pads[0].controls,
-                                                              static_cast<std::uint64_t>(polled_ns));
-                    }
+                    mouse_look.commit();
                 });
             }
+            const bool heap_trace_on = gekko::HeapTrace::enabled();  // GEKKO_HEAP_TRACE, read once
             system.set_host_service(
                 [&](gekko::u64 game_ticks) {
                     const auto service_start = std::chrono::steady_clock::now();
                     if (gekko::MeasureProbes* probes = gekko::MeasureProbes::active()) probes->on_host_service();
                     // GEKKO_HEAP_TRACE (gekko/heap_census.h): the OS heaps once per game second.
-                    gekko::HeapTrace::tick(game_ticks, [&](gekko::u32 a) { return system.cpu().mem_read32(a); });
+                    if (heap_trace_on)
+                        gekko::HeapTrace::tick(game_ticks, [&](gekko::u32 a) { return system.cpu().mem_read32(a); });
                     game_thread_placement.sample();
                     // Whole-body cost of one host service, so the audit can
                     // tell service work apart from native guest execution.
@@ -4256,6 +4845,7 @@ int run(Options options) {
                     const gekko::u64 total = game_ticks;
                     const gekko::u64 paced_cycles = game_ticks;
                     retired_published.store(total, std::memory_order_relaxed);
+                    if (behaviour_trace.active()) behaviour_trace.on_service(system, game_ticks);
 
                     if (stop_requested.load(std::memory_order_acquire)) {
                         system.cpu().request_stop(gekko::StopReason::HostRequest,
@@ -4290,7 +4880,19 @@ int run(Options options) {
                         }
                         // A tape being played replaces the live samples (gekko/input_tape.h); a recording keeps
                         // what was latched.
+                        const bool camera_in_play = gekko::gameplay_camera_active(system.cpu());
+                        static bool camera_in_play_noted = false;
+                        if (camera_in_play != camera_in_play_noted) {
+                            camera_in_play_noted = camera_in_play;
+                            std::cout << "[controls] tick " << game_ticks
+                                      << (camera_in_play ? ": gameplay camera, the mouse is the camera's\n"
+                                                         : ": no gameplay camera, the mouse is free\n");
+                        }
+                        camera_wants_mouse.store(camera_in_play && !input_tape.playing() && !ui_test_active,
+                                                 std::memory_order_relaxed);
+                        game_paused.store(gekko::gameplay_paused(system.cpu()), std::memory_order_relaxed);
                         if (input_tape.playing()) input_tape.samples_at(game_ticks, pads);
+                        else if (!ui_test_active) overlay_mouse_look(pads[0]);
                         // --ui-test(-script) in a window too (the headless loop has its own): its pad replaces
                         // player 1's, so a scripted tour can be watched and captured with the overlay.
                         if (ui_test_active) {
@@ -4316,6 +4918,7 @@ int run(Options options) {
                                                                   game_ticks, changed ? 1u : 0u, pads[0].controls,
                                                                   static_cast<std::uint64_t>(pads_polled_ns));
                         }
+                        gekko::camera_trace_record(system.cpu(), game_ticks, pads[0]);
                         if (tape_recorder != nullptr) {
                             tape_recorder->observe(game_ticks, pads);
                             autosave_tape();
@@ -5490,17 +6093,16 @@ int run(Options options) {
                 // and size (the resize below takes the new client area to the swap chain), V-Sync from the next
                 // present, the render clock's rate and frame blending, the FPS counter.
                 // Alt+Enter: windowed <-> fullscreen (borderless or exclusive, as set), through the display settings so
-                // the Options page and display.cfg follow; nothing else changes.
-                // The same transaction as the Options page (settings_registry.h toggle_fullscreen): refused while a
-                // display trial runs, never saved before the window owner reports an exclusive mode set.
+                // display.cfg follows; nothing else changes (gekko/display_settings.h FullscreenToggle: refused while
+                // one is verified, never saved before the window owner reports an exclusive mode set).
                 if (window.take_fullscreen_toggle()) {
                     std::string toggle_error;
-                    if (!gekko::settings::registry().toggle_fullscreen(&toggle_error))
+                    if (!gekko::fullscreen_toggle().toggle(gekko::display_settings(), &toggle_error))
                         std::cerr << "[display] Alt+Enter: " << toggle_error << "\n";
                 }
-                // The Options menu's display trial (gekko/settings_registry.h): a mode or resolution change not
-                // confirmed within 15 s is rolled back here, whatever the screen shows; the take below applies it.
-                gekko::settings::registry().tick();
+                // An exclusive mode Alt+Enter asked for: kept when the window owner reports it set, rolled back when it
+                // reports it refused or never reports it within 15 s; the take below applies a rollback.
+                gekko::fullscreen_toggle().tick(gekko::display_settings());
                 {
                     gekko::DisplaySettings settings;
                     const std::uint64_t settings_generation = gekko::display_settings().generation();
@@ -5517,7 +6119,7 @@ int run(Options options) {
                                             exclusive_mode ? settings.fullscreen_height : settings.window_height,
                                             settings.exclusive);
                         }
-                        // What the window owner reached (the Options page and the display trial read it).
+                        // What the window owner reached (Alt+Enter's verification reads it).
                         gekko::DisplayWindowState state;
                         state.generation = settings_generation;
                         state.fullscreen = settings.fullscreen;
@@ -5531,10 +6133,10 @@ int run(Options options) {
                     }
                     // A window the player resized (the drag ended, or maximised / restored): that size is the window
                     // size from now on - remembered in display.cfg, used again at the next start and after fullscreen.
-                    // Never during a display trial (only confirmed values are saved).
+                    // Never while Alt+Enter's exclusive mode is verified (only confirmed values are saved).
                     if (!settings.fullscreen && !window.sizing() && !window.minimized() &&
                         (changes & gekko::kDisplayWindowChange) == 0u && !gekko::display_settings().provisional() &&
-                        !gekko::settings::registry().trial().active) {
+                        !gekko::fullscreen_toggle().verifying()) {
                         int client_w = 0, client_h = 0;
                         window.client_size(client_w, client_h);
                         if (client_w >= 320 && client_h >= 240 &&
@@ -5563,17 +6165,6 @@ int run(Options options) {
                 }
                 {
                     GEKKO_PROFILE_ZONE("ui/resize");
-                    // The Options page's fullscreen resolution: the monitor the window is on now.
-                    if (int monitor_w = 0, monitor_h = 0; window.monitor_size(monitor_w, monitor_h)) {
-                        // The desktop's size: in exclusive fullscreen the monitor's rectangle is the mode's, so the
-                        // last size seen outside it stays (borderless shows at the desktop's).
-                        if (!window.exclusive_active())
-                            gekko::options_display::set_screen_size(static_cast<gekko::u32>(monitor_w),
-                                                                    static_cast<gekko::u32>(monitor_h));
-                    }
-                    if (int work_w = 0, work_h = 0; window.work_area_client(work_w, work_h))
-                        gekko::options_display::set_work_area(static_cast<gekko::u32>(work_w),
-                                                              static_cast<gekko::u32>(work_h));
                     int client_w = 0;
                     int client_h = 0;
                     window.client_size(client_w, client_h);
@@ -6332,6 +6923,7 @@ int run(Options options) {
 #if defined(SHADOW_RENDER_LIFTED)
         start_game_output(headless_output_w, headless_output_h, headless_output_source);
 #endif
+        const bool heap_trace_on = gekko::HeapTrace::enabled();  // GEKKO_HEAP_TRACE, read once
         system.set_host_service(
                 [&](gekko::u64 game_ticks) {
                     if (budget_due(game_ticks)) {
@@ -6340,8 +6932,10 @@ int run(Options options) {
                         return;
                     }
                     if (gekko::MeasureProbes* probes = gekko::MeasureProbes::active()) probes->on_host_service();
-                    gekko::HeapTrace::tick(game_ticks, [&](gekko::u32 a) { return system.cpu().mem_read32(a); });
+                    if (heap_trace_on)
+                        gekko::HeapTrace::tick(game_ticks, [&](gekko::u32 a) { return system.cpu().mem_read32(a); });
                     game_thread_placement.sample();
+                    if (behaviour_trace.active()) behaviour_trace.on_service(system, game_ticks);
                     if (ui_test_active) {
                         const gekko::u32 frame = static_cast<gekko::u32>(ui_driver.system->video().frames());
                         const std::string* entered = nullptr;
@@ -6595,6 +7189,7 @@ int run(Options options) {
         // path, so its own CPU time bounds how much of the run was execution
         // and how much was waiting. Two syscalls per run, outside any loop.
         const double guest_cpu_start = thread_cpu_seconds_now();
+        const unsigned long long guest_cycles_start = thread_cycles_now();
         const auto guest_wall_start = std::chrono::steady_clock::now();
         for (;;) {
             system.run();
@@ -6634,6 +7229,7 @@ int run(Options options) {
             std::chrono::duration<double>(std::chrono::steady_clock::now() - guest_wall_start)
                 .count();
         g_guest_run_cpu_seconds = thread_cpu_seconds_now() - guest_cpu_start;
+        g_guest_run_cycles = static_cast<long long>(thread_cycles_now() - guest_cycles_start);
         system.set_host_service({});
     }
     audio_runtime.finish_production();  // AU-T1: guest execution has ended; later device silence is the run's tail
@@ -6641,8 +7237,9 @@ int run(Options options) {
         const gekko::PrsAhead::Stats s = ahead->stats();
         std::cout << "[prs-ahead] archives " << s.archives << " members queued " << s.queued << " decoded "
                   << s.decoded << " (not qualified " << s.unqualified << ") taken " << s.taken << " not ready "
-                  << s.not_ready << " dropped " << s.dropped << " key matched but refused " << s.refused
-                  << "; expand calls served " << system.game_memory().prs_ahead_served() << " refused "
+                  << s.not_ready << " (claimed by the game thread " << s.claimed << ", waited for " << s.waited
+                  << ", wait timeouts " << s.wait_timeouts << ") dropped " << s.dropped << " key matched but refused "
+                  << s.refused << "; expand calls served " << system.game_memory().prs_ahead_served() << " refused "
                   << system.game_memory().prs_ahead_refused() << "\n";
     }
     if (gekko::NativeFileApi* files = system.file_api()) {
@@ -6960,6 +7557,10 @@ int run(Options options) {
             std::cerr << "[input-tape] " << tape_error << "\n";
         }
     }
+    if (options.code_report) {
+        std::ofstream out(*options.code_report, std::ios::binary | std::ios::trunc);
+        out << "{\"engine\":" << code_engine.report_json() << ",\"verdicts\":" << (code_report_extra.empty() ? "[]" : code_report_extra) << "}\n";
+    }
     if (options.state_report) {
         std::ofstream out(*options.state_report, std::ios::binary | std::ios::trunc);
         out << state_report_json(system, render_frames(), stop_at_request_tick, report_ranges, true) << "\n";
@@ -7015,6 +7616,9 @@ int run(Options options) {
                 static_cast<double>(memory.PeakPagefileUsage) / (1024.0 * 1024.0);
         }
     }
+#endif
+#if defined(SHADOW_RAM_PROBE)
+    ram_probe::report();
 #endif
     std::cout << "Process memory: working set " << memory_working_set_mib << " MiB (peak "
               << memory_peak_working_set_mib << "), private " << memory_private_mib
@@ -7387,32 +7991,6 @@ int run(Options options) {
                       static_cast<unsigned long long>(h.considered) - attributed);
         std::cout << row;
     }
-    {
-        // The Options menu's Display tile (gekko/native_options_display.h).
-        const auto& d = system.options_display().report();
-        std::cout << "Options Display tile: " << d.setups << " screens, " << d.row_draws << " page draws, " << d.moves
-                  << " moves, " << d.changes << " changes, " << d.applies << " applied (" << d.apply_failures
-                  << " refused), " << d.saves << " saved (" << d.save_failures << " failed), " << d.font_failures
-                  << " font failures";
-        if (!system.options_display().last_error().empty())
-            std::cout << "; last error: " << system.options_display().last_error();
-        // What the Display page shows for the settings in effect (fullscreen: the monitor's size is the resolution).
-        {
-            namespace od = gekko::options_display;
-            const od::Model page = od::Model::from(gekko::display_settings().current());
-            const od::Texts& en = od::texts(od::Language::EN);
-            const auto ascii = [](const std::u16string& s) {
-                std::string out;
-                for (const char16_t c : s) out.push_back(c < 0x80 ? static_cast<char>(c) : '?');
-                return out;
-            };
-            std::cout << "; page: " << ascii(page.value_text(od::kDisplayMode, en, u"ON", u"OFF")) << ", ratio "
-                      << ascii(page.value_text(od::kScreenRatio, en, u"ON", u"OFF")) << ", resolution scale "
-                      << ascii(page.value_text(od::kRenderResolution, en, u"ON", u"OFF")) << " (screen "
-                      << page.screen.width << "x" << page.screen.height << ")";
-        }
-        std::cout << "\n";
-    }
     if (options.fov_probe) {
         const auto& fp = system.fov_probe();
         char row[600];
@@ -7639,7 +8217,7 @@ int run(Options options) {
                     // EVERY call into that slot, hooked or not, through try_hle_slow.
                     std::map<gekko::u32, std::vector<gekko::u32>> slots;
                     for (const auto& entry : system.cpu().hle_entries()) {
-                        slots[(entry.address >> 2) & 1023u].push_back(entry.address);
+                        slots[gekko::Cpu::hle_slot_of(entry.address)].push_back(entry.address);
                     }
                     std::size_t shared = 0;
                     std::string members;
@@ -7655,6 +8233,11 @@ int run(Options options) {
                     }
                     std::printf("HLE filter: %zu of %zu hooked slots shared%s%s\n", shared, slots.size(),
                                 shared != 0u ? ":" : "", members.c_str());
+                }
+                if (std::getenv("SHADOW_HLE_DUMP") != nullptr) {
+                    // Every installed hook (address, hits): the input of the filter-collision analysis.
+                    for (const auto& entry : system.cpu().hle_entries())
+                        std::printf("HLEDUMP 0x%08X %llu\n", entry.address, static_cast<unsigned long long>(entry.hits));
                 }
                 std::printf("HLE hooks installed: %zu; hits this run:\n", system.cpu().hle_entries().size());
                 for (const auto& entry : system.cpu().hle_entries()) {
@@ -7697,6 +8280,15 @@ int run(Options options) {
                           system.cpu().fallback_total(gekko::FallbackReason::Yield)),
                       static_cast<unsigned long long>(
                           system.cpu().fallback_total(gekko::FallbackReason::VerifyCut)));
+        std::cout << row;
+        std::snprintf(row, sizeof(row),
+                      "Native boundary transitions (cont.): fp-unavailable %llu, program %llu, indirect-target %llu\n",
+                      static_cast<unsigned long long>(
+                          system.cpu().fallback_total(gekko::FallbackReason::FpUnavailable)),
+                      static_cast<unsigned long long>(
+                          system.cpu().fallback_total(gekko::FallbackReason::Program)),
+                      static_cast<unsigned long long>(
+                          system.cpu().fallback_total(gekko::FallbackReason::IndirectTarget)));
         std::cout << row;
     }
     {
@@ -8132,6 +8724,7 @@ int run(Options options) {
                       << errata.motion_counter_cleared << "; E3 land layers loaded " << errata.land_layers_ready
                       << ", land pattern sets seen " << errata.land_pattern_sets << ", clocks aligned "
                       << errata.land_clocks_aligned << '\n';
+            gekko::message_voice_owner::print_report(stdout);
         }
         {
             const auto& gm = system.game_memory().stats();
@@ -8176,6 +8769,8 @@ int run(Options options) {
         const auto& verify = system.cpu().verify_report();
         const gekko::HostJobReport jobs = gekko::host_job_report();
         const gekko::u64 interpreted = system.cpu().interpreted_instructions();
+        gekko::u64 owner_hits_total = 0;  // native-owner (HLE) hook hits, read from the existing per-hook counters
+        for (const auto& hook : system.cpu().hle_entries()) owner_hits_total += hook.hits;
         const double game_seconds_advanced =
             static_cast<double>(system.game_ticks() - initial_game_ticks) /
             static_cast<double>(gekko::kGameTicksPerSecond);
@@ -8366,6 +8961,10 @@ int run(Options options) {
               // the guest_blocked taxonomy does not name.
               << ", \"guest_run_wall_seconds\": " << g_guest_run_wall_seconds
               << ", \"guest_run_cpu_seconds\": " << g_guest_run_cpu_seconds
+              // s3/prof contention-robust counters (-1 = not measured on this path): the guest thread's CPU time
+              // (GetThreadTimes, 15.6 ms granularity) and cycles (QueryThreadCycleTime) over the run() window.
+              << ", \"game_thread_cpu_s\": " << g_guest_run_cpu_seconds
+              << ", \"game_thread_cycles\": " << g_guest_run_cycles
               << ",\n    \"threads\": " << threads_json
               << "},\n"
               << gekko_conformance_json
@@ -8380,6 +8979,9 @@ int run(Options options) {
              << ", \"host_services\": " << system.host_services()
              << ", \"limiter_frames\": " << system.frame_limiter().stats().frames
              << ", \"native_entries\": " << system.cpu().recompiled_calls
+             << ", \"owner_hits\": " << owner_hits_total
+             << ", \"owner_hooks\": " << system.cpu().hle_entries().size()
+             << ", \"owner_entry_attempts\": " << system.cpu().hle_slow_calls()
              << ", \"interpreted_instructions\": " << interpreted
              << ", \"interpreter_ms\": "
              << static_cast<double>(system.cpu().interpreted_ns()) / 1.0e6
@@ -8401,7 +9003,10 @@ int run(Options options) {
              << ", \"unexpected_return\": " << fallback(gekko::FallbackReason::UnexpectedReturn)
              << ", \"past_function\": " << fallback(gekko::FallbackReason::EndOfFunction)
              << ", \"yield\": " << fallback(gekko::FallbackReason::Yield)
-              << ", \"verify_cut\": " << fallback(gekko::FallbackReason::VerifyCut) << "}},\n"
+              << ", \"verify_cut\": " << fallback(gekko::FallbackReason::VerifyCut)
+              << ", \"fp_unavailable\": " << fallback(gekko::FallbackReason::FpUnavailable)
+              << ", \"program\": " << fallback(gekko::FallbackReason::Program)
+              << ", \"indirect_target\": " << fallback(gekko::FallbackReason::IndirectTarget) << "}},\n"
               << "  \"pacing\": {\"game_clock_hz\": " << gekko::kGameTicksPerSecond
               << ", \"fixed_quantum_hz\": 60"
               << ", \"maximum_catchup_rate\": "
@@ -8755,6 +9360,18 @@ Options parse_options(int argc, char** argv) {
             options.report_peeks.push_back(argv[++index]);
             continue;
         }
+        if (argument == "--behaviour-trace" && index + 1 < argc) {
+            options.behaviour_trace = std::filesystem::path(argv[++index]);
+            continue;
+        }
+        if (argument == "--behaviour-layout" && index + 1 < argc) {
+            options.behaviour_layout = std::filesystem::path(argv[++index]);
+            continue;
+        }
+        if (argument == "--behaviour-every" && index + 1 < argc) {
+            options.behaviour_every = static_cast<gekko::u32>((std::max)(1ull, std::strtoull(argv[++index], nullptr, 10)));
+            continue;
+        }
         if (argument == "--marker-key" && index + 1 < argc) {
             options.marker_key = argv[++index];
             if (snapshot_virtual_key(options.marker_key) < 0) {
@@ -8872,6 +9489,7 @@ Options parse_options(int argc, char** argv) {
         }
         if (argument == "--no-fpr-shadow") {
             options.fpr_shadow = false;
+            options.no_fpr_shadow = true;
             continue;
         }
         if (argument == "--compiler-intrinsics" || argument == "--no-compiler-intrinsics") {
@@ -9009,6 +9627,13 @@ Options parse_options(int argc, char** argv) {
             options.native_output_explicit = true;
             continue;
         }
+        // ---- mods/texpacks: Dolphin-style texture packs (gekko/texture_packs.h). Repeatable; the first directory
+        // given has the highest priority. Indexed once, at the first texture import.
+        if (argument == "--texture-pack" && index + 1 < argc) {
+            gekko::texture_packs::add_texture_pack(std::filesystem::path(argv[++index]));
+            continue;
+        }
+        // ---- end mods/texpacks
         if (argument == "--native-screenshot" && index + 1 < argc) {
             options.native_screenshot = std::filesystem::path(argv[++index]);
             continue;
@@ -9400,6 +10025,22 @@ Options parse_options(int argc, char** argv) {
             options.storage_backend = argv[++index];
         } else if (argument == "--disc-image" && index + 1 < argc) {
             options.disc_image = std::filesystem::path(argv[++index]);
+        } else if (argument == "--mods-dir" && index + 1 < argc) {
+            options.mods_dir = std::filesystem::path(argv[++index]);
+        } else if (argument == "--mods-report" && index + 1 < argc) {
+            options.mods_report = std::filesystem::path(argv[++index]);
+        } else if (argument == "--no-mods") {
+            options.no_mods = true;
+        } else if (argument == "--code-ini" && index + 1 < argc) {
+            options.code_inis.emplace_back(argv[++index]);
+        } else if (argument == "--code-enable" && index + 1 < argc) {
+            options.code_enable.emplace_back(argv[++index]);
+        } else if (argument == "--code-enable-all") {
+            options.code_enable_all = true;
+        } else if (argument == "--code-lines" && index + 1 < argc) {
+            options.code_files.emplace_back(argv[++index]);
+        } else if (argument == "--code-report" && index + 1 < argc) {
+            options.code_report = std::filesystem::path(argv[++index]);
         } else if (argument == "--service-interval" || argument == "--tick-profile") {
             std::cerr << "ERROR: " << argument << " is gone: there is no instruction clock; the host "
                          "service runs every 5 ms of game time, headless or not\n";
@@ -9602,6 +10243,8 @@ Options parse_options(int argc, char** argv) {
             options.display_cfg = std::filesystem::path(argv[++index]);
         } else if (argument == "--pad-cfg" && index + 1 < argc) {
             options.pad_cfg = std::filesystem::path(argv[++index]);
+        } else if (argument == "--controls-cfg" && index + 1 < argc) {
+            options.controls_cfg = std::filesystem::path(argv[++index]);
         } else if (argument == "--button-style" && index + 1 < argc) {
             shadow::peripheral::ButtonStyle style{};
             if (!shadow::peripheral::parse_button_style(argv[++index], style)) {

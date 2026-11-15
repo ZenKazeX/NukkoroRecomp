@@ -1529,6 +1529,53 @@ void call_return_recognition(RecompiledCode& code) {
     std::cout << "PASS generated call/return recognition (post-call exiting() unwinds at the link address)\n";
 }
 
+// RC-gen-6: the same loop as cross_record_back_edge, but its only back edge is a computed transfer
+// (bctr) to a lower address in another row. A computed transfer to a lower address is a recognition
+// point exactly like a direct back edge: with a stop pending at every dispatch the loop must yield
+// once per iteration, and an interrupt deliverable on entry is taken at the first back edge.
+void cross_record_bctr_back_edge(RecompiledCode& code) {
+    constexpr u32 kIterations = 50u;
+    const IrqProgram loop = GEKKO_IRQ_PROGRAM(CrossBctr);
+    const u32 head = loop.address + 8u;
+    require_that(code.lookup(loop.address + 16u) != nullptr && code.lookup(head) != nullptr,
+                 "cross-record bctr loop: the rows or the interior entry are missing");
+    const std::string name = "cross-record bctr loop, stop pending at every dispatch";
+    auto native = std::make_unique<Fixture>();
+    auto oracle = std::make_unique<Fixture>();
+    for (Fixture* f : {native.get(), oracle.get()}) {
+        load_irq_program(*f, loop);
+        f->cpu.gpr[5] = kIterations;
+        f->cpu.gpr[7] = head;
+    }
+    native->cpu.attach_recompiled(&code);
+    oracle->cpu.attach_recompiled(nullptr);
+    u64 pauses = 0;
+    const auto pause_hook = [&pauses](Cpu& c) {
+        ++pauses;
+        c.request_stop(StopReason::HostRequest, "cross-record bctr pause");
+        return false;
+    };
+    native->cpu.install_hle(loop.address, pause_hook, "cross-record bctr entry pause");
+    native->cpu.install_hle(head, pause_hook, "cross-record bctr head pause");
+    u64 dispatches = 0;
+    for (u64 runs = 0; !native->cpu.stopped() && native->cpu.pc != kIrqReturn && runs <= 4u * kIterations; ++runs) {
+        dispatches += native->cpu.run_steps(1u);
+        if (native->cpu.stop().detail == "cross-record bctr pause") native->cpu.clear_stop();
+    }
+    require_that(!native->cpu.stopped() && native->cpu.pc == kIrqReturn && native->cpu.gpr[3] == kIterations,
+                 name + ": wrong loop result: " + native->cpu.stop().detail);
+    // pauses: the entry (1) + the head hook on every arrival at the head (fall-through from row A, then 49 bctr arrivals)
+    require_that(dispatches == kIterations && pauses == kIterations + 1u,
+                 name + ": the computed back edge did not poll needs_dispatch (" + std::to_string(dispatches) +
+                     " dispatches, " + std::to_string(pauses) + " pauses)");
+    // li, mtctr, then per iteration addi, cmpw, bge, bctr (the last: addi, cmpw, bge), then blr.
+    require_that(step_until(*oracle, kIrqReturn, 4u * kIterations + 8u) == 4u * kIterations + 2u &&
+                     oracle->cpu.pc == kIrqReturn,
+                 name + ": the interpreter did not return over the loop's instructions");
+    compare_irq(name, *native, *oracle);
+    std::cout << "PASS cross-record bctr back edge polls needs_dispatch\n";
+}
+
 // branch-sys-2: a loop whose only back edge (blt in row 2) targets row 1. The
 // cross-record transfer must publish pc and poll exactly like an in-body back
 // edge: with a stop pending at every dispatch it yields once per iteration
@@ -1620,7 +1667,7 @@ int main() {
     unsigned failures = 0;
     for (auto test : {traps, hooks, update_forms, reservation, count_leading_zeros,
                       overflow_forms, floating_point_forms, fp_semantics, indirect_jump_loop, shared_indirect_jumps, decrementer_idle_loop, mtmsr_recognition,
-                      call_return_recognition, cross_record_back_edge}) {
+                      call_return_recognition, cross_record_back_edge, cross_record_bctr_back_edge}) {
         try { test(code); }
         catch (const std::exception& error) {
             std::cerr << "FAIL " << error.what() << '\n';

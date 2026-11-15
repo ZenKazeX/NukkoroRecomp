@@ -248,6 +248,9 @@ private:
     bool ensure_list(std::string* error);
     bool reserve(std::uint64_t bytes, std::uint64_t alignment, std::uint8_t** cpu, ID3D12Resource** buffer,
                  std::uint64_t* offset, std::string* error);
+    // cs2 gpu: the ring starts small and doubles (up to max_ring_size_, the size it always had) when it is full or an upload
+    // needs more: submits the open list, waits for the copy queue to drain, then swaps in the larger buffer. False: kept as is.
+    bool grow(std::uint64_t at_least);
     // Returns the ring space of finished submissions; with `wait`, first waits for the oldest one.
     void reclaim(bool wait);
     // Publishes the counters for counts().
@@ -263,6 +266,7 @@ private:
     GpuBuffer ring_;
     std::uint8_t* ring_cpu_ = nullptr;
     std::uint64_t ring_size_ = 0;
+    std::uint64_t max_ring_size_ = 0;  // == ring_size_ when growing is off
     // Positions in an unbounded byte sequence laid over the ring (offset = position % ring_size_): [tail_, head_) may
     // still be read by the copy queue.
     std::uint64_t head_ = 0;

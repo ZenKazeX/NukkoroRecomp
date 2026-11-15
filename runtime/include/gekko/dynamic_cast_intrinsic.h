@@ -40,6 +40,10 @@ class Cpu;
 
 class DynamicCastIntrinsic {
 public:
+    DynamicCastIntrinsic() = default;
+    DynamicCastIntrinsic(const DynamicCastIntrinsic&) = delete;  // front_ points into memo_
+    DynamicCastIntrinsic& operator=(const DynamicCastIntrinsic&) = delete;
+
     // The hook: true when the call was served (r3 and the stack words written), false to run the guest body (the
     // throwing failure of a reference cast).
     bool serve(Cpu& cpu);
@@ -76,6 +80,15 @@ private:
     const Result& remembered(Cpu& cpu, u32 object, u32 vptr_offset, u32 to, u32 from);
 
     std::unordered_map<Key, Result, KeyHash> memo_;
+    // A direct-mapped front for memo_ (the same entries; a node of memo_ is never erased or moved, and an entry
+    // recomputed for a changed vtable is assigned in place, so a pointer stays valid): a slot is used only while its key
+    // matches and the entry's two vtable words still read the same, the memo's own rule.
+    struct Slot {
+        Key key{};
+        const Result* result = nullptr;
+    };
+    static constexpr std::size_t kFront = 256;
+    Slot front_[kFront]{};
     u64 calls_ = 0, computed_ = 0, declines_ = 0;
 };
 

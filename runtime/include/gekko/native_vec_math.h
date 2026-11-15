@@ -66,6 +66,17 @@ void serve_cross(Cpu& cpu) noexcept;
 void serve_add_to(Cpu& cpu) noexcept;
 
 // Installs the owners on the CPU.
+// The original sequences alone (shadow::math::detail on the guest's operands): what the functions above run when an operand
+// or a result is not an ordinary single, and the reference the differential test checks them against.
+void serve_sub_exact(Cpu& cpu) noexcept;
+void serve_scale_exact(Cpu& cpu) noexcept;
+void serve_add_exact(Cpu& cpu) noexcept;
+void serve_sub_from_exact(Cpu& cpu) noexcept;
+void serve_length_exact(Cpu& cpu) noexcept;
+void serve_dot_exact(Cpu& cpu) noexcept;
+void serve_cross_exact(Cpu& cpu) noexcept;
+void serve_add_to_exact(Cpu& cpu) noexcept;
+
 void install(Cpu& cpu);
 
 }  // namespace gekko::vec_math

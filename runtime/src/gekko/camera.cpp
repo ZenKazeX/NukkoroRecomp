@@ -603,12 +603,6 @@ VisibilityResult VisibilitySystem::test_sphere(const Sphere& world_sphere) noexc
     return r;
 }
 
-VisibilityResult VisibilitySystem::test_aabb(const Aabb& world_box) noexcept {
-    const VisibilityResult r = classify_aabb(world_frustum_, world_box);
-    stats_.record(r);
-    return r;
-}
-
 VisibilityResult VisibilitySystem::test_sphere(const Sphere& world_sphere,
                                                const VisibilityBudget& budget) noexcept {
     const VisibilityResult r =

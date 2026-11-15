@@ -195,6 +195,23 @@ struct Machine {
         if (cpu.stopped()) o.stop = cpu.stop().detail;
         return o;
     }
+    // A run that a stop ended goes on from the machine's own state, as the game thread's loop does after clear_stop().
+    Outcome resume(u32 steps_cap) {
+        Outcome o;
+        std::set<u32> written;
+        trace = &written;
+        cpu.clear_stop();
+        unsigned steps = 0;
+        while (cpu.pc != kFinish && !cpu.stopped() && steps++ < steps_cap) cpu.run_steps(1u);
+        trace = nullptr;
+        o.returned = !cpu.stopped() && cpu.pc == kFinish;
+        o.r1 = cpu.gpr[1];
+        o.r3 = cpu.gpr[3];
+        o.lr = cpu.lr;
+        o.written = std::move(written);
+        if (cpu.stopped()) o.stop = cpu.stop().detail;
+        return o;
+    }
 };
 
 void compare(const std::string& label, Machine& original, Machine& owned, const Machine::Outcome& a, const Machine::Outcome& b,
@@ -1021,6 +1038,161 @@ void test_clear(const std::vector<u8>& dol) {
         put_rect(b, 0, 0, 16, 8);
         const auto y = b.run(kClearRect, kRasters, kBlock + 0x100u, 400000u, 0u);
         check(!y.returned && y.stop.find("ClearQuad") != std::string::npos, "clear of a raster of type " + std::to_string(type) + " without a renderer stops naming ClearQuad: " + y.stop);
+    }
+}
+
+// The five interior entries of GcnRasterClearRect (the arms of its switch on the raster depth, docs/agents/sdk-rwnum.md): the
+// ORIGINAL words entered AT the arm with the register state the body has there (r29 rectangle, r30 pixel, r31 unlock flag, r1 =
+// the function's 0x30-byte frame holding the saved r28..r31 and LR) against the owners' continuations. Compared as for any call:
+// r3, r1, LR, r14..r31 (the epilogue restores r28..r31 from the frame), every guest word written outside the stack, the lock
+// doubles' logs (the unlock the tail makes when r31 is set) and the RwErrorSet record of the unsupported-depth arm. Grids: every
+// rectangle of a fixed set (odd and zero widths, negative origins, zero / negative heights, negative widths where the original
+// terminates) with the pixel, stride and flag cycled, the full pixel x stride x flag product on a few rectangles, and a few thousand
+// random rectangles. The two byte-fill arms with a negative byte count are not run on the original (its memset would write ~4 GiB):
+// the owner must stop there. Negative controls: one code word of the ORIGINAL patched per arm and per tail piece; the comparison must
+// fail each.
+void test_clear_arms(const std::vector<u8>& dol) {
+    constexpr u32 kArm4 = 0x8049A304u, kArm8 = 0x8049A364u, kArm16 = 0x8049A3B4u, kArm32 = 0x8049A41Cu, kArmOther = 0x8049A480u;
+    constexpr u32 kPixelBase = kBlock + 0x3400u;
+    constexpr u32 kSaved[4] = {0xA5A50028u, 0xA5A50029u, 0xA5A5002Au, 0xA5A5002Bu};   // r28..r31 as the prologue saved them
+    unsigned cases = 0, refused = 0, unlocks = 0, errors = 0, filled = 0;
+    struct Case {
+        u32 arm;
+        int x, y, w, h;
+        u32 stride, pixel, flag;
+    };
+    const auto prepare = [&](Machine& m, const Case& k) {
+        m.setup(0, 0);
+        install_core_lock_doubles(m);
+        build(m, {kRasters, 0, 0, 0, 0, 16, 8, 3, 0, kBlock});
+        m.cpu.mem_write32(kRasters + 0x14u, 16u);   // the depth word: the arms do not read it, the switch did
+        m.cpu.mem_write32(kRasters + 0x18u, k.stride);
+        m.cpu.mem_write32(kRasters + 0x04u, kPixelBase);
+        m.cpu.mem_write8(kRasters + 0x22u, 0u);
+        m.cpu.mem_write32(kSda + kSdaContext, kRasters);
+        for (u32 i = 0; i < 0x2000u; i += 4u) m.cpu.mem_write32(kBlock + 0x3000u + i, 0xEEEEEEEEu);
+        m.cpu.mem_write32(kBlock + 0x100u, static_cast<u32>(k.x));
+        m.cpu.mem_write32(kBlock + 0x104u, static_cast<u32>(k.y));
+        m.cpu.mem_write32(kBlock + 0x108u, static_cast<u32>(k.w));
+        m.cpu.mem_write32(kBlock + 0x10Cu, static_cast<u32>(k.h));
+        const u32 frame = kStackTop - 0x30u;
+        m.cpu.gpr[1] = frame;
+        m.cpu.mem_write32(frame, kStackTop);
+        for (u32 i = 0; i < 4u; ++i) m.cpu.mem_write32(frame + 0x20u + 4u * i, kSaved[i]);
+        m.cpu.mem_write32(frame + 0x34u, kFinish);
+        m.cpu.gpr[28] = 0xD0D00028u;
+        m.cpu.gpr[29] = kBlock + 0x100u;
+        m.cpu.gpr[30] = k.pixel;
+        m.cpu.gpr[31] = k.flag;
+    };
+    const auto label = [](const Case& k) {
+        return "clear arm " + hex(k.arm) + " rect " + std::to_string(k.x) + "," + std::to_string(k.y) + "," + std::to_string(k.w) + "," +
+               std::to_string(k.h) + " stride " + std::to_string(k.stride) + " pixel " + hex(k.pixel) + " flag " + std::to_string(k.flag);
+    };
+    const auto byte_count_negative = [](const Case& k) {
+        return (k.arm == kArm4 && (k.w >> 1) < 0 && k.h > 0) || (k.arm == kArm8 && k.w < 0 && k.h > 0);
+    };
+    const auto compare_case = [&](Machine& a, Machine& b, const Case& k) {
+        prepare(a, k);
+        prepare(b, k);
+        if (byte_count_negative(k)) {   // the original's memset would write ~4 GiB: the owner stops
+            const auto y = b.run(k.arm, 0x1111u, 0x2222u, 400000u, 0x3333u);
+            check(!y.returned && y.stop.find("negative byte count") != std::string::npos, label(k) + ": the owner stops on a negative byte count: " + y.stop);
+            ++refused;
+            return;
+        }
+        const auto x = a.run(k.arm, 0x1111u, 0x2222u, 4000000u, 0x3333u);
+        const auto y = b.run(k.arm, 0x1111u, 0x2222u, 400000u, 0x3333u);
+        compare(label(k), a, b, x, y);
+        if (x.returned && y.returned) {
+            check(y.r3 == 1u, label(k) + ": the answer is 1");
+            for (u32 i = 0; i < 4u; ++i)
+                check(a.cpu.gpr[28u + i] == kSaved[i] && b.cpu.gpr[28u + i] == kSaved[i], label(k) + ": r" + std::to_string(28u + i) + " restored from the frame");
+        }
+        ++cases;
+        unlocks += b.cpu.mem_read32(kFreeLog + 0x30u);
+        errors += k.arm == kArmOther ? 1u : 0u;
+        for (u32 i = 0; i < 0x1000u; i += 4u) filled += b.cpu.mem_read32(kBlock + 0x3000u + i) != 0xEEEEEEEEu ? 1u : 0u;
+    };
+    const u32 arms[] = {kArm4, kArm8, kArm16, kArm32, kArmOther};
+    const u32 pixels[] = {0u, 0xFFFFFFFFu, 0x12345678u, 0xABCDEF01u, 0x0Fu, 0xF0u, 0x80000001u};
+    const u32 strides[] = {64u, 0x31u, 0u, 128u};
+    const int xs[] = {0, 1, 2, 5, -2, 3}, ws[] = {0, 1, 2, 5, 7, 8, 16, -3}, ys[] = {0, 1, 3, -1}, hs[] = {0, 1, 2, 4, -1};
+    for (const u32 arm : arms) {
+        Machine a(dol, false), b(dol, true);
+        unsigned n = 0;
+        for (const int x : xs)
+            for (const int w : ws)
+                for (const int y : ys)
+                    for (const int h : hs) {
+                        compare_case(a, b, {arm, x, y, w, h, strides[n % 4u], pixels[n % 7u], (n / 3u) % 2u});
+                        ++n;
+                    }
+        // the full pixel x stride x flag product on a few rectangles
+        const int fixed[][4] = {{0, 0, 16, 8}, {1, 1, 7, 3}, {2, 0, 5, 2}, {0, 2, 0, 4}};
+        for (const auto& r : fixed)
+            for (const u32 pixel : pixels)
+                for (const u32 stride : strides)
+                    for (const u32 flag : {0u, 1u, 0xFFFFFFFFu}) compare_case(a, b, {arm, r[0], r[1], r[2], r[3], stride, pixel, flag});
+        // random rectangles inside the buffer
+        u32 state = 0x2545F491u ^ arm;
+        const auto next = [&]() {
+            state = state * 1664525u + 1013904223u;
+            return state >> 8;
+        };
+        for (unsigned i = 0; i < 1500u; ++i) {
+            const int x = static_cast<int>(next() % 129u) - 64, w = static_cast<int>(next() % 41u) - 4;
+            const int y = static_cast<int>(next() % 17u) - 4, h = static_cast<int>(next() % 12u) - 2;
+            const u32 stride = next() % 129u, pixel = next() ^ (next() << 16), flag = next() % 3u == 0u ? next() : 0u;
+            compare_case(a, b, {arm, x, y, w, h, stride, pixel, flag});
+        }
+    }
+    check(cases > 13000u && refused > 300u && unlocks > 1000u && errors > 500u && filled > 100000u,
+          "the arm grid fills, unlocks, reports depth errors and is refused where the original never ends (" + std::to_string(cases) + " cases, " +
+              std::to_string(refused) + " refused, " + std::to_string(unlocks) + " unlocks, " + std::to_string(errors) + " errors, " + std::to_string(filled) + " words)");
+    std::printf("  GcnRasterClearRect arms: %u cases equal (%u refused as the original never ends, %u unlocks, %u depth errors, %u pixel words filled)\n",
+                cases, refused, unlocks, errors, filled);
+    // Negative controls: one code word of the ORIGINAL patched; the comparison must tell the patched original from the owner.
+    struct Mutation {
+        const char* what;
+        u32 arm, address, word;
+        Case k;
+    };
+    const Mutation mutations[] = {
+        {"4-bit arm: the nibble is not copied into the high half (rlwimi -> nop)", kArm4, 0x8049A30Cu, 0x60000000u, {kArm4, 2, 1, 6, 3, 64, 0x000000A5u, 0}},
+        {"8-bit arm: a fixed fill byte (clrlwi r30 -> li r30, 0x11)", kArm8, 0x8049A364u, 0x3BC00011u, {kArm8, 2, 1, 6, 3, 64, 0x123456A5u, 0}},
+        {"16-bit arm: the low byte only (clrlwi r7, r30, 16 -> 24)", kArm16, 0x8049A3B4u, 0x57C7063Eu, {kArm16, 2, 1, 6, 3, 64, 0x123456A5u, 0}},
+        {"32-bit arm: the word lands 4 bytes late (stw r30, 0(r3) -> 4(r3))", kArm32, 0x8049A454u, 0x93C30004u, {kArm32, 2, 1, 6, 3, 64, 0x123456A5u, 0}},
+        {"error arm: another error code (addi r3, r3, 0xC -> 0xD)", kArmOther, 0x8049A48Cu, 0x3863000Du, {kArmOther, 2, 1, 6, 3, 64, 0x123456A5u, 0}},
+        {"tail: the unlock test compares r31 with 9 (cmpwi r31, 0 -> 9)", kArm8, 0x8049A4A4u, 0x2C1F0009u, {kArm8, 2, 1, 6, 3, 64, 0x123456A5u, 0}},
+        {"tail: the answer is 2 (li r3, 1 -> 2)", kArm32, 0x8049A4E4u, 0x38600002u, {kArm32, 2, 1, 6, 3, 64, 0x123456A5u, 1}},
+        {"epilogue: r28 restored from the wrong slot (lwz r28, 0x20(r1) -> 0x24)", kArm16, 0x8049A4F8u, 0x83810024u, {kArm16, 2, 1, 6, 3, 64, 0x123456A5u, 1}},
+    };
+    unsigned told_apart = 0;
+    for (const Mutation& mutation : mutations) {
+        Machine a(dol, false), b(dol, true);
+        prepare(a, mutation.k);
+        prepare(b, mutation.k);
+        a.cpu.mem_write32(mutation.address, mutation.word);
+        const unsigned before = static_cast<unsigned>(g_failures);
+        g_quiet = true;
+        compare(std::string("mutation: ") + mutation.what, a, b, a.run(mutation.arm, 0x1111u, 0x2222u, 4000000u, 0x3333u),
+                b.run(mutation.arm, 0x1111u, 0x2222u, 400000u, 0x3333u));
+        g_quiet = false;
+        const bool detected = static_cast<unsigned>(g_failures) > before;
+        g_failures = static_cast<int>(before);   // the failures of a mutation are the point of the check
+        check(detected, std::string("the comparison tells apart: ") + mutation.what);
+        told_apart += detected ? 1u : 0u;
+    }
+    std::printf("  GcnRasterClearRect arms: %u of %u patched originals told apart from the owners\n", told_apart,
+                static_cast<unsigned>(sizeof(mutations) / sizeof(mutations[0])));
+    // the same case without a mutation is equal (the comparison is not simply always failing)
+    {
+        Machine a(dol, false), b(dol, true);
+        const Case k{kArm32, 2, 1, 6, 3, 64, 0x123456A5u, 1};
+        prepare(a, k);
+        prepare(b, k);
+        compare("clear arm without mutation", a, b, a.run(kArm32, 0x1111u, 0x2222u, 4000000u, 0x3333u), b.run(kArm32, 0x1111u, 0x2222u, 400000u, 0x3333u));
     }
 }
 
@@ -1951,10 +2123,12 @@ struct WaitCase {
     u32 so = 0;                  // XER[SO] set on entry
     u32 interrupt_at_gate = 0;   // the interrupt becomes deliverable just before the first OSDisableInterrupts (not before the function)
     u32 expect_taken = 0;  // the pc the native interrupt handler must see (the interrupt is taken once), 0 = it is not taken
+    u32 stop_on = 0;       // the sleep (1-based) that a host stop ends first: the leaf hands back at its own entry with r3 intact, as
+                           // os_threads::serve_sleep_thread does (RC-kernel-1); the run is then resumed and must end as an unstopped one
 };
 
 void install_wait_leaves(Machine& m, const WaitCase& k) {
-    struct State { u32 sleeps = 0, gates = 0; };
+    struct State { u32 sleeps = 0, gates = 0; bool stop_done = false; };
     const auto state = std::make_shared<State>();
     const auto log = [](Cpu& c, u32 id) {
         const u32 index = c.mem_read32(kVLog), entry = kVLog + 16u + 64u * index;
@@ -1991,6 +2165,12 @@ void install_wait_leaves(Machine& m, const WaitCase& k) {
     m.cpu.install_hle(0x803792C4u, [log, state, k](Cpu& c) {
         log(c, 3u);
         if (c.interrupt_pending()) { c.leave_to_dispatcher(0x803792C4u, FallbackReason::Yield, 0x803792C4u); return true; }
+        if (k.stop_on != 0u && state->sleeps + 1u == k.stop_on && !state->stop_done) {
+            state->stop_done = true;
+            c.request_stop(StopReason::HostRequest, "test: a host stop inside the sleep");
+            c.leave_to_dispatcher(0x803792C4u, FallbackReason::Yield, 0x803792C4u);
+            return true;
+        }
         ++state->sleeps;
         if (state->sleeps > 40u) { c.request_stop(StopReason::ExecutionFault, "test: the wait never ends"); return true; }
         const u32 count_word = c.gpr[13] + 0x5BCCu;
@@ -2032,8 +2212,22 @@ void compare_wait(const std::vector<u8>& dol, const std::string& label, const Wa
         if (k.so != 0u) m->cpu.xer |= kXerSO;
         if (k.interrupt_at_start != 0u) m->cpu.set_native_interrupt(true);
     }
-    const auto x = a.run(0x8037ECD4u, 0xC0DE0001u, caller_r4, 400000u, caller_r5);
-    const auto y = b.run(0x8037ECD4u, 0xC0DE0001u, caller_r4, 400000u, caller_r5);
+    auto x = a.run(0x8037ECD4u, 0xC0DE0001u, caller_r4, 400000u, caller_r5);
+    auto y = b.run(0x8037ECD4u, 0xC0DE0001u, caller_r4, 400000u, caller_r5);
+    if (k.stop_on != 0u) {
+        // Both machines stopped inside the sleep. The stopped state must be a real resume point: the sleep's entry, its
+        // argument, the function's frame and r30 / r31 as the original has them there; then the run goes on to the end.
+        const u32 queue = kSda + 0x5BD4u;
+        for (Machine* m : {&a, &b}) {
+            const std::string who = m == &a ? " (original)" : " (owner)";
+            check(m->cpu.stopped() && m->cpu.pc == 0x803792C4u, label + ": stopped at the sleep's entry" + who + ", pc " + hex(m->cpu.pc));
+            check(m->cpu.gpr[3] == queue && m->cpu.lr == 0x8037ECFCu && m->cpu.gpr[1] == kStackTop - 16u,
+                  label + ": the stopped r3 / LR / r1" + who + " " + hex(m->cpu.gpr[3]) + " " + hex(m->cpu.lr) + " " + hex(m->cpu.gpr[1]));
+        }
+        check(a.cpu.gpr[30] == b.cpu.gpr[30] && a.cpu.gpr[31] == b.cpu.gpr[31] && a.cpu.msr() == b.cpu.msr(), label + ": the stopped r30 / r31 / MSR");
+        x = a.resume(400000u);
+        y = b.resume(400000u);
+    }
     compare(label, a, b, x, y, true);
     Cpu& p = a.cpu;
     Cpu& q = b.cpu;
@@ -2087,6 +2281,14 @@ void test_vi_wait(const std::vector<u8>& dol) {
                 if (ee != 0u) k.expect_taken = at == 0u ? 0x8037ECD4u : at == 3u ? 0x8037611Cu : (at <= wake_on ? 0x8037ED10u : 0u);   // at the gate's entry / before the row after the restore
                 compare_wait(dol, "VIWaitForRetrace interrupt ee " + std::to_string(ee) + " wake " + std::to_string(wake_on) + " at " + std::to_string(at), k, seed++);
             }
+    // RC-kernel-1: a host stop ends a sleep (the first, a repeated one, the waking one); the stopped state is resumable and the
+    // resumed run equals the original's.
+    for (const u32 ee : {0u, 1u})
+        for (const u32 wake_on : {1u, 2u, 3u})
+            for (u32 stop_on = 1u; stop_on <= wake_on; ++stop_on) {
+                WaitCase k; k.ee = ee; k.wake_on = wake_on; k.stop_on = stop_on; k.count = 0xFFFFFFFFu;
+                compare_wait(dol, "VIWaitForRetrace stop ee " + std::to_string(ee) + " wake " + std::to_string(wake_on) + " stop " + std::to_string(stop_on), k, seed++);
+            }
     std::printf("  VIWaitForRetrace: %u cases equal (%u leaf calls compared)\n", g_image_cases - base, g_image_calls);
 }
 
@@ -2130,6 +2332,11 @@ int main(int argc, char** argv) {
                 std::printf("rw_raster_contract_tests (vi only): %s\n", g_failures == 0 ? "ok" : "FAILED");
                 return g_failures == 0 ? 0 : 1;
             }
+            if (std::string(only) == "arms") {
+                test_clear_arms(dol);
+                std::printf("rw_raster_contract_tests (arms only): %s\n", g_failures == 0 ? "ok" : "FAILED");
+                return g_failures == 0 ? 0 : 1;
+            }
             if (std::string(only) == "display") {
                 test_display(dol);
                 std::printf("rw_raster_contract_tests (display only): %s\n", g_failures == 0 ? "ok" : "FAILED");
@@ -2150,6 +2357,7 @@ int main(int argc, char** argv) {
         test_size(dol);
         test_quant_end(dol);
         test_clear(dol);
+        test_clear_arms(dol);
         test_display(dol);
         test_vi_wait(dol);
         test_texture_read(dol);

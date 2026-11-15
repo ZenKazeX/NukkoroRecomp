@@ -68,10 +68,10 @@
 // Cpu::set_hardware_tick services and their `retired` argument, coalesced charges - no longer exists, so no
 // observable contract remains; the per-service ledger (each service's `retired` == the instructions since the
 // previous one) and the coalesced-iteration checks of B1 went with them. Asking for B2 or B3 is an error.
-#include "gekko/os_exception_vector.h"
 #include "gekko/cpu.h"
 #include "gekko/cpu_diag.h"
 #include "gekko/guest_memory.h"
+#include "gekko/os_exception_vector.h"
 #include "gekko/recomp.h"
 
 #include "f1c_fixture.h"
@@ -238,14 +238,12 @@ u64 table_hash(const RecompiledCode& code) {
 
 std::vector<u8> expected_hle_slots(const std::vector<std::pair<u32, std::string>>& hooks) {
     // Cpu::rebuild_hle_slots for a non-verifying, non-faulted machine (kHleSlotEmpty 1, kHleSlotAll 3).
-    // The table is Cpu::kHleSlotCount (4096) words = 16 KiB since 2026-11-04 (it was 1024 words).
-    constexpr std::size_t kSlots = 4096u;
-    std::vector<u32> slots(kSlots, 1u);
+    std::vector<u32> slots(Cpu::kHleSlotCount, 1u);
     for (const auto& [address, name] : hooks) {
-        u32& slot = slots[(address >> 2) & (kSlots - 1u)];
-        slot = (slot == 1u && address != 1u && address != 3u) ? address : 3u;
+        u32& slot = slots[Cpu::hle_slot_of(address)];
+        slot = slot == 1u ? address : 3u;
     }
-    std::vector<u8> bytes(kSlots * sizeof(u32));
+    std::vector<u8> bytes(Cpu::kHleSlotCount * sizeof(u32));
     std::memcpy(bytes.data(), slots.data(), bytes.size());
     return bytes;
 }
@@ -388,16 +386,18 @@ void load_code(Machine& m) {
     }
 }
 
-// The OS's exception entry as __OSExceptionInit / __OSInitSystemCall / OSSetCurrentContext leave it. The native
-// exception entry (gekko/os_exception_entry.cpp) performs the vector's work itself, but only after it has checked
-// that the guest built the whole 38-word vector page (os_exception_page_word: the __OSExceptionVector template with
-// `li r3, <index>` at +0x68, PPCSync's head over the first seven words for the system call). The F1c image carries
-// none of those bytes, so the harness writes the same pages the guest's OS init would.
+// The OS's exception entry as __OSExceptionInit / __OSInitSystemCall / OSSetCurrentContext leave it: the whole vector
+// page of each exception the canary takes. The native entry (os_exception_entry.cpp) compares every word of the page
+// with the OS's constant template (os_exception_vector.h: 38 words, `li r3, <index>` at +0x68, PPCSync's head on the
+// system-call page) before it takes an exception; this fixture used to write only the `li r3` word, which that check
+// has refused since 67eb159 / 9545590 ("the guest has not installed the OS's vector"): every B1 check failed at the
+// first `sc`. RC-tests-6.
 void install_os_entry(Machine& m) {
-    gekko::write_os_exception_vector(*m.bus, 0x80000500u, 4u);  // external
-    gekko::write_os_exception_vector(*m.bus, 0x80000900u, 8u);  // decrementer
-    for (u32 word = 0; word < gekko::kOsVectorWords; ++word)
-        m.bus->write32(0x80000C00u + 4u * word, gekko::os_exception_page_word(word, 9u));  // system call
+    struct Vector { u32 page; u32 index; };
+    for (const Vector& v : {Vector{0x80000500u, 4u} /* external */, Vector{0x80000900u, 8u} /* decrementer */,
+                            Vector{0x80000C00u, 9u} /* system call */}) {
+        for (u32 word = 0; word < kOsVectorWords; ++word) m.bus->write32(v.page + 4u * word, os_exception_page_word(word, v.index));
+    }
     m.bus->write32(0x80003000u + 4u * 4u, f1c::kExternalHandler);
     m.bus->write32(0x80003000u + 4u * 8u, f1c::kDecrementerHandler);
     m.bus->write32(0x800000D4u, f1c::kOsContext);

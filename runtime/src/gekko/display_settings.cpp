@@ -152,8 +152,7 @@ unsigned changed_keys(const DisplaySettings& a, const DisplaySettings& b) {
 // Which owners' groups the changed keys reach (gekko/display_settings.h).
 unsigned groups_for_keys(unsigned keys) {
     unsigned groups = 0u;
-    // Only the display mode and the window size touch the window; the ratio and the scale never do (a ratio picked
-    // in the menu reshapes a window once by setting its size - gekko/settings_display.cpp).
+    // Only the display mode and the window size touch the window; the ratio and the scale never do.
     if (keys & (kKeyFullscreen | kKeyExclusive | kKeyWidth | kKeyHeight | kKeyFullscreenWidth | kKeyFullscreenHeight))
         groups |= kDisplayWindowChange;
     if (keys & (kKeyRenderRate | kKeyVsync | kKeyFrameInterpolation | kKeyMsaa | kKeyAnisotropy))
@@ -423,6 +422,65 @@ bool DisplaySettingsService::save(std::string* error) const {
 DisplaySettingsService& display_settings() {
     static DisplaySettingsService service;
     return service;
+}
+
+bool FullscreenToggle::toggle(DisplaySettingsService& service, std::string* error, Clock::time_point now) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (verifying_) {
+        if (error != nullptr) *error = "the last fullscreen change is still being verified";
+        return false;
+    }
+    DisplaySettings want = service.current();
+    want.fullscreen = !want.fullscreen;
+    if (want.fullscreen && want.exclusive) {
+        // A display mode change may fail on this monitor: provisional until the window owner reports.
+        if (!service.apply(want, error, true)) return false;
+        verifying_ = true;
+        generation_ = service.generation();
+        deadline_ = now + kVerifyLength;
+        return true;
+    }
+    if (!service.apply(want, error)) return false;
+    return service.save(error);
+}
+
+void FullscreenToggle::tick(DisplaySettingsService& service, Clock::time_point now) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!verifying_) return;
+    const DisplaySettings want = service.current();
+    if (want.fullscreen && want.exclusive) {
+        const DisplayWindowState state = service.window_state();
+        if (state.generation >= generation_) {  // the window owner has applied it
+            verifying_ = false;
+            if (!state.exclusive_active) {
+                last_failure_ = state.note.empty() ? std::string("exclusive fullscreen was refused") : state.note;
+                service.rollback();
+                return;
+            }
+            service.commit();
+            std::string why;
+            (void)service.save(&why);
+            return;
+        }
+    }
+    if (now < deadline_) return;
+    verifying_ = false;
+    service.rollback();
+}
+
+bool FullscreenToggle::verifying() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return verifying_;
+}
+
+std::string FullscreenToggle::last_failure() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return last_failure_;
+}
+
+FullscreenToggle& fullscreen_toggle() {
+    static FullscreenToggle toggle;
+    return toggle;
 }
 
 }  // namespace gekko

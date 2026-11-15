@@ -97,6 +97,24 @@ bool read_string(Cpu& cpu, u32 address, std::size_t limit, std::string& out, boo
     return stop_at_limit;
 }
 
+// The widest field / longest precision the formatter takes. Format strings and `*` arguments are guest data: without a
+// limit a long digit run overflowed `int` (undefined), `-w` of INT_MIN did too, and a huge width asked pad() for
+// gigabytes. The game's formats use one- and two-digit fields; anything beyond the limit is refused with `why`
+// (RC-kernel-12).
+constexpr int kMaxField = 4096;
+
+// Decimal digits at text[i...] as a field size; false when the value passes kMaxField (i is then past the digits).
+bool parse_field(const std::string& text, std::size_t& i, int& value) {
+    long long wide = 0;
+    bool fits = true;
+    for (; i < text.size() && text[i] >= '0' && text[i] <= '9'; ++i) {
+        if (fits) wide = wide * 10 + (text[i] - '0');
+        if (wide > kMaxField) fits = false;
+    }
+    if (fits) value = static_cast<int>(wide);
+    return fits;
+}
+
 struct Spec {
     bool minus = false, plus = false, space = false, alt = false, zero = false;
     int width = 0;
@@ -165,21 +183,32 @@ bool format(Cpu& cpu, u32 format_address, ArgCursor& args, std::string& out, std
             else break;
         }
         if (i < text.size() && text[i] == '*') {
-            const int w = static_cast<int>(args.next_word());
+            long long w = static_cast<s32>(args.next_word());  // 64-bit: -INT_MIN is representable
             ++i;
-            if (w < 0) { spec.minus = true; spec.width = -w; } else spec.width = w;
-        } else {
-            while (i < text.size() && text[i] >= '0' && text[i] <= '9') spec.width = spec.width * 10 + (text[i++] - '0');
+            if (w < 0) { spec.minus = true; w = -w; }
+            if (w > kMaxField) {
+                why = "field width too large";
+                return false;
+            }
+            spec.width = static_cast<int>(w);
+        } else if (!parse_field(text, i, spec.width)) {
+            why = "field width too large";
+            return false;
         }
         if (i < text.size() && text[i] == '.') {
             ++i;
             spec.precision = 0;
             if (i < text.size() && text[i] == '*') {
-                const int p = static_cast<int>(args.next_word());
+                const s32 p = static_cast<s32>(args.next_word());
                 ++i;
+                if (p > kMaxField) {
+                    why = "precision too large";
+                    return false;
+                }
                 spec.precision = p < 0 ? -1 : p;
-            } else {
-                while (i < text.size() && text[i] >= '0' && text[i] <= '9') spec.precision = spec.precision * 10 + (text[i++] - '0');
+            } else if (!parse_field(text, i, spec.precision)) {
+                why = "precision too large";
+                return false;
             }
         }
         if (i < text.size() && (text[i] == 'h' || text[i] == 'l' || text[i] == 'j' || text[i] == 'z' || text[i] == 't')) {

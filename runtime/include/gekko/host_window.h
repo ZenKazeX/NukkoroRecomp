@@ -6,6 +6,7 @@
 // Y'CbCr 4:2:2 layout to host RGB. Input is collected from the keyboard and from
 // XInput pads as samples of the game's controls (peripheral/controls.h).
 
+#include <atomic>
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -58,6 +59,10 @@ public:
     // Off, a minimised window stays minimised; nothing else changes, and the
     // guest never sees the window state either way.
     void set_keep_foreground(bool enabled) noexcept { keep_foreground_ = enabled; }
+
+    // Hide and confine the cursor while the game window is in front (any thread; the next pump() carries it out). The
+    // cursor is released whenever the window is not in front, whatever is requested.
+    void request_cursor_capture(bool capture) noexcept { cursor_capture_wanted_.store(capture, std::memory_order_relaxed); }
     u64 foreground_restores() const noexcept { return foreground_restores_; }
     // Presenter switches, applied at create() (D06-F6, D06-F7). Both must be
     // set before create(); setting them afterwards also takes effect, which is
@@ -87,8 +92,6 @@ public:
     void client_size(int& width, int& height) const noexcept;
     // The full size of the monitor the window is on (what borderless fullscreen covers); false without a window.
     bool monitor_size(int& width, int& height) const noexcept;
-    // The largest windowed client the window's monitor holds: its work area less this style's frame (false: none).
-    bool work_area_client(int& width, int& height) const noexcept;
     // An edge or the title bar is being dragged (the client size is not final until the drag ends).
     bool sizing() const noexcept;
     bool minimized() const noexcept;
@@ -230,6 +233,9 @@ private:
     bool xinput_enabled_ = true;
     bool fullscreen_ = false;
     bool keep_foreground_ = false;
+    std::atomic<bool> cursor_capture_wanted_{false};
+    bool cursor_captured_ = false;
+    bool was_keyboard_active_ = false;
     u64 foreground_restores_ = 0;
     bool narrow_present_lock_ = true;
     bool deferred_pin_release_ = true;

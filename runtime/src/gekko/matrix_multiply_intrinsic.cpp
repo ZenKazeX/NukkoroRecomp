@@ -100,31 +100,33 @@ GEKKO_ALWAYS_INLINE Ps ps_madds(Cpu& c, const Ps& x, u64 s, const Ps& y) {
 bool overlaps(u32 x, u32 xn, u32 y, u32 yn) noexcept { return x - y < yn || y - x < xn; }
 
 #if defined(__AVX2__)
-// fp_detail::tiny_key's test, (key >> 53) < kTinySingle with key = (bits << 1) - 1, per lane: 0 < |v| <= 2^-125,
-// i.e. 0 < magnitude bits <= kTinySingle << 52.
-GEKKO_ALWAYS_INLINE __m256i tiny_lanes(__m256d v) noexcept {
-    const __m256i m = _mm256_and_si256(_mm256_castpd_si256(v), _mm256_set1_epi64x(0x7FFFFFFFFFFFFFFFll));
-    const __m256i nonzero = _mm256_cmpgt_epi64(m, _mm256_setzero_si256());
-    const __m256i above = _mm256_cmpgt_epi64(m, _mm256_set1_epi64x(static_cast<long long>(
-                                                     u64{ppc::fp_detail::kTinySingle} << 52)));
-    return _mm256_andnot_si256(above, nonzero);
+// One row of a matrix as four words (the fourth is the flags / padding word).
+GEKKO_ALWAYS_INLINE __m128i load_row(Cpu& c, u32 address) {
+    return _mm_setr_epi32(static_cast<int>(c.mem_read32(address)), static_cast<int>(c.mem_read32(address + 4u)),
+                          static_cast<int>(c.mem_read32(address + 8u)), static_cast<int>(c.mem_read32(address + 12u)));
 }
-
-// One ps_muls/ps_madds half per lane: x * s + add rounded once, then to single, as ppc::fps_fused's fast path
-// computes it. `slow` collects every lane where fps_fused or fps_mul could leave that path - a tiny operand or
-// result, a NaN result (every NaN operand makes one), a fused double on a single-precision midpoint. A product is
-// the lane with add = -0.0: x * s + -0 is x * s exactly, signed zeros included; its midpoint test is stricter than
-// fps_mul's (none), which only sends a call to the ordered path.
-GEKKO_ALWAYS_INLINE __m256d fused_lanes(__m256d x, __m256d s, __m256d add, __m256i& slow) noexcept {
-    const __m256d r = _mm256_fmadd_pd(x, s, add);
-    const __m256i bits = _mm256_castpd_si256(r);
-    const __m256i midpoint = _mm256_cmpeq_epi64(_mm256_and_si256(bits, _mm256_set1_epi64x(0x1FFFFFFFll)),
-                                                _mm256_set1_epi64x(0x10000000ll));
-    const __m256i nan = _mm256_castpd_si256(_mm256_cmp_pd(r, r, _CMP_UNORD_Q));
-    slow = _mm256_or_si256(slow, _mm256_or_si256(_mm256_or_si256(tiny_lanes(x), tiny_lanes(s)),
-                                                 _mm256_or_si256(tiny_lanes(add), tiny_lanes(r))));
-    slow = _mm256_or_si256(slow, _mm256_or_si256(midpoint, nan));
-    return _mm256_cvtps_pd(_mm256_cvtpd_ps(r));
+// |bits| - 1 per lane, unsigned: 0 < |v| <= 2^-125 (fp_detail::kTinySingle's range; a zero gives all ones) is exactly
+// the lanes below 0x01000000. The running minimum over many values is one test at the end.
+GEKKO_ALWAYS_INLINE __m128i tiny_key(__m128i bits) noexcept {
+    return _mm_sub_epi32(_mm_and_si128(bits, _mm_set1_epi32(0x7FFFFFFF)), _mm_set1_epi32(1));
+}
+GEKKO_ALWAYS_INLINE __m128i tiny_key(__m128 value) noexcept { return tiny_key(_mm_castps_si128(value)); }
+// True when a counted lane of `key` (a running minimum of tiny_key) belongs to a tiny value.
+GEKKO_ALWAYS_INLINE bool any_tiny(__m128i key, int lanes) noexcept {
+    const __m128i small = _mm_cmpeq_epi32(_mm_min_epu32(key, _mm_set1_epi32(0x00FFFFFF)), key);
+    return (_mm_movemask_ps(_mm_castsi128_ps(small)) & lanes) != 0;
+}
+// Row I of the product: the three-term chain over b's rows with a's component I of each column (ax, ay, az hold the
+// x / y / z of the four rows of a). The pos row (Pos) starts with a fused step over b's pos row.
+template <int I, bool Pos, class Step>
+GEKKO_ALWAYS_INLINE __m128 chain(__m128 b0, __m128 b1, __m128 b2, __m128 b3, __m128 ax, __m128 ay, __m128 az,
+                                 Step& step) noexcept {
+    const __m128 sx = _mm_permute_ps(ax, _MM_SHUFFLE(I, I, I, I));
+    const __m128 sy = _mm_permute_ps(ay, _MM_SHUFFLE(I, I, I, I));
+    const __m128 sz = _mm_permute_ps(az, _MM_SHUFFLE(I, I, I, I));
+    __m128 acc = Pos ? step(_mm_fmadd_ps(b0, sx, b3)) : step(_mm_mul_ps(b0, sx));
+    acc = step(_mm_fmadd_ps(b1, sy, acc));
+    return step(_mm_fmadd_ps(b2, sz, acc));
 }
 #endif
 
@@ -149,14 +151,20 @@ bool MatrixMultiplyIntrinsic::execute(Cpu& c) {
     return run(c);
 }
 
-// The body four lanes at a time. Each ps_muls/ps_madds half is one lane of three steps (right, up, at terms):
-//   lanes 0-3   f12 (out.right.xy), f13 (out.up.xy)          a.right / a.up  x, y, z  times b.right/up/at .xy
-//   lanes 4-7   f30 (out.at.xy), f31 (out.pos.xy)            a.at / a.pos, f31 starting from b.pos.xy
-//   lanes 8-11  f12', f13' = (out.right.z, sum), (out.up.z, sum)   the second pass: (b.*.z, 1.0)
-//   lanes 12-15 f8', f11'  = (out.at.z, sum), (out.pos.z, sum)     f11' starting from (b.pos.z, 1.0)
-// When no lane leaves the helpers' fast path, the fast path changes no FPSCR bit, so the order of the operations is
-// not observable and the result is the ordered body's. Every input is read before anything is written; an output
-// that overlaps an input or the stack frame, or a lane off the fast path, returns false having written nothing.
+// The body in single precision, one row of the output per vector. Every output element is a three-term chain,
+//   right / up / at rows:  (b.right * a.row.x)  then  fma(b.up, a.row.y)  then  fma(b.at, a.row.z)
+//   pos row:               fma(b.right, a.pos.x, b.pos)  then  fma(b.up, a.pos.y)  then  fma(b.at, a.pos.z)
+// (the ordered body's ps_muls / ps_madds halves: x and y through its first pass, z through the second), here as float
+// lanes: a product is one rounding, a fused step is one rounding (_mm_fmadd_ps), which is what ppc::fps_mul / fps_fused
+// return when the operation stays on their fast path (a fused double repaired at a single-precision midpoint is the
+// once-rounded value, the same one). The second pass also leaves a sum in ps1 of f8 / f11 / f12 / f13 (1.0 times the a
+// row's components, added one after the other); it is computed too, because those registers are left as the body
+// leaves them.
+// When no operand and no intermediate or final value is tiny (0 < |v| <= 2^-125: the helpers' slow-path range, where
+// the non-IEEE flush bit matters) and no output is a NaN (every NaN operand makes one), the helpers change no FPSCR
+// bit, so the order of the operations is not observable and the result is the ordered body's. Every input is read
+// before anything is written; an output that overlaps an input or the stack frame, or a call off that range, returns
+// false having written nothing.
 bool MatrixMultiplyIntrinsic::run_wide(Cpu& c) {
 #if defined(__AVX2__)
     const u32 out = c.gpr[3];
@@ -168,53 +176,62 @@ bool MatrixMultiplyIntrinsic::run_wide(Cpu& c) {
         ++overlapping_;
         return false;
     }
-    // The FPR values the psq_l loads make, as stored bits (index = word offset / 4; 3, 7, 11, 15 unused).
-    u64 av[16], bv[16];
-    for (u32 i = 0; i < 16u; ++i) {
-        if ((i & 3u) == 3u) continue;
-        av[i] = single_to_double_bits(c.mem_read32(a + 4u * i));
-        bv[i] = single_to_double_bits(c.mem_read32(b + 4u * i));
-    }
-    const auto d = [](u64 bits) { return bits_to_double(bits); };
-    const double one = 1.0;
-    const double nz = -0.0;
-    // _mm256_set_pd takes lanes high to low.
-    const auto pair2 = [&](double x0, double x1, double y0, double y1) { return _mm256_set_pd(y1, y0, x1, x0); };
-    const __m256d right_xy = pair2(d(bv[0]), d(bv[1]), d(bv[0]), d(bv[1]));
-    const __m256d up_xy = pair2(d(bv[4]), d(bv[5]), d(bv[4]), d(bv[5]));
-    const __m256d at_xy = pair2(d(bv[8]), d(bv[9]), d(bv[8]), d(bv[9]));
-    const __m256d right_z = pair2(d(bv[2]), one, d(bv[2]), one);
-    const __m256d up_z = pair2(d(bv[6]), one, d(bv[6]), one);
-    const __m256d at_z = pair2(d(bv[10]), one, d(bv[10]), one);
-    // a's rows: right 0, up 4, at 8, pos 12; component k at + k.
-    const auto rows = [&](u32 r0, u32 r1, u32 k) {
-        return pair2(d(av[r0 + k]), d(av[r0 + k]), d(av[r1 + k]), d(av[r1 + k]));
-    };
-    const __m256d zero2 = _mm256_set1_pd(nz);
-    const __m256d pos_xy = pair2(nz, nz, d(bv[12]), d(bv[13]));
-    const __m256d pos_z = pair2(nz, nz, d(bv[14]), one);
-    __m256i slow = _mm256_setzero_si256();
-    __m256d v0 = fused_lanes(right_xy, rows(0u, 4u, 0u), zero2, slow);
-    __m256d v1 = fused_lanes(right_xy, rows(8u, 12u, 0u), pos_xy, slow);
-    __m256d v2 = fused_lanes(right_z, rows(0u, 4u, 0u), zero2, slow);
-    __m256d v3 = fused_lanes(right_z, rows(8u, 12u, 0u), pos_z, slow);
-    v0 = fused_lanes(up_xy, rows(0u, 4u, 1u), v0, slow);
-    v1 = fused_lanes(up_xy, rows(8u, 12u, 1u), v1, slow);
-    v2 = fused_lanes(up_z, rows(0u, 4u, 1u), v2, slow);
-    v3 = fused_lanes(up_z, rows(8u, 12u, 1u), v3, slow);
-    v0 = fused_lanes(at_xy, rows(0u, 4u, 2u), v0, slow);
-    v1 = fused_lanes(at_xy, rows(8u, 12u, 2u), v1, slow);
-    v2 = fused_lanes(at_z, rows(0u, 4u, 2u), v2, slow);
-    v3 = fused_lanes(at_z, rows(8u, 12u, 2u), v3, slow);
-    if (!_mm256_testz_si256(slow, slow)) {
+    const __m128i ai0 = load_row(c, a), ai1 = load_row(c, a + 0x10u), ai2 = load_row(c, a + 0x20u),
+                  ai3 = load_row(c, a + 0x30u);
+    const __m128i bi0 = load_row(c, b), bi1 = load_row(c, b + 0x10u), bi2 = load_row(c, b + 0x20u),
+                  bi3 = load_row(c, b + 0x30u);
+    // Tiny operands (lane 3, the flags word, does not count).
+    __m128i key = _mm_min_epu32(_mm_min_epu32(tiny_key(ai0), tiny_key(ai1)), _mm_min_epu32(tiny_key(ai2), tiny_key(ai3)));
+    key = _mm_min_epu32(key, _mm_min_epu32(_mm_min_epu32(tiny_key(bi0), tiny_key(bi1)),
+                                           _mm_min_epu32(tiny_key(bi2), tiny_key(bi3))));
+    if (any_tiny(key, 7)) {
         ++off_fast_path_;
         return false;
     }
-    alignas(32) u64 r[4][4];
-    _mm256_store_si256(reinterpret_cast<__m256i*>(r[0]), _mm256_castpd_si256(v0));
-    _mm256_store_si256(reinterpret_cast<__m256i*>(r[1]), _mm256_castpd_si256(v1));
-    _mm256_store_si256(reinterpret_cast<__m256i*>(r[2]), _mm256_castpd_si256(v2));
-    _mm256_store_si256(reinterpret_cast<__m256i*>(r[3]), _mm256_castpd_si256(v3));
+    // b's rows with the flags word zeroed (a flags word read as a float is usually a denormal: no arithmetic on it).
+    const __m128 zero = _mm_setzero_ps();
+    const __m128 b0 = _mm_blend_ps(_mm_castsi128_ps(bi0), zero, 8), b1 = _mm_blend_ps(_mm_castsi128_ps(bi1), zero, 8),
+                 b2 = _mm_blend_ps(_mm_castsi128_ps(bi2), zero, 8), b3 = _mm_blend_ps(_mm_castsi128_ps(bi3), zero, 8);
+    // a transposed: ax = (right.x, up.x, at.x, pos.x), ay and az likewise (aw = the flags words).
+    __m128 ax = _mm_castsi128_ps(ai0), ay = _mm_castsi128_ps(ai1), az = _mm_castsi128_ps(ai2), aw = _mm_castsi128_ps(ai3);
+    _MM_TRANSPOSE4_PS(ax, ay, az, aw);
+    (void)aw;
+    __m128i chain_key = _mm_set1_epi32(-1);
+    const auto step = [&chain_key](__m128 value) {
+        chain_key = _mm_min_epu32(chain_key, tiny_key(value));
+        return value;
+    };
+    __m128 row[4];
+    row[0] = chain<0, false>(b0, b1, b2, zero, ax, ay, az, step);
+    row[1] = chain<1, false>(b0, b1, b2, zero, ax, ay, az, step);
+    row[2] = chain<2, false>(b0, b1, b2, zero, ax, ay, az, step);
+    row[3] = chain<3, true>(b0, b1, b2, b3, ax, ay, az, step);
+    // The second pass's ps1 sums: right / up / at: (z + (y + x)); pos: (z + (y + (x + 1.0))).
+    const __m128 x_plus_one = _mm_blend_ps(ax, _mm_add_ps(ax, _mm_set1_ps(1.0f)), 8);
+    const __m128 sum_yx = step(_mm_add_ps(ay, x_plus_one));
+    const __m128 sum = step(_mm_add_ps(az, sum_yx));
+    if (any_tiny(chain_key, 15)) {
+        ++off_fast_path_;
+        return false;
+    }
+    // A NaN anywhere reaches an output or a sum.
+    const __m128 unordered = _mm_or_ps(_mm_or_ps(_mm_cmpunord_ps(row[0], row[0]), _mm_cmpunord_ps(row[1], row[1])),
+                                       _mm_or_ps(_mm_cmpunord_ps(row[2], row[2]), _mm_cmpunord_ps(row[3], row[3])));
+    if ((_mm_movemask_ps(unordered) & 7) != 0 || (_mm_movemask_ps(_mm_cmpunord_ps(sum, sum)) & 15) != 0) {
+        ++off_fast_path_;
+        return false;
+    }
+    alignas(16) float r[4][4];
+    alignas(16) float j[4];
+    alignas(16) float xs[4], ys[4], zs[4], up_z[4], at_z[4];
+    for (u32 i = 0; i < 4u; ++i)
+        _mm_store_ps(r[i], row[i]);
+    _mm_store_ps(j, sum);
+    _mm_store_ps(xs, ax);
+    _mm_store_ps(ys, ay);
+    _mm_store_ps(zs, az);
+    _mm_store_ps(up_z, b1);
+    _mm_store_ps(at_z, b2);
 
     // The prologue's stack words.
     const u64 f31_0 = c.fpr[31].bits[0], f31_1 = c.fpr[31].bits[1];
@@ -228,45 +245,37 @@ bool MatrixMultiplyIntrinsic::run_wide(Cpu& c) {
     c.mem_write64(sp + 0x10u, f30_0);
     c.mem_write32(sp + 0x18u, f30_s0);
     c.mem_write32(sp + 0x1Cu, f30_s1);
-    // The output: x, y from the first pass, z from the second; flags; the padding words untouched.
-    const auto put_word = [&c](u32 address, u64 bits) { c.mem_write32(address, double_to_single_bits_flush(bits)); };
-    put_word(out + 0x00u, r[0][0]);
-    put_word(out + 0x04u, r[0][1]);
-    put_word(out + 0x08u, r[2][0]);
-    put_word(out + 0x10u, r[0][2]);
-    put_word(out + 0x14u, r[0][3]);
-    put_word(out + 0x18u, r[2][2]);
-    put_word(out + 0x20u, r[1][0]);
-    put_word(out + 0x24u, r[1][1]);
-    put_word(out + 0x28u, r[3][0]);
-    put_word(out + 0x30u, r[1][2]);
-    put_word(out + 0x34u, r[1][3]);
-    put_word(out + 0x38u, r[3][2]);
+    // The output: three words per row; the padding words untouched, the flags word last.
+    for (u32 row_index = 0; row_index < 4u; ++row_index)
+        for (u32 k = 0; k < 3u; ++k)
+            c.mem_write32(out + 0x10u * row_index + 4u * k, float_to_bits(r[row_index][k]));
     const u32 r0 = c.mem_read32(a + 0x0Cu);
     const u32 r4 = r0 & c.mem_read32(b + 0x0Cu);
     c.mem_write32(out + 0x0Cu, r4);
 
-    // The registers as the body leaves them.
-    const auto set = [&c](u32 n, u64 p0, u64 p1) {
-        c.fpr[n].bits[0] = p0;
-        c.fpr[n].bits[1] = p1;
+    // The registers as the body leaves them (singles held as doubles).
+    const auto set = [&c](u32 n, float p0, float p1) {
+        c.fpr[n].bits[0] = double_to_bits(static_cast<double>(p0));
+        c.fpr[n].bits[1] = double_to_bits(static_cast<double>(p1));
     };
-    set(0u, av[0], av[1]);
-    set(1u, av[2], kOne);
-    set(2u, av[4], av[5]);
-    set(3u, av[6], kOne);
-    set(4u, av[8], av[9]);
-    set(5u, av[10], kOne);
-    set(6u, av[12], av[13]);
-    set(7u, av[14], kOne);
-    set(8u, r[3][0], r[3][1]);
-    set(9u, bv[6], kOne);
-    set(10u, bv[10], kOne);
-    set(11u, r[3][2], r[3][3]);
-    set(12u, r[2][0], r[2][1]);
-    set(13u, r[2][2], r[2][3]);
-    set(30u, f30_0, single_to_double_bits(f30_s1));
-    set(31u, f31_0, single_to_double_bits(f31_s1));
+    set(0u, xs[0], ys[0]);
+    set(1u, zs[0], 1.0f);
+    set(2u, xs[1], ys[1]);
+    set(3u, zs[1], 1.0f);
+    set(4u, xs[2], ys[2]);
+    set(5u, zs[2], 1.0f);
+    set(6u, xs[3], ys[3]);
+    set(7u, zs[3], 1.0f);
+    set(8u, r[2][2], j[2]);
+    set(9u, up_z[2], 1.0f);
+    set(10u, at_z[2], 1.0f);
+    set(11u, r[3][2], j[3]);
+    set(12u, r[0][2], j[0]);
+    set(13u, r[1][2], j[1]);
+    c.fpr[30].bits[0] = f30_0;
+    c.fpr[30].bits[1] = single_to_double_bits(f30_s1);
+    c.fpr[31].bits[0] = f31_0;
+    c.fpr[31].bits[1] = single_to_double_bits(f31_s1);
     c.gpr[0] = r0;
     c.gpr[4] = r4;
     return true;

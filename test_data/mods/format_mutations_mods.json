@@ -1,0 +1,1570 @@
+[
+ {
+  "kind": ".inf",
+  "file": "more-reasonable-missions/files/nukkoro2.inf",
+  "mutation": "trunc1",
+  "result": "warning",
+  "why": "I04 does not end with a line break (a real mod ships that way)"
+ },
+ {
+  "kind": ".inf",
+  "file": "more-reasonable-missions/files/nukkoro2.inf",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "I07 last shipped section [EVENT0910] is absent (cut off: the later stages lose their tuning)"
+ },
+ {
+  "kind": ".inf",
+  "file": "more-reasonable-missions/files/nukkoro2.inf",
+  "mutation": "cutlast",
+  "result": "warning",
+  "why": "I04 does not end with a line break (a real mod ships that way)"
+ },
+ {
+  "kind": ".inf",
+  "file": "more-reasonable-missions/files/nukkoro2.inf",
+  "mutation": "zero",
+  "result": "error",
+  "why": "I02 contains a NUL byte (a Shift-JIS text file)"
+ },
+ {
+  "kind": ".inf",
+  "file": "shdth-reloaded/files/nukkoro.inf",
+  "mutation": "trunc1",
+  "result": "warning",
+  "why": "I04 does not end with a line break (a real mod ships that way)"
+ },
+ {
+  "kind": ".inf",
+  "file": "shdth-reloaded/files/nukkoro.inf",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "I08 last shipped key \"AREA\" is absent (cut off: the global settings fall back to defaults)"
+ },
+ {
+  "kind": ".inf",
+  "file": "shdth-reloaded/files/nukkoro.inf",
+  "mutation": "cutlast",
+  "result": "warning",
+  "why": "I04 does not end with a line break (a real mod ships that way)"
+ },
+ {
+  "kind": ".inf",
+  "file": "shdth-reloaded/files/nukkoro.inf",
+  "mutation": "zero",
+  "result": "error",
+  "why": "I02 contains a NUL byte (a Shift-JIS text file)"
+ },
+ {
+  "kind": ".inf",
+  "file": "shdth-reloaded/files/nukkoro2.inf",
+  "mutation": "trunc1",
+  "result": "warning",
+  "why": "I04 does not end with a line break (a real mod ships that way)"
+ },
+ {
+  "kind": ".inf",
+  "file": "shdth-reloaded/files/nukkoro2.inf",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "I07 last shipped section [EVENT0910] is absent (cut off: the later stages lose their tuning)"
+ },
+ {
+  "kind": ".inf",
+  "file": "shdth-reloaded/files/nukkoro2.inf",
+  "mutation": "cutlast",
+  "result": "warning",
+  "why": "I04 does not end with a line break (a real mod ships that way)"
+ },
+ {
+  "kind": ".inf",
+  "file": "shdth-reloaded/files/nukkoro2.inf",
+  "mutation": "zero",
+  "result": "error",
+  "why": "I02 contains a NUL byte (a Shift-JIS text file)"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shadow-model-fixes/files/csdFiles/HPBar.gncp",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "G03 second blob (728 bytes) runs past the file (truncated or damaged)"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shadow-model-fixes/files/csdFiles/HPBar.gncp",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "G02 first blob (3440 bytes) runs past the file (2090 bytes)"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shadow-model-fixes/files/csdFiles/HPBar.gncp",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "G03 second blob (728 bytes) runs past the file (truncated or damaged)"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shadow-model-fixes/files/csdFiles/HPBar.gncp",
+  "mutation": "zero",
+  "result": "error",
+  "why": "G05 project image has no \"NGIF\" header"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/files/csdFiles/InfoWindow.gncp",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "G03 second blob (4312 bytes) runs past the file (truncated or damaged)"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/files/csdFiles/InfoWindow.gncp",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "G03 second blob (4312 bytes) runs past the file (truncated or damaged)"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/files/csdFiles/InfoWindow.gncp",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "G03 second blob (4312 bytes) runs past the file (truncated or damaged)"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/files/csdFiles/InfoWindow.gncp",
+  "mutation": "zero",
+  "result": "error",
+  "why": "G05 project image has no \"NGIF\" header"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/files/csdFiles/Loading_SP.gncp",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "G03 second blob (16600 bytes) runs past the file (truncated or damaged)"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/files/csdFiles/Loading_SP.gncp",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "G03 second blob (16600 bytes) runs past the file (truncated or damaged)"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/files/csdFiles/Loading_SP.gncp",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "G03 second blob (16600 bytes) runs past the file (truncated or damaged)"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/files/csdFiles/Loading_SP.gncp",
+  "mutation": "zero",
+  "result": "error",
+  "why": "G05 project image has no \"NGIF\" header"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/files/csdFiles/Result_JP.gncp",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "G03 second blob (131288 bytes) runs past the file (truncated or damaged)"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/files/csdFiles/Result_JP.gncp",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "G03 second blob (131288 bytes) runs past the file (truncated or damaged)"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/files/csdFiles/Result_JP.gncp",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "G03 second blob (131288 bytes) runs past the file (truncated or damaged)"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/files/csdFiles/Result_JP.gncp",
+  "mutation": "zero",
+  "result": "error",
+  "why": "G05 project image has no \"NGIF\" header"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/files/csdFiles/pause/pauseBoss.gncp",
+  "mutation": "trunc1",
+  "result": "MISSED",
+  "why": ""
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/files/csdFiles/pause/pauseBoss.gncp",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "G06 data area [0x20, +0x73f0) does not fit the 15672-byte image"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/files/csdFiles/pause/pauseBoss.gncp",
+  "mutation": "cutlast",
+  "result": "MISSED",
+  "why": ""
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/files/csdFiles/pause/pauseBoss.gncp",
+  "mutation": "zero",
+  "result": "error",
+  "why": "G05 project image has no \"NGIF\" header"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/options/workspace-widescreen-shadowth-overrides-16x9/on/files/csdFiles/Result_IT.gncp",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "G03 second blob (131288 bytes) runs past the file (truncated or damaged)"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/options/workspace-widescreen-shadowth-overrides-16x9/on/files/csdFiles/Result_IT.gncp",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "G03 second blob (131288 bytes) runs past the file (truncated or damaged)"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/options/workspace-widescreen-shadowth-overrides-16x9/on/files/csdFiles/Result_IT.gncp",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "G03 second blob (131288 bytes) runs past the file (truncated or damaged)"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/options/workspace-widescreen-shadowth-overrides-16x9/on/files/csdFiles/Result_IT.gncp",
+  "mutation": "zero",
+  "result": "error",
+  "why": "G05 project image has no \"NGIF\" header"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/options/workspace-widescreen-shadowth-overrides-4x3/on/files/csdFiles/Result_GE.gncp",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "G03 second blob (131288 bytes) runs past the file (truncated or damaged)"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/options/workspace-widescreen-shadowth-overrides-4x3/on/files/csdFiles/Result_GE.gncp",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "G03 second blob (131288 bytes) runs past the file (truncated or damaged)"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/options/workspace-widescreen-shadowth-overrides-4x3/on/files/csdFiles/Result_GE.gncp",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "G03 second blob (131288 bytes) runs past the file (truncated or damaged)"
+ },
+ {
+  "kind": ".gncp",
+  "file": "shdth-reloaded/options/workspace-widescreen-shadowth-overrides-4x3/on/files/csdFiles/Result_GE.gncp",
+  "mutation": "zero",
+  "result": "error",
+  "why": "G05 project image has no \"NGIF\" header"
+ },
+ {
+  "kind": ".gncp",
+  "file": "xbox-buttons-files/files/csdFiles/CommandWindow.gncp",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "G03 second blob (52840 bytes) runs past the file (truncated or damaged)"
+ },
+ {
+  "kind": ".gncp",
+  "file": "xbox-buttons-files/files/csdFiles/CommandWindow.gncp",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "G03 second blob (52840 bytes) runs past the file (truncated or damaged)"
+ },
+ {
+  "kind": ".gncp",
+  "file": "xbox-buttons-files/files/csdFiles/CommandWindow.gncp",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "G03 second blob (52840 bytes) runs past the file (truncated or damaged)"
+ },
+ {
+  "kind": ".gncp",
+  "file": "xbox-buttons-files/files/csdFiles/CommandWindow.gncp",
+  "mutation": "zero",
+  "result": "error",
+  "why": "G05 project image has no \"NGIF\" header"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/common/ScoreData.bin",
+  "mutation": "trunc1",
+  "result": "warning",
+  "why": "C04 container header says 4522 bytes but the file is 4543 (a real mod ships longer files than its header says)"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/common/ScoreData.bin",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "C07 container data (4360) + relocation (116) overrun the file"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/common/ScoreData.bin",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "C07 container data (4360) + relocation (116) overrun the file"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/common/ScoreData.bin",
+  "mutation": "zero",
+  "result": "error",
+  "why": "C02 container byte order marker at +0x17 is 0x0, expected 0x42 \"B\""
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/common/ScoreDatb.bin",
+  "mutation": "trunc1",
+  "result": "warning",
+  "why": "C04 container header says 4522 bytes but the file is 4543 (a real mod ships longer files than its header says)"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/common/ScoreDatb.bin",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "C07 container data (4360) + relocation (116) overrun the file"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/common/ScoreDatb.bin",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "C07 container data (4360) + relocation (116) overrun the file"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/common/ScoreDatb.bin",
+  "mutation": "zero",
+  "result": "error",
+  "why": "C02 container byte order marker at +0x17 is 0x0, expected 0x42 \"B\""
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/setid.bin",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "B02 header says 302 records (3632 bytes) but the file is 3631 (truncated or damaged)"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/setid.bin",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "B02 header says 302 records (3632 bytes) but the file is 1816 (truncated or damaged)"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/setid.bin",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "B02 header says 302 records (3632 bytes) but the file is 3631 (truncated or damaged)"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/setid.bin",
+  "mutation": "zero",
+  "result": "error",
+  "why": "B03 header says 0 records (8 bytes) but the file is 3632 bytes"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/stg0210/stg0210_hint.bin",
+  "mutation": "trunc1",
+  "result": "warning",
+  "why": "C04 container header says 119 bytes but the file is 117 (cut by 2 byte(s); the loader reads the real size, a real mod ships one byte short)"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/stg0210/stg0210_hint.bin",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "C07 container data (72) + relocation (0) overrun the file"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/stg0210/stg0210_hint.bin",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "C07 container data (72) + relocation (0) overrun the file"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/stg0210/stg0210_hint.bin",
+  "mutation": "zero",
+  "result": "error",
+  "why": "C02 container byte order marker at +0x17 is 0x0, expected 0x42 \"B\""
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/stg0400/stg0400_light.bin",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "B05 is 831 bytes, the loader reads 0x340 (832)"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/stg0400/stg0400_light.bin",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "B05 is 416 bytes, the loader reads 0x340 (832)"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/stg0400/stg0400_light.bin",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "B05 is 831 bytes, the loader reads 0x340 (832)"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/stg0400/stg0400_light.bin",
+  "mutation": "zero",
+  "result": "warning",
+  "why": "B08 first 16 bytes are all zero (no shipped light table starts that way)"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/stg0401/stg0401_light.bin",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "B05 is 831 bytes, the loader reads 0x340 (832)"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/stg0401/stg0401_light.bin",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "B05 is 416 bytes, the loader reads 0x340 (832)"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/stg0401/stg0401_light.bin",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "B05 is 831 bytes, the loader reads 0x340 (832)"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/stg0401/stg0401_light.bin",
+  "mutation": "zero",
+  "result": "warning",
+  "why": "B08 first 16 bytes are all zero (no shipped light table starts that way)"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/stg0410/stg0410_hint.bin",
+  "mutation": "trunc1",
+  "result": "warning",
+  "why": "C04 container header says 118 bytes but the file is 117 (cut by 1 byte(s); the loader reads the real size, a real mod ships one byte short)"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/stg0410/stg0410_hint.bin",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "C07 container data (72) + relocation (0) overrun the file"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/stg0410/stg0410_hint.bin",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "C07 container data (72) + relocation (0) overrun the file"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/stg0410/stg0410_hint.bin",
+  "mutation": "zero",
+  "result": "error",
+  "why": "C02 container byte order marker at +0x17 is 0x0, expected 0x42 \"B\""
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/stg0410/stg0410_light.bin",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "B05 is 831 bytes, the loader reads 0x340 (832)"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/stg0410/stg0410_light.bin",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "B05 is 416 bytes, the loader reads 0x340 (832)"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/stg0410/stg0410_light.bin",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "B05 is 831 bytes, the loader reads 0x340 (832)"
+ },
+ {
+  "kind": ".bin",
+  "file": "shdth-reloaded/files/stg0410/stg0410_light.bin",
+  "mutation": "zero",
+  "result": "warning",
+  "why": "B08 first 16 bytes are all zero (no shipped light table starts that way)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "shdth-reloaded/files/fonts/Advertise/Advertise_EN.fnt",
+  "mutation": "trunc1",
+  "result": "MISSED",
+  "why": ""
+ },
+ {
+  "kind": ".fnt",
+  "file": "shdth-reloaded/files/fonts/Advertise/Advertise_EN.fnt",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "F04 record 524 string has no zero terminator before the end of the file (truncated)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "shdth-reloaded/files/fonts/Advertise/Advertise_EN.fnt",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "F04 record 956 string has no zero terminator before the end of the file (truncated)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "shdth-reloaded/files/fonts/Advertise/Advertise_EN.fnt",
+  "mutation": "zero",
+  "result": "error",
+  "why": "F02 says 0 records (4 bytes of table) but the file is 110268 bytes (truncated or damaged)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "shdth-reloaded/files/fonts/stg0500/stg0500_EN.fnt",
+  "mutation": "trunc1",
+  "result": "MISSED",
+  "why": ""
+ },
+ {
+  "kind": ".fnt",
+  "file": "shdth-reloaded/files/fonts/stg0500/stg0500_EN.fnt",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "F04 record 80 string has no zero terminator before the end of the file (truncated)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "shdth-reloaded/files/fonts/stg0500/stg0500_EN.fnt",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "F04 record 206 string has no zero terminator before the end of the file (truncated)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "shdth-reloaded/files/fonts/stg0500/stg0500_EN.fnt",
+  "mutation": "zero",
+  "result": "error",
+  "why": "F02 says 0 records (4 bytes of table) but the file is 24834 bytes (truncated or damaged)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "shdth-reloaded/files/fonts/stg0700/stg0700_IT.fnt",
+  "mutation": "trunc1",
+  "result": "MISSED",
+  "why": ""
+ },
+ {
+  "kind": ".fnt",
+  "file": "shdth-reloaded/files/fonts/stg0700/stg0700_IT.fnt",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "F04 record 41 string has no zero terminator before the end of the file (truncated)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "shdth-reloaded/files/fonts/stg0700/stg0700_IT.fnt",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "F04 record 129 string has no zero terminator before the end of the file (truncated)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "shdth-reloaded/files/fonts/stg0700/stg0700_IT.fnt",
+  "mutation": "zero",
+  "result": "error",
+  "why": "F02 says 0 records (4 bytes of table) but the file is 14772 bytes (truncated or damaged)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "xbox-buttons-files/files/fonts/stg0210/stg0210_EN.fnt",
+  "mutation": "trunc1",
+  "result": "MISSED",
+  "why": ""
+ },
+ {
+  "kind": ".fnt",
+  "file": "xbox-buttons-files/files/fonts/stg0210/stg0210_EN.fnt",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "F04 record 36 string has no zero terminator before the end of the file (truncated)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "xbox-buttons-files/files/fonts/stg0210/stg0210_EN.fnt",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "F04 record 90 string has no zero terminator before the end of the file (truncated)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "xbox-buttons-files/files/fonts/stg0210/stg0210_EN.fnt",
+  "mutation": "zero",
+  "result": "error",
+  "why": "F02 says 0 records (4 bytes of table) but the file is 11616 bytes (truncated or damaged)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "xbox-buttons-files/files/fonts/stg0404/stg0404_SP.fnt",
+  "mutation": "trunc1",
+  "result": "MISSED",
+  "why": ""
+ },
+ {
+  "kind": ".fnt",
+  "file": "xbox-buttons-files/files/fonts/stg0404/stg0404_SP.fnt",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "F04 record 150 string has no zero terminator before the end of the file (truncated)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "xbox-buttons-files/files/fonts/stg0404/stg0404_SP.fnt",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "F04 record 463 string has no zero terminator before the end of the file (truncated)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "xbox-buttons-files/files/fonts/stg0404/stg0404_SP.fnt",
+  "mutation": "zero",
+  "result": "error",
+  "why": "F02 says 0 records (4 bytes of table) but the file is 52576 bytes (truncated or damaged)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "xbox-buttons-files/files/fonts/stg0511/stg0511_JP.fnt",
+  "mutation": "trunc1",
+  "result": "MISSED",
+  "why": ""
+ },
+ {
+  "kind": ".fnt",
+  "file": "xbox-buttons-files/files/fonts/stg0511/stg0511_JP.fnt",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "F04 record 32 string has no zero terminator before the end of the file (truncated)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "xbox-buttons-files/files/fonts/stg0511/stg0511_JP.fnt",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "F04 record 101 string has no zero terminator before the end of the file (truncated)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "xbox-buttons-files/files/fonts/stg0511/stg0511_JP.fnt",
+  "mutation": "zero",
+  "result": "error",
+  "why": "F02 says 0 records (4 bytes of table) but the file is 7862 bytes (truncated or damaged)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "xbox-buttons-files/files/fonts/stg0614/stg0614_IT.fnt",
+  "mutation": "trunc1",
+  "result": "MISSED",
+  "why": ""
+ },
+ {
+  "kind": ".fnt",
+  "file": "xbox-buttons-files/files/fonts/stg0614/stg0614_IT.fnt",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "F04 record 43 string has no zero terminator before the end of the file (truncated)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "xbox-buttons-files/files/fonts/stg0614/stg0614_IT.fnt",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "F04 record 136 string has no zero terminator before the end of the file (truncated)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "xbox-buttons-files/files/fonts/stg0614/stg0614_IT.fnt",
+  "mutation": "zero",
+  "result": "error",
+  "why": "F02 says 0 records (4 bytes of table) but the file is 16674 bytes (truncated or damaged)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "xbox-buttons-files/files/fonts/stg0901/stg0901_GE.fnt",
+  "mutation": "trunc1",
+  "result": "MISSED",
+  "why": ""
+ },
+ {
+  "kind": ".fnt",
+  "file": "xbox-buttons-files/files/fonts/stg0901/stg0901_GE.fnt",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "F04 record 22 string has no zero terminator before the end of the file (truncated)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "xbox-buttons-files/files/fonts/stg0901/stg0901_GE.fnt",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "F04 record 44 string has no zero terminator before the end of the file (truncated)"
+ },
+ {
+  "kind": ".fnt",
+  "file": "xbox-buttons-files/files/fonts/stg0901/stg0901_GE.fnt",
+  "mutation": "zero",
+  "result": "error",
+  "why": "F02 says 0 records (4 bytes of table) but the file is 5050 bytes (truncated or damaged)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/Advertise/Advertise_EN00.met",
+  "mutation": "trunc1",
+  "result": "warning",
+  "why": "M13 has carriage returns (shipped files use bare LF; the Reloaded fonts ship CRLF)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/Advertise/Advertise_EN00.met",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "M03 does not end with a newline (the last glyph line would be cut)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/Advertise/Advertise_EN00.met",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "M03 does not end with a newline (the last glyph line would be cut)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/Advertise/Advertise_EN00.met",
+  "mutation": "zero",
+  "result": "error",
+  "why": "M02 contains a NUL byte (a text file)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/Save/Save_FR00.met",
+  "mutation": "trunc1",
+  "result": "warning",
+  "why": "M13 has carriage returns (shipped files use bare LF; the Reloaded fonts ship CRLF)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/Save/Save_FR00.met",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "M03 does not end with a newline (the last glyph line would be cut)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/Save/Save_FR00.met",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "M03 does not end with a newline (the last glyph line would be cut)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/Save/Save_FR00.met",
+  "mutation": "zero",
+  "result": "error",
+  "why": "M02 contains a NUL byte (a text file)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0200/stg0200_GE00.met",
+  "mutation": "trunc1",
+  "result": "warning",
+  "why": "M13 has carriage returns (shipped files use bare LF; the Reloaded fonts ship CRLF)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0200/stg0200_GE00.met",
+  "mutation": "trunch",
+  "result": "warning",
+  "why": "M13 has carriage returns (shipped files use bare LF; the Reloaded fonts ship CRLF)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0200/stg0200_GE00.met",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "M03 does not end with a newline (the last glyph line would be cut)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0200/stg0200_GE00.met",
+  "mutation": "zero",
+  "result": "error",
+  "why": "M02 contains a NUL byte (a text file)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0310/stg0310_EN00.met",
+  "mutation": "trunc1",
+  "result": "warning",
+  "why": "M13 has carriage returns (shipped files use bare LF; the Reloaded fonts ship CRLF)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0310/stg0310_EN00.met",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "M03 does not end with a newline (the last glyph line would be cut)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0310/stg0310_EN00.met",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "M03 does not end with a newline (the last glyph line would be cut)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0310/stg0310_EN00.met",
+  "mutation": "zero",
+  "result": "error",
+  "why": "M02 contains a NUL byte (a text file)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0412/stg0412_EN00.met",
+  "mutation": "trunc1",
+  "result": "warning",
+  "why": "M13 has carriage returns (shipped files use bare LF; the Reloaded fonts ship CRLF)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0412/stg0412_EN00.met",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "M03 does not end with a newline (the last glyph line would be cut)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0412/stg0412_EN00.met",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "M03 does not end with a newline (the last glyph line would be cut)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0412/stg0412_EN00.met",
+  "mutation": "zero",
+  "result": "error",
+  "why": "M02 contains a NUL byte (a text file)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0600/stg0600_EN00.met",
+  "mutation": "trunc1",
+  "result": "warning",
+  "why": "M13 has carriage returns (shipped files use bare LF; the Reloaded fonts ship CRLF)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0600/stg0600_EN00.met",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "M03 does not end with a newline (the last glyph line would be cut)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0600/stg0600_EN00.met",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "M03 does not end with a newline (the last glyph line would be cut)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0600/stg0600_EN00.met",
+  "mutation": "zero",
+  "result": "error",
+  "why": "M02 contains a NUL byte (a text file)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0613/stg0613_EN00.met",
+  "mutation": "trunc1",
+  "result": "warning",
+  "why": "M13 has carriage returns (shipped files use bare LF; the Reloaded fonts ship CRLF)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0613/stg0613_EN00.met",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "M03 does not end with a newline (the last glyph line would be cut)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0613/stg0613_EN00.met",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "M03 does not end with a newline (the last glyph line would be cut)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0613/stg0613_EN00.met",
+  "mutation": "zero",
+  "result": "error",
+  "why": "M02 contains a NUL byte (a text file)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0710/stg0710_EN00.met",
+  "mutation": "trunc1",
+  "result": "warning",
+  "why": "M13 has carriage returns (shipped files use bare LF; the Reloaded fonts ship CRLF)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0710/stg0710_EN00.met",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "M03 does not end with a newline (the last glyph line would be cut)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0710/stg0710_EN00.met",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "M03 does not end with a newline (the last glyph line would be cut)"
+ },
+ {
+  "kind": ".met",
+  "file": "shdth-reloaded/files/fonts/stg0710/stg0710_EN00.met",
+  "mutation": "zero",
+  "result": "error",
+  "why": "M02 contains a NUL byte (a text file)"
+ },
+ {
+  "kind": ".tp",
+  "file": "shdth-reloaded/files/mc_bunner_e.tp",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "P01 is 6143 bytes, the memory card banner is 6144"
+ },
+ {
+  "kind": ".tp",
+  "file": "shdth-reloaded/files/mc_bunner_e.tp",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "P01 is 3072 bytes, the memory card banner is 6144"
+ },
+ {
+  "kind": ".tp",
+  "file": "shdth-reloaded/files/mc_bunner_e.tp",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "P01 is 6143 bytes, the memory card banner is 6144"
+ },
+ {
+  "kind": ".tp",
+  "file": "shdth-reloaded/files/mc_bunner_e.tp",
+  "mutation": "zero",
+  "result": "MISSED",
+  "why": ""
+ },
+ {
+  "kind": ".tp",
+  "file": "shdth-reloaded/files/mc_icon01.tp",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "P01 is 2047 bytes, the memory card icon is 2048"
+ },
+ {
+  "kind": ".tp",
+  "file": "shdth-reloaded/files/mc_icon01.tp",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "P01 is 1024 bytes, the memory card icon is 2048"
+ },
+ {
+  "kind": ".tp",
+  "file": "shdth-reloaded/files/mc_icon01.tp",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "P01 is 2047 bytes, the memory card icon is 2048"
+ },
+ {
+  "kind": ".tp",
+  "file": "shdth-reloaded/files/mc_icon01.tp",
+  "mutation": "zero",
+  "result": "MISSED",
+  "why": ""
+ },
+ {
+  "kind": ".bnr",
+  "file": "shdth-reloaded/files/opening.bnr",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "N01 is 6495 bytes, a BNR1 banner is 6496"
+ },
+ {
+  "kind": ".bnr",
+  "file": "shdth-reloaded/files/opening.bnr",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "N01 is 3248 bytes, a BNR1 banner is 6496"
+ },
+ {
+  "kind": ".bnr",
+  "file": "shdth-reloaded/files/opening.bnr",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "N01 is 6495 bytes, a BNR1 banner is 6496"
+ },
+ {
+  "kind": ".bnr",
+  "file": "shdth-reloaded/files/opening.bnr",
+  "mutation": "zero",
+  "result": "error",
+  "why": "N02 has no \"BNR1\"/\"BNR2\" signature"
+ },
+ {
+  "kind": ".mlt",
+  "file": "shdth-reloaded/files/sound/B81_FINALDOOM.mlt",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "S02 header says 374048 bytes but the file is 374047 (truncated or damaged)"
+ },
+ {
+  "kind": ".mlt",
+  "file": "shdth-reloaded/files/sound/B81_FINALDOOM.mlt",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "S02 header says 374048 bytes but the file is 187024 (truncated or damaged)"
+ },
+ {
+  "kind": ".mlt",
+  "file": "shdth-reloaded/files/sound/B81_FINALDOOM.mlt",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "S02 header says 374048 bytes but the file is 374047 (truncated or damaged)"
+ },
+ {
+  "kind": ".mlt",
+  "file": "shdth-reloaded/files/sound/B81_FINALDOOM.mlt",
+  "mutation": "zero",
+  "result": "error",
+  "why": "S01 is not a gcax sound bank (no \"gcaxMLT \" signature)"
+ },
+ {
+  "kind": ".srd",
+  "file": "shdth-reloaded/files/stafroll/StafRoll.srd",
+  "mutation": "trunc1",
+  "result": "warning",
+  "why": "R04 size 11327, shipped table ends 16 bytes after the strips (11328)"
+ },
+ {
+  "kind": ".srd",
+  "file": "shdth-reloaded/files/stafroll/StafRoll.srd",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "R03 strip table (95 x 8 at 0x2938) overruns the file (truncated or damaged)"
+ },
+ {
+  "kind": ".srd",
+  "file": "shdth-reloaded/files/stafroll/StafRoll.srd",
+  "mutation": "cutlast",
+  "result": "warning",
+  "why": "R04 size 11327, shipped table ends 16 bytes after the strips (11328)"
+ },
+ {
+  "kind": ".srd",
+  "file": "shdth-reloaded/files/stafroll/StafRoll.srd",
+  "mutation": "zero",
+  "result": "error",
+  "why": "R01 is not a staff-roll table (no \"SSRD\" signature)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0100/stg0100_cam.dat",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "K03 header says 73 camera records (16084 bytes) but the file is 16083 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0100/stg0100_cam.dat",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "K03 header says 73 camera records (16084 bytes) but the file is 8042 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0100/stg0100_cam.dat",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "K03 header says 73 camera records (16084 bytes) but the file is 16083 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0100/stg0100_cam.dat",
+  "mutation": "zero",
+  "result": "error",
+  "why": "K02 camera header {0x0, 0x0} is not {3, 0x0131CD93}"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0210/stg0210_cmn.dat",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "L03 header says 41 entries + 1996 misc bytes = 3812 bytes but the file is 3811 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0210/stg0210_cmn.dat",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "L03 header says 41 entries + 1996 misc bytes = 3812 bytes but the file is 1906 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0210/stg0210_cmn.dat",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "L03 header says 41 entries + 1996 misc bytes = 3812 bytes but the file is 3811 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0210/stg0210_cmn.dat",
+  "mutation": "zero",
+  "result": "error",
+  "why": "L02 is not a layout file (no \"sky2\" signature)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0400/stg0400_cam.dat",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "K03 header says 63 camera records (13884 bytes) but the file is 13883 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0400/stg0400_cam.dat",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "K03 header says 63 camera records (13884 bytes) but the file is 6942 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0400/stg0400_cam.dat",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "K03 header says 63 camera records (13884 bytes) but the file is 13883 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0400/stg0400_cam.dat",
+  "mutation": "zero",
+  "result": "error",
+  "why": "K02 camera header {0x0, 0x0} is not {3, 0x0131CD93}"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0404/stg0404_cam.dat",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "K03 header says 109 camera records (24004 bytes) but the file is 24003 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0404/stg0404_cam.dat",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "K03 header says 109 camera records (24004 bytes) but the file is 12002 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0404/stg0404_cam.dat",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "K03 header says 109 camera records (24004 bytes) but the file is 24003 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0404/stg0404_cam.dat",
+  "mutation": "zero",
+  "result": "error",
+  "why": "K02 camera header {0x0, 0x0} is not {3, 0x0131CD93}"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0501/stg0501_cmn.dat",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "L03 header says 492 entries + 14892 misc bytes = 36552 bytes but the file is 36551 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0501/stg0501_cmn.dat",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "L03 header says 492 entries + 14892 misc bytes = 36552 bytes but the file is 18276 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0501/stg0501_cmn.dat",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "L03 header says 492 entries + 14892 misc bytes = 36552 bytes but the file is 36551 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0501/stg0501_cmn.dat",
+  "mutation": "zero",
+  "result": "error",
+  "why": "L02 is not a layout file (no \"sky2\" signature)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0510/stg0510_hrd.dat",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "L03 header says 20 entries + 364 misc bytes = 1256 bytes but the file is 1255 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0510/stg0510_hrd.dat",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "L03 header says 20 entries + 364 misc bytes = 1256 bytes but the file is 628 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0510/stg0510_hrd.dat",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "L03 header says 20 entries + 364 misc bytes = 1256 bytes but the file is 1255 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0510/stg0510_hrd.dat",
+  "mutation": "zero",
+  "result": "error",
+  "why": "L02 is not a layout file (no \"sky2\" signature)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0603/stg0603_cmn.dat",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "L03 header says 206 entries + 5508 misc bytes = 14584 bytes but the file is 14583 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0603/stg0603_cmn.dat",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "L03 header says 206 entries + 5508 misc bytes = 14584 bytes but the file is 7292 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0603/stg0603_cmn.dat",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "L03 header says 206 entries + 5508 misc bytes = 14584 bytes but the file is 14583 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0603/stg0603_cmn.dat",
+  "mutation": "zero",
+  "result": "error",
+  "why": "L02 is not a layout file (no \"sky2\" signature)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0613/stg0613_nrm.dat",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "L03 header says 9 entries + 64 misc bytes = 472 bytes but the file is 471 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0613/stg0613_nrm.dat",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "L03 header says 9 entries + 64 misc bytes = 472 bytes but the file is 236 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0613/stg0613_nrm.dat",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "L03 header says 9 entries + 64 misc bytes = 472 bytes but the file is 471 (truncated or damaged)"
+ },
+ {
+  "kind": ".dat",
+  "file": "shdth-reloaded/files/stg0613/stg0613_nrm.dat",
+  "mutation": "zero",
+  "result": "error",
+  "why": "L02 is not a layout file (no \"sky2\" signature)"
+ },
+ {
+  "kind": ".fog",
+  "file": "shdth-reloaded/files/stg0300/stg0300.fog",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "O01 is 959 bytes, the loader reads 24 entries of 40 bytes (960)"
+ },
+ {
+  "kind": ".fog",
+  "file": "shdth-reloaded/files/stg0300/stg0300.fog",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "O01 is 480 bytes, the loader reads 24 entries of 40 bytes (960)"
+ },
+ {
+  "kind": ".fog",
+  "file": "shdth-reloaded/files/stg0300/stg0300.fog",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "O01 is 959 bytes, the loader reads 24 entries of 40 bytes (960)"
+ },
+ {
+  "kind": ".fog",
+  "file": "shdth-reloaded/files/stg0300/stg0300.fog",
+  "mutation": "zero",
+  "result": "error",
+  "why": "O04 first fog entry is empty (every shipped file has its first entry filled)"
+ },
+ {
+  "kind": ".fog",
+  "file": "shdth-reloaded/files/stg0401/stg0401.fog",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "O01 is 959 bytes, the loader reads 24 entries of 40 bytes (960)"
+ },
+ {
+  "kind": ".fog",
+  "file": "shdth-reloaded/files/stg0401/stg0401.fog",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "O01 is 480 bytes, the loader reads 24 entries of 40 bytes (960)"
+ },
+ {
+  "kind": ".fog",
+  "file": "shdth-reloaded/files/stg0401/stg0401.fog",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "O01 is 959 bytes, the loader reads 24 entries of 40 bytes (960)"
+ },
+ {
+  "kind": ".fog",
+  "file": "shdth-reloaded/files/stg0401/stg0401.fog",
+  "mutation": "zero",
+  "result": "error",
+  "why": "O04 first fog entry is empty (every shipped file has its first entry filled)"
+ },
+ {
+  "kind": ".fog",
+  "file": "shdth-reloaded/files/stg0402/stg0402.fog",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "O01 is 959 bytes, the loader reads 24 entries of 40 bytes (960)"
+ },
+ {
+  "kind": ".fog",
+  "file": "shdth-reloaded/files/stg0402/stg0402.fog",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "O01 is 480 bytes, the loader reads 24 entries of 40 bytes (960)"
+ },
+ {
+  "kind": ".fog",
+  "file": "shdth-reloaded/files/stg0402/stg0402.fog",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "O01 is 959 bytes, the loader reads 24 entries of 40 bytes (960)"
+ },
+ {
+  "kind": ".fog",
+  "file": "shdth-reloaded/files/stg0402/stg0402.fog",
+  "mutation": "zero",
+  "result": "error",
+  "why": "O04 first fog entry is empty (every shipped file has its first entry filled)"
+ },
+ {
+  "kind": ".fog",
+  "file": "shdth-reloaded/files/stg0501/stg0501.fog",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "O01 is 959 bytes, the loader reads 24 entries of 40 bytes (960)"
+ },
+ {
+  "kind": ".fog",
+  "file": "shdth-reloaded/files/stg0501/stg0501.fog",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "O01 is 480 bytes, the loader reads 24 entries of 40 bytes (960)"
+ },
+ {
+  "kind": ".fog",
+  "file": "shdth-reloaded/files/stg0501/stg0501.fog",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "O01 is 959 bytes, the loader reads 24 entries of 40 bytes (960)"
+ },
+ {
+  "kind": ".fog",
+  "file": "shdth-reloaded/files/stg0501/stg0501.fog",
+  "mutation": "zero",
+  "result": "error",
+  "why": "O04 first fog entry is empty (every shipped file has its first entry filled)"
+ },
+ {
+  "kind": ".fog",
+  "file": "shdth-reloaded/files/stg0601/stg0601.fog",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "O01 is 959 bytes, the loader reads 24 entries of 40 bytes (960)"
+ },
+ {
+  "kind": ".fog",
+  "file": "shdth-reloaded/files/stg0601/stg0601.fog",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "O01 is 480 bytes, the loader reads 24 entries of 40 bytes (960)"
+ },
+ {
+  "kind": ".fog",
+  "file": "shdth-reloaded/files/stg0601/stg0601.fog",
+  "mutation": "cutlast",
+  "result": "error",
+  "why": "O01 is 959 bytes, the loader reads 24 entries of 40 bytes (960)"
+ },
+ {
+  "kind": ".fog",
+  "file": "shdth-reloaded/files/stg0601/stg0601.fog",
+  "mutation": "zero",
+  "result": "error",
+  "why": "O04 first fog entry is empty (every shipped file has its first entry filled)"
+ },
+ {
+  "kind": ".flo",
+  "file": "shdth-reloaded/files/E4101.flo",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "V03 size 9596927 is not a whole number of 2048-byte sectors (every Sofdec movie of the disc and of the real mods is)"
+ },
+ {
+  "kind": ".flo",
+  "file": "shdth-reloaded/files/E4101.flo",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "V02 does not end with the MPEG program end code (truncated movie)"
+ },
+ {
+  "kind": ".flo",
+  "file": "shdth-reloaded/files/E4101.flo",
+  "mutation": "zero",
+  "result": "error",
+  "why": "V01 does not start with an MPEG pack header (00 00 01 BA)"
+ },
+ {
+  "kind": ".flo",
+  "file": "shdth-reloaded/files/E4102.flo",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "V03 size 22294527 is not a whole number of 2048-byte sectors (every Sofdec movie of the disc and of the real mods is)"
+ },
+ {
+  "kind": ".flo",
+  "file": "shdth-reloaded/files/E4102.flo",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "V02 does not end with the MPEG program end code (truncated movie)"
+ },
+ {
+  "kind": ".flo",
+  "file": "shdth-reloaded/files/E4102.flo",
+  "mutation": "zero",
+  "result": "error",
+  "why": "V01 does not start with an MPEG pack header (00 00 01 BA)"
+ },
+ {
+  "kind": ".flo",
+  "file": "shdth-reloaded/files/E4201.flo",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "V03 size 4253695 is not a whole number of 2048-byte sectors (every Sofdec movie of the disc and of the real mods is)"
+ },
+ {
+  "kind": ".flo",
+  "file": "shdth-reloaded/files/E4201.flo",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "V02 does not end with the MPEG program end code (truncated movie)"
+ },
+ {
+  "kind": ".flo",
+  "file": "shdth-reloaded/files/E4201.flo",
+  "mutation": "zero",
+  "result": "error",
+  "why": "V01 does not start with an MPEG pack header (00 00 01 BA)"
+ },
+ {
+  "kind": ".flo",
+  "file": "shdth-reloaded/files/E8003.flo",
+  "mutation": "trunc1",
+  "result": "error",
+  "why": "V03 size 13258751 is not a whole number of 2048-byte sectors (every Sofdec movie of the disc and of the real mods is)"
+ },
+ {
+  "kind": ".flo",
+  "file": "shdth-reloaded/files/E8003.flo",
+  "mutation": "trunch",
+  "result": "error",
+  "why": "V02 does not end with the MPEG program end code (truncated movie)"
+ },
+ {
+  "kind": ".flo",
+  "file": "shdth-reloaded/files/E8003.flo",
+  "mutation": "zero",
+  "result": "error",
+  "why": "V01 does not start with an MPEG pack header (00 00 01 BA)"
+ }
+]

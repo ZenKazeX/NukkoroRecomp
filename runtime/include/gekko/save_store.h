@@ -29,8 +29,16 @@
 //   * after every load (0x8035AA28 at boot, 0x8035B414 from Options' Load) the values are written over the loaded
 //     record's (GameData + 0x18 / + 0x20 / + 0x24) before the game applies them; a value not set yet is taken from
 //     the record instead, once, and saved to options.cfg (the user's save carries their choices over);
-//   * leaving Options does not write the save: Options' exit (state 5, 0x802B90B0) reads "save enabled" (G + 0x7D)
-//     as clear for that one decision, so it fades out without the card save; the flag is restored at the next frame;
+//   * the game's own Options screen (retail, docs/OPTIONS_MENU_ORIGINAL_RE.md) changes them through its apply
+//     0x802B85D8; at the apply's last call (0x802BE860 returning to 0x802B8814: the settings object, G, holds the
+//     applied values) the text language (G + 0x58), the speaker mode (G + 0x78) and the vibration (G + 0x7C) are taken
+//     into options.cfg, which is written at once. The voice item is hidden on PAL (options.cfg voice only);
+//   * so leaving Options does not write the save: Options' exit (state 5, 0x802B90B0) reads "save enabled"
+//     (G + 0x7D) as clear for that one decision, so it fades out without the card save; the flag is restored at the
+//     next frame. The record already carries the applied values (the apply copies them), so the next progress save
+//     writes them too;
+//   * a language outside the game's six (options.cfg 6, the Hungarian text of earlier builds, or a record holding
+//     one) reads as English (1);
 //   * Autosave off (PcSettings autosave 0) keeps "save enabled" clear every frame, whatever the game sets; on / not
 //     set leaves the game's own value (its boot check sets it when a save exists or was created).
 //
@@ -69,6 +77,7 @@ public:
         u64 creates = 0, reads = 0, overwrites = 0, deletes = 0, formats = 0, free_queries = 0, scans = 0;
         u64 failures = 0, writes = 0, write_failures = 0;
         u64 options_applied = 0, options_taken = 0, options_exit_saves_skipped = 0, boot_languages = 0;
+        u64 options_screen_saves = 0;  // the Options screen's applies taken into options.cfg
         u64 stray_card_calls = 0;  // CARD calls that only the replaced runner made
         s32 last_result = 0;
     };
@@ -94,6 +103,7 @@ private:
     void after_load(Cpu& c);
     void boot_language(Cpu& c);
     void options_exit(Cpu& c);
+    void options_applied(Cpu& c);
     void restore_save_flag();
     s32 write_file(const save_file::Gci& gci);
     std::string guest_text(u32 address, std::size_t max) const;

@@ -1,0 +1,4980 @@
+{
+ "by_group": {
+  "character": {
+   "changed": 4
+  },
+  "common": {
+   "changed": 2,
+   "new": 1
+  },
+  "csdFiles": {
+   "changed": 55
+  },
+  "enemy": {
+   "changed": 3
+  },
+  "event": {
+   "changed": 138
+  },
+  "fonts": {
+   "changed": 268,
+   "identical": 1
+  },
+  "root.adx": {
+   "changed": 1,
+   "new": 3
+  },
+  "root.bin": {
+   "changed": 1
+  },
+  "root.bnr": {
+   "changed": 1
+  },
+  "root.flo": {
+   "new": 6
+  },
+  "root.inf": {
+   "changed": 2
+  },
+  "root.one": {
+   "changed": 1,
+   "new": 1
+  },
+  "root.tp": {
+   "changed": 2
+  },
+  "root.txd": {
+   "changed": 1
+  },
+  "sound": {
+   "changed": 1
+  },
+  "stafroll": {
+   "changed": 1
+  },
+  "stage": {
+   "changed": 211,
+   "identical": 1,
+   "new": 32
+  }
+ },
+ "files_changed": [
+  "FadeLogo.txd",
+  "character/maria.one",
+  "character/shadow.one",
+  "character/shadow2pmtlp.one",
+  "character/shadow2py.one",
+  "common/CommonEffect.one",
+  "common/ScoreData.bin",
+  "csdFiles/2P_CommandWindow.gncp",
+  "csdFiles/2P_Ring.gncp",
+  "csdFiles/CommandWindow.gncp",
+  "csdFiles/EggBoss.gncp",
+  "csdFiles/HPBar.gncp",
+  "csdFiles/InfoWindow.gncp",
+  "csdFiles/Loading_EN.gncp",
+  "csdFiles/Loading_FR.gncp",
+  "csdFiles/Loading_GE.gncp",
+  "csdFiles/Loading_IT.gncp",
+  "csdFiles/Loading_JP.gncp",
+  "csdFiles/Loading_SP.gncp",
+  "csdFiles/Logo.gncp",
+  "csdFiles/Result_EN.gncp",
+  "csdFiles/Result_FR.gncp",
+  "csdFiles/Result_GE.gncp",
+  "csdFiles/Result_IT.gncp",
+  "csdFiles/Result_JP.gncp",
+  "csdFiles/Result_SP.gncp",
+  "csdFiles/SelectMode.gncp",
+  "csdFiles/SelectMode_EN.txd",
+  "csdFiles/SelectMode_FR.txd",
+  "csdFiles/SelectMode_GE.txd",
+  "csdFiles/SelectMode_IT.txd",
+  "csdFiles/SelectMode_JP.txd",
+  "csdFiles/SelectMode_SP.txd",
+  "csdFiles/TWindow.gncp",
+  "csdFiles/honban.gncp",
+  "csdFiles/honban_EN.txd",
+  "csdFiles/honban_FR.txd",
+  "csdFiles/honban_GE.txd",
+  "csdFiles/honban_IT.txd",
+  "csdFiles/honban_JP.txd",
+  "csdFiles/honban_SP.txd",
+  "csdFiles/pause/pause.gncp",
+  "csdFiles/pause/pause0401_EN.txd",
+  "csdFiles/pause/pause0401_FR.txd",
+  "csdFiles/pause/pause0401_GE.txd",
+  "csdFiles/pause/pause0401_IT.txd",
+  "csdFiles/pause/pause0401_JP.txd",
+  "csdFiles/pause/pause0401_SP.txd",
+  "csdFiles/pause/pause0503_EN.txd",
+  "csdFiles/pause/pause0503_FR.txd",
+  "csdFiles/pause/pause0503_GE.txd",
+  "csdFiles/pause/pause0503_IT.txd",
+  "csdFiles/pause/pause0503_JP.txd",
+  "csdFiles/pause/pause0503_SP.txd",
+  "csdFiles/pause/pause0504_EN.txd",
+  "csdFiles/pause/pause0504_FR.txd",
+  "csdFiles/pause/pause0504_GE.txd",
+  "csdFiles/pause/pause0504_IT.txd",
+  "csdFiles/pause/pause0504_JP.txd",
+  "csdFiles/pause/pause0504_SP.txd",
+  "csdFiles/pause/pauseBoss.gncp",
+  "csdFiles/stageTitle/StageTitle.gncp",
+  "enemy/BKChaosData.one",
+  "enemy/GunBigfootData.one",
+  "enemy/boss/HeavyDog0410One.one",
+  "event/event0800_sceneA.one",
+  "event/event0801_sceneA.one",
+  "event/event0802_sceneA.one",
+  "event/event0803_sceneA.one",
+  "event/event0804_sceneA.one",
+  "event/event0805_sceneA.one",
+  "event/event0806_sceneA.one",
+  "event/event0807_sceneA.one",
+  "event/event0808_sceneA.one",
+  "event/event0809_sceneA.one",
+  "event/event0810_sceneA.one",
+  "event/event0811_sceneA.one",
+  "event/event0812_sceneA.one",
+  "event/event0813_sceneA.one",
+  "event/event0814_sceneA.one",
+  "event/event0815_sceneA.one",
+  "event/event0816_sceneA.one",
+  "event/event0817_sceneA.one",
+  "event/event0818_sceneA.one",
+  "event/event0819_sceneA.one",
+  "event/event0820_sceneA.one",
+  "event/event0821_sceneA.one",
+  "event/event0822_sceneA.one",
+  "event/event0823_sceneA.one",
+  "event/event0824_sceneA.one",
+  "event/event0825_sceneA.one",
+  "event/event0826_sceneA.one",
+  "event/event0900_sceneA.one",
+  "event/event0901_sceneA.one",
+  "event/event0902_sceneA.one",
+  "event/event0903_sceneA.one",
+  "event/event0904_sceneA.one",
+  "event/event0905_sceneA.one",
+  "event/event0906_sceneA.one",
+  "event/event0907_sceneA.one",
+  "event/event0908_sceneA.one",
+  "event/event0909_sceneA.one",
+  "event/event0910_sceneA.one",
+  "event/event0911_sceneA.one",
+  "event/event0912_sceneA.one",
+  "event/event0913_sceneA.one",
+  "event/event0914_sceneA.one",
+  "event/event0915_sceneA.one",
+  "event/event0916_sceneA.one",
+  "event/event0917_sceneA.one",
+  "event/event0918_sceneA.one",
+  "event/event0919_sceneA.one",
+  "event/event0920_sceneA.one",
+  "event/event0921_sceneA.one",
+  "event/event0922_sceneA.one",
+  "event/event0923_sceneA.one",
+  "event/event0924_sceneA.one",
+  "event/event0925_sceneA.one",
+  "event/event0926_sceneA.one",
+  "event/event0950_sceneA.one",
+  "event/event0951_sceneA.one",
+  "event/event0960_sceneA.one",
+  "event/event0961_sceneA.one",
+  "event/event0980_sceneA.one",
+  "event/event1101_sceneA.one",
+  "event/event1101_sceneB.one",
+  "event/event2001_sceneA.one",
+  "event/event2101_sceneA.one",
+  "event/event2102_sceneA.one",
+  "event/event2201_sceneA.one",
+  "event/event2211_sceneA.one",
+  "event/event3001_sceneA.one",
+  "event/event3011_sceneA.one",
+  "event/event3101_sceneA.one",
+  "event/event3201_sceneA.one",
+  "event/event4002_sceneA.one",
+  "event/event4111_sceneA.one",
+  "event/event4202_sceneA.one",
+  "event/event4301_sceneA.one",
+  "event/event4311_sceneA.one",
+  "event/event4411_sceneA.one",
+  "event/event5001_sceneA.one",
+  "event/event5011_sceneA.one",
+  "event/event5101_sceneD.one",
+  "event/event5101_sceneE.one",
+  "event/event5201_sceneA.one",
+  "event/event5211_sceneA.one",
+  "event/event5301_sceneA.one",
+  "event/event5302_sceneA.one",
+  "event/event5402_sceneA.one",
+  "event/event5403_sceneA.one",
+  "event/event6001_sceneF.one",
+  "event/event6101_sceneA.one",
+  "event/event6103_sceneA.one",
+  "event/event6104_sceneA.one",
+  "event/event6201_sceneA.one",
+  "event/event6202_sceneA.one",
+  "event/event6203_sceneA.one",
+  "event/event6301_sceneA.one",
+  "event/event6302_sceneA.one",
+  "event/event6303_sceneA.one",
+  "event/event6401_sceneA.one",
+  "event/event6402_sceneA.one",
+  "event/event7001_sceneA.one",
+  "event/event7011_sceneA.one",
+  "event/event7101_sceneA.one",
+  "event/event7111_sceneA.one",
+  "event/event7201_sceneA.one",
+  "event/event7211_sceneA.one",
+  "event/event7301_sceneA.one",
+  "event/event7311_sceneA.one",
+  "event/event7401_sceneA.one",
+  "event/event7411_sceneA.one",
+  "event/event7501_sceneA.one",
+  "event/event7511_sceneA.one",
+  "event/event7601_sceneA.one",
+  "event/event7611_sceneA.one",
+  "event/event7701_sceneA.one",
+  "event/event7711_sceneA.one",
+  "event/event7801_sceneA.one",
+  "event/event7811_sceneA.one",
+  "event/event7901_sceneA.one",
+  "event/event7911_sceneA.one",
+  "event/event8002_sceneA.one",
+  "event/event8002_sceneB.one",
+  "event/event8002_sceneD.one",
+  "event/event8002_sceneF.one",
+  "event/event8002_sceneG.one",
+  "event/event8002_sceneH.one",
+  "event/event8004_sceneA.one",
+  "event/event8004_sceneB.one",
+  "event/event8005_sceneA.one",
+  "event/event8006_sceneA.one",
+  "event/event8006_sceneC.one",
+  "event/event8006_sceneD.one",
+  "event/event8006_sceneF.one",
+  "event/event8006_sceneG.one",
+  "event/event8006_sceneH.one",
+  "event/event8101_sceneA.one",
+  "event/event8103_sceneA.one",
+  "event/event8106_sceneA.one",
+  "event/event8106_sceneB.one",
+  "event/event8204_sceneA.one",
+  "fonts/Advertise/Advertise_EN.fnt",
+  "fonts/Advertise/Advertise_EN.txd",
+  "fonts/Advertise/Advertise_EN00.met",
+  "fonts/Advertise/Advertise_FR.fnt",
+  "fonts/Advertise/Advertise_FR.txd",
+  "fonts/Advertise/Advertise_FR00.met",
+  "fonts/Advertise/Advertise_GE.fnt",
+  "fonts/Advertise/Advertise_GE.txd",
+  "fonts/Advertise/Advertise_GE00.met",
+  "fonts/Advertise/Advertise_IT.fnt",
+  "fonts/Advertise/Advertise_IT00.met",
+  "fonts/Advertise/Advertise_JP.fnt",
+  "fonts/Advertise/Advertise_JP.txd",
+  "fonts/Advertise/Advertise_JP08.met",
+  "fonts/Advertise/Advertise_SP.fnt",
+  "fonts/Advertise/Advertise_SP.txd",
+  "fonts/Advertise/Advertise_SP00.met",
+  "fonts/Movie/Movie_EN.txd",
+  "fonts/Movie/Movie_EN00.met",
+  "fonts/Save/Save_EN.fnt",
+  "fonts/Save/Save_EN.txd",
+  "fonts/Save/Save_EN00.met",
+  "fonts/Save/Save_FR.fnt",
+  "fonts/Save/Save_FR.txd",
+  "fonts/Save/Save_FR00.met",
+  "fonts/Save/Save_GE.fnt",
+  "fonts/Save/Save_GE.txd",
+  "fonts/Save/Save_GE00.met",
+  "fonts/Save/Save_IT.fnt",
+  "fonts/Save/Save_IT.txd",
+  "fonts/Save/Save_IT00.met",
+  "fonts/Save/Save_JP.fnt",
+  "fonts/Save/Save_JP.txd",
+  "fonts/Save/Save_JP02.met",
+  "fonts/Save/Save_SP.fnt",
+  "fonts/Save/Save_SP.txd",
+  "fonts/Save/Save_SP00.met",
+  "fonts/stg0005/stg0005_EN.txd",
+  "fonts/stg0005/stg0005_EN00.met",
+  "fonts/stg0100/stg0100_EN.fnt",
+  "fonts/stg0100/stg0100_EN.txd",
+  "fonts/stg0100/stg0100_EN00.met",
+  "fonts/stg0100/stg0100_FR.fnt",
+  "fonts/stg0100/stg0100_GE.fnt",
+  "fonts/stg0100/stg0100_IT.fnt",
+  "fonts/stg0100/stg0100_JP.fnt",
+  "fonts/stg0100/stg0100_SP.fnt",
+  "fonts/stg0200/stg0200_EN.fnt",
+  "fonts/stg0200/stg0200_EN.txd",
+  "fonts/stg0200/stg0200_EN00.met",
+  "fonts/stg0200/stg0200_FR.fnt",
+  "fonts/stg0200/stg0200_GE.fnt",
+  "fonts/stg0200/stg0200_GE.txd",
+  "fonts/stg0200/stg0200_GE00.met",
+  "fonts/stg0200/stg0200_IT.fnt",
+  "fonts/stg0200/stg0200_JP.fnt",
+  "fonts/stg0200/stg0200_JP.txd",
+  "fonts/stg0200/stg0200_JP05.met",
+  "fonts/stg0200/stg0200_SP.fnt",
+  "fonts/stg0201/stg0201_EN.fnt",
+  "fonts/stg0201/stg0201_EN.txd",
+  "fonts/stg0201/stg0201_EN00.met",
+  "fonts/stg0202/stg0202_EN.fnt",
+  "fonts/stg0202/stg0202_EN.txd",
+  "fonts/stg0202/stg0202_EN00.met",
+  "fonts/stg0210/stg0210_EN.fnt",
+  "fonts/stg0210/stg0210_EN.txd",
+  "fonts/stg0210/stg0210_EN00.met",
+  "fonts/stg0300/stg0300_EN.fnt",
+  "fonts/stg0300/stg0300_EN.txd",
+  "fonts/stg0300/stg0300_EN00.met",
+  "fonts/stg0301/stg0301_EN.fnt",
+  "fonts/stg0301/stg0301_EN.txd",
+  "fonts/stg0301/stg0301_EN00.met",
+  "fonts/stg0301/stg0301_FR.fnt",
+  "fonts/stg0301/stg0301_GE.fnt",
+  "fonts/stg0301/stg0301_IT.fnt",
+  "fonts/stg0301/stg0301_JP.fnt",
+  "fonts/stg0301/stg0301_SP.fnt",
+  "fonts/stg0302/stg0302_EN.fnt",
+  "fonts/stg0302/stg0302_EN.txd",
+  "fonts/stg0302/stg0302_EN00.met",
+  "fonts/stg0310/stg0310_EN.fnt",
+  "fonts/stg0310/stg0310_EN.txd",
+  "fonts/stg0310/stg0310_EN00.met",
+  "fonts/stg0310/stg0310_FR.fnt",
+  "fonts/stg0310/stg0310_GE.fnt",
+  "fonts/stg0310/stg0310_IT.fnt",
+  "fonts/stg0310/stg0310_JP.fnt",
+  "fonts/stg0310/stg0310_SP.fnt",
+  "fonts/stg0400/stg0400_EN.fnt",
+  "fonts/stg0400/stg0400_EN.txd",
+  "fonts/stg0400/stg0400_EN00.met",
+  "fonts/stg0401/stg0401_EN.fnt",
+  "fonts/stg0401/stg0401_EN.txd",
+  "fonts/stg0401/stg0401_EN00.met",
+  "fonts/stg0401/stg0401_FR.fnt",
+  "fonts/stg0401/stg0401_GE.fnt",
+  "fonts/stg0401/stg0401_IT.fnt",
+  "fonts/stg0401/stg0401_JP.fnt",
+  "fonts/stg0401/stg0401_SP.fnt",
+  "fonts/stg0402/stg0402_EN.fnt",
+  "fonts/stg0402/stg0402_EN.txd",
+  "fonts/stg0402/stg0402_EN00.met",
+  "fonts/stg0403/stg0403_EN.fnt",
+  "fonts/stg0403/stg0403_EN.txd",
+  "fonts/stg0403/stg0403_EN00.met",
+  "fonts/stg0404/stg0404_EN.fnt",
+  "fonts/stg0404/stg0404_EN.txd",
+  "fonts/stg0404/stg0404_EN00.met",
+  "fonts/stg0410/stg0410_EN.fnt",
+  "fonts/stg0410/stg0410_EN.txd",
+  "fonts/stg0410/stg0410_EN00.met",
+  "fonts/stg0411/stg0411_EN.fnt",
+  "fonts/stg0411/stg0411_EN.txd",
+  "fonts/stg0411/stg0411_EN00.met",
+  "fonts/stg0411/stg0411_FR.fnt",
+  "fonts/stg0411/stg0411_GE.fnt",
+  "fonts/stg0411/stg0411_IT.fnt",
+  "fonts/stg0411/stg0411_JP.fnt",
+  "fonts/stg0411/stg0411_SP.fnt",
+  "fonts/stg0412/stg0412_EN.fnt",
+  "fonts/stg0412/stg0412_EN.txd",
+  "fonts/stg0412/stg0412_EN00.met",
+  "fonts/stg0500/stg0500_EN.fnt",
+  "fonts/stg0500/stg0500_EN.txd",
+  "fonts/stg0500/stg0500_EN00.met",
+  "fonts/stg0501/stg0501_EN.fnt",
+  "fonts/stg0501/stg0501_EN.txd",
+  "fonts/stg0501/stg0501_EN00.met",
+  "fonts/stg0501/stg0501_FR.fnt",
+  "fonts/stg0501/stg0501_GE.fnt",
+  "fonts/stg0501/stg0501_IT.fnt",
+  "fonts/stg0501/stg0501_JP.fnt",
+  "fonts/stg0501/stg0501_SP.fnt",
+  "fonts/stg0502/stg0502_EN.fnt",
+  "fonts/stg0502/stg0502_EN.txd",
+  "fonts/stg0502/stg0502_EN00.met",
+  "fonts/stg0502/stg0502_FR.fnt",
+  "fonts/stg0502/stg0502_GE.fnt",
+  "fonts/stg0502/stg0502_IT.fnt",
+  "fonts/stg0502/stg0502_JP.fnt",
+  "fonts/stg0502/stg0502_SP.fnt",
+  "fonts/stg0503/stg0503_EN.fnt",
+  "fonts/stg0503/stg0503_EN.txd",
+  "fonts/stg0503/stg0503_EN00.met",
+  "fonts/stg0503/stg0503_FR.fnt",
+  "fonts/stg0503/stg0503_GE.fnt",
+  "fonts/stg0503/stg0503_IT.fnt",
+  "fonts/stg0503/stg0503_JP.fnt",
+  "fonts/stg0503/stg0503_SP.fnt",
+  "fonts/stg0504/stg0504_EN.fnt",
+  "fonts/stg0504/stg0504_EN.txd",
+  "fonts/stg0504/stg0504_EN00.met",
+  "fonts/stg0504/stg0504_FR.fnt",
+  "fonts/stg0504/stg0504_GE.fnt",
+  "fonts/stg0504/stg0504_IT.fnt",
+  "fonts/stg0504/stg0504_JP.fnt",
+  "fonts/stg0504/stg0504_SP.fnt",
+  "fonts/stg0510/stg0510_EN.fnt",
+  "fonts/stg0510/stg0510_EN.txd",
+  "fonts/stg0510/stg0510_EN00.met",
+  "fonts/stg0511/stg0511_EN.fnt",
+  "fonts/stg0511/stg0511_EN.txd",
+  "fonts/stg0511/stg0511_EN00.met",
+  "fonts/stg0511/stg0511_FR.fnt",
+  "fonts/stg0511/stg0511_GE.fnt",
+  "fonts/stg0511/stg0511_IT.fnt",
+  "fonts/stg0511/stg0511_JP.fnt",
+  "fonts/stg0511/stg0511_SP.fnt",
+  "fonts/stg0600/stg0600_EN.fnt",
+  "fonts/stg0600/stg0600_EN.txd",
+  "fonts/stg0600/stg0600_EN00.met",
+  "fonts/stg0601/stg0601_EN.fnt",
+  "fonts/stg0601/stg0601_EN.txd",
+  "fonts/stg0601/stg0601_EN00.met",
+  "fonts/stg0602/stg0602_EN.fnt",
+  "fonts/stg0602/stg0602_EN.txd",
+  "fonts/stg0602/stg0602_EN00.met",
+  "fonts/stg0602/stg0602_FR.fnt",
+  "fonts/stg0602/stg0602_GE.fnt",
+  "fonts/stg0602/stg0602_IT.fnt",
+  "fonts/stg0602/stg0602_JP.fnt",
+  "fonts/stg0602/stg0602_SP.fnt",
+  "fonts/stg0603/stg0603_EN.fnt",
+  "fonts/stg0603/stg0603_EN.txd",
+  "fonts/stg0603/stg0603_EN00.met",
+  "fonts/stg0604/stg0604_EN.fnt",
+  "fonts/stg0604/stg0604_EN.txd",
+  "fonts/stg0604/stg0604_EN00.met",
+  "fonts/stg0604/stg0604_FR.fnt",
+  "fonts/stg0604/stg0604_GE.fnt",
+  "fonts/stg0604/stg0604_IT.fnt",
+  "fonts/stg0604/stg0604_JP.fnt",
+  "fonts/stg0604/stg0604_SP.fnt",
+  "fonts/stg0610/stg0610_EN.fnt",
+  "fonts/stg0610/stg0610_EN.txd",
+  "fonts/stg0610/stg0610_EN00.met",
+  "fonts/stg0611/stg0611_EN.fnt",
+  "fonts/stg0611/stg0611_EN.txd",
+  "fonts/stg0611/stg0611_EN00.met",
+  "fonts/stg0612/stg0612_EN.fnt",
+  "fonts/stg0612/stg0612_EN.txd",
+  "fonts/stg0612/stg0612_EN00.met",
+  "fonts/stg0613/stg0613_EN.fnt",
+  "fonts/stg0613/stg0613_EN.txd",
+  "fonts/stg0613/stg0613_EN00.met",
+  "fonts/stg0614/stg0614_EN.fnt",
+  "fonts/stg0614/stg0614_EN.txd",
+  "fonts/stg0614/stg0614_EN00.met",
+  "fonts/stg0615/stg0615_EN.fnt",
+  "fonts/stg0615/stg0615_EN.txd",
+  "fonts/stg0615/stg0615_EN00.met",
+  "fonts/stg0616/stg0616_EN.fnt",
+  "fonts/stg0616/stg0616_EN.txd",
+  "fonts/stg0616/stg0616_EN00.met",
+  "fonts/stg0617/stg0617_EN.fnt",
+  "fonts/stg0617/stg0617_EN.txd",
+  "fonts/stg0617/stg0617_EN00.met",
+  "fonts/stg0618/stg0618_EN.fnt",
+  "fonts/stg0618/stg0618_EN.txd",
+  "fonts/stg0618/stg0618_EN00.met",
+  "fonts/stg0700/stg0700_EN.fnt",
+  "fonts/stg0700/stg0700_EN.txd",
+  "fonts/stg0700/stg0700_EN00.met",
+  "fonts/stg0700/stg0700_FR.fnt",
+  "fonts/stg0700/stg0700_GE.fnt",
+  "fonts/stg0700/stg0700_IT.fnt",
+  "fonts/stg0700/stg0700_JP.fnt",
+  "fonts/stg0700/stg0700_JP.txd",
+  "fonts/stg0700/stg0700_JP03.met",
+  "fonts/stg0700/stg0700_SP.fnt",
+  "fonts/stg0710/stg0710_EN.fnt",
+  "fonts/stg0710/stg0710_EN.txd",
+  "fonts/stg0710/stg0710_EN00.met",
+  "fonts/stg0710/stg0710_FR.fnt",
+  "fonts/stg0710/stg0710_GE.fnt",
+  "fonts/stg0710/stg0710_IT.fnt",
+  "fonts/stg0710/stg0710_JP.fnt",
+  "fonts/stg0710/stg0710_SP.fnt",
+  "fonts/stg0800/stg0800_EN.txd",
+  "fonts/stg0800/stg0800_EN00.met",
+  "fonts/stg0801/stg0801_EN.txd",
+  "fonts/stg0801/stg0801_EN00.met",
+  "fonts/stg0802/stg0802_EN.txd",
+  "fonts/stg0802/stg0802_EN00.met",
+  "fonts/stg0901/stg0901_EN.txd",
+  "fonts/stg0901/stg0901_EN00.met",
+  "fonts/stg0902/stg0902_EN.txd",
+  "fonts/stg0902/stg0902_EN00.met",
+  "fonts/stg0903/stg0903_EN.txd",
+  "fonts/stg0903/stg0903_EN00.met",
+  "fonts/stg0904/stg0904_EN.txd",
+  "fonts/stg0904/stg0904_EN00.met",
+  "fonts/stg0905/stg0905_EN.txd",
+  "fonts/stg0905/stg0905_EN00.met",
+  "fonts/stg0906/stg0906_EN.txd",
+  "fonts/stg0906/stg0906_EN00.met",
+  "fonts/stg0907/stg0907_EN.txd",
+  "fonts/stg0907/stg0907_EN00.met",
+  "fonts/stg0908/stg0908_EN.txd",
+  "fonts/stg0908/stg0908_EN00.met",
+  "fonts/stg0909/stg0909_EN.txd",
+  "fonts/stg0909/stg0909_EN00.met",
+  "fonts/stg0910/stg0910_EN.txd",
+  "fonts/stg0910/stg0910_EN00.met",
+  "fonts/stg0911/stg0911_EN.txd",
+  "fonts/stg0911/stg0911_EN00.met",
+  "mc_bunner_e.tp",
+  "mc_icon01.tp",
+  "nukkoro.inf",
+  "nukkoro2.inf",
+  "opening.bnr",
+  "setid.bin",
+  "sng_vox06.adx",
+  "sound/B81_FINALDOOM.mlt",
+  "stafroll/StafRoll.srd",
+  "stg0005/stg0005_01.one",
+  "stg0005/stg0005_texCM.one",
+  "stg0100/stg0100_cam.dat",
+  "stg0100/stg0100_cmn.dat",
+  "stg0100/stg0100_ds1.dat",
+  "stg0100/stg0100_gdt.one",
+  "stg0100/stg0100_hrd.dat",
+  "stg0100/stg0100_nrm.dat",
+  "stg0100/stg0100_texCM.one",
+  "stg0200/stg0200_cam.dat",
+  "stg0200/stg0200_cmn.dat",
+  "stg0200/stg0200_dat.one",
+  "stg0200/stg0200_ds1.dat",
+  "stg0200/stg0200_hrd.dat",
+  "stg0200/stg0200_nrm.dat",
+  "stg0201/stg0201_01.one",
+  "stg0201/stg0201_02.one",
+  "stg0201/stg0201_03.one",
+  "stg0201/stg0201_04.one",
+  "stg0201/stg0201_05.one",
+  "stg0201/stg0201_06.one",
+  "stg0201/stg0201_07.one",
+  "stg0201/stg0201_08.one",
+  "stg0201/stg0201_09.one",
+  "stg0201/stg0201_10.one",
+  "stg0201/stg0201_cam.dat",
+  "stg0201/stg0201_cmn.dat",
+  "stg0201/stg0201_dat.one",
+  "stg0201/stg0201_ds1.dat",
+  "stg0201/stg0201_hrd.dat",
+  "stg0201/stg0201_nrm.dat",
+  "stg0202/stg0202_cam.dat",
+  "stg0202/stg0202_cmn.dat",
+  "stg0202/stg0202_ds1.dat",
+  "stg0202/stg0202_hrd.dat",
+  "stg0202/stg0202_nrm.dat",
+  "stg0210/stg0210_cmn.dat",
+  "stg0210/stg0210_hint.bin",
+  "stg0300/stg0300.fog",
+  "stg0300/stg0300_cam.dat",
+  "stg0300/stg0300_cmn.dat",
+  "stg0300/stg0300_dat.one",
+  "stg0300/stg0300_ds1.dat",
+  "stg0300/stg0300_gdt.one",
+  "stg0300/stg0300_hrd.dat",
+  "stg0300/stg0300_nrm.dat",
+  "stg0301/stg0301_cmn.dat",
+  "stg0301/stg0301_ds1.dat",
+  "stg0301/stg0301_hrd.dat",
+  "stg0301/stg0301_nrm.dat",
+  "stg0302/stg0302_cam.dat",
+  "stg0302/stg0302_cmn.dat",
+  "stg0302/stg0302_dat.one",
+  "stg0302/stg0302_ds1.dat",
+  "stg0302/stg0302_gdt.one",
+  "stg0302/stg0302_hrd.dat",
+  "stg0302/stg0302_nrm.dat",
+  "stg0310/stg0310_cmn.dat",
+  "stg0310/stg0310_gdt.one",
+  "stg0400/stg0400_cam.dat",
+  "stg0400/stg0400_cmn.dat",
+  "stg0400/stg0400_ds1.dat",
+  "stg0400/stg0400_gdt.one",
+  "stg0400/stg0400_hrd.dat",
+  "stg0400/stg0400_light.bin",
+  "stg0400/stg0400_nrm.dat",
+  "stg0400/stg0400_texCM.one",
+  "stg0401/stg0401.fog",
+  "stg0401/stg0401_cam.dat",
+  "stg0401/stg0401_cmn.dat",
+  "stg0401/stg0401_dat.one",
+  "stg0401/stg0401_ds1.dat",
+  "stg0401/stg0401_gdt.one",
+  "stg0401/stg0401_hrd.dat",
+  "stg0401/stg0401_light.bin",
+  "stg0401/stg0401_nrm.dat",
+  "stg0401/stg0401_texCM.one",
+  "stg0402/stg0402.fog",
+  "stg0402/stg0402_cam.dat",
+  "stg0402/stg0402_cmn.dat",
+  "stg0402/stg0402_ds1.dat",
+  "stg0402/stg0402_fx.one",
+  "stg0402/stg0402_gdt.one",
+  "stg0402/stg0402_hrd.dat",
+  "stg0402/stg0402_nrm.dat",
+  "stg0403/stg0403_cam.dat",
+  "stg0403/stg0403_cmn.dat",
+  "stg0403/stg0403_ds1.dat",
+  "stg0403/stg0403_hrd.dat",
+  "stg0403/stg0403_nrm.dat",
+  "stg0404/stg0404_01.one",
+  "stg0404/stg0404_02.one",
+  "stg0404/stg0404_03.one",
+  "stg0404/stg0404_06.one",
+  "stg0404/stg0404_07.one",
+  "stg0404/stg0404_08.one",
+  "stg0404/stg0404_09.one",
+  "stg0404/stg0404_10.one",
+  "stg0404/stg0404_11.one",
+  "stg0404/stg0404_12.one",
+  "stg0404/stg0404_13.one",
+  "stg0404/stg0404_cam.dat",
+  "stg0404/stg0404_cmn.dat",
+  "stg0404/stg0404_ds1.dat",
+  "stg0404/stg0404_hrd.dat",
+  "stg0404/stg0404_nrm.dat",
+  "stg0410/stg0410_cmn.dat",
+  "stg0410/stg0410_fx.one",
+  "stg0410/stg0410_gdt.one",
+  "stg0410/stg0410_hint.bin",
+  "stg0410/stg0410_light.bin",
+  "stg0410/stg0410_texCM.one",
+  "stg0411/stg0411_cmn.dat",
+  "stg0411/stg0411_hint.bin",
+  "stg0412/stg0412_cmn.dat",
+  "stg0412/stg0412_gdt.one",
+  "stg0500/stg0500_cam.dat",
+  "stg0500/stg0500_cmn.dat",
+  "stg0500/stg0500_ds1.dat",
+  "stg0500/stg0500_hrd.dat",
+  "stg0500/stg0500_nrm.dat",
+  "stg0501/stg0501.fog",
+  "stg0501/stg0501_cam.dat",
+  "stg0501/stg0501_cmn.dat",
+  "stg0501/stg0501_dat.one",
+  "stg0501/stg0501_ds1.dat",
+  "stg0501/stg0501_gdt.one",
+  "stg0501/stg0501_hrd.dat",
+  "stg0501/stg0501_nrm.dat",
+  "stg0502/stg0502_cam.dat",
+  "stg0502/stg0502_cmn.dat",
+  "stg0502/stg0502_dat.one",
+  "stg0502/stg0502_ds1.dat",
+  "stg0502/stg0502_hrd.dat",
+  "stg0502/stg0502_nrm.dat",
+  "stg0503/stg0503_cam.dat",
+  "stg0503/stg0503_cmn.dat",
+  "stg0503/stg0503_dat.one",
+  "stg0503/stg0503_ds1.dat",
+  "stg0503/stg0503_hrd.dat",
+  "stg0503/stg0503_nrm.dat",
+  "stg0504/stg0504_cam.dat",
+  "stg0504/stg0504_cmn.dat",
+  "stg0504/stg0504_dat.one",
+  "stg0504/stg0504_ds1.dat",
+  "stg0504/stg0504_hrd.dat",
+  "stg0504/stg0504_nrm.dat",
+  "stg0510/stg0510_cmn.dat",
+  "stg0510/stg0510_gdt.one",
+  "stg0511/stg0511_cmn.dat",
+  "stg0600/stg0600_cam.dat",
+  "stg0600/stg0600_cmn.dat",
+  "stg0600/stg0600_ds1.dat",
+  "stg0600/stg0600_gdt.one",
+  "stg0600/stg0600_hrd.dat",
+  "stg0600/stg0600_nrm.dat",
+  "stg0601/stg0601.fog",
+  "stg0601/stg0601_cam.dat",
+  "stg0601/stg0601_cmn.dat",
+  "stg0601/stg0601_hrd.dat",
+  "stg0601/stg0601_nrm.dat",
+  "stg0602/stg0602_cam.dat",
+  "stg0602/stg0602_cmn.dat",
+  "stg0602/stg0602_ds1.dat",
+  "stg0602/stg0602_hrd.dat",
+  "stg0602/stg0602_nrm.dat",
+  "stg0603/stg0603_cam.dat",
+  "stg0603/stg0603_cmn.dat",
+  "stg0603/stg0603_dat.one",
+  "stg0603/stg0603_ds1.dat",
+  "stg0603/stg0603_gdt.one",
+  "stg0603/stg0603_hrd.dat",
+  "stg0603/stg0603_nrm.dat",
+  "stg0604/stg0604_cam.dat",
+  "stg0604/stg0604_cmn.dat",
+  "stg0604/stg0604_dat.one",
+  "stg0604/stg0604_ds1.dat",
+  "stg0604/stg0604_gdt.one",
+  "stg0604/stg0604_hrd.dat",
+  "stg0604/stg0604_light.bin",
+  "stg0604/stg0604_nrm.dat",
+  "stg0604/stg0604_texCM.one",
+  "stg0610/stg0610_cmn.dat",
+  "stg0610/stg0610_gdt.one",
+  "stg0610/stg0610_hint.bin",
+  "stg0611/stg0611_cmn.dat",
+  "stg0611/stg0611_gdt.one",
+  "stg0612/stg0612_cmn.dat",
+  "stg0612/stg0612_gdt.one",
+  "stg0613/stg0613_cmn.dat",
+  "stg0613/stg0613_gdt.one",
+  "stg0614/stg0614_cmn.dat",
+  "stg0614/stg0614_dat.one",
+  "stg0614/stg0614_gdt.one",
+  "stg0615/stg0615_cmn.dat",
+  "stg0615/stg0615_gdt.one",
+  "stg0616/stg0616_cmn.dat",
+  "stg0616/stg0616_gdt.one",
+  "stg0616/stg0616_hint.bin",
+  "stg0617/stg0617_cmn.dat",
+  "stg0617/stg0617_gdt.one",
+  "stg0617/stg0617_hint.bin",
+  "stg0617/stg0617_texCM.one",
+  "stg0618/stg0618_cmn.dat",
+  "stg0618/stg0618_gdt.one",
+  "stg0700/stg0700_cam.dat",
+  "stg0700/stg0700_cmn.dat",
+  "stg0700/stg0700_ds1.dat",
+  "stg0700/stg0700_hrd.dat",
+  "stg0700/stg0700_nrm.dat",
+  "stg0710/stg0710_hint.bin",
+  "stg_cmn_gdt.one"
+ ],
+ "files_changed_count": 692,
+ "files_identical": [
+  "fonts/Advertise/Advertise_IT.txd",
+  "stg0005/stg0005_dat.one"
+ ],
+ "files_new": [
+  "E4101.flo",
+  "E4102.flo",
+  "E4201.flo",
+  "E8003.flo",
+  "E8201.flo",
+  "Op.flo",
+  "common/ScoreDatb.bin",
+  "sng_EV_music4.adx",
+  "sng_stg0613.adx",
+  "sng_vox07.adx",
+  "stg0210/stg0210_hrd.dat",
+  "stg0210/stg0210_nrm.dat",
+  "stg0310/stg0310_hrd.dat",
+  "stg0310/stg0310_nrm.dat",
+  "stg0410/stg0410_hrd.dat",
+  "stg0410/stg0410_nrm.dat",
+  "stg0411/stg0411_hrd.dat",
+  "stg0411/stg0411_nrm.dat",
+  "stg0412/stg0412_hrd.dat",
+  "stg0412/stg0412_nrm.dat",
+  "stg0510/stg0510_hrd.dat",
+  "stg0510/stg0510_nrm.dat",
+  "stg0511/stg0511_hrd.dat",
+  "stg0511/stg0511_nrm.dat",
+  "stg0610/stg0610_hrd.dat",
+  "stg0610/stg0610_nrm.dat",
+  "stg0611/stg0611_hrd.dat",
+  "stg0611/stg0611_nrm.dat",
+  "stg0612/stg0612_hrd.dat",
+  "stg0612/stg0612_nrm.dat",
+  "stg0613/stg0613_hrd.dat",
+  "stg0613/stg0613_nrm.dat",
+  "stg0614/stg0614_hrd.dat",
+  "stg0614/stg0614_nrm.dat",
+  "stg0615/stg0615_hrd.dat",
+  "stg0615/stg0615_nrm.dat",
+  "stg0616/stg0616_hrd.dat",
+  "stg0616/stg0616_nrm.dat",
+  "stg0617/stg0617_hrd.dat",
+  "stg0617/stg0617_nrm.dat",
+  "stg0618/stg0618_hrd.dat",
+  "stg0618/stg0618_nrm.dat",
+  "stg_cmn_gd2.one"
+ ],
+ "files_total": 737,
+ "layouts": {
+  "class_totals_stock_vs_mod": {
+   "DEFENSE_SHIELD": [
+    63,
+    73
+   ],
+   "DOOR": [
+    264,
+    276
+   ],
+   "ELEVATOR": [
+    15,
+    34
+   ],
+   "HINT COLLISION": [
+    796,
+    814
+   ],
+   "HINTRING": [
+    305,
+    260
+   ],
+   "RING": [
+    990,
+    1058
+   ],
+   "SECRET CONTAINER": [
+    72,
+    72
+   ],
+   "SECRETDOOR": [
+    26,
+    0
+   ],
+   "SECRETKEY": [
+    115,
+    115
+   ],
+   "SET GENERATOR": [
+    74,
+    100
+   ],
+   "SETCOLLISION": [
+    997,
+    1028
+   ],
+   "WARP_HOLE": [
+    24,
+    43
+   ]
+  },
+  "classes_dropped_by_mod": {
+   "SECRETDOOR": 26
+  },
+  "classes_used_by_mod_never_by_stock": [],
+  "files": {
+   "stg0100/stg0100_cmn.dat": {
+    "delta_by_class": {
+     "BRK_OBJ": -2,
+     "CAGE": 3,
+     "CONTAINER": 2,
+     "CityLaser": -1,
+     "FallBuilding": -1,
+     "GUN_SOLDIER": 1,
+     "ITEM_BOX": 1,
+     "JUMP_BOARD": -7,
+     "MOVE_FOOTING": 2,
+     "RING": -9,
+     "SAVEPOINT": -1,
+     "SECRET CONTAINER": -1,
+     "SECRETDOOR": -1,
+     "SETCOLLISION": -6,
+     "TARGETSWITCH": 4,
+     "UD_REEL": 1
+    },
+    "objects_mod": 489,
+    "objects_stock": 504,
+    "status": "changed"
+   },
+   "stg0100/stg0100_ds1.dat": {
+    "delta_by_class": {
+     "ART GADGET": -3
+    },
+    "objects_mod": 533,
+    "objects_stock": 536,
+    "status": "changed"
+   },
+   "stg0100/stg0100_hrd.dat": {
+    "delta_by_class": {
+     "ART GADGET": 3,
+     "BK_SOLDIER": 1,
+     "BK_WINGSMALL": 7,
+     "CityLaser": 3,
+     "FIRE": 4,
+     "FallBuilding": 1,
+     "GUN_BEETLE": 11,
+     "HINT COLLISION": 1,
+     "HINTRING": -1,
+     "Helicopter": 2,
+     "MOVE_FOOTING": 1,
+     "RING": 2,
+     "SETCOLLISION": 1,
+     "SET_WEAPON": 2,
+     "TURNOVER": 1
+    },
+    "objects_mod": 61,
+    "objects_stock": 22,
+    "status": "changed"
+   },
+   "stg0100/stg0100_nrm.dat": {
+    "delta_by_class": {
+     "ART GADGET": 1,
+     "CityLaser": 1,
+     "FallBuilding": 1,
+     "HINT COLLISION": 1,
+     "HINTRING": -4,
+     "ITEM_BOX": 1,
+     "JUMP_BOARD": 7,
+     "RING": 4,
+     "SAVEPOINT": 1,
+     "SECRET CONTAINER": 1,
+     "SETCOLLISION": 1
+    },
+    "objects_mod": 86,
+    "objects_stock": 71,
+    "status": "changed"
+   },
+   "stg0200/stg0200_cmn.dat": {
+    "delta_by_class": {
+     "BALLOON": -1,
+     "BK_WORM": -1,
+     "ELEC_BAR": -3,
+     "ELEC_FOOTINGROTATE": -2,
+     "ELEC_SECURITY": 2,
+     "ELEC_SPRING": 6,
+     "ELEC_WALL": -9,
+     "ELEC_WALLSWITCH": -2,
+     "HINT COLLISION": -34,
+     "ITEM_BOX": 2,
+     "MOVE_FOOTING": -3,
+     "RING": -11,
+     "SECRET CONTAINER": -2,
+     "SECRETDOOR": -1,
+     "SETCOLLISION": -15
+    },
+    "objects_mod": 455,
+    "objects_stock": 529,
+    "status": "changed"
+   },
+   "stg0200/stg0200_ds1.dat": {
+    "delta_by_class": {
+     "ELEC_PILLAR": 6
+    },
+    "objects_mod": 108,
+    "objects_stock": 102,
+    "status": "changed"
+   },
+   "stg0200/stg0200_hrd.dat": {
+    "delta_by_class": {
+     "BK_WORM": 1,
+     "ELEC_BAR": 6,
+     "ELEC_BIGBLOCK": 1,
+     "ELEC_FOOTINGROTATE": 6,
+     "ELEC_SECURITY": -2,
+     "ELEC_SPRING": -1,
+     "GUN_BEETLE": 1,
+     "HINT COLLISION": 1,
+     "HINTRING": 3,
+     "MOVE_FOOTING": 6,
+     "RING": -2,
+     "SAVEPOINT": 1,
+     "SETCOLLISION": 3
+    },
+    "objects_mod": 65,
+    "objects_stock": 41,
+    "status": "changed"
+   },
+   "stg0200/stg0200_nrm.dat": {
+    "delta_by_class": {
+     "BALLOON": 1,
+     "BK_SOLDIER": 2,
+     "BK_WORM": 4,
+     "CAGE": 3,
+     "ELEC_BAR": 5,
+     "ELEC_FOOTINGROTATE": 2,
+     "ELEC_SPRING": 4,
+     "ELEC_WALL": 6,
+     "ELEC_WALLSWITCH": 2,
+     "HINT COLLISION": 29,
+     "HINTRING": -7,
+     "ITEM_BOX": -1,
+     "MOVE_FOOTING": 3,
+     "RING": 6,
+     "SAVEPOINT": 1,
+     "SECRET CONTAINER": 2,
+     "SET GENERATOR": 3,
+     "SETCOLLISION": 1,
+     "WARP_HOLE": 1
+    },
+    "objects_mod": 192,
+    "objects_stock": 125,
+    "status": "changed"
+   },
+   "stg0201/stg0201_cmn.dat": {
+    "delta_by_class": {
+     "ART WORK": 7,
+     "BOMB": 2,
+     "CAGE": 1,
+     "FAN": 1,
+     "MOVE_FOOTING": 9,
+     "RING": 6,
+     "SECRET CONTAINER": -4,
+     "SECRETDOOR": -1,
+     "SETCOLLISION": -1,
+     "STICK": -4,
+     "TARGETSWITCH": 2,
+     "TORNADO": -1,
+     "TORNADO_COLLI": 2
+    },
+    "objects_mod": 347,
+    "objects_stock": 328,
+    "status": "changed"
+   },
+   "stg0201/stg0201_ds1.dat": {
+    "delta_by_class": {
+     "ART GADGET": 7,
+     "ART WORK": 8,
+     "MOVE_FOOTING": 1,
+     "STICK": -5,
+     "TORNADO": 1
+    },
+    "objects_mod": 590,
+    "objects_stock": 578,
+    "status": "changed"
+   },
+   "stg0201/stg0201_hrd.dat": {
+    "delta_by_class": {
+     "HINT COLLISION": 1,
+     "HINTRING": -1
+    },
+    "objects_mod": 9,
+    "objects_stock": 9,
+    "status": "changed"
+   },
+   "stg0201/stg0201_nrm.dat": {
+    "delta_by_class": {
+     "BK_LARVA": 1,
+     "CAGE": -2,
+     "FAN": -3,
+     "GUN_SOLDIER": 1,
+     "HINT COLLISION": -3,
+     "HINTRING": -5,
+     "MOVE_FOOTING": 1,
+     "SECRET CONTAINER": 4,
+     "SET_CHARACTOR": -1,
+     "SPRING": -1
+    },
+    "objects_mod": 78,
+    "objects_stock": 86,
+    "status": "changed"
+   },
+   "stg0202/stg0202_cmn.dat": {
+    "delta_by_class": {
+     "ART GADGET": 10,
+     "BK_SOLDIER": 1,
+     "BK_WINGLARGE": -1,
+     "CITY_BOMB_SMALL": 1,
+     "FALL_HIWAY": 1,
+     "FALL_LARGE": 2,
+     "JUMP_BOARD": 1,
+     "RING": -5,
+     "SECRET CONTAINER": -3,
+     "SECRETDOOR": -1,
+     "SETCOLLISION": 4,
+     "SET_VEHICLE": 1,
+     "STICK": -1,
+     "WEAPON_CONTAINER": 2
+    },
+    "objects_mod": 390,
+    "objects_stock": 378,
+    "status": "changed"
+   },
+   "stg0202/stg0202_ds1.dat": {
+    "delta_by_class": {
+     "ART GADGET": 2,
+     "JUMP_BOARD": -2
+    },
+    "objects_mod": 658,
+    "objects_stock": 658,
+    "status": "changed"
+   },
+   "stg0202/stg0202_hrd.dat": {
+    "delta_by_class": {
+     "BK_TANK_COLI": 5,
+     "HINT COLLISION": 1,
+     "HINTRING": -1,
+     "SETCOLLISION": 2
+    },
+    "objects_mod": 102,
+    "objects_stock": 95,
+    "status": "changed"
+   },
+   "stg0202/stg0202_nrm.dat": {
+    "delta_by_class": {
+     "ART GADGET": -1,
+     "ART WORK": 1,
+     "BK_TANK_COLI": -3,
+     "FIRE": 3,
+     "HINT COLLISION": -2,
+     "HINTRING": -1,
+     "RING": -2,
+     "SECRET CONTAINER": 3
+    },
+    "objects_mod": 172,
+    "objects_stock": 174,
+    "status": "changed"
+   },
+   "stg0210/stg0210_cmn.dat": {
+    "delta_by_class": {
+     "BK_SOLDIER": -5,
+     "RING": -5
+    },
+    "objects_mod": 41,
+    "objects_stock": 51,
+    "status": "changed"
+   },
+   "stg0210/stg0210_hrd.dat": {
+    "delta_by_class": {
+     "BK_GIANT": 5,
+     "BK_SOLDIER": 9
+    },
+    "objects_mod": 14,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0210/stg0210_nrm.dat": {
+    "delta_by_class": {
+     "BK_SOLDIER": 5,
+     "RING": 5
+    },
+    "objects_mod": 10,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0300/stg0300_cmn.dat": {
+    "delta_by_class": {
+     "ART GADGET": 1,
+     "Coaster": 1,
+     "DASHRING": 2,
+     "ITEM_BOX": 1,
+     "MOVE_FOOTING": 1,
+     "PARK_BALLOON": 1,
+     "SECRET CONTAINER": -2,
+     "SECRETDOOR": -1,
+     "SETCOLLISION": -3,
+     "SWITCH": -2
+    },
+    "objects_mod": 372,
+    "objects_stock": 373,
+    "status": "changed"
+   },
+   "stg0300/stg0300_ds1.dat": {
+    "delta_by_class": {},
+    "objects_mod": 334,
+    "objects_stock": 334,
+    "status": "changed"
+   },
+   "stg0300/stg0300_hrd.dat": {
+    "delta_by_class": {
+     "BK_WINGLARGE": 1,
+     "Coaster": -1,
+     "FIRE": 2,
+     "HINT COLLISION": 1,
+     "HINTRING": -1,
+     "RING": 1,
+     "SECRET CONTAINER": -1
+    },
+    "objects_mod": 91,
+    "objects_stock": 89,
+    "status": "changed"
+   },
+   "stg0300/stg0300_nrm.dat": {
+    "delta_by_class": {
+     "BALLOON": 1,
+     "BK_SOLDIER": 2,
+     "CIRCUS_BALL": -1,
+     "Coaster": -1,
+     "EGG_PAWN": -2,
+     "HINT COLLISION": 3,
+     "HINTRING": -2,
+     "RING": 1,
+     "SECRET CONTAINER": 2,
+     "ThreatObj": 1
+    },
+    "objects_mod": 181,
+    "objects_stock": 177,
+    "status": "changed"
+   },
+   "stg0301/stg0301_cmn.dat": {
+    "delta_by_class": {
+     "BK_SOLDIER": -1,
+     "DASHRING": 1,
+     "FOOTING": 3,
+     "GUN_BEETLE": 1,
+     "GUN_ROBOT": 1,
+     "HINT COLLISION": -1,
+     "HRD_CONTAINER": 3,
+     "RING": -6,
+     "SECRET CONTAINER": -3,
+     "SECRETDOOR": -1,
+     "SET_WEAPON": 2,
+     "SPRING": 1
+    },
+    "objects_mod": 526,
+    "objects_stock": 526,
+    "status": "changed"
+   },
+   "stg0301/stg0301_ds1.dat": {
+    "delta_by_class": {
+     "ART GADGET": 2
+    },
+    "objects_mod": 429,
+    "objects_stock": 427,
+    "status": "changed"
+   },
+   "stg0301/stg0301_hrd.dat": {
+    "delta_by_class": {
+     "HINT COLLISION": 1,
+     "HINTRING": -1,
+     "SPRING": -1
+    },
+    "objects_mod": 147,
+    "objects_stock": 148,
+    "status": "changed"
+   },
+   "stg0301/stg0301_nrm.dat": {
+    "delta_by_class": {
+     "ART GADGET": 1,
+     "ELEVATOR": 1,
+     "GUN_BEETLE": 1,
+     "HINT COLLISION": -2,
+     "HINTRING": -2,
+     "JUMP_BOARD": -2,
+     "RING": 2,
+     "SECRET CONTAINER": 3,
+     "SETCOLLISION": 3,
+     "SET_CHARACTOR": -2,
+     "SET_WEAPON": 2,
+     "SWITCH": 1
+    },
+    "objects_mod": 158,
+    "objects_stock": 152,
+    "status": "changed"
+   },
+   "stg0302/stg0302_cmn.dat": {
+    "delta_by_class": {
+     "CONTAINER": 2,
+     "DASHPANEL": -1,
+     "EGG_PIERROT": -1,
+     "FIRE_RING": 2,
+     "GUN_BEETLE": -1,
+     "GUN_ROBOT": 3,
+     "ITEM_BOX": 2,
+     "LONGSPRING": -2,
+     "MOVE_FOOTING": 2,
+     "RING": 8,
+     "SECRET CONTAINER": -2,
+     "SECRETDOOR": -1,
+     "SETCOLLISION": 5,
+     "SET_VEHICLE": -2,
+     "ThreatObj": 4
+    },
+    "objects_mod": 254,
+    "objects_stock": 236,
+    "status": "changed"
+   },
+   "stg0302/stg0302_ds1.dat": {
+    "delta_by_class": {
+     "MORPHDOOR": 1,
+     "ThreatObj": 6
+    },
+    "objects_mod": 279,
+    "objects_stock": 272,
+    "status": "changed"
+   },
+   "stg0302/stg0302_hrd.dat": {
+    "delta_by_class": {
+     "ART GADGET ZONE": 6,
+     "BRK_OBJ": 2,
+     "EGG_PIERROT": 1,
+     "FIRE_RING": 2,
+     "GUN_BEETLE": 1,
+     "GUN_ROBOT": -2,
+     "HINT COLLISION": 1,
+     "HINTRING": -1,
+     "ITEM_BOX": 2,
+     "MORPHDOOR": 1,
+     "MOVE_FOOTING": 10,
+     "RING": 1,
+     "SETCOLLISION": 2,
+     "ThreatObj": -6
+    },
+    "objects_mod": 125,
+    "objects_stock": 105,
+    "status": "changed"
+   },
+   "stg0302/stg0302_nrm.dat": {
+    "delta_by_class": {
+     "CIRCUS_BALL": -2,
+     "CONTAINER": 1,
+     "EGG_PIERROT": 1,
+     "GUN_BEETLE": 1,
+     "HINT COLLISION": -3,
+     "HINTRING": -3,
+     "HRD_CONTAINER": 2,
+     "ITEM_BOX": 1,
+     "LONGSPRING": 2,
+     "MOVE_FOOTING": -2,
+     "RING": 2,
+     "SECRET CONTAINER": 2,
+     "SET_CHARACTOR": -1,
+     "SET_VEHICLE": 2,
+     "ThreatObj": 1
+    },
+    "objects_mod": 147,
+    "objects_stock": 143,
+    "status": "changed"
+   },
+   "stg0310/stg0310_cmn.dat": {
+    "delta_by_class": {
+     "EGG_PAWN": -2,
+     "RING": -1,
+     "WEAPON_CONTAINER": -2
+    },
+    "objects_mod": 13,
+    "objects_stock": 18,
+    "status": "changed"
+   },
+   "stg0310/stg0310_hrd.dat": {
+    "delta_by_class": {
+     "EGG_PAWN": 6,
+     "RING": 1
+    },
+    "objects_mod": 7,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0310/stg0310_nrm.dat": {
+    "delta_by_class": {
+     "EGG_PAWN": 2,
+     "RING": 1,
+     "WEAPON_CONTAINER": 2
+    },
+    "objects_mod": 5,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0400/stg0400_cmn.dat": {
+    "delta_by_class": {
+     "SECRET CONTAINER": -2,
+     "SECRETDOOR": -1,
+     "SETCOLLISION": -7
+    },
+    "objects_mod": 529,
+    "objects_stock": 539,
+    "status": "changed"
+   },
+   "stg0400/stg0400_ds1.dat": {
+    "delta_by_class": {},
+    "objects_mod": 365,
+    "objects_stock": 365,
+    "status": "changed"
+   },
+   "stg0400/stg0400_hrd.dat": {
+    "delta_by_class": {
+     "HINT COLLISION": 1,
+     "HINTRING": -1,
+     "SECRET CONTAINER": -1
+    },
+    "objects_mod": 46,
+    "objects_stock": 47,
+    "status": "changed"
+   },
+   "stg0400/stg0400_nrm.dat": {
+    "delta_by_class": {
+     "HINTRING": -1,
+     "SECRET CONTAINER": 2
+    },
+    "objects_mod": 162,
+    "objects_stock": 161,
+    "status": "changed"
+   },
+   "stg0401/stg0401_cmn.dat": {
+    "delta_by_class": {
+     "ART GADGET ZONE": 3,
+     "BREAKWALL": 5,
+     "BombingWall": -1,
+     "CAGE": -2,
+     "DASHRING": -1,
+     "DOOR": -2,
+     "ENERGY_CORE": 1,
+     "FIRE": 3,
+     "GRINDGADGET": -2,
+     "GUN_BEETLE": 2,
+     "GUN_SOLDIER": 4,
+     "HRD_CONTAINER": 4,
+     "ITEM_BOX": 1,
+     "METEOR_L": 4,
+     "METEOR_S": 10,
+     "MOVE_FOOTING": 3,
+     "POISON_GAS": 8,
+     "RING": 5,
+     "ROCKET": 1,
+     "SAVEPOINT": 1,
+     "SECRET CONTAINER": -3,
+     "SECRETDOOR": -1,
+     "SETCOLLISION": -14,
+     "SPRING": -2,
+     "SWITCH": 1,
+     "TARGETSWITCH": 2,
+     "WEAPON_CONTAINER": 2
+    },
+    "objects_mod": 407,
+    "objects_stock": 375,
+    "status": "changed"
+   },
+   "stg0401/stg0401_ds1.dat": {
+    "delta_by_class": {
+     "ART GADGET ZONE": 1,
+     "DOOR": -1
+    },
+    "objects_mod": 361,
+    "objects_stock": 361,
+    "status": "changed"
+   },
+   "stg0401/stg0401_hrd.dat": {
+    "delta_by_class": {
+     "DOOR": 3,
+     "HINT COLLISION": 1,
+     "HINTRING": -1
+    },
+    "objects_mod": 15,
+    "objects_stock": 12,
+    "status": "changed"
+   },
+   "stg0401/stg0401_nrm.dat": {
+    "delta_by_class": {
+     "BombServer": 1,
+     "CAGE": 1,
+     "DOOR": 3,
+     "ENERGY_CORE": 1,
+     "HINT COLLISION": 16,
+     "HINTRING": 19,
+     "Researcher": 2,
+     "SECRET CONTAINER": 3,
+     "SETCOLLISION": 1,
+     "SET_CHARACTOR": 1
+    },
+    "objects_mod": 157,
+    "objects_stock": 109,
+    "status": "changed"
+   },
+   "stg0402/stg0402_cmn.dat": {
+    "delta_by_class": {
+     "BK_SOLDIER": -5,
+     "DASHPANEL": -6,
+     "DOOR": -3,
+     "JUMP_BOARD": 1,
+     "POISON_GAS": 6,
+     "RING": 3,
+     "RainEffect": -1,
+     "SECRET CONTAINER": -4,
+     "SECRETDOOR": -1,
+     "SETCOLLISION": -2,
+     "SET_VEHICLE": -1
+    },
+    "objects_mod": 299,
+    "objects_stock": 312,
+    "status": "changed"
+   },
+   "stg0402/stg0402_ds1.dat": {
+    "delta_by_class": {
+     "BK_WINGLARGE": 2,
+     "RainEffect": 1,
+     "STONE_STATUE": 1
+    },
+    "objects_mod": 805,
+    "objects_stock": 801,
+    "status": "changed"
+   },
+   "stg0402/stg0402_hrd.dat": {
+    "delta_by_class": {
+     "BK_SOLDIER": 5,
+     "DOOR": 3,
+     "EggFleet": 1,
+     "HINT COLLISION": 1,
+     "HINTRING": -1,
+     "MOVE_FOOTING": 3,
+     "ROLL_CIRCLE": 1,
+     "SET_VEHICLE": 1
+    },
+    "objects_mod": 29,
+    "objects_stock": 15,
+    "status": "changed"
+   },
+   "stg0402/stg0402_nrm.dat": {
+    "delta_by_class": {
+     "BK_SOLDIER": 5,
+     "DOOR": 7,
+     "HINT COLLISION": -1,
+     "HINTRING": -5,
+     "SECRET CONTAINER": 4,
+     "SECURITY LASER": 19,
+     "SETCOLLISION": 6,
+     "SET_CHARACTOR": -2,
+     "SET_VEHICLE": 1
+    },
+    "objects_mod": 112,
+    "objects_stock": 78,
+    "status": "changed"
+   },
+   "stg0403/stg0403_cmn.dat": {
+    "delta_by_class": {
+     "BK_WINGLARGE": 1,
+     "ELEC_BARRIER": -2,
+     "ELEC_BIGBLOCK": 2,
+     "ELEC_PANEL": 3,
+     "ITEM_BOX": 1,
+     "RING": 4,
+     "SAVEPOINT": 2,
+     "SECRET CONTAINER": -3,
+     "SECRETDOOR": -1,
+     "SETCOLLISION": -1,
+     "WEAPON_CONTAINER": -3
+    },
+    "objects_mod": 521,
+    "objects_stock": 518,
+    "status": "changed"
+   },
+   "stg0403/stg0403_ds1.dat": {
+    "delta_by_class": {},
+    "objects_mod": 98,
+    "objects_stock": 98,
+    "status": "changed"
+   },
+   "stg0403/stg0403_hrd.dat": {
+    "delta_by_class": {
+     "EGG_PAWN": 3,
+     "ELEC_BARRIER": 4,
+     "ELEC_FOOTINGROTATE": 2,
+     "ELEC_PANEL": -2,
+     "ELEC_SECURITY": 5,
+     "ELEC_WALL": 4,
+     "HINT COLLISION": 1,
+     "HINTRING": -1,
+     "MOVE_FOOTING": 2,
+     "SECRET CONTAINER": -1,
+     "SETCOLLISION": 1
+    },
+    "objects_mod": 88,
+    "objects_stock": 70,
+    "status": "changed"
+   },
+   "stg0403/stg0403_nrm.dat": {
+    "delta_by_class": {
+     "ART WORK": 1,
+     "ELEC_BARRIER": 4,
+     "ELEC_BIGBLOCK": -2,
+     "ELEC_FOOTINGROTATE": 1,
+     "ELEC_PANEL": 30,
+     "HINT COLLISION": 2,
+     "HINTRING": -5,
+     "MOVE_FOOTING": 6,
+     "SECRET CONTAINER": 3,
+     "SETCOLLISION": -2,
+     "WARP_HOLE": 12,
+     "WEAPON_CONTAINER": 3
+    },
+    "objects_mod": 218,
+    "objects_stock": 165,
+    "status": "changed"
+   },
+   "stg0404/stg0404_cmn.dat": {
+    "delta_by_class": {
+     "BK_LARVA": 4,
+     "BK_SOLDIER": 1,
+     "BREAKWALL": 1,
+     "DASHPANEL": -16,
+     "DASHRING": 1,
+     "Fruit": 3,
+     "ITEM_BOX": 2,
+     "RING": 2,
+     "SAVEPOINT": -1,
+     "SECRET CONTAINER": -2,
+     "SECRETDOOR": -1,
+     "SETCOLLISION": -6,
+     "SET_WEAPON": 1,
+     "SPRING": -1
+    },
+    "objects_mod": 446,
+    "objects_stock": 458,
+    "status": "changed"
+   },
+   "stg0404/stg0404_ds1.dat": {
+    "delta_by_class": {
+     "MOVE_FOOTING": 1
+    },
+    "objects_mod": 352,
+    "objects_stock": 351,
+    "status": "changed"
+   },
+   "stg0404/stg0404_hrd.dat": {
+    "delta_by_class": {
+     "HINT COLLISION": 1,
+     "HINTRING": -1
+    },
+    "objects_mod": 24,
+    "objects_stock": 24,
+    "status": "changed"
+   },
+   "stg0404/stg0404_nrm.dat": {
+    "delta_by_class": {
+     "HINT COLLISION": 1,
+     "HINTRING": -1,
+     "SECRET CONTAINER": 2
+    },
+    "objects_mod": 32,
+    "objects_stock": 30,
+    "status": "changed"
+   },
+   "stg0410/stg0410_cmn.dat": {
+    "delta_by_class": {
+     "RING": -3
+    },
+    "objects_mod": 4,
+    "objects_stock": 7,
+    "status": "changed"
+   },
+   "stg0410/stg0410_hrd.dat": {
+    "delta_by_class": {
+     "GUN_BEETLE": 5,
+     "RING": 2
+    },
+    "objects_mod": 7,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0410/stg0410_nrm.dat": {
+    "delta_by_class": {
+     "RING": 3
+    },
+    "objects_mod": 3,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0411/stg0411_cmn.dat": {
+    "delta_by_class": {
+     "CONTAINER": -2,
+     "EGG_PAWN": -2,
+     "ELEC_BAR": -8,
+     "ELEC_FOOTINGROTATE": -3,
+     "ELEC_SPRING": -8,
+     "RING": -1
+    },
+    "objects_mod": 11,
+    "objects_stock": 35,
+    "status": "changed"
+   },
+   "stg0411/stg0411_hrd.dat": {
+    "delta_by_class": {
+     "ELEC_FOOTINGROTATE": 2,
+     "ELEC_SECURITY": 7,
+     "RING": 1,
+     "SET GENERATOR": 1
+    },
+    "objects_mod": 11,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0411/stg0411_nrm.dat": {
+    "delta_by_class": {
+     "CONTAINER": 2,
+     "EGG_PAWN": 2,
+     "ELEC_BAR": 8,
+     "ELEC_FOOTINGROTATE": 3,
+     "ELEC_SPRING": 8,
+     "RING": 1
+    },
+    "objects_mod": 24,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0412/stg0412_cmn.dat": {
+    "delta_by_class": {
+     "BK_SOLDIER": -2,
+     "ITEM_BOX": -1,
+     "WEAPON_CONTAINER": -2
+    },
+    "objects_mod": 15,
+    "objects_stock": 20,
+    "status": "changed"
+   },
+   "stg0412/stg0412_hrd.dat": {
+    "delta_by_class": {
+     "BK_SOLDIER": 2,
+     "BK_WINGSMALL": 2,
+     "ITEM_BOX": 1
+    },
+    "objects_mod": 5,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0412/stg0412_nrm.dat": {
+    "delta_by_class": {
+     "BK_SOLDIER": 2,
+     "ITEM_BOX": 1,
+     "WEAPON_CONTAINER": 2
+    },
+    "objects_mod": 5,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0500/stg0500_cmn.dat": {
+    "delta_by_class": {
+     "ARKCANNON": 2,
+     "BK_CHAOS": 8,
+     "BK_WINGLARGE": 18,
+     "BK_WINGSMALL": 27,
+     "BOMB": -5,
+     "BRK_OBJ": -2,
+     "DASHRING": 4,
+     "GUN_BEETLE": -1,
+     "ITEM_BOX": 6,
+     "LONGSPRING": 2,
+     "RING": 36,
+     "SECRET CONTAINER": -2,
+     "SECRETDOOR": -1,
+     "SETCOLLISION": -6,
+     "SET_VEHICLE": 3,
+     "SPACEGADGET": 1,
+     "SPRING": 1,
+     "TARGETSWITCH": 1
+    },
+    "objects_mod": 447,
+    "objects_stock": 355,
+    "status": "changed"
+   },
+   "stg0500/stg0500_ds1.dat": {
+    "delta_by_class": {
+     "SPACEGADGET": -1
+    },
+    "objects_mod": 243,
+    "objects_stock": 244,
+    "status": "changed"
+   },
+   "stg0500/stg0500_hrd.dat": {
+    "delta_by_class": {
+     "HINT COLLISION": 1,
+     "HINTRING": -1
+    },
+    "objects_mod": 2,
+    "objects_stock": 2,
+    "status": "changed"
+   },
+   "stg0500/stg0500_nrm.dat": {
+    "delta_by_class": {
+     "DASHRING": 16,
+     "HINT COLLISION": -8,
+     "ITEM_BOX": 2,
+     "SECRET CONTAINER": 2,
+     "SET_VEHICLE": -3
+    },
+    "objects_mod": 60,
+    "objects_stock": 51,
+    "status": "changed"
+   },
+   "stg0501/stg0501_cmn.dat": {
+    "delta_by_class": {
+     "ART GADGET": 4,
+     "ART WORK": -1,
+     "BA GUNSHIP": 3,
+     "BK_SOLDIER": 3,
+     "BRK_OBJ": 1,
+     "CAGE": 2,
+     "CONTAINER": 2,
+     "DASHPANEL": -1,
+     "ENERGY_CORE": 1,
+     "E_P_COLI": 1,
+     "FAN": 2,
+     "GUN_BEETLE": 2,
+     "GUN_ROBOT": 5,
+     "MOVE_FOOTING": 6,
+     "PLANE RAIL": 1,
+     "RING": 4,
+     "SECRET CONTAINER": -6,
+     "SECRETDOOR": -1,
+     "SETCOLLISION": 35,
+     "SET_WEAPON": 2,
+     "SWITCH": 1,
+     "WARP_HOLE": 4,
+     "WEIGHT": 2
+    },
+    "objects_mod": 492,
+    "objects_stock": 420,
+    "status": "changed"
+   },
+   "stg0501/stg0501_ds1.dat": {
+    "delta_by_class": {
+     "ART GADGET": -7,
+     "ART WORK": 2,
+     "BASE DOOR": 1
+    },
+    "objects_mod": 850,
+    "objects_stock": 854,
+    "status": "changed"
+   },
+   "stg0501/stg0501_hrd.dat": {
+    "delta_by_class": {
+     "E_P_COLI": -1,
+     "HINT COLLISION": 1,
+     "HINTRING": -1,
+     "SECRET CONTAINER": 2,
+     "SETCOLLISION": 2
+    },
+    "objects_mod": 31,
+    "objects_stock": 28,
+    "status": "changed"
+   },
+   "stg0501/stg0501_nrm.dat": {
+    "delta_by_class": {
+     "ELEVATOR": 1,
+     "E_P_COLI": -1,
+     "GUN_BEETLE": 2,
+     "HINT COLLISION": 6,
+     "HINTRING": -3,
+     "MOVE_FOOTING": 1,
+     "PLANE RAIL": -1,
+     "SECRET CONTAINER": 6
+    },
+    "objects_mod": 124,
+    "objects_stock": 113,
+    "status": "changed"
+   },
+   "stg0502/stg0502_cmn.dat": {
+    "delta_by_class": {
+     "DASHPANEL": -2,
+     "DOOR": 1,
+     "E_B_COLI": -28,
+     "GUN_BEETLE": 1,
+     "HINT COLLISION": 10,
+     "JUMP_BOARD": -2,
+     "SECRET CONTAINER": -3,
+     "SECRETDOOR": -1,
+     "SET GENERATOR": 1,
+     "SETCOLLISION": -8
+    },
+    "objects_mod": 226,
+    "objects_stock": 257,
+    "status": "changed"
+   },
+   "stg0502/stg0502_ds1.dat": {
+    "delta_by_class": {
+     "EGG_PAWN": 1,
+     "EGG_SHADOWANDROID": 1,
+     "MOVE_FOOTING": 1
+    },
+    "objects_mod": 468,
+    "objects_stock": 465,
+    "status": "changed"
+   },
+   "stg0502/stg0502_hrd.dat": {
+    "delta_by_class": {
+     "ART GADGET ZONE": 24,
+     "CAGE": 2,
+     "ELEVATOR": 17,
+     "E_B_COLI": 13,
+     "GUN_BEETLE": 2,
+     "GUN_BIGFOOT": 1,
+     "HINT COLLISION": 1,
+     "HINTRING": -1,
+     "ITEM_BOX": 1,
+     "JUMP_BOARD": 2,
+     "MOVE_FOOTING": 8,
+     "RING": 8,
+     "SETCOLLISION": 1,
+     "SPRING": 2,
+     "TURNOVER": 9,
+     "WEIGHT": 2
+    },
+    "objects_mod": 103,
+    "objects_stock": 11,
+    "status": "changed"
+   },
+   "stg0502/stg0502_nrm.dat": {
+    "delta_by_class": {
+     "E_B_COLI": 29,
+     "HINT COLLISION": 1,
+     "HINTRING": -2,
+     "JUMP_BOARD": 2,
+     "SECRET CONTAINER": 3
+    },
+    "objects_mod": 111,
+    "objects_stock": 78,
+    "status": "changed"
+   },
+   "stg0503/stg0503_cmn.dat": {
+    "delta_by_class": {
+     "BK_SOLDIER": 1,
+     "DASHRING": 3,
+     "DEFENSE_SHIELD": 1,
+     "DOOR": 1,
+     "ENERGY_CORE": -1,
+     "GUN_ROBOT": 4,
+     "GravityChangeCollision": 1,
+     "GravityChangeSwitch": -2,
+     "GravityChangeZone": 1,
+     "GravitySignBoard": -2,
+     "ITEM_BOX": 1,
+     "JUMP_BOARD": 1,
+     "MOVE_FOOTING": 1,
+     "RING": 10,
+     "SECRET CONTAINER": -1,
+     "SECRETDOOR": -1,
+     "SETCOLLISION": 14,
+     "SET_VEHICLE": 1,
+     "SPRING": 2,
+     "TARGETSWITCH": 1,
+     "WARP_HOLE": -4,
+     "WEAPON_CONTAINER": 2
+    },
+    "objects_mod": 626,
+    "objects_stock": 592,
+    "status": "changed"
+   },
+   "stg0503/stg0503_ds1.dat": {
+    "delta_by_class": {
+     "ART GADGET": 2,
+     "DEFENSE_SHIELD": 1,
+     "GravityChangeSwitch": 1
+    },
+    "objects_mod": 590,
+    "objects_stock": 586,
+    "status": "changed"
+   },
+   "stg0503/stg0503_hrd.dat": {
+    "delta_by_class": {
+     "DOOR": 1,
+     "HINT COLLISION": 1,
+     "HINTRING": -1,
+     "SETCOLLISION": 5,
+     "WARP_HOLE": 2
+    },
+    "objects_mod": 13,
+    "objects_stock": 5,
+    "status": "changed"
+   },
+   "stg0503/stg0503_nrm.dat": {
+    "delta_by_class": {
+     "DOOR": 1,
+     "ENERGY_CORE": 1,
+     "GOALRING": 1,
+     "HINTRING": 2,
+     "MissionClearCollision": 1,
+     "SECRET CONTAINER": 1,
+     "SETCOLLISION": 2,
+     "WARP_HOLE": 2
+    },
+    "objects_mod": 84,
+    "objects_stock": 73,
+    "status": "changed"
+   },
+   "stg0504/stg0504_cmn.dat": {
+    "delta_by_class": {
+     "ART GADGET ZONE": 2,
+     "BK_CHAOS": 3,
+     "DASHPANEL": -1,
+     "DOOR": -9,
+     "FAN STAGE": -1,
+     "GUN_BEETLE": 1,
+     "HRD_CONTAINER": 2,
+     "SECRET CONTAINER": -1,
+     "SECRETDOOR": -1,
+     "SETCOLLISION": 3,
+     "SET_VEHICLE": -1,
+     "WARP_HOLE": 2
+    },
+    "objects_mod": 338,
+    "objects_stock": 339,
+    "status": "changed"
+   },
+   "stg0504/stg0504_ds1.dat": {
+    "delta_by_class": {
+     "ART GADGET ZONE": -36,
+     "BK_CHAOS": 1,
+     "DOOR": -1,
+     "STICK": -13
+    },
+    "objects_mod": 496,
+    "objects_stock": 545,
+    "status": "changed"
+   },
+   "stg0504/stg0504_hrd.dat": {
+    "delta_by_class": {
+     "HINT COLLISION": 1,
+     "HINTRING": -1
+    },
+    "objects_mod": 15,
+    "objects_stock": 15,
+    "status": "changed"
+   },
+   "stg0504/stg0504_nrm.dat": {
+    "delta_by_class": {
+     "HINTRING": -1,
+     "SECRET CONTAINER": 1
+    },
+    "objects_mod": 79,
+    "objects_stock": 79,
+    "status": "changed"
+   },
+   "stg0510/stg0510_cmn.dat": {
+    "delta_by_class": {
+     "HEAVY_DOG_0510": -1,
+     "HINT COLLISION": -2,
+     "RING": -2,
+     "SPRING": -2,
+     "WEAPON_CONTAINER": -1
+    },
+    "objects_mod": 4,
+    "objects_stock": 12,
+    "status": "changed"
+   },
+   "stg0510/stg0510_hrd.dat": {
+    "delta_by_class": {
+     "DEFENSE_SHIELD": 8,
+     "GUN_BEETLE": 4,
+     "HEAVY_DOG_0510": 1,
+     "RING": 1,
+     "SET GENERATOR": 1,
+     "SET_VEHICLE": 1,
+     "WEAPON_CONTAINER": 4
+    },
+    "objects_mod": 20,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0510/stg0510_nrm.dat": {
+    "delta_by_class": {
+     "HEAVY_DOG_0510": 1,
+     "HINT COLLISION": 2,
+     "RING": 2,
+     "SPRING": 2,
+     "WEAPON_CONTAINER": 1
+    },
+    "objects_mod": 8,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0511/stg0511_cmn.dat": {
+    "delta_by_class": {
+     "EGG_PAWN": -4,
+     "RING": -4,
+     "SET GENERATOR": -1,
+     "SET_VEHICLE": -2
+    },
+    "objects_mod": 11,
+    "objects_stock": 22,
+    "status": "changed"
+   },
+   "stg0511/stg0511_hrd.dat": {
+    "delta_by_class": {
+     "CAGE": 2,
+     "EGG_PAWN": 3,
+     "EGG_PIERROT": 2,
+     "EGG_SHADOWANDROID": 4,
+     "RING": 2,
+     "SETCOLLISION": 2
+    },
+    "objects_mod": 15,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0511/stg0511_nrm.dat": {
+    "delta_by_class": {
+     "EGG_PAWN": 4,
+     "RING": 4,
+     "SET GENERATOR": 1,
+     "SET_VEHICLE": 2
+    },
+    "objects_mod": 11,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0600/stg0600_cmn.dat": {
+    "delta_by_class": {
+     "ART GADGET": 3,
+     "ART GADGET ZONE": 1,
+     "ART WORK": 1,
+     "BASE DOOR": 2,
+     "BK_SOLDIER": 5,
+     "BRK_OBJ": 3,
+     "CONTAINER": 15,
+     "GUN_ROBOT": 3,
+     "GUN_SOLDIER": 3,
+     "ITEM_BOX": 2,
+     "RING": 3,
+     "SECRET CONTAINER": -2,
+     "SECRETDOOR": -1,
+     "SECURITY LASER": 13,
+     "SETCOLLISION": 6,
+     "SET_SE_LOOP": 15,
+     "SET_VEHICLE": 1,
+     "TARGETSWITCH": 2,
+     "UNBRK_CONTAINER": 2
+    },
+    "objects_mod": 493,
+    "objects_stock": 416,
+    "status": "changed"
+   },
+   "stg0600/stg0600_ds1.dat": {
+    "delta_by_class": {
+     "ART GADGET": 4,
+     "ART WORK": 12,
+     "MOVE_FOOTING": 1
+    },
+    "objects_mod": 718,
+    "objects_stock": 701,
+    "status": "changed"
+   },
+   "stg0600/stg0600_hrd.dat": {
+    "delta_by_class": {
+     "GUN_ROBOT": 3,
+     "GUN_SOLDIER": 2,
+     "HINT COLLISION": 1,
+     "HINTRING": -1,
+     "MOVE_FOOTING": 4,
+     "RING": 1,
+     "SETCOLLISION": 4,
+     "SET_VEHICLE": 1
+    },
+    "objects_mod": 32,
+    "objects_stock": 17,
+    "status": "changed"
+   },
+   "stg0600/stg0600_nrm.dat": {
+    "delta_by_class": {
+     "DASHPANEL": -3,
+     "HINT COLLISION": -3,
+     "RING": 1,
+     "SECRET CONTAINER": 3
+    },
+    "objects_mod": 84,
+    "objects_stock": 86,
+    "status": "changed"
+   },
+   "stg0601/stg0601_cmn.dat": {
+    "delta_by_class": {
+     "BALLOON": 1,
+     "BK_WORM": -5,
+     "DASHPANEL": -3,
+     "MOVE_FOOTING": 1,
+     "PARTICLE": 2,
+     "RING": 1,
+     "SECRET CONTAINER": -4,
+     "SECRETDOOR": -1,
+     "SETCOLLISION": -6
+    },
+    "objects_mod": 419,
+    "objects_stock": 433,
+    "status": "changed"
+   },
+   "stg0601/stg0601_hrd.dat": {
+    "delta_by_class": {
+     "BK_WORM": 5,
+     "DASHPANEL": 1,
+     "HINT COLLISION": 1,
+     "HINTRING": -1,
+     "MOVE_FOOTING": 1,
+     "RING": 1,
+     "WEIGHT": 18
+    },
+    "objects_mod": 52,
+    "objects_stock": 26,
+    "status": "changed"
+   },
+   "stg0601/stg0601_nrm.dat": {
+    "delta_by_class": {
+     "BK_WORM": 5,
+     "HINT COLLISION": -5,
+     "SECRET CONTAINER": 4
+    },
+    "objects_mod": 47,
+    "objects_stock": 43,
+    "status": "changed"
+   },
+   "stg0602/stg0602_cmn.dat": {
+    "delta_by_class": {
+     "ART GADGET ZONE": 3,
+     "BALLOON": -2,
+     "BASE DOOR": 1,
+     "DASHRING": 4,
+     "HINT COLLISION": 10,
+     "ITEM_BOX": 2,
+     "PARTICLE": 12,
+     "POP FOOTING": 4,
+     "RING": 2,
+     "SECRET CONTAINER": -3,
+     "SECRETDOOR": -1,
+     "SECURITY LASER": 3,
+     "SETCOLLISION": -2
+    },
+    "objects_mod": 374,
+    "objects_stock": 341,
+    "status": "changed"
+   },
+   "stg0602/stg0602_ds1.dat": {
+    "delta_by_class": {
+     "ART GADGET ZONE": 3,
+     "ART WORK": 5,
+     "ART WORK ZONE": -1,
+     "BASE DOOR": -1
+    },
+    "objects_mod": 610,
+    "objects_stock": 604,
+    "status": "changed"
+   },
+   "stg0602/stg0602_hrd.dat": {
+    "delta_by_class": {
+     "BASE DOOR": 1,
+     "HINT COLLISION": 1,
+     "HINTRING": -1,
+     "MAGMA": 3,
+     "MOVE_FOOTING": 2,
+     "SETCOLLISION": 2
+    },
+    "objects_mod": 14,
+    "objects_stock": 6,
+    "status": "changed"
+   },
+   "stg0602/stg0602_nrm.dat": {
+    "delta_by_class": {
+     "BASE DOOR": 1,
+     "HINT COLLISION": -5,
+     "HINTRING": -2,
+     "MAGMA": 2,
+     "MOVE_FOOTING": 2,
+     "SECRET CONTAINER": 3,
+     "SET_CHARACTOR": 2,
+     "SWITCH": 1
+    },
+    "objects_mod": 78,
+    "objects_stock": 74,
+    "status": "changed"
+   },
+   "stg0603/stg0603_cmn.dat": {
+    "delta_by_class": {
+     "BALLOON": -4,
+     "BK_GIANT": -1,
+     "BK_WINGLARGE": -2,
+     "DARKSPINENTRANCE": 1,
+     "DASHRING": -4,
+     "DOOR": 1,
+     "ENERGY_CORE": -1,
+     "FootingBreak": -5,
+     "FootingRoll": -8,
+     "GUN_ROBOT": -1,
+     "ITEM_BOX": -1,
+     "JUMP_BOARD": -3,
+     "MOVE_FOOTING": 4,
+     "RING": -12,
+     "ROCKET": -1,
+     "SAVEPOINT": 1,
+     "SECRET CONTAINER": -1,
+     "SECRETDOOR": -1,
+     "SETCOLLISION": -7,
+     "SPRING": -1,
+     "SWITCH": -1,
+     "TARGETSWITCH": 1
+    },
+    "objects_mod": 206,
+    "objects_stock": 252,
+    "status": "changed"
+   },
+   "stg0603/stg0603_ds1.dat": {
+    "delta_by_class": {
+     "ART GADGET": -4,
+     "ART GADGET ZONE": 2,
+     "PARTICLE": -4,
+     "SPACEGADGET": -2,
+     "STICK": -8
+    },
+    "objects_mod": 476,
+    "objects_stock": 492,
+    "status": "changed"
+   },
+   "stg0603/stg0603_hrd.dat": {
+    "delta_by_class": {
+     "BALLOON": 3,
+     "BK_CHAOS": 5,
+     "BK_GIANT": 2,
+     "BK_WINGLARGE": 2,
+     "BK_WINGSMALL": 6,
+     "DASHRING": 6,
+     "FootingBreak": 1,
+     "FootingRoll": 15,
+     "GUN_ROBOT": 4,
+     "HINT COLLISION": 2,
+     "HINTRING": -1,
+     "HRD_CONTAINER": 1,
+     "MOVE_FOOTING": 2,
+     "RING": 5,
+     "SETCOLLISION": 2,
+     "SET_VEHICLE": 1,
+     "SPRING": 1,
+     "SWITCH": 1,
+     "WARP_HOLE": 2
+    },
+    "objects_mod": 77,
+    "objects_stock": 17,
+    "status": "changed"
+   },
+   "stg0603/stg0603_nrm.dat": {
+    "delta_by_class": {
+     "ART GADGET": 9,
+     "ART GADGET ZONE": 1,
+     "BALLOON": 4,
+     "BK_GIANT": 1,
+     "BK_WINGLARGE": 2,
+     "DASHRING": 15,
+     "FootingBreak": 5,
+     "FootingRoll": 18,
+     "GUN_ROBOT": 1,
+     "HINT COLLISION": 4,
+     "HINTRING": -1,
+     "ITEM_BOX": 3,
+     "JUMP_BOARD": 4,
+     "PARTICLE": 4,
+     "RING": 5,
+     "ROCKET": 1,
+     "SECRET CONTAINER": 1,
+     "SETCOLLISION": 4,
+     "SPACEGADGET": 10,
+     "SPRING": -2,
+     "STICK": 8,
+     "SWITCH": 1
+    },
+    "objects_mod": 185,
+    "objects_stock": 87,
+    "status": "changed"
+   },
+   "stg0604/stg0604_cmn.dat": {
+    "delta_by_class": {
+     "BA Mine": 2,
+     "CAGE": -1,
+     "CONTAINER": 2,
+     "DASHPANEL": -12,
+     "DOOR": 3,
+     "ITEM_BOX": 1,
+     "JUMP_BOARD": -3,
+     "LONGSPRING": -2,
+     "SECRET CONTAINER": -3,
+     "SECRETDOOR": -4,
+     "SECURITY LASER": 4,
+     "SETCOLLISION": -2,
+     "SET_VEHICLE": -1,
+     "SUCTION PILLAR": 1,
+     "TARGETSWITCH": 4
+    },
+    "objects_mod": 435,
+    "objects_stock": 446,
+    "status": "changed"
+   },
+   "stg0604/stg0604_ds1.dat": {
+    "delta_by_class": {
+     "ART GADGET": 9,
+     "BK_GIANT": -1
+    },
+    "objects_mod": 783,
+    "objects_stock": 775,
+    "status": "changed"
+   },
+   "stg0604/stg0604_hrd.dat": {
+    "delta_by_class": {
+     "BA Mine": 2,
+     "BK_GIANT": 1,
+     "BK_NINJA": 3,
+     "BK_SOLDIER": 3,
+     "BK_WINGLARGE": 3,
+     "DASHRING": 1,
+     "DOOR": 3,
+     "HINT COLLISION": 1,
+     "HINTRING": -1
+    },
+    "objects_mod": 21,
+    "objects_stock": 5,
+    "status": "changed"
+   },
+   "stg0604/stg0604_nrm.dat": {
+    "delta_by_class": {
+     "BK_WINGLARGE": -3,
+     "CAGE": 1,
+     "CONTAINER": 3,
+     "DOOR": 1,
+     "ENERGY_CORE": 1,
+     "HINT COLLISION": -8,
+     "HINTRING": 2,
+     "JUMP_BOARD": 3,
+     "MOVE_FOOTING": 2,
+     "SECRET CONTAINER": 3,
+     "SETCOLLISION": 2,
+     "SUCTION PILLAR": 2
+    },
+    "objects_mod": 106,
+    "objects_stock": 97,
+    "status": "changed"
+   },
+   "stg0610/stg0610_cmn.dat": {
+    "delta_by_class": {
+     "ITEM_BOX": -4,
+     "RING": -1,
+     "WEAPON_CONTAINER": -4
+    },
+    "objects_mod": 4,
+    "objects_stock": 13,
+    "status": "changed"
+   },
+   "stg0610/stg0610_hrd.dat": {
+    "delta_by_class": {
+     "CAGE": 1,
+     "GUN_SOLDIER": 5,
+     "SET_WEAPON": 1,
+     "WEAPON_CONTAINER": 1
+    },
+    "objects_mod": 8,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0610/stg0610_nrm.dat": {
+    "delta_by_class": {
+     "ITEM_BOX": 4,
+     "RING": 1,
+     "WEAPON_CONTAINER": 4
+    },
+    "objects_mod": 9,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0611/stg0611_cmn.dat": {
+    "delta_by_class": {
+     "ITEM_BOX": -3,
+     "RING": -1,
+     "WEAPON_CONTAINER": -4
+    },
+    "objects_mod": 11,
+    "objects_stock": 19,
+    "status": "changed"
+   },
+   "stg0611/stg0611_hrd.dat": {
+    "delta_by_class": {
+     "GUN_BEETLE": 8,
+     "RING": 1
+    },
+    "objects_mod": 9,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0611/stg0611_nrm.dat": {
+    "delta_by_class": {
+     "ITEM_BOX": 3,
+     "RING": 1,
+     "WEAPON_CONTAINER": 4
+    },
+    "objects_mod": 8,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0612/stg0612_cmn.dat": {
+    "delta_by_class": {
+     "RING": -2,
+     "WEAPON_CONTAINER": -28
+    },
+    "objects_mod": 131,
+    "objects_stock": 161,
+    "status": "changed"
+   },
+   "stg0612/stg0612_hrd.dat": {
+    "delta_by_class": {
+     "EGG_PAWN": 2
+    },
+    "objects_mod": 2,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0612/stg0612_nrm.dat": {
+    "delta_by_class": {
+     "RING": 2,
+     "WEAPON_CONTAINER": 28
+    },
+    "objects_mod": 30,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0613/stg0613_cmn.dat": {
+    "delta_by_class": {
+     "CONTAINER": -2,
+     "ITEM_BOX": -4,
+     "WEAPON_CONTAINER": -3
+    },
+    "objects_mod": 5,
+    "objects_stock": 14,
+    "status": "changed"
+   },
+   "stg0613/stg0613_hrd.dat": {
+    "delta_by_class": {
+     "ITEM_BOX": 3,
+     "PARTICLE": 2,
+     "SETCOLLISION": 1,
+     "SET_VEHICLE": 1,
+     "WEAPON_CONTAINER": 1
+    },
+    "objects_mod": 8,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0613/stg0613_nrm.dat": {
+    "delta_by_class": {
+     "CONTAINER": 2,
+     "ITEM_BOX": 4,
+     "WEAPON_CONTAINER": 3
+    },
+    "objects_mod": 9,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0614/stg0614_cmn.dat": {
+    "delta_by_class": {
+     "MOVE_FOOTING": -4,
+     "RING": -4,
+     "WEAPON_CONTAINER": -28
+    },
+    "objects_mod": 109,
+    "objects_stock": 145,
+    "status": "changed"
+   },
+   "stg0614/stg0614_hrd.dat": {
+    "delta_by_class": {
+     "EGG_SHADOWANDROID": 19
+    },
+    "objects_mod": 19,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0614/stg0614_nrm.dat": {
+    "delta_by_class": {
+     "MOVE_FOOTING": 4,
+     "RING": 4,
+     "WEAPON_CONTAINER": 28
+    },
+    "objects_mod": 36,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0615/stg0615_cmn.dat": {
+    "delta_by_class": {
+     "RING": -2,
+     "WEAPON_CONTAINER": -19
+    },
+    "objects_mod": 116,
+    "objects_stock": 137,
+    "status": "changed"
+   },
+   "stg0615/stg0615_hrd.dat": {
+    "delta_by_class": {
+     "BK_CHAOS": 4
+    },
+    "objects_mod": 4,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0615/stg0615_nrm.dat": {
+    "delta_by_class": {
+     "RING": 2,
+     "WEAPON_CONTAINER": 19
+    },
+    "objects_mod": 21,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0616/stg0616_cmn.dat": {
+    "delta_by_class": {
+     "ITEM_BOX": -4,
+     "RING": -1,
+     "WEAPON_CONTAINER": -6
+    },
+    "objects_mod": 4,
+    "objects_stock": 15,
+    "status": "changed"
+   },
+   "stg0616/stg0616_hrd.dat": {
+    "delta_by_class": {
+     "ITEM_BOX": 4,
+     "WEAPON_CONTAINER": 6
+    },
+    "objects_mod": 10,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0616/stg0616_nrm.dat": {
+    "delta_by_class": {
+     "ITEM_BOX": 4,
+     "RING": 1,
+     "WEAPON_CONTAINER": 6
+    },
+    "objects_mod": 11,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0617/stg0617_cmn.dat": {
+    "delta_by_class": {
+     "RING": -3,
+     "WEAPON_CONTAINER": -4
+    },
+    "objects_mod": 4,
+    "objects_stock": 11,
+    "status": "changed"
+   },
+   "stg0617/stg0617_hrd.dat": {
+    "delta_by_class": {
+     "BK_GIANT": 2,
+     "BK_NINJA": 8,
+     "BK_SOLDIER": 4,
+     "RING": 2,
+     "SET GENERATOR": 10
+    },
+    "objects_mod": 26,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0617/stg0617_nrm.dat": {
+    "delta_by_class": {
+     "RING": 3,
+     "WEAPON_CONTAINER": 4
+    },
+    "objects_mod": 7,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0618/stg0618_cmn.dat": {
+    "delta_by_class": {
+     "CONTAINER": -2,
+     "HRD_CONTAINER": -3,
+     "RING": -1,
+     "WEAPON_CONTAINER": -2
+    },
+    "objects_mod": 7,
+    "objects_stock": 15,
+    "status": "changed"
+   },
+   "stg0618/stg0618_hrd.dat": {
+    "delta_by_class": {
+     "RING": 1,
+     "WEAPON_CONTAINER": 3
+    },
+    "objects_mod": 4,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0618/stg0618_nrm.dat": {
+    "delta_by_class": {
+     "CONTAINER": 2,
+     "HRD_CONTAINER": 3,
+     "RING": 1,
+     "WEAPON_CONTAINER": 2
+    },
+    "objects_mod": 8,
+    "objects_stock": 0,
+    "status": "new"
+   },
+   "stg0700/stg0700_cmn.dat": {
+    "delta_by_class": {
+     "BA GUNSHIP": 2,
+     "BK_NINJA": 1,
+     "BK_SOLDIER": 11,
+     "BK_WINGLARGE": 3,
+     "BK_WORM": 3,
+     "CAGE": 2,
+     "CONTAINER": 2,
+     "ENERGY_CORE": 1,
+     "POISON_GAS": 23,
+     "RING": -19,
+     "SECRET CONTAINER": -4,
+     "SECRETDOOR": -1,
+     "SET GENERATOR": 7,
+     "SETCOLLISION": 2,
+     "SET_VEHICLE": 1,
+     "WARP_HOLE": -2,
+     "WEAPON_CONTAINER": 6
+    },
+    "objects_mod": 495,
+    "objects_stock": 457,
+    "status": "changed"
+   },
+   "stg0700/stg0700_ds1.dat": {
+    "delta_by_class": {
+     "MOVE_FOOTING": 1
+    },
+    "objects_mod": 908,
+    "objects_stock": 907,
+    "status": "changed"
+   },
+   "stg0700/stg0700_hrd.dat": {
+    "delta_by_class": {
+     "BA GUNSHIP": 2,
+     "BK_GIANT": 2,
+     "BK_NINJA": 6,
+     "BK_SOLDIER": 8,
+     "BK_WINGLARGE": 7,
+     "CAGE": 2,
+     "HINT COLLISION": 2,
+     "HINTRING": -1,
+     "SET GENERATOR": 3,
+     "SETCOLLISION": 2
+    },
+    "objects_mod": 50,
+    "objects_stock": 17,
+    "status": "changed"
+   },
+   "stg0700/stg0700_nrm.dat": {
+    "delta_by_class": {
+     "HINT COLLISION": -15,
+     "HINTRING": -4,
+     "RING": -1,
+     "SECRET CONTAINER": 4
+    },
+    "objects_mod": 24,
+    "objects_stock": 40,
+    "status": "changed"
+   }
+  },
+  "layouts_only_in_mod": [
+   "stg0210/stg0210_hrd.dat",
+   "stg0210/stg0210_nrm.dat",
+   "stg0310/stg0310_hrd.dat",
+   "stg0310/stg0310_nrm.dat",
+   "stg0410/stg0410_hrd.dat",
+   "stg0410/stg0410_nrm.dat",
+   "stg0411/stg0411_hrd.dat",
+   "stg0411/stg0411_nrm.dat",
+   "stg0412/stg0412_hrd.dat",
+   "stg0412/stg0412_nrm.dat",
+   "stg0510/stg0510_hrd.dat",
+   "stg0510/stg0510_nrm.dat",
+   "stg0511/stg0511_hrd.dat",
+   "stg0511/stg0511_nrm.dat",
+   "stg0610/stg0610_hrd.dat",
+   "stg0610/stg0610_nrm.dat",
+   "stg0611/stg0611_hrd.dat",
+   "stg0611/stg0611_nrm.dat",
+   "stg0612/stg0612_hrd.dat",
+   "stg0612/stg0612_nrm.dat",
+   "stg0613/stg0613_hrd.dat",
+   "stg0613/stg0613_nrm.dat",
+   "stg0614/stg0614_hrd.dat",
+   "stg0614/stg0614_nrm.dat",
+   "stg0615/stg0615_hrd.dat",
+   "stg0615/stg0615_nrm.dat",
+   "stg0616/stg0616_hrd.dat",
+   "stg0616/stg0616_nrm.dat",
+   "stg0617/stg0617_hrd.dat",
+   "stg0617/stg0617_nrm.dat",
+   "stg0618/stg0618_hrd.dat",
+   "stg0618/stg0618_nrm.dat"
+  ],
+  "new_misc_length_combinations": []
+ },
+ "one_archives": {
+  "character/maria.one": {
+   "added": [],
+   "changed": [
+    "MARIA.DFF"
+   ],
+   "members_mod": 9,
+   "members_stock": 9,
+   "removed_count": 0
+  },
+  "character/shadow.one": {
+   "added": [],
+   "changed": [
+    "SHADOW.MTP",
+    "SHADOW.TXD",
+    "SHADOW_BODY.DFF"
+   ],
+   "members_mod": 28,
+   "members_stock": 28,
+   "removed_count": 0
+  },
+  "character/shadow2pmtlp.one": {
+   "added": [],
+   "changed": [
+    "SWMTLP.DFF"
+   ],
+   "members_mod": 10,
+   "members_stock": 10,
+   "removed_count": 0
+  },
+  "character/shadow2py.one": {
+   "added": [],
+   "changed": [
+    "SW2PY_HAND_BAR.DFF",
+    "SW2PY_HAND_GUN.DFF",
+    "SW2PY_HAND_SWORD.DFF"
+   ],
+   "members_mod": 11,
+   "members_stock": 11,
+   "removed_count": 0
+  },
+  "common/CommonEffect.one": {
+   "added": [],
+   "changed": [
+    "COMMONEFFECT.TXD"
+   ],
+   "members_mod": 81,
+   "members_stock": 81,
+   "removed_count": 0
+  },
+  "enemy/BKChaosData.one": {
+   "added": [],
+   "changed": [
+    "CHAOSEYE.DFF"
+   ],
+   "members_mod": 13,
+   "members_stock": 13,
+   "removed_count": 0
+  },
+  "enemy/GunBigfootData.one": {
+   "added": [],
+   "changed": [
+    "BIGFOOTB.DFF"
+   ],
+   "members_mod": 9,
+   "members_stock": 9,
+   "removed_count": 0
+  },
+  "enemy/boss/HeavyDog0410One.one": {
+   "added": [],
+   "changed": [
+    "HEAVYDOG0410.TXD"
+   ],
+   "members_mod": 13,
+   "members_stock": 13,
+   "removed_count": 0
+  },
+  "event/event0800_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 15,
+   "members_stock": 15,
+   "removed_count": 0
+  },
+  "event/event0801_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 15,
+   "members_stock": 15,
+   "removed_count": 0
+  },
+  "event/event0802_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 15,
+   "members_stock": 15,
+   "removed_count": 0
+  },
+  "event/event0803_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 15,
+   "members_stock": 15,
+   "removed_count": 0
+  },
+  "event/event0804_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 18,
+   "members_stock": 18,
+   "removed_count": 0
+  },
+  "event/event0805_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 18,
+   "members_stock": 18,
+   "removed_count": 0
+  },
+  "event/event0806_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 18,
+   "members_stock": 18,
+   "removed_count": 0
+  },
+  "event/event0807_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 18,
+   "members_stock": 18,
+   "removed_count": 0
+  },
+  "event/event0808_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 18,
+   "members_stock": 18,
+   "removed_count": 0
+  },
+  "event/event0809_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 22,
+   "members_stock": 22,
+   "removed_count": 0
+  },
+  "event/event0810_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 22,
+   "members_stock": 22,
+   "removed_count": 0
+  },
+  "event/event0811_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 22,
+   "members_stock": 22,
+   "removed_count": 0
+  },
+  "event/event0812_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 22,
+   "members_stock": 22,
+   "removed_count": 0
+  },
+  "event/event0813_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 22,
+   "members_stock": 22,
+   "removed_count": 0
+  },
+  "event/event0814_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 24,
+   "members_stock": 24,
+   "removed_count": 0
+  },
+  "event/event0815_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 24,
+   "members_stock": 24,
+   "removed_count": 0
+  },
+  "event/event0816_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 24,
+   "members_stock": 24,
+   "removed_count": 0
+  },
+  "event/event0817_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 22,
+   "members_stock": 22,
+   "removed_count": 0
+  },
+  "event/event0818_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 22,
+   "members_stock": 22,
+   "removed_count": 0
+  },
+  "event/event0819_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 22,
+   "members_stock": 22,
+   "removed_count": 0
+  },
+  "event/event0820_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 30,
+   "members_stock": 30,
+   "removed_count": 0
+  },
+  "event/event0821_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 22,
+   "members_stock": 22,
+   "removed_count": 0
+  },
+  "event/event0822_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 18,
+   "members_stock": 18,
+   "removed_count": 0
+  },
+  "event/event0823_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 18,
+   "members_stock": 18,
+   "removed_count": 0
+  },
+  "event/event0824_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 18,
+   "members_stock": 18,
+   "removed_count": 0
+  },
+  "event/event0825_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 20,
+   "members_stock": 20,
+   "removed_count": 0
+  },
+  "event/event0826_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 20,
+   "members_stock": 20,
+   "removed_count": 0
+  },
+  "event/event0900_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 9,
+   "members_stock": 9,
+   "removed_count": 0
+  },
+  "event/event0901_sceneA.one": {
+   "added": [],
+   "changed": [
+    "EMERALD!WHITE!A!.DFF",
+    "EMERALD!WHITE!G!.DFF",
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 15,
+   "members_stock": 15,
+   "removed_count": 0
+  },
+  "event/event0902_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 16,
+   "members_stock": 16,
+   "removed_count": 0
+  },
+  "event/event0903_sceneA.one": {
+   "added": [],
+   "changed": [
+    "EMERALD!WHITE!A!.DFF",
+    "EMERALD!WHITE!G!.DFF",
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 22,
+   "members_stock": 22,
+   "removed_count": 0
+  },
+  "event/event0904_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 16,
+   "members_stock": 16,
+   "removed_count": 0
+  },
+  "event/event0905_sceneA.one": {
+   "added": [],
+   "changed": [
+    "EMERALD!WHITE!A!.DFF",
+    "EMERALD!WHITE!G!.DFF",
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 22,
+   "members_stock": 22,
+   "removed_count": 0
+  },
+  "event/event0906_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 16,
+   "members_stock": 16,
+   "removed_count": 0
+  },
+  "event/event0907_sceneA.one": {
+   "added": [],
+   "changed": [
+    "EMERALD!WHITE!A!.DFF",
+    "EMERALD!WHITE!G!.DFF",
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 22,
+   "members_stock": 22,
+   "removed_count": 0
+  },
+  "event/event0908_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 12,
+   "members_stock": 12,
+   "removed_count": 0
+  },
+  "event/event0909_sceneA.one": {
+   "added": [],
+   "changed": [
+    "EMERALD!WHITE!A!.DFF",
+    "EMERALD!WHITE!G!.DFF",
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 18,
+   "members_stock": 18,
+   "removed_count": 0
+  },
+  "event/event0910_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 24,
+   "members_stock": 24,
+   "removed_count": 0
+  },
+  "event/event0911_sceneA.one": {
+   "added": [],
+   "changed": [
+    "EMERALD!WHITE!A!.DFF",
+    "EMERALD!WHITE!G!.DFF",
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 30,
+   "members_stock": 30,
+   "removed_count": 0
+  },
+  "event/event0912_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 16,
+   "members_stock": 16,
+   "removed_count": 0
+  },
+  "event/event0913_sceneA.one": {
+   "added": [],
+   "changed": [
+    "EMERALD!WHITE!A!.DFF",
+    "EMERALD!WHITE!G!.DFF",
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 22,
+   "members_stock": 22,
+   "removed_count": 0
+  },
+  "event/event0914_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 16,
+   "members_stock": 16,
+   "removed_count": 0
+  },
+  "event/event0915_sceneA.one": {
+   "added": [],
+   "changed": [
+    "EMERALD!WHITE!A!.DFF",
+    "EMERALD!WHITE!G!.DFF",
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 22,
+   "members_stock": 22,
+   "removed_count": 0
+  },
+  "event/event0916_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 16,
+   "members_stock": 16,
+   "removed_count": 0
+  },
+  "event/event0917_sceneA.one": {
+   "added": [],
+   "changed": [
+    "EMERALD!WHITE!A!.DFF",
+    "EMERALD!WHITE!G!.DFF",
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 22,
+   "members_stock": 22,
+   "removed_count": 0
+  },
+  "event/event0918_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 12,
+   "members_stock": 12,
+   "removed_count": 0
+  },
+  "event/event0919_sceneA.one": {
+   "added": [],
+   "changed": [
+    "EMERALD!WHITE!A!.DFF",
+    "EMERALD!WHITE!G!.DFF",
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 18,
+   "members_stock": 18,
+   "removed_count": 0
+  },
+  "event/event0920_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 18,
+   "members_stock": 18,
+   "removed_count": 0
+  },
+  "event/event0921_sceneA.one": {
+   "added": [],
+   "changed": [
+    "EMERALD!WHITE!A!.DFF",
+    "EMERALD!WHITE!G!.DFF",
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 24,
+   "members_stock": 24,
+   "removed_count": 0
+  },
+  "event/event0922_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 16,
+   "members_stock": 16,
+   "removed_count": 0
+  },
+  "event/event0923_sceneA.one": {
+   "added": [],
+   "changed": [
+    "EMERALD!WHITE!A!.DFF",
+    "EMERALD!WHITE!G!.DFF",
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 22,
+   "members_stock": 22,
+   "removed_count": 0
+  },
+  "event/event0924_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 14,
+   "members_stock": 14,
+   "removed_count": 0
+  },
+  "event/event0925_sceneA.one": {
+   "added": [],
+   "changed": [
+    "EMERALD!WHITE!A!.DFF",
+    "EMERALD!WHITE!G!.DFF",
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 20,
+   "members_stock": 20,
+   "removed_count": 0
+  },
+  "event/event0926_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SUPERSHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 13,
+   "members_stock": 13,
+   "removed_count": 0
+  },
+  "event/event0950_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 9,
+   "members_stock": 9,
+   "removed_count": 0
+  },
+  "event/event0951_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 9,
+   "members_stock": 9,
+   "removed_count": 0
+  },
+  "event/event0960_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 9,
+   "members_stock": 9,
+   "removed_count": 0
+  },
+  "event/event0961_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 9,
+   "members_stock": 9,
+   "removed_count": 0
+  },
+  "event/event0980_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 9,
+   "members_stock": 9,
+   "removed_count": 0
+  },
+  "event/event1101_sceneA.one": {
+   "added": [],
+   "changed": [
+    "EV!SIREIKAN2!LOCATOR.DFF"
+   ],
+   "members_mod": 19,
+   "members_stock": 19,
+   "removed_count": 0
+  },
+  "event/event1101_sceneB.one": {
+   "added": [],
+   "changed": [
+    "EBNEV!SIREIKAN2.BON",
+    "EV!SIREIKAN2!LOCATOR.DFF"
+   ],
+   "members_mod": 19,
+   "members_stock": 19,
+   "removed_count": 0
+  },
+  "event/event2001_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 27,
+   "members_stock": 27,
+   "removed_count": 0
+  },
+  "event/event2101_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 29,
+   "members_stock": 29,
+   "removed_count": 0
+  },
+  "event/event2102_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 21,
+   "members_stock": 21,
+   "removed_count": 0
+  },
+  "event/event2201_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 32,
+   "members_stock": 32,
+   "removed_count": 0
+  },
+  "event/event2211_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 23,
+   "members_stock": 23,
+   "removed_count": 0
+  },
+  "event/event3001_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 33,
+   "members_stock": 33,
+   "removed_count": 0
+  },
+  "event/event3011_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 35,
+   "members_stock": 35,
+   "removed_count": 0
+  },
+  "event/event3101_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 28,
+   "members_stock": 28,
+   "removed_count": 0
+  },
+  "event/event3201_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 93,
+   "members_stock": 93,
+   "removed_count": 0
+  },
+  "event/event4002_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 25,
+   "members_stock": 25,
+   "removed_count": 0
+  },
+  "event/event4111_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 35,
+   "members_stock": 35,
+   "removed_count": 0
+  },
+  "event/event4202_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 19,
+   "members_stock": 19,
+   "removed_count": 0
+  },
+  "event/event4301_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 38,
+   "members_stock": 38,
+   "removed_count": 0
+  },
+  "event/event4311_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 45,
+   "members_stock": 45,
+   "removed_count": 0
+  },
+  "event/event4411_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 49,
+   "members_stock": 49,
+   "removed_count": 0
+  },
+  "event/event5001_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 36,
+   "members_stock": 36,
+   "removed_count": 0
+  },
+  "event/event5011_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 21,
+   "members_stock": 21,
+   "removed_count": 0
+  },
+  "event/event5101_sceneD.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 25,
+   "members_stock": 25,
+   "removed_count": 0
+  },
+  "event/event5101_sceneE.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 14,
+   "members_stock": 14,
+   "removed_count": 0
+  },
+  "event/event5201_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 61,
+   "members_stock": 61,
+   "removed_count": 0
+  },
+  "event/event5211_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 105,
+   "members_stock": 105,
+   "removed_count": 0
+  },
+  "event/event5301_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOWL!LOCATOR.DFF"
+   ],
+   "members_mod": 61,
+   "members_stock": 61,
+   "removed_count": 0
+  },
+  "event/event5302_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 99,
+   "members_stock": 99,
+   "removed_count": 0
+  },
+  "event/event5402_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 84,
+   "members_stock": 84,
+   "removed_count": 0
+  },
+  "event/event5403_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 35,
+   "members_stock": 35,
+   "removed_count": 0
+  },
+  "event/event6001_sceneF.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 13,
+   "members_stock": 13,
+   "removed_count": 0
+  },
+  "event/event6101_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 40,
+   "members_stock": 40,
+   "removed_count": 0
+  },
+  "event/event6103_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 40,
+   "members_stock": 40,
+   "removed_count": 0
+  },
+  "event/event6104_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 52,
+   "members_stock": 52,
+   "removed_count": 0
+  },
+  "event/event6201_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 13,
+   "members_stock": 13,
+   "removed_count": 0
+  },
+  "event/event6202_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 16,
+   "members_stock": 16,
+   "removed_count": 0
+  },
+  "event/event6203_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 22,
+   "members_stock": 22,
+   "removed_count": 0
+  },
+  "event/event6301_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 31,
+   "members_stock": 31,
+   "removed_count": 0
+  },
+  "event/event6302_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 44,
+   "members_stock": 44,
+   "removed_count": 0
+  },
+  "event/event6303_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 29,
+   "members_stock": 29,
+   "removed_count": 0
+  },
+  "event/event6401_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 44,
+   "members_stock": 44,
+   "removed_count": 0
+  },
+  "event/event6402_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 16,
+   "members_stock": 16,
+   "removed_count": 0
+  },
+  "event/event7001_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 40,
+   "members_stock": 40,
+   "removed_count": 0
+  },
+  "event/event7011_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 82,
+   "members_stock": 82,
+   "removed_count": 0
+  },
+  "event/event7101_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 20,
+   "members_stock": 20,
+   "removed_count": 0
+  },
+  "event/event7111_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 56,
+   "members_stock": 56,
+   "removed_count": 0
+  },
+  "event/event7201_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 40,
+   "members_stock": 40,
+   "removed_count": 0
+  },
+  "event/event7211_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 82,
+   "members_stock": 82,
+   "removed_count": 0
+  },
+  "event/event7301_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 34,
+   "members_stock": 34,
+   "removed_count": 0
+  },
+  "event/event7311_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 77,
+   "members_stock": 77,
+   "removed_count": 0
+  },
+  "event/event7401_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 34,
+   "members_stock": 34,
+   "removed_count": 0
+  },
+  "event/event7411_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 78,
+   "members_stock": 78,
+   "removed_count": 0
+  },
+  "event/event7501_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 37,
+   "members_stock": 37,
+   "removed_count": 0
+  },
+  "event/event7511_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 81,
+   "members_stock": 81,
+   "removed_count": 0
+  },
+  "event/event7601_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 34,
+   "members_stock": 34,
+   "removed_count": 0
+  },
+  "event/event7611_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 75,
+   "members_stock": 75,
+   "removed_count": 0
+  },
+  "event/event7701_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 18,
+   "members_stock": 18,
+   "removed_count": 0
+  },
+  "event/event7711_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 61,
+   "members_stock": 61,
+   "removed_count": 0
+  },
+  "event/event7801_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 40,
+   "members_stock": 40,
+   "removed_count": 0
+  },
+  "event/event7811_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 82,
+   "members_stock": 82,
+   "removed_count": 0
+  },
+  "event/event7901_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 21,
+   "members_stock": 21,
+   "removed_count": 0
+  },
+  "event/event7911_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 63,
+   "members_stock": 63,
+   "removed_count": 0
+  },
+  "event/event8002_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 55,
+   "members_stock": 55,
+   "removed_count": 0
+  },
+  "event/event8002_sceneB.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 97,
+   "members_stock": 97,
+   "removed_count": 0
+  },
+  "event/event8002_sceneD.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 89,
+   "members_stock": 89,
+   "removed_count": 0
+  },
+  "event/event8002_sceneF.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 93,
+   "members_stock": 93,
+   "removed_count": 0
+  },
+  "event/event8002_sceneG.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 59,
+   "members_stock": 59,
+   "removed_count": 0
+  },
+  "event/event8002_sceneH.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 45,
+   "members_stock": 45,
+   "removed_count": 0
+  },
+  "event/event8004_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 55,
+   "members_stock": 55,
+   "removed_count": 0
+  },
+  "event/event8004_sceneB.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 32,
+   "members_stock": 32,
+   "removed_count": 0
+  },
+  "event/event8005_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 29,
+   "members_stock": 29,
+   "removed_count": 0
+  },
+  "event/event8006_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 37,
+   "members_stock": 37,
+   "removed_count": 0
+  },
+  "event/event8006_sceneC.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 19,
+   "members_stock": 19,
+   "removed_count": 0
+  },
+  "event/event8006_sceneD.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 33,
+   "members_stock": 33,
+   "removed_count": 0
+  },
+  "event/event8006_sceneF.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 21,
+   "members_stock": 21,
+   "removed_count": 0
+  },
+  "event/event8006_sceneG.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 33,
+   "members_stock": 33,
+   "removed_count": 0
+  },
+  "event/event8006_sceneH.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF"
+   ],
+   "members_mod": 33,
+   "members_stock": 33,
+   "removed_count": 0
+  },
+  "event/event8101_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 56,
+   "members_stock": 56,
+   "removed_count": 0
+  },
+  "event/event8103_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 79,
+   "members_stock": 79,
+   "removed_count": 0
+  },
+  "event/event8106_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 80,
+   "members_stock": 80,
+   "removed_count": 0
+  },
+  "event/event8106_sceneB.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "SUPERSHABE!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 73,
+   "members_stock": 73,
+   "removed_count": 0
+  },
+  "event/event8204_sceneA.one": {
+   "added": [],
+   "changed": [
+    "SHADOW!LOCATOR.DFF",
+    "TEXTURE.TXD"
+   ],
+   "members_mod": 14,
+   "members_stock": 14,
+   "removed_count": 0
+  },
+  "stg0005/stg0005_01.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 1,
+   "members_stock": 2,
+   "removed_count": 1
+  },
+  "stg0005/stg0005_texCM.one": {
+   "added": [],
+   "changed": [
+    "STG0005_TEXCM.TXD"
+   ],
+   "members_mod": 1,
+   "members_stock": 1,
+   "removed_count": 0
+  },
+  "stg0100/stg0100_gdt.one": {
+   "added": [],
+   "changed": [
+    "CT0100BLDFALL.CCL",
+    "STG_GDT.TXD"
+   ],
+   "members_mod": 135,
+   "members_stock": 135,
+   "removed_count": 0
+  },
+  "stg0100/stg0100_texCM.one": {
+   "added": [],
+   "changed": [
+    "STG0100_TEXCM.TXD"
+   ],
+   "members_mod": 1,
+   "members_stock": 1,
+   "removed_count": 0
+  },
+  "stg0200/stg0200_dat.one": {
+   "added": [],
+   "changed": [
+    "PATH.PTP",
+    "STG0200.BDT"
+   ],
+   "members_mod": 3,
+   "members_stock": 3,
+   "removed_count": 0
+  },
+  "stg0201/stg0201_01.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 2,
+   "members_stock": 3,
+   "removed_count": 1
+  },
+  "stg0201/stg0201_02.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 2,
+   "members_stock": 3,
+   "removed_count": 1
+  },
+  "stg0201/stg0201_03.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 2,
+   "members_stock": 3,
+   "removed_count": 1
+  },
+  "stg0201/stg0201_04.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 3,
+   "members_stock": 4,
+   "removed_count": 1
+  },
+  "stg0201/stg0201_05.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 2,
+   "members_stock": 3,
+   "removed_count": 1
+  },
+  "stg0201/stg0201_06.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 3,
+   "members_stock": 4,
+   "removed_count": 1
+  },
+  "stg0201/stg0201_07.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 3,
+   "members_stock": 4,
+   "removed_count": 1
+  },
+  "stg0201/stg0201_08.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 2,
+   "members_stock": 3,
+   "removed_count": 1
+  },
+  "stg0201/stg0201_09.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 2,
+   "members_stock": 3,
+   "removed_count": 1
+  },
+  "stg0201/stg0201_10.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 2,
+   "members_stock": 3,
+   "removed_count": 1
+  },
+  "stg0201/stg0201_dat.one": {
+   "added": [],
+   "changed": [
+    "PATH.PTP",
+    "STG0201.BDT"
+   ],
+   "members_mod": 2,
+   "members_stock": 2,
+   "removed_count": 0
+  },
+  "stg0300/stg0300_dat.one": {
+   "added": [],
+   "changed": [
+    "PATH.PTP",
+    "STG0300.BDT"
+   ],
+   "members_mod": 5,
+   "members_stock": 5,
+   "removed_count": 0
+  },
+  "stg0300/stg0300_gdt.one": {
+   "added": [],
+   "changed": [
+    "STG_GDT.TXD"
+   ],
+   "members_mod": 106,
+   "members_stock": 127,
+   "removed_count": 21
+  },
+  "stg0302/stg0302_dat.one": {
+   "added": [],
+   "changed": [
+    "PATH.PTP",
+    "STG0302.BDT"
+   ],
+   "members_mod": 10,
+   "members_stock": 10,
+   "removed_count": 0
+  },
+  "stg0302/stg0302_gdt.one": {
+   "added": [
+    "ARTGADGETZONE.BIN",
+    "BS0602EGGPAWN.BON",
+    "BS0602EGGPAWN.CCL",
+    "BS0602EGGPAWN.DFF",
+    "BS0602EGGPAWN.MTP",
+    "BS0602EGGPAWNBRK.DFF"
+   ],
+   "changed": [
+    "PR0302BALLOONRED.DFF",
+    "PR0302BALLOONYEL.DFF",
+    "PR0302FIRERING.CCL",
+    "STG_GDT.TXD"
+   ],
+   "members_mod": 178,
+   "members_stock": 172,
+   "removed_count": 0
+  },
+  "stg0310/stg0310_gdt.one": {
+   "added": [],
+   "changed": [
+    "STG_GDT.TXD"
+   ],
+   "members_mod": 14,
+   "members_stock": 36,
+   "removed_count": 22
+  },
+  "stg0400/stg0400_gdt.one": {
+   "added": [],
+   "changed": [
+    "STG_GDT.TXD"
+   ],
+   "members_mod": 156,
+   "members_stock": 156,
+   "removed_count": 0
+  },
+  "stg0400/stg0400_texCM.one": {
+   "added": [],
+   "changed": [
+    "STG0400_TEXCM.TXD"
+   ],
+   "members_mod": 1,
+   "members_stock": 1,
+   "removed_count": 0
+  },
+  "stg0401/stg0401_dat.one": {
+   "added": [],
+   "changed": [
+    "STG0401.BDT"
+   ],
+   "members_mod": 14,
+   "members_stock": 14,
+   "removed_count": 0
+  },
+  "stg0401/stg0401_gdt.one": {
+   "added": [],
+   "changed": [
+    "A20000DIRECTION.CCL",
+    "A20000FOOTING.CCL",
+    "STG_GDT.TXD"
+   ],
+   "members_mod": 151,
+   "members_stock": 151,
+   "removed_count": 0
+  },
+  "stg0401/stg0401_texCM.one": {
+   "added": [],
+   "changed": [
+    "STG0401_TEXCM.TXD"
+   ],
+   "members_mod": 1,
+   "members_stock": 1,
+   "removed_count": 0
+  },
+  "stg0402/stg0402_fx.one": {
+   "added": [],
+   "changed": [
+    "STG0402_FX.TXD"
+   ],
+   "members_mod": 19,
+   "members_stock": 19,
+   "removed_count": 0
+  },
+  "stg0402/stg0402_gdt.one": {
+   "added": [
+    "DM0000LASERSML.CCL",
+    "DM0000LASERSML.DFF",
+    "DM0000LASERSML1M.DFF",
+    "DM0000LASERSML1MB.DFF",
+    "SECURITYLASER.BIN"
+   ],
+   "changed": [
+    "CN0402EGGSHIP.CCL",
+    "CN0402EGGSHIPSML.CCL"
+   ],
+   "members_mod": 167,
+   "members_stock": 162,
+   "removed_count": 0
+  },
+  "stg0404/stg0404_01.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 3,
+   "members_stock": 6,
+   "removed_count": 3
+  },
+  "stg0404/stg0404_02.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 3,
+   "members_stock": 6,
+   "removed_count": 3
+  },
+  "stg0404/stg0404_03.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 4,
+   "members_stock": 7,
+   "removed_count": 3
+  },
+  "stg0404/stg0404_06.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 3,
+   "members_stock": 6,
+   "removed_count": 3
+  },
+  "stg0404/stg0404_07.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 2,
+   "members_stock": 5,
+   "removed_count": 3
+  },
+  "stg0404/stg0404_08.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 2,
+   "members_stock": 5,
+   "removed_count": 3
+  },
+  "stg0404/stg0404_09.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 2,
+   "members_stock": 5,
+   "removed_count": 3
+  },
+  "stg0404/stg0404_10.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 2,
+   "members_stock": 5,
+   "removed_count": 3
+  },
+  "stg0404/stg0404_11.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 2,
+   "members_stock": 5,
+   "removed_count": 3
+  },
+  "stg0404/stg0404_12.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 4,
+   "members_stock": 7,
+   "removed_count": 3
+  },
+  "stg0404/stg0404_13.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 4,
+   "members_stock": 7,
+   "removed_count": 3
+  },
+  "stg0410/stg0410_fx.one": {
+   "added": [],
+   "changed": [
+    "STG0410_FX.TXD"
+   ],
+   "members_mod": 1,
+   "members_stock": 20,
+   "removed_count": 19
+  },
+  "stg0410/stg0410_gdt.one": {
+   "added": [],
+   "changed": [
+    "STG_GDT.TXD"
+   ],
+   "members_mod": 1,
+   "members_stock": 132,
+   "removed_count": 131
+  },
+  "stg0410/stg0410_texCM.one": {
+   "added": [],
+   "changed": [
+    "STG0410_TEXCM.TXD"
+   ],
+   "members_mod": 1,
+   "members_stock": 1,
+   "removed_count": 0
+  },
+  "stg0412/stg0412_gdt.one": {
+   "added": [],
+   "changed": [
+    "STG_GDT.TXD"
+   ],
+   "members_mod": 18,
+   "members_stock": 41,
+   "removed_count": 23
+  },
+  "stg0501/stg0501_dat.one": {
+   "added": [],
+   "changed": [
+    "PATH.PTP",
+    "STG0501.BDT"
+   ],
+   "members_mod": 3,
+   "members_stock": 3,
+   "removed_count": 0
+  },
+  "stg0501/stg0501_gdt.one": {
+   "added": [
+    "BAGUNSHIP.BIN",
+    "DM0000GUNSHIP.BON",
+    "DM0000GUNSHIP.CCL",
+    "DM0000GUNSHIP.DFF",
+    "DM0000GUNSHIP.MTP",
+    "DM0000GUNSHIPBRK.DFF",
+    "DM0000GUNSHIPGUN.DFF"
+   ],
+   "changed": [
+    "BS0000LIGHT01.CCL",
+    "STG_GDT.TXD"
+   ],
+   "members_mod": 178,
+   "members_stock": 171,
+   "removed_count": 0
+  },
+  "stg0502/stg0502_dat.one": {
+   "added": [],
+   "changed": [
+    "PATH.PTP",
+    "STG0502.BDT"
+   ],
+   "members_mod": 2,
+   "members_stock": 2,
+   "removed_count": 0
+  },
+  "stg0503/stg0503_dat.one": {
+   "added": [],
+   "changed": [
+    "PATH.PTP",
+    "STG0503.BDT"
+   ],
+   "members_mod": 17,
+   "members_stock": 17,
+   "removed_count": 0
+  },
+  "stg0504/stg0504_dat.one": {
+   "added": [],
+   "changed": [
+    "PATH.PTP",
+    "STG0504.BDT"
+   ],
+   "members_mod": 16,
+   "members_stock": 16,
+   "removed_count": 0
+  },
+  "stg0510/stg0510_gdt.one": {
+   "added": [
+    "A10500SHIELD.CCL",
+    "A10500SHIELD.DFF",
+    "A10500SHIELDAFTER.CCL",
+    "A10500SHIELDAFTER.DFF",
+    "A10500SHIELDTRANS.DFF",
+    "A10500SHIELDTRANSAFTER.DFF",
+    "DEFENSESHIELD.BIN"
+   ],
+   "changed": [
+    "STG_GDT.TXD"
+   ],
+   "members_mod": 19,
+   "members_stock": 55,
+   "removed_count": 43
+  },
+  "stg0600/stg0600_gdt.one": {
+   "added": [],
+   "changed": [
+    "BS0000ENERGYWALL.CCL",
+    "BS0000LIGHT01.CCL",
+    "BS0600ELECTRICDEV.CCL",
+    "BS0600ELECTRICDEVLEFT.CCL",
+    "BS0600GUNCOASTER.CCL",
+    "BS0600TOWER.CCL",
+    "BS0600WALLMOUNT.CCL"
+   ],
+   "members_mod": 205,
+   "members_stock": 205,
+   "removed_count": 0
+  },
+  "stg0603/stg0603_dat.one": {
+   "added": [],
+   "changed": [
+    "PATH.PTP",
+    "STG0603.BDT"
+   ],
+   "members_mod": 21,
+   "members_stock": 21,
+   "removed_count": 0
+  },
+  "stg0603/stg0603_gdt.one": {
+   "added": [],
+   "changed": [
+    "A10603BOXCYL.CCL"
+   ],
+   "members_mod": 167,
+   "members_stock": 167,
+   "removed_count": 0
+  },
+  "stg0604/stg0604_dat.one": {
+   "added": [],
+   "changed": [
+    "PATH.PTP"
+   ],
+   "members_mod": 7,
+   "members_stock": 7,
+   "removed_count": 0
+  },
+  "stg0604/stg0604_gdt.one": {
+   "added": [],
+   "changed": [
+    "STG_GDT.TXD"
+   ],
+   "members_mod": 163,
+   "members_stock": 163,
+   "removed_count": 0
+  },
+  "stg0604/stg0604_texCM.one": {
+   "added": [],
+   "changed": [
+    "STG0604_TEXCM.TXD"
+   ],
+   "members_mod": 1,
+   "members_stock": 1,
+   "removed_count": 0
+  },
+  "stg0610/stg0610_gdt.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 36,
+   "members_stock": 133,
+   "removed_count": 97
+  },
+  "stg0611/stg0611_gdt.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 35,
+   "members_stock": 133,
+   "removed_count": 98
+  },
+  "stg0612/stg0612_gdt.one": {
+   "added": [],
+   "changed": [
+    "STG_GDT.TXD"
+   ],
+   "members_mod": 36,
+   "members_stock": 151,
+   "removed_count": 115
+  },
+  "stg0613/stg0613_gdt.one": {
+   "added": [],
+   "changed": [
+    "STG_GDT.TXD"
+   ],
+   "members_mod": 42,
+   "members_stock": 151,
+   "removed_count": 109
+  },
+  "stg0614/stg0614_dat.one": {
+   "added": [],
+   "changed": [
+    "STG0614.BDT"
+   ],
+   "members_mod": 4,
+   "members_stock": 4,
+   "removed_count": 0
+  },
+  "stg0614/stg0614_gdt.one": {
+   "added": [],
+   "changed": [],
+   "members_mod": 20,
+   "members_stock": 22,
+   "removed_count": 2
+  },
+  "stg0615/stg0615_gdt.one": {
+   "added": [],
+   "changed": [
+    "STG_GDT.TXD"
+   ],
+   "members_mod": 20,
+   "members_stock": 76,
+   "removed_count": 56
+  },
+  "stg0616/stg0616_gdt.one": {
+   "added": [],
+   "changed": [
+    "STG_GDT.TXD"
+   ],
+   "members_mod": 20,
+   "members_stock": 76,
+   "removed_count": 56
+  },
+  "stg0617/stg0617_gdt.one": {
+   "added": [],
+   "changed": [
+    "STG_GDT.TXD"
+   ],
+   "members_mod": 19,
+   "members_stock": 148,
+   "removed_count": 129
+  },
+  "stg0617/stg0617_texCM.one": {
+   "added": [],
+   "changed": [
+    "STG0617_TEXCM.TXD"
+   ],
+   "members_mod": 1,
+   "members_stock": 1,
+   "removed_count": 0
+  },
+  "stg0618/stg0618_gdt.one": {
+   "added": [],
+   "changed": [
+    "STG_GDT.TXD"
+   ],
+   "members_mod": 21,
+   "members_stock": 148,
+   "removed_count": 127
+  },
+  "stg_cmn_gdt.one": {
+   "added": [],
+   "changed": [
+    "GHOSTRING.DFF",
+    "GHOSTRINGLOW.DFF",
+    "RING.DFF",
+    "RINGLOW.DFF",
+    "SAVEPOINT.CCL",
+    "SAVEPOINT00.DFF",
+    "SAVEPOINT01.DFF",
+    "SAVEPOINT02.DFF",
+    "SAVEPOINT03.DFF",
+    "SECRETKEY00.DFF",
+    "STG_GDT.TXD",
+    "TARGETSW.CCL"
+   ],
+   "members_mod": 331,
+   "members_stock": 331,
+   "removed_count": 0
+  }
+ },
+ "one_member_kinds": {
+  "added:bin": 4,
+  "added:bon": 2,
+  "added:ccl": 5,
+  "added:dff": 12,
+  "added:mtp": 2,
+  "changed:bdt": 11,
+  "changed:bon": 1,
+  "changed:ccl": 17,
+  "changed:dff": 184,
+  "changed:mtp": 1,
+  "changed:ptp": 10,
+  "changed:txd": 106
+ },
+ "one_trimmed_stage_archives": [
+  "stg0300/stg0300_gdt.one",
+  "stg0310/stg0310_gdt.one",
+  "stg0410/stg0410_fx.one",
+  "stg0410/stg0410_gdt.one",
+  "stg0412/stg0412_gdt.one",
+  "stg0510/stg0510_gdt.one",
+  "stg0610/stg0610_gdt.one",
+  "stg0611/stg0611_gdt.one",
+  "stg0612/stg0612_gdt.one",
+  "stg0613/stg0613_gdt.one",
+  "stg0615/stg0615_gdt.one",
+  "stg0616/stg0616_gdt.one",
+  "stg0617/stg0617_gdt.one",
+  "stg0618/stg0618_gdt.one"
+ ],
+ "schema": 1,
+ "score_data": {
+  "differing_runs_in_common_prefix": 8,
+  "size_mod": 4544,
+  "size_stock": 4522
+ },
+ "shadow_motion_pack": {
+  "changed_members": [
+   "SHADOW.MTP",
+   "SHADOW.TXD",
+   "SHADOW_BODY.DFF"
+  ]
+ },
+ "single_files": {
+  "E4101.flo": {
+   "size_mod": 9596928,
+   "size_stock": null,
+   "status": "new"
+  },
+  "E4102.flo": {
+   "size_mod": 22294528,
+   "size_stock": null,
+   "status": "new"
+  },
+  "E4201.flo": {
+   "size_mod": 4253696,
+   "size_stock": null,
+   "status": "new"
+  },
+  "E8003.flo": {
+   "size_mod": 13258752,
+   "size_stock": null,
+   "status": "new"
+  },
+  "E8201.flo": {
+   "size_mod": 13213696,
+   "size_stock": null,
+   "status": "new"
+  },
+  "FadeLogo.txd": {
+   "size_mod": 248,
+   "size_stock": 4312,
+   "status": "changed"
+  },
+  "Op.flo": {
+   "size_mod": 7710720,
+   "size_stock": null,
+   "status": "new"
+  },
+  "common/ScoreData.bin": {
+   "size_mod": 4544,
+   "size_stock": 4522,
+   "status": "changed"
+  },
+  "common/ScoreDatb.bin": {
+   "size_mod": 4544,
+   "size_stock": null,
+   "status": "new"
+  },
+  "mc_bunner_e.tp": {
+   "size_mod": 6144,
+   "size_stock": 6144,
+   "status": "changed"
+  },
+  "mc_icon01.tp": {
+   "size_mod": 2048,
+   "size_stock": 2048,
+   "status": "changed"
+  },
+  "nukkoro.inf": {
+   "size_mod": 366,
+   "size_stock": 4143,
+   "status": "changed"
+  },
+  "nukkoro2.inf": {
+   "size_mod": 12702,
+   "size_stock": 9769,
+   "status": "changed"
+  },
+  "opening.bnr": {
+   "size_mod": 6496,
+   "size_stock": 6496,
+   "status": "changed"
+  },
+  "setid.bin": {
+   "size_mod": 3632,
+   "size_stock": 3632,
+   "status": "changed"
+  },
+  "sng_EV_music4.adx": {
+   "size_mod": 13913910,
+   "size_stock": null,
+   "status": "new"
+  },
+  "sng_stg0613.adx": {
+   "size_mod": 5015552,
+   "size_stock": null,
+   "status": "new"
+  },
+  "sng_vox06.adx": {
+   "size_mod": 11030742,
+   "size_stock": 12835858,
+   "status": "changed"
+  },
+  "sng_vox07.adx": {
+   "size_mod": 11030742,
+   "size_stock": null,
+   "status": "new"
+  },
+  "sound/B81_FINALDOOM.mlt": {
+   "size_mod": 374048,
+   "size_stock": 374048,
+   "status": "changed"
+  },
+  "stafroll/StafRoll.srd": {
+   "size_mod": 11328,
+   "size_stock": 11328,
+   "status": "changed"
+  },
+  "stg_cmn_gd2.one": {
+   "size_mod": 576813,
+   "size_stock": null,
+   "status": "new"
+  },
+  "stg_cmn_gdt.one": {
+   "size_mod": 577140,
+   "size_stock": 577708,
+   "status": "changed"
+  }
+ }
+}

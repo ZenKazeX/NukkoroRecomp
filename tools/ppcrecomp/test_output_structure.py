@@ -10,6 +10,17 @@ import struct
 import subprocess
 import tempfile
 
+# s3/gen: these tests assert the exact emitted text of the hot copy. The hot-body GPR read cache rewrites reads of
+# that copy to locals (covered by test_gpr_cache.py), so every generator run here passes --no-gpr-cache, except the
+# one that asks for the cache (KEEP_GPR_CACHE) to prove it still lowers every platform site.
+KEEP_GPR_CACHE=[False]
+_real_run=subprocess.run
+def _run(cmd,*a,**k):
+    if isinstance(cmd,list) and "--dol" in cmd and not KEEP_GPR_CACHE[0]:
+        cmd=[cmd[0],"--no-gpr-cache"]+list(cmd[1:])
+    return _real_run(cmd,*a,**k)
+subprocess.run=_run
+
 def gap_sweep_roots(generator,root):
     """decode-cfg-3: a speculative gap-sweep root must never reject a function
     that is valid from its declared entry. It runs WITH the gap sweep."""
@@ -86,11 +97,13 @@ def bctr_loop_lowering(generator,root):
     text=(out/"recomp_000.cpp").read_text()
     for row in ("80003118","8000311C"):
         assert f"static void fn_{row}_body(Cpu& c, u32 entry) {{ fn_80003100_at(c, entry); }}" in text,row+" not absorbed\n"+text
-    hot=text.split("static void fn_80003100_body(Cpu& c, u32 entry) {",1)[1].split("static void fn_80003100_body_at(Cpu& c, u32 entry) {",1)[0]
+    hot=text.split("static void fn_80003100_body(Cpu& GEKKO_CPU_RESTRICT c, u32 entry) {",1)[1].split("static void fn_80003100_body_at(Cpu& c, u32 entry) {",1)[0]
     for case in ("80003118","8000311C"):
         assert f"\nL_{case}:\n" in hot,"absorbed case entry is not a hot label: "+case+"\n"+hot
         assert f"case 0x{case}u: if (c.try_hle(0x{case}u)) return; goto L_{case};" in hot,case+"\n"+hot
     assert "recomp::jump_indirect(c, tmp); return;" not in text,"bctr still lowered to a call\n"+text
+    # RC-gen-7: the hand-back of a bctr names the bctr (its address is the site), never site 0.
+    assert "recomp::jump_indirect(c, tmp, 0x8000313Cu);" in hot,"bctr default path lost its site\n"+hot
     assert "c.leave_to_dispatcher(tmp, FallbackReason::Yield, 0x8000313Cu); return; }" in hot,"backward bctr does not poll\n"+hot
 
 def shared_indirect_lowering(generator,root):
@@ -115,7 +128,7 @@ def shared_indirect_lowering(generator,root):
             "--out",str(out),"--shards","1","--no-gap-sweep","--no-wide-entries"],capture_output=True,text=True)
         assert result.returncode==0,result.stdout+result.stderr
         text=(out/"recomp_000.cpp").read_text()
-        hot=text.split("static void fn_80003100_body(Cpu& c, u32 entry) {",1)[1].split("static void fn_80003100_body_at(Cpu& c, u32 entry) {",1)[0]
+        hot=text.split("static void fn_80003100_body(Cpu& GEKKO_CPU_RESTRICT c, u32 entry) {",1)[1].split("static void fn_80003100_body_at(Cpu& c, u32 entry) {",1)[0]
         assert hot.count("gekko_indirect_dispatch:") == 1, hot
         assert hot.count("goto gekko_indirect_dispatch;") == sites, hot
         assert hot.count("switch (tmp)") == 2, "dispatch tables grew with site count"
@@ -123,7 +136,10 @@ def shared_indirect_lowering(generator,root):
         assert "FallbackReason::Yield, gekko_indirect_site" in hot, hot
         for i in range(sites):
             assert f"gekko_indirect_site = 0x{base+i*8:X}u;" in hot, hot
-        assert "default: recomp::jump_indirect(c, tmp); return;" in hot, hot
+        # RC-gen-6: the shared default arm polls a LOWER computed target before jump_indirect.
+        assert "if (tmp <= gekko_indirect_site && c.needs_dispatch()) { c.pc = tmp; c.leave_to_dispatcher(tmp, FallbackReason::Yield, gekko_indirect_site); return; }" in hot, hot
+        # RC-gen-7: the default arm passes the bctr site.
+        assert "recomp::jump_indirect(c, tmp, gekko_indirect_site); return;" in hot, hot
 
 def interrupt_recognition_lowering(generator,root):
     """Audit batch b5. branch-sys-3: mtmsr checks for a deliverable interrupt
@@ -154,7 +170,7 @@ def interrupt_recognition_lowering(generator,root):
         "--out",str(out),"--shards","1","--no-gap-sweep","--no-wide-entries"],capture_output=True,text=True)
     assert result.returncode==0,result.stdout+result.stderr
     text=(out/"recomp_000.cpp").read_text()
-    hot=text.split("static void fn_80003100_body(Cpu& c, u32 entry) {",1)[1].split("static void fn_80003100_body_at(Cpu& c, u32 entry) {",1)[0]
+    hot=text.split("static void fn_80003100_body(Cpu& GEKKO_CPU_RESTRICT c, u32 entry) {",1)[1].split("static void fn_80003100_body_at(Cpu& c, u32 entry) {",1)[0]
     mtmsr=("    if (c.interrupt_pending()) { c.leave_to_dispatcher(0x80003108u, FallbackReason::Yield, 0x80003108u); return; }\n"
            "    c.set_msr(c.gpr[4]);\n"  # C2 (2026-09-28): MSR writes re-select the host page table
            "    if (c.interrupt_pending()) { c.leave_to_dispatcher(0x8000310Cu, FallbackReason::Yield, 0x80003108u); return; }\n")
@@ -296,6 +312,13 @@ def platform_site_emission(generator,root):
                     "    ea = c.gpr[3] + 0x2u;\n    c.platform_write16(0x80003118u, ea, static_cast<u16>(c.gpr[0]));\n"):
         assert text.count(lowered)==2,"a listed site is not lowered in both bodies:\n"+lowered+"\n"+text
     assert text.count("c.platform_read16(")==4 and text.count("c.platform_write16(")==2,text
+    KEEP_GPR_CACHE[0]=True
+    try:
+        out2,_=generate("listed-cache",listed)
+    finally:
+        KEEP_GPR_CACHE[0]=False
+    text2=(out2/"recomp_000.cpp").read_text()
+    assert text2.count("c.platform_read16(")==4 and text2.count("c.platform_write16(")==2,"the GPR cache lost a platform site"+chr(10)+text2
     for bus in ("c.gpr[0] = c.mem_read16(ea);","c.gpr[5] = c.mem_read16(ea);",
                 "c.mem_write16(ea, static_cast<u16>(c.gpr[0]));"):
         assert bus not in text,"a listed site still reaches the bus: "+bus+"\n"+text
@@ -603,6 +626,147 @@ def native_owner_emission(generator,root):
                          ["--native-owners",str(wrong)],ok=False)
     assert "is not the start of an accepted row" in result.stderr,result.stderr
 
+def recompiler_issue_gates(generator,root):
+    """docs/RECOMPILER_ISSUES.md: the generator gates added for RC-gen-2 (owner extents), RC-gen-5 (a listed wait
+    point translated without its wait), RC-gen-8 (the cold trampoline's unknown entry), RC-gen-12 (malformed list
+    lines and option values) and RC-fp-3 (the FPSCR policy guard after a generated FPSCR write)."""
+    work=root/"issue-gates";work.mkdir()
+    BLR=0x4E800020
+    def table(name,rows):
+        functions=work/(name+".csv")
+        stream=io.StringIO(newline="")
+        writer=csv.writer(stream)
+        writer.writerow(["addr_hex","addr","name","size","ins","tags","strings","callees"])
+        for address,size in rows:
+            writer.writerow([hex(address),address,"r_"+hex(address)[2:],size,size//4,"","",""])
+        functions.write_text(stream.getvalue(),encoding="utf-8")
+        return functions
+    def text_file(name,content):
+        path=work/name;path.write_text(content,encoding="utf-8");return path
+    def out_dir(name):
+        out=work/name;out.mkdir();return out
+
+    # ---- RC-gen-2: a surviving row that translates an owner's instruction ----
+    image=liveness_dol(work,"own",liveness_words(),[0x80003130])
+    starts=[(0x80003100+16*i,8) for i in range(6)]
+    functions=table("overlap",starts+[(0x80003114,4)])     # a late row start inside owner B (0x80003110: bl ; blr)
+    roots=text_file("overlap-roots.txt","0x80003140\n0x80003114\n")
+    owners=text_file("overlap-owners.txt","0x80003110 B\n")
+    args=["--prune-roots",str(roots),"--native-owners",str(owners)]
+    result=run_generator(generator,image,functions,out_dir("overlap-notes"),args)
+    assert "note: row 0x80003114 translates 1 instruction(s) of native owner 0x80003110 (first at 0x80003114)" in result.stderr,result.stderr
+    assert "native owners: 1 surviving row(s) translate 1 owned instruction(s)" in result.stderr,result.stderr
+    strict=out_dir("overlap-strict")
+    result=run_generator(generator,image,functions,strict,args+["--strict-owner-extents"],ok=False)
+    assert "error: row 0x80003114 translates 1 instruction(s) of native owner 0x80003110" in result.stderr,result.stderr
+    assert "(--strict-owner-extents: refused)" in result.stderr and not (strict/"recomp_table.cpp").exists(),result.stderr
+    # The same tree without the overlapping row passes the strict rule (and says nothing).
+    result=run_generator(generator,image,table("clean",starts),out_dir("overlap-clean"),
+                         ["--prune-roots",str(text_file("clean-roots.txt","0x80003140\n")),"--native-owners",str(owners),
+                          "--strict-owner-extents"])
+    assert "translates" not in result.stderr,result.stderr
+
+    # ---- RC-gen-5: a listed back edge translated without its wait ----
+    # R (0x3100) does not decode, so it is rejected and has no translation; W's `beq` back to it is then emitted as a
+    # hand-back, a path with no wait. The list is valid (the site IS a backward branch to its head): only the gate sees it.
+    words=[0x00000000,BLR,0x2C030000,0x4182FFF4,BLR,0]      # R: <invalid> ; blr    W: cmpwi r3,0 ; beq 0x3100 ; blr
+    image=liveness_dol(work,"lostwait",words,[],entry=0x80003108)
+    functions=table("lostwait",[(0x80003100,8),(0x80003108,12)])
+    points=text_file("lostwait.txt","0x8000310C 0x80003100 poll\n")
+    lost=out_dir("lostwait")
+    result=run_generator(generator,image,functions,lost,["--wait-points",str(points)],ok=False)
+    assert "wait point 0x8000310C -> 0x80003100" in result.stderr and "translates the back edge without its wait" in result.stderr,result.stderr
+    assert "1 listed wait point(s) translated without a wait" in result.stderr,result.stderr
+    # Control: unlisted, the same program generates (the hand-back itself is legal).
+    result=run_generator(generator,image,functions,out_dir("lostwait-unlisted"),[])
+    assert "c.idle_wait();" not in (work/"lostwait-unlisted"/"recomp_000.cpp").read_text()
+
+    # ---- RC-gen-8 and RC-fp-3: emitted text ----
+    words=[0xFF80110C,0xFFA0004C,0xFFC0004C,BLR,           # mtfsfi 7,1 (RN) ; mtfsb1 29 (NI) ; mtfsb1 30 (RN) ; blr
+           BLR,0,0,0]                                       # a one-instruction function
+    image=liveness_dol(work,"emit",words,[])
+    functions=table("emit",[(0x80003100,16),(0x80003110,4)])
+    out=out_dir("emit")
+    run_generator(generator,image,functions,out,[])
+    text=(out/"recomp_000.cpp").read_text()
+    cold=text.split("static void fn_80003100_body_at(Cpu& c, u32 entry) {",1)[1].split("\n}\n",1)[0]
+    leave="c.leave_to_dispatcher(entry, FallbackReason::NotRecompiled, entry);\n    return;\n"
+    switch_end="                default: break;\n            }\n        }\n    }\n"
+    assert switch_end+"    "+leave in cold,"an unknown interior entry must hand back at the entry, not run the function from its start\n"+cold
+    assert switch_end+"    fn_80003100_body(c, 0x80003100u);" not in cold,cold
+    one=text.split("static void fn_80003110_body_at(Cpu& c, u32 entry) {",1)[1].split("\n}\n",1)[0]
+    assert "if (entry != 0x80003110u) {\n        "+leave in one,"a one-instruction function must refuse another entry too\n"+one
+    hot=text.split("static void fn_80003100_body(Cpu& GEKKO_CPU_RESTRICT c, u32 entry) {",1)[1].split("static void fn_80003100_body_at",1)[0]
+    import re
+    assert len(re.findall(r"c\.fpscr = \(c\.fpscr & 0xFFFFFFF0u\) \| 0x1u;\s*c\.fpscr_written\(\);",hot))==1,"mtfsfi that sets RN must be followed by the policy guard\n"+hot
+    assert len(re.findall(r"c\.fpscr \|= 0x2u;\s*c\.fpscr_written\(\);",hot))==1,"mtfsb1 of an RN bit must be followed by the policy guard\n"+hot
+    assert re.search(r"c\.fpscr \|= 0x4u;\s*(?!c\.fpscr_written)",hot) and hot.count("c.fpscr_written();")==2,"mtfsb1 NI cannot break the policy: no guard\n"+hot
+
+    # ---- RC-gen-4: the layout's dependence on the directory's history is visible and can be switched off ----
+    image=liveness_dol(work,"layout",liveness_words(),[0x80003130])
+    six=table("layout-six",starts)
+    four=table("layout-four",[starts[0],starts[1],starts[3],starts[5]])
+    def fingerprint(result):
+        line=[l for l in result.stderr.splitlines() if l.startswith("shard layout: fingerprint ")]
+        assert len(line)==1,result.stderr
+        return line[0].split()[3],("carried over" in line[0])
+    def generate(out,functions,extra=()):
+        return subprocess.run([str(generator.resolve()),"--dol",str(image),"--functions",str(functions),"--out",str(out),
+                               "--shards","2","--no-gap-sweep",*extra],capture_output=True,text=True)
+    fresh=out_dir("layout-fresh");history=out_dir("layout-history")
+    a=generate(fresh,six);assert a.returncode==0,a.stderr
+    b=generate(history,four);assert b.returncode==0,b.stderr      # a different past ...
+    c=generate(history,six);assert c.returncode==0,c.stderr       # ... then the same inputs as `fresh`
+    assert fingerprint(a)[1] is False and fingerprint(c)[1] is True,a.stderr+c.stderr
+    assert fingerprint(a)[0]!=fingerprint(c)[0] and (fresh/"recomp_layout.csv").read_bytes()!=(history/"recomp_layout.csv").read_bytes(),\
+        "the fixture no longer shows a history-dependent layout"
+    d=generate(history,six,["--fresh-layout"]);assert d.returncode==0,d.stderr
+    assert fingerprint(d)==(fingerprint(a)[0],False),"--fresh-layout must give the layout of a fresh directory\n"+d.stderr
+    assert (history/"recomp_layout.csv").read_bytes()==(fresh/"recomp_layout.csv").read_bytes()
+    for name in ("recomp_000.cpp","recomp_001.cpp","recomp_table.cpp"):
+        assert (history/name).read_bytes()==(fresh/name).read_bytes(),name+" differs between a fresh directory and --fresh-layout"
+
+    # ---- RC-gen-12: malformed list lines and option values are refused, naming file and line ----
+    image=liveness_dol(work,"own12",liveness_words(),[0x80003130])
+    functions=table("lists",starts)
+    good_roots=text_file("good-roots.txt","0x80003140\n")
+    def refused(name,extra,needle):
+        out=out_dir(name)
+        result=run_generator(generator,image,functions,out,extra,ok=False)
+        assert needle in result.stderr,name+": "+result.stderr
+        assert not (out/"recomp_table.cpp").exists(),name+": output written before the refusal"
+    for index,line in enumerate(["0x80003140 cenzus 0x80003100","80003140","0x8000314G","0x80003140 census 80003100","garbage"]):
+        refused(f"roots-{index}",["--prune-roots",str(text_file(f"roots-{index}.txt","# c\n"+line+"\n"))],f"roots-{index}.txt:2: malformed line")
+    for index,line in enumerate(["80003110 B","B 0x80003110","0x800031100 B"]):
+        refused(f"owners-{index}",["--prune-roots",str(good_roots),"--native-owners",str(text_file(f"owners-{index}.txt",line+"\n"))],
+                f"owners-{index}.txt:1: malformed line")
+    wait_image=liveness_dol(work,"wait12",[0x80030000,0x28000000,0x4182FFF8,BLR],[])
+    wait_functions=table("wait12",[(0x80003100,16)])
+    def wait_refused(name,content,needle):
+        out=out_dir(name)
+        result=run_generator(generator,wait_image,wait_functions,out,["--wait-points",str(text_file(name+".txt",content))],ok=False)
+        assert needle in result.stderr,name+": "+result.stderr
+    wait_refused("wait-dup","0x80003108 0x80003100 poll\n0x80003108 0x80003100 poll\n","wait point 0x80003108 is listed twice")
+    wait_refused("wait-short","0x80003108 poll\n","wait-short.txt:1: malformed line")
+    wait_refused("wait-hex","0x80003108 80003100 poll\n","wait-hex.txt:1: malformed line")
+    for index,line in enumerate(["0x80003100 0x80004000","0x80003100 0x80004000 x","0x80003100 0x80004000 2 extra","0x80003100 0x80004000 0"]):
+        refused(f"tables-{index}",["--prune-roots",str(good_roots),"--jump-tables",str(text_file(f"tables-{index}.txt",line+"\n"))],
+                f"tables-{index}.txt:1: malformed line")
+    refused("only-bad",["--only",str(text_file("only.txt","0x80003100\nnot-an-address\n"))],"only.txt:2: malformed line")
+    # Blank lines, lines of spaces, CR line ends and comments stay legal.
+    run_generator(generator,image,functions,out_dir("lists-ok"),
+                  ["--prune-roots",str(text_file("ok-roots.txt","# c\n\n   \n0x80003140\r\n  # indented comment\n")),
+                   "--native-owners",str(text_file("ok-owners.txt","\t\n0x80003110 B with a name\r\n"))])
+    # An option whose value is missing, and numbers that are not numbers.
+    def bad_arguments(arguments,needle):
+        result=subprocess.run([str(generator.resolve()),"--dol",str(image),"--functions",str(functions),
+                               "--out",str(out_dir("args-"+str(abs(hash(tuple(arguments)))))),*arguments],capture_output=True,text=True)
+        assert result.returncode!=0 and needle in result.stderr,str(arguments)+": "+result.stderr
+    bad_arguments(["--prune-roots"],"--prune-roots needs a value")
+    bad_arguments(["--shards","0"],"--shards needs a number >= 1")
+    bad_arguments(["--shards","many"],"--shards needs a number >= 1")
+    bad_arguments(["--limit","-1"],"--limit needs a number >= 0")
+
 def precise_dol(root,name,text_words,data_words,data_base=0x80010000,entry=0x80003100):
     """A text section at 0x80003100 and a data section at data_base."""
     text=4*len(text_words);data=4*len(data_words)
@@ -884,6 +1048,7 @@ def main():
         platform_site_emission(args.generator,root)
         liveness_pruning(args.generator,root)
         native_owner_emission(args.generator,root)
+        recompiler_issue_gates(args.generator,root)
         for kind in ("scalar_square_root", "affine_matrix_copy", "affine_matrix_compose", "msl_sin", "msl_cosf",
                      "msl_atan2f", "msl_sincosf"):
             math_lowering_case(args.generator,root,kind)
@@ -893,7 +1058,7 @@ def main():
         precise_liveness(args.generator,root)
         hot_set_emission(args.generator,root)
         psq_site_emission(args.generator,root)
-        print("PASS: byte/timestamp stability, stable weighted insertion/removal, invalid-layout rejection, missing-output repair, unsupported gap-sweep roots dropped, local bctr lowered to gotos, interrupt recognition at mtmsr and cross-record back edges, wait points on exactly the listed back edges (stale/unknown refused), platform sites lowered on exactly the listed lhz/sth in every copy (stale/mismatched/non-lhz-sth/invalid lists refused before writing), unreachable rows pruned with call/data/roots references kept, native owners emitted as thunks with interior entry refused, jump-table words as dispatch edges (aliased/pointed tables rooted), census roots through their constructors, hi/lo pairs forming only what they compute and only through a register, hot-set accessor inlining in exactly the listed hot bodies (empty list byte-identical, stale/malformed lists refused before writing), psq sites behind an exact GQR guard on exactly the listed sites (non-psq / wrong-GQR / incomplete lists refused)")
+        print("PASS: byte/timestamp stability, stable weighted insertion/removal, invalid-layout rejection, missing-output repair, unsupported gap-sweep roots dropped, local bctr lowered to gotos, interrupt recognition at mtmsr and cross-record back edges, wait points on exactly the listed back edges (stale/unknown refused), platform sites lowered on exactly the listed lhz/sth in every copy (stale/mismatched/non-lhz-sth/invalid lists refused before writing), unreachable rows pruned with call/data/roots references kept, native owners emitted as thunks with interior entry refused, jump-table words as dispatch edges (aliased/pointed tables rooted), census roots through their constructors, hi/lo pairs forming only what they compute and only through a register, hot-set accessor inlining in exactly the listed hot bodies (empty list byte-identical, stale/malformed lists refused before writing), psq sites behind an exact GQR guard on exactly the listed sites (non-psq / wrong-GQR / incomplete lists refused), owner extents (overlapping row noted / refused under --strict-owner-extents), a listed wait point translated without its wait refused, unknown cold entry handed back at the entry, FPSCR policy guard after RN/enable writes, malformed list lines and option values refused, shard layout fingerprint and --fresh-layout")
 
 if __name__=="__main__":
     main()

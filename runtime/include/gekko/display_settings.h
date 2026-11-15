@@ -1,6 +1,6 @@
 #pragma once
 
-// The display settings while the game runs (the Options menu's Display and Graphics pages): one owner of the window
+// The display settings while the game runs (display.cfg, the command line and Alt+Enter): one owner of the window
 // mode and sizes, the game resolution, the render scale, the presentation cadence and the render-only extras,
 // readable and changeable from any thread, and saved to display.cfg (docs/DISPLAY_SETTINGS_AUDIT.md).
 //
@@ -8,13 +8,13 @@
 //   * preferences - display.cfg, the only persistent store. save() writes only CONFIRMED values, and only the keys
 //                   the player changed this session (a key changed and changed back by a rollback is not written);
 //   * session overrides - the command line (tests, benchmarks): in effect for this run, never saved unless the
-//                   player changes that setting in the menu (then the override for it ends);
+//                   player changes that setting (Alt+Enter, a window resize: then the override for it ends);
 //   * the achieved state - what the window owner actually reached (exclusive mode set or refused, the client size,
-//                   the monitor). The menu and the session report show it next to the settings.
+//                   the monitor). The session report shows it next to the settings.
 //
 // Changes are transactions: apply() makes a value current, either committed at once (safe changes) or provisional
 // (a window mode or screen resolution change, which may show nothing on this monitor): a provisional change is
-// committed by commit() - the player's confirmation, or the window owner's verified success for Alt+Enter - or put
+// committed by commit() - the window owner's verified success for Alt+Enter (FullscreenToggle) - or put
 // back by rollback(). While one is provisional, save() writes the last committed values only.
 //
 // Each group of settings is picked up by the thread that owns what it changes, at that thread's next pickup point
@@ -29,6 +29,7 @@
 // keys it does not manage, line endings); a managed key's line keeps its key spelling, spacing and trailing comment
 // and only its value is replaced; keys the file lacks are appended.
 
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <mutex>
@@ -37,12 +38,12 @@
 namespace gekko {
 
 struct DisplaySettings {
-    // Display mode (the menu: Windowed / Fullscreen). Fullscreen is borderless at the desktop's size; exclusive is a
+    // Display mode (windowed / fullscreen; Alt+Enter toggles it). Fullscreen is borderless at the desktop's size; exclusive is a
     // display.cfg / command-line key for tests only (the monitor's mode fullscreen_width x fullscreen_height, 0 x 0 =
-    // its desktop mode), never offered in the menu.
+    // its desktop mode), never chosen by Alt+Enter itself.
     bool fullscreen = false;
     bool exclusive = false;
-    // The window's client size: the Resolution row's choice or whatever the player dragged it to, remembered.
+    // The window's client size: whatever the player dragged it to, remembered (no list, no typed size).
     int window_width = 1280;
     int window_height = 720;
     int fullscreen_width = 0;
@@ -98,7 +99,7 @@ public:
     DisplaySettings current() const;
     DisplaySettings confirmed() const;
     bool provisional() const;
-    // Changes with every apply / commit / rollback: owners of a snapshot (the Options page) re-read when it moved.
+    // Changes with every apply / commit / rollback: owners of a snapshot re-read when it moved.
     std::uint64_t generation() const;
     // The ranges display.cfg and the command line accept (gekko/display_geometry.h): a window and an exclusive mode
     // of at least 320 x 240 (0 x 0 = the desktop's mode), a resolution scale of 25..200 %, an aspect of 0 (Auto) or
@@ -146,8 +147,34 @@ private:
 // command line set with it.
 unsigned display_settings_key(const char* name) noexcept;
 
-// The process's display settings: the launcher initializes it; the System's owners, the native menu owners and the
-// UI thread reach it here.
+// The process's display settings: the launcher initializes it; the System's owners and the UI thread reach it here.
 DisplaySettingsService& display_settings();
+
+// Alt+Enter: windowed <-> fullscreen (borderless or exclusive, as display.cfg sets it), nothing else changes.
+// Windowed and borderless are committed and saved at once. Exclusive may show nothing on this monitor, so it is
+// provisional until the window owner reports the mode set (tick: committed and saved) or refused (tick: rolled back,
+// the owner's reason kept in last_failure); a mode never reported within kVerifyLength is rolled back. A second toggle
+// is refused while one is being verified.
+class FullscreenToggle {
+public:
+    using Clock = std::chrono::steady_clock;
+    static constexpr std::chrono::seconds kVerifyLength{15};
+
+    bool toggle(DisplaySettingsService& service, std::string* error = nullptr, Clock::time_point now = Clock::now());
+    // The UI thread, every loop iteration.
+    void tick(DisplaySettingsService& service, Clock::time_point now = Clock::now());
+    bool verifying() const;
+    std::string last_failure() const;
+
+private:
+    mutable std::mutex mutex_;
+    bool verifying_ = false;
+    std::uint64_t generation_ = 0;  // the settings generation the toggle made
+    Clock::time_point deadline_{};
+    std::string last_failure_;
+};
+
+// The process's Alt+Enter (the UI loop).
+FullscreenToggle& fullscreen_toggle();
 
 }  // namespace gekko

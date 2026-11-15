@@ -1,6 +1,7 @@
 #include "gekko/chara_colli_intrinsic.h"
 
 #include "gekko/chara_colli_bone.h"
+#include "gekko/chara_colli_geometry.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -43,7 +44,6 @@ bool known_filter(u32 filter) noexcept {
            filter == kMaskNone100108 || filter == kNotTheseTwo || filter == kNotThatOwner;
 }
 
-constexpr u32 kSegmentConstant = 0xFFFF8418u;  // r2 - 0x7BE8: the 0x8003C688 projection bound
 
 u32 entry_of(CharaColliIntrinsic::Test test) noexcept {
     switch (test) {
@@ -62,76 +62,13 @@ bool is_sweep(CharaColliIntrinsic::Test test) noexcept {
     return test == CharaColliIntrinsic::Test::BodySweep || test == CharaColliIntrinsic::Test::GeneralSweep;
 }
 
-// lfs and stfs: the guest's conversions at every float load and store.
-GEKKO_ALWAYS_INLINE u64 lfs(u32 word) noexcept { return single_to_double_bits(word); }
-GEKKO_ALWAYS_INLINE u32 stfs(u64 bits) noexcept { return double_to_single_bits(bits); }
+using namespace chara_colli_geometry;
 
-// An RwV3d as three stored words (a helper's stfs results in the guest's dead frame).
-struct V3 {
-    u32 x, y, z;
-};
-GEKKO_ALWAYS_INLINE V3 read3(Cpu& c, u32 address) {
-    const u32 x = c.mem_read32(address);
-    const u32 y = c.mem_read32(address + 4u);
-    return V3{x, y, c.mem_read32(address + 8u)};
-}
-// 0x800091EC (lfs, lfs, stfs, lfs, stfs, stfs): a copy through the FPRs.
-GEKKO_ALWAYS_INLINE V3 copy(const V3& v) noexcept { return V3{stfs(lfs(v.x)), stfs(lfs(v.y)), stfs(lfs(v.z))}; }
-// 0x8040DDC4 RwV3dSub(out, a, b): fsubs x, y, z.
-GEKKO_ALWAYS_INLINE V3 sub(Cpu& c, const V3& a, const V3& b) {
-    const u64 x = ppc::fps_sub(c, lfs(a.x), lfs(b.x));
-    const u64 y = ppc::fps_sub(c, lfs(a.y), lfs(b.y));
-    const u64 z = ppc::fps_sub(c, lfs(a.z), lfs(b.z));
-    return V3{stfs(x), stfs(y), stfs(z)};
-}
-// 0x8040DE20 RwV3dAdd(out, a, b): fadds x, y, z.
-GEKKO_ALWAYS_INLINE V3 add(Cpu& c, const V3& a, const V3& b) {
-    const u64 x = ppc::fps_add(c, lfs(a.x), lfs(b.x));
-    const u64 y = ppc::fps_add(c, lfs(a.y), lfs(b.y));
-    const u64 z = ppc::fps_add(c, lfs(a.z), lfs(b.z));
-    return V3{stfs(x), stfs(y), stfs(z)};
-}
-// 0x8040DDF8 RwV3dScale(out, v, f1): fmuls x, y, z.
-GEKKO_ALWAYS_INLINE V3 scale(Cpu& c, const V3& v, u64 s) {
-    const u64 x = ppc::fps_mul(c, lfs(v.x), s);
-    const u64 y = ppc::fps_mul(c, lfs(v.y), s);
-    const u64 z = ppc::fps_mul(c, lfs(v.z), s);
-    return V3{stfs(x), stfs(y), stfs(z)};
-}
-// 0x8040DFE0 RwV3dDotProduct(a, b) -> f1: fmuls y, fmadds x, fmadds z.
-GEKKO_ALWAYS_INLINE u64 dot(Cpu& c, const V3& a, const V3& b) {
-    const u64 y = ppc::fps_mul(c, lfs(a.y), lfs(b.y));
-    const u64 xy = ppc::fps_madd(c, lfs(a.x), lfs(b.x), y);
-    return ppc::fps_madd(c, lfs(a.z), lfs(b.z), xy);
-}
-// 0x8040DF7C (|v|^2) -> f1: fmuls x, y, z; fadds x + y; fadds z + (x + y).
-GEKKO_ALWAYS_INLINE u64 length_squared(Cpu& c, const V3& v) {
-    const u64 x = ppc::fps_mul(c, lfs(v.x), lfs(v.x));
-    const u64 y = ppc::fps_mul(c, lfs(v.y), lfs(v.y));
-    const u64 z = ppc::fps_mul(c, lfs(v.z), lfs(v.z));
-    const u64 xy = ppc::fps_add(c, x, y);
-    return ppc::fps_add(c, z, xy);
-}
-
-// 0x8003C688 (centre, segment {a, b}, out = null) -> f1: the squared distance from the centre to the segment.
-u64 distance_squared(Cpu& c, const V3& centre, const V3& a, const V3& b) {
-    const V3 d = copy(sub(c, b, a));
-    const V3 w = copy(sub(c, centre, a));
-    const u64 along = dot(c, w, d);  // f31
-    ppc::fp_compare(c, 0u, along, lfs(c.mem_read32(c.gpr[2] + kSegmentConstant)), true);
-    if (!ppc::cr_bit(c, 1u))  // not past a: |w|^2
-        return length_squared(c, w);
-    const u64 span = dot(c, d, d);
-    ppc::fp_compare(c, 0u, along, span, true);
-    if (ppc::cr_bit(c, 1u) || ppc::cr_bit(c, 2u))  // past b: 0x8040E1D0 (centre, b)
-        return length_squared(c, sub(c, centre, b));
-    const u64 t = ppc::fps_div(c, along, span);
-    const V3 nearest = copy(add(c, a, scale(c, d, t)));
-    return length_squared(c, sub(c, centre, nearest));
-}
 
 // vf 0x88 (0x800C1A74 / 0x800C409C, the same code): the owner's position, rotation and word copied in when they
 // differ. The weak_ptr copies and the lock change no count when done (each increment has its decrement).
+// The compares are fcmpu cr0: each one overwrites cr0 and FPSCR[FPCC], so only the last one executed is left; the
+// writes are made once, when the function ends (fast::LazyCompare; a NaN word takes ppc::fp_compare in place).
 void update(Cpu& c, u32 self) {
     const u32 counts = c.mem_read32(self + 0x34u);
     if (counts == 0u || c.mem_read32(counts + 4u) == 0u)  // expired
@@ -139,9 +76,9 @@ void update(Cpu& c, u32 self) {
     const u32 owner = c.mem_read32(self + 0x30u);
     if (owner == 0u)
         return;
-    const auto differs = [&c](u32 a, u32 b) {  // fcmpu cr0, lfs a, lfs b; "ne"
-        ppc::fp_compare(c, 0u, lfs(c.mem_read32(a)), lfs(c.mem_read32(b)), false);
-        return !ppc::cr_bit(c, 2u);
+    fast::LazyCompare compare(c);
+    const auto differs = [&c, &compare](u32 a, u32 b) {  // fcmpu cr0, lfs a, lfs b; "ne"
+        return !compare.equal(c.mem_read32(a), c.mem_read32(b), false);
     };
     if (differs(owner, self + 0x40u) || differs(owner + 4u, self + 0x44u) || differs(owner + 8u, self + 0x48u)) {
         const u32 x = c.mem_read32(owner);  // 0x800091D0 (self + 0x40, owner)
@@ -153,8 +90,8 @@ void update(Cpu& c, u32 self) {
         c.mem_write8(self + 0x28u, 1u);
     }
     const u32 rx = c.mem_read32(owner + 0x0Cu);  // f2, kept for the store
-    ppc::fp_compare(c, 0u, lfs(rx), lfs(c.mem_read32(self + 0x4Cu)), false);
-    if (!ppc::cr_bit(c, 2u) || differs(owner + 0x10u, self + 0x50u) || differs(owner + 0x14u, self + 0x54u)) {
+    const bool same = compare.equal(rx, c.mem_read32(self + 0x4Cu), false);
+    if (!same || differs(owner + 0x10u, self + 0x50u) || differs(owner + 0x14u, self + 0x54u)) {
         c.mem_write32(self + 0x4Cu, stfs(lfs(rx)));
         c.mem_write32(self + 0x50u, stfs(lfs(c.mem_read32(owner + 0x10u))));
         c.mem_write32(self + 0x54u, stfs(lfs(c.mem_read32(owner + 0x14u))));

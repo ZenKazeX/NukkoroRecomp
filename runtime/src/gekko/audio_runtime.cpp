@@ -880,7 +880,7 @@ void AudioRuntime::Impl::emit_silence(u8* out, AudioFrameIndex64 frames) noexcep
 }
 
 namespace {
-// The player's master volume (Options > Audio, gekko/pc_settings.h): a linear gain on the endpoint stream, after
+// The player's master volume (options.cfg, gekko/pc_settings.h): a linear gain on the endpoint stream, after
 // the game's mix, so the game's PCM is never touched. 1 = unity: the multiply is skipped (bit-identical output).
 std::atomic<float> g_output_gain{1.0f};
 }  // namespace

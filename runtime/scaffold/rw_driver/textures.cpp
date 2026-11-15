@@ -9,6 +9,7 @@
 #include "gekko/cpu.h"
 #include "gekko/gc_addr.h"
 #include "gekko/texture_overrides.h"
+#include "gekko/texture_packs.h"
 #include "rw_driver.h"
 
 namespace gekko::scaffold {
@@ -27,10 +28,11 @@ void RwDriver::native_texture_loaded(Cpu& c, u32 texture, u32 bias_clamp, u32 ed
     if (raster == 0u)
         return;
     render::TextureHandle handle;
-    build_texture(c, raster, raster_ext(c, raster), &handle);
+    build_texture(c, raster, raster_ext(c, raster), &handle, true, texture);
 }
 
-bool RwDriver::build_texture(Cpu& c, u32 raster, u32 ext, render::TextureHandle* out, bool mips) {
+bool RwDriver::build_texture(Cpu& c, u32 raster, u32 ext, render::TextureHandle* out, bool mips, u32 rw_texture,
+                             bool allow_pack) {
     assets::TextureRecord record;
     record.width = static_cast<std::uint16_t>(c.mem_read32(raster + layout::kRasterWidth));
     record.height = static_cast<std::uint16_t>(c.mem_read32(raster + layout::kRasterHeight));
@@ -72,7 +74,28 @@ bool RwDriver::build_texture(Cpu& c, u32 raster, u32 ext, render::TextureHandle*
     // A texture registered to be drawn in place of this content (the sharp button sheets: full colour, larger than
     // the raster; sampling is normalised, so the game's quads map it the same way).
     std::shared_ptr<const texture_overrides::Override> replacement;
-    if (assets::is_indexed(record.encoding) && !texture_overrides::Registry::instance().empty()) {
+    // ---- texture packs (gekko/texture_packs.h): a user's Dolphin-named replacement, found by the Dolphin hash of
+    // the raster's base level and the palette range it uses. One relaxed load while no pack is configured. The game's
+    // raster is not touched: only what the renderer samples changes. Movie pictures are never looked up.
+    if (allow_pack && texture_packs::texture_packs_enabled()) {
+        const u8* palette_ptr = nullptr;
+        std::size_t palette_size = 0u;
+        if (assets::is_indexed(record.encoding)) {
+            const u32 palette = c.mem_read32(ext + layout::kRasterExtPalette);
+            palette_size = record.palette.size() * 2u;
+            palette_ptr = c.guest_memory().peek(GcAddr(palette), static_cast<u32>(palette_size));
+            if (palette_ptr == nullptr) palette_size = 0u;
+        }
+        // Dolphin's `_m`: the sampler the texture is drawn with filters between mip levels (RenderWare filter
+        // modes 3-6). Unknown without the RwTexture; the lookup accepts either spelling.
+        const bool mip_filter =
+            rw_texture != 0u && (c.mem_read32(rw_texture + layout::kTextureFilterAddressing) & 0xFFu) >= 3u;
+        replacement = texture_packs::find_replacement(static_cast<u32>(record.encoding), record.width, record.height,
+                                                      texels, level0, palette_ptr, palette_size, mip_filter);
+        if (replacement) ++stats_.textures_from_packs;
+    }
+    // ---- end texture packs
+    if (!replacement && assets::is_indexed(record.encoding) && !texture_overrides::Registry::instance().empty()) {
         std::vector<u8> palette_bytes(record.palette.size() * 2u);
         for (std::size_t i = 0; i < record.palette.size(); ++i) {
             palette_bytes[i * 2u] = static_cast<u8>(record.palette[i] >> 8);
@@ -80,6 +103,7 @@ bool RwDriver::build_texture(Cpu& c, u32 raster, u32 ext, render::TextureHandle*
         }
         replacement = texture_overrides::Registry::instance().find(
             texture_overrides::content_key(texels, level0, palette_bytes.data(), palette_bytes.size()));
+        if (replacement) ++stats_.textures_overridden;
     }
     if (replacement) {
         record.encoding = assets::TexelEncoding::RGBA8;
@@ -88,7 +112,6 @@ bool RwDriver::build_texture(Cpu& c, u32 raster, u32 ext, render::TextureHandle*
         record.depth = 32u;
         record.palette.clear();
         source.texels = replacement->gx_rgba8;
-        ++stats_.textures_overridden;
     } else {
         source.texels.assign(texels, texels + level0);
     }
@@ -152,20 +175,20 @@ render::TextureHandle RwDriver::texture_lookup(Cpu& c, u32 rw_texture, bool* has
     if (value != 0u) {
         if (texture_index_dirty_) {
             // At most one live entry per word (build_texture gives the old one back first).
-            texture_index_.clear();
+            texture_index_.reserve(textures_.size());
             for (const Owned& owned : textures_) {
                 if (owned.handle != 0u)
-                    texture_index_[owned.word] = owned.handle;
+                    texture_index_.set(owned.word, owned.handle);
             }
             texture_index_dirty_ = false;
         }
-        const auto found = texture_index_.find(word);
-        if (found != texture_index_.end() && found->second == value)
+        const u32* const found = texture_index_.find(word);
+        if (found != nullptr && *found == value)
             return render::TextureHandle{value};
     }
     // Unknown here (never built, or a word restored by a savestate from another session): build it now.
     render::TextureHandle handle;
-    if (build_texture(c, parent, ext, &handle))
+    if (build_texture(c, parent, ext, &handle, true, rw_texture))
         return handle;
     return {};
 }

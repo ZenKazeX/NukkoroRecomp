@@ -880,6 +880,11 @@ void FrameGraph::execute(ID3D12GraphicsCommandList* list, const BindlessHeap& he
             resource.pooled->initialized = true;
         }
     }
+    // PIX / RenderDoc pass events: two runtime calls per pass, read only by a capture tool. GEKKO_GPU_MARKERS=1 keeps them.
+    static const bool markers = [] {
+        const char* v = std::getenv("GEKKO_GPU_MARKERS");
+        return v != nullptr && v[0] == '1';
+    }();
     std::vector<D3D12_RESOURCE_BARRIER> barriers;
     std::size_t next = 0, next_activation = 0;
     auto flush = [&](std::uint32_t pass) {
@@ -934,7 +939,8 @@ void FrameGraph::execute(ID3D12GraphicsCommandList* list, const BindlessHeap& he
         Pass& pass = passes_[n];
         if (!pass.kept)
             continue;
-        list->BeginEvent(1, pass.name.c_str(), static_cast<UINT>(pass.name.size() + 1));
+        if (markers)
+            list->BeginEvent(1, pass.name.c_str(), static_cast<UINT>(pass.name.size() + 1));
         if (marks != nullptr)
             marks->pass_begin(list, pass.name);
         flush(static_cast<std::uint32_t>(n));
@@ -987,7 +993,8 @@ void FrameGraph::execute(ID3D12GraphicsCommandList* list, const BindlessHeap& he
             pass.execute(context);
         if (marks != nullptr)
             marks->pass_end(list);
-        list->EndEvent();
+        if (markers)
+            list->EndEvent();
     }
     flush(static_cast<std::uint32_t>(passes_.size()));
     // The memories' last users, now that this frame's uses are recorded in the GPU's order.

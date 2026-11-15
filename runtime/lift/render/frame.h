@@ -78,8 +78,9 @@ enum class Combine : std::uint8_t { OneStage, TwoStage };
 
 // A second draw of the same mesh (census 6.2): the environment reflection, or a second texture over the first.
 struct ExtraPass {
-    // BumpEnvironment (MatFX BUMPENVMAP) is not a second draw: it is combined in the base
-    // pass's own shader (mesh.hlsl PSBase, kBumpEnvironment); `texture` is then the environment map.
+    // BumpEnvironment (MatFX BUMPENVMAP) is not a second draw: the original combines it inside the base pass, in four
+    // combiner stages (mesh.hlsl PSBase, kBumpEnvironment; docs/effects/lighting_materials.md 2); `texture` is then
+    // the environment map.
     enum class Kind : std::uint8_t { None, Environment, Dual, BumpEnvironment } kind = Kind::None;
     TextureHandle texture;
     Sampler sampler;
@@ -91,8 +92,9 @@ struct ExtraPass {
     // dual: the second layer's own UV transform - MatFX DUALUVTRANSFORM's dual matrix, identity when it has none (or
     // for DUALTEXTURE); never the base layer's (docs/renderer-re-20261007/04_GC_DRIVER.md 3.18).
     float uv_transform[2][3] = {{1, 0, 0}, {0, 1, 0}};
-    // bump-environment: the bump texgen's scale, -(coefficient x invBumpWidth) of the bump slot (
-    // the height lookup's offset is this x the view normal), and the environment slot's useFrameBufferAlpha.
+    // bump-environment: the bump texture-coordinate scale, -(coefficient x invBumpWidth) of the bump slot (the height
+    // lookup's offset is this x the view normal; docs/effects/lighting_materials.md "Address notes for the lifted
+    // sources"), and the environment slot's useFrameBufferAlpha.
     float bump_shift = 0.0f;
     bool framebuffer_alpha = false;
 };

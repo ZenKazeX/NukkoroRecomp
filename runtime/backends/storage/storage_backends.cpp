@@ -46,8 +46,9 @@ bool name_ok(const std::string& name) {
 
 class HostDirectoryStorage final : public runtime::v1::Storage {
 public:
-    explicit HostDirectoryStorage(std::filesystem::path root, std::vector<std::filesystem::path> extra = {})
-        : root_(std::move(root)), extra_(std::move(extra)) {}
+    explicit HostDirectoryStorage(std::filesystem::path root, std::vector<std::filesystem::path> extra = {},
+                                  std::vector<std::pair<std::string, std::filesystem::path>> overlays = {})
+        : root_(std::move(root)), extra_(std::move(extra)), overlays_(std::move(overlays)) {}
 
     BackendInfo info() const noexcept override {
         return {"host-directory", "the extracted disc tree on the host file system (mapped files)",
@@ -70,6 +71,8 @@ public:
             tree_.directory = true;
             if (const Status s = scan(root_, tree_, message, 0u); s != Status::Ok) return s;
             if (const Status s = add_extra(message); s != Status::Ok) return s;
+            if (!overlays_.empty())
+                if (const Status s = add_overlays(message); s != Status::Ok) return s;
             scanned_ = true;
             // the host's file opens move off the game thread's reads, as the mount did before the contract
             // (FileProvider::preopen; GEKKO_ASSET_PREOPEN=0 is its control) - host timing only
@@ -173,8 +176,64 @@ private:
         return Status::Ok;
     }
 
+    // The mods' files (StorageOptions::overlays): each replaces the node of its path (any case) with a new key for
+    // the host file, or adds the node and its missing directories. Keys stay dense: a replaced file's old key keeps
+    // its slot in the provider and is never handed out again.
+    Status add_overlays(std::string& message) {
+        const auto folded = [](std::string n) {
+            for (char& c : n) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            return n;
+        };
+        for (const auto& [game_path, host] : overlays_) {
+            std::vector<std::string> parts;
+            for (std::size_t start = 0; start <= game_path.size();) {
+                const std::size_t slash = game_path.find('/', start);
+                parts.push_back(game_path.substr(start, slash == std::string::npos ? std::string::npos : slash - start));
+                if (slash == std::string::npos) break;
+                start = slash + 1;
+            }
+            for (const std::string& p : parts)
+                if (!name_ok(p)) {
+                    message = "a mod file's disc path is outside the contract's name rule: " + game_path;
+                    return Status::InvalidArgument;
+                }
+            std::error_code ec;
+            const std::uint64_t size = std::filesystem::file_size(host, ec);
+            if (ec) {
+                message = "cannot read the size of the mod file " + utf8(host);
+                return Status::IoError;
+            }
+            StorageNode* node = &tree_;
+            for (std::size_t i = 0; i < parts.size(); ++i) {
+                const bool last = i + 1 == parts.size();
+                auto it = std::find_if(node->children.begin(), node->children.end(),
+                                       [&](const StorageNode& c) { return folded(c.name) == folded(parts[i]); });
+                if (it == node->children.end()) {
+                    StorageNode made;
+                    made.name = parts[i];
+                    made.directory = !last;
+                    node->children.push_back(std::move(made));
+                    it = node->children.end() - 1;
+                } else if (it->directory == last) {
+                    message = "a mod file and the disc disagree on whether " + game_path + " is a directory";
+                    return Status::InvalidArgument;
+                }
+                node = &*it;
+            }
+            node->size = size;
+            node->key = files_.add(host);
+            if (node->key != sizes_.size()) {
+                message = "the file provider's keys are not dense";
+                return Status::IoError;
+            }
+            sizes_.push_back(size);
+        }
+        return Status::Ok;
+    }
+
     std::filesystem::path root_;
     std::vector<std::filesystem::path> extra_;
+    std::vector<std::pair<std::string, std::filesystem::path>> overlays_;
     gekko::assets::FileProvider files_;
     std::vector<std::uint64_t> sizes_;  // index = key
     std::mutex enumerate_lock_;
@@ -321,7 +380,7 @@ std::unique_ptr<runtime::v1::Storage> create_storage(std::string_view name, cons
     error.clear();
     std::unique_ptr<runtime::v1::Storage> made;
     if (name == "host-directory") {
-        auto host = std::make_unique<HostDirectoryStorage>(options.files_root, options.extra_files);
+        auto host = std::make_unique<HostDirectoryStorage>(options.files_root, options.extra_files, options.overlays);
         made = std::move(host);
     } else if (name == "gamecube-disc") {
         auto disc = std::make_unique<GameCubeDiscStorage>(options.disc_image);

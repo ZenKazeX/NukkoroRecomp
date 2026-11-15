@@ -1,5 +1,11 @@
 # Options menu overhaul - the user's directive (2026-11-05, verbatim below the notes)
 
+> **Retired 2026-11-14.** The user switched back to the original retail Options menu ("switch back to the original
+> retail options menu") and dropped Hungarian. The PC menu described here, its Display tile, overlay, settings registry,
+> 15 s display confirmation and the Hungarian text are removed from the source (branch `retail/options`). The game's own
+> Options screen runs as on the disc (docs/OPTIONS_MENU_ORIGINAL_RE.md); every PC setting is a key of the settings files
+> (docs/PC_SETTINGS_FILES.md). Kept for the record of the user's directive and decisions.
+
 ## The user's notes that came with it (2026-11-05)
 
 - **Gameplay tile icon:** use the game's own Shadow life icon (the HUD lives counter: Shadow's head in a rectangle).

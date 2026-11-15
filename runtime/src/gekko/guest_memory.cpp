@@ -151,13 +151,13 @@ GuestMemory::GuestMemory()
     if (api.virtual_alloc2 == nullptr || api.map_view3 == nullptr || api.unmap_view2 == nullptr) {
         fm_fail("the placeholder memory API (VirtualAlloc2 / MapViewOfFile3) is not available");
     }
-    fm_window_ = static_cast<u8*>(api.virtual_alloc2(GetCurrentProcess(), nullptr, kFmWindowBytes,
+    fm_window_ = static_cast<u8*>(api.virtual_alloc2(GetCurrentProcess(), nullptr, kFmWindowBytes + kFmGuardBytes,
                                                      MEM_RESERVE | MEM_RESERVE_PLACEHOLDER, PAGE_NOACCESS,
                                                      nullptr, 0));
-    fm_null_window_ = static_cast<u8*>(VirtualAlloc(nullptr, kFmWindowBytes, MEM_RESERVE, PAGE_NOACCESS));
+    fm_null_window_ = static_cast<u8*>(VirtualAlloc(nullptr, kFmWindowBytes + kFmGuardBytes, MEM_RESERVE, PAGE_NOACCESS));
 #else
-    fm_window_ = reserve_host(kFmWindowBytes);
-    fm_null_window_ = reserve_host(kFmWindowBytes);
+    fm_window_ = reserve_host(kFmWindowBytes + kFmGuardBytes);
+    fm_null_window_ = reserve_host(kFmWindowBytes + kFmGuardBytes);
 #endif
     if (fm_window_ == nullptr || fm_null_window_ == nullptr) fm_fail("cannot reserve the 4 GiB windows");
     // The fixed regions every machine has: the program image at its link
@@ -188,12 +188,12 @@ GuestMemory::~GuestMemory() {
 #endif
     }
 #if defined(_WIN32)
-    VirtualFree(fm_window_, kFmWindowBytes, MEM_RELEASE | MEM_COALESCE_PLACEHOLDERS);
+    VirtualFree(fm_window_, kFmWindowBytes + kFmGuardBytes, MEM_RELEASE | MEM_COALESCE_PLACEHOLDERS);
     VirtualFree(fm_window_, 0, MEM_RELEASE);
     VirtualFree(fm_null_window_, 0, MEM_RELEASE);
 #else
-    munmap(fm_window_, kFmWindowBytes);
-    munmap(fm_null_window_, kFmWindowBytes);
+    munmap(fm_window_, kFmWindowBytes + kFmGuardBytes);
+    munmap(fm_null_window_, kFmWindowBytes + kFmGuardBytes);
 #endif
 }
 

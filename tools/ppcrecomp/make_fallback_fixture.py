@@ -189,6 +189,7 @@ def main():
     #                  mtmsr r4; addi r5,r5,1; blr
     #   CallReturn   - addi r3,r3,1; bl callee; addi r4,r4,1; addi r5,r5,1; blr
     #                  callee (own row): addi r6,r6,1; blr
+    #   CrossBctr    - like CrossLoop but the back edge is `bctr` to the head (RC-gen-6)
     #   CrossLoop    - row 1: li r3,0; head: addi r3,r3,1 (falls into row 2)
     #                  row 2: cmpw r3,r5; blt head; blr - the loop's only back
     #                  edge crosses the record boundary (branch-sys-2).
@@ -197,6 +198,11 @@ def main():
         ("MtmsrEnable", 0x80007440, (0x7C6000A6, 0x60648000, 0x7C800124, 0x38A50001, blr), []),
         ("CallReturn", 0x80007480, (0x38630001, 0x4800001D, 0x38840001, 0x38A50001, blr), []),
         ("CrossLoop", 0x800074C0, (0x38600000, 0x38630001, 0x7C032800, 0x4180FFF8, blr), [2]),
+        # RC-gen-6: CrossBctr - row 1: li r3,0; mtctr r7 (r7 = head); head: addi r3,r3,1
+        #                       rows: A = li, mtctr; H = head: addi, cmpw; B = bge out; bctr (back to H, a LOWER address in another
+        #                       row); out: blr. The loop's only back edge is a computed cross-row transfer.
+        ("CrossBctr", 0x80007500, (0x38600000, 0x7CE903A6, 0x38630001, 0x7C032800, 0x40800008,
+                                   0x4E800420, blr), [2, 4]),
     ]
     for name, address, words, splits in irq_programs:
         struct.pack_into(f">{len(words)}I", image, 0x100 + address - base, *words)

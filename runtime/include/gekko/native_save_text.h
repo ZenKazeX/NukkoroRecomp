@@ -30,10 +30,6 @@
 
 namespace gekko::save_text {
 
-// The table's path in the asset tree, and its glyph list.
-inline constexpr std::string_view kEnglishTable = "FONTS/SAVE/Save_EN.fnt";
-inline constexpr std::string_view kEnglishGlyphs = "FONTS/SAVE/Save_EN00.met";
-
 struct Message {
     u32 id;
     const char* text;  // UTF-8; '\n' breaks a line, '&' is the atlas's trademark glyph
@@ -42,34 +38,21 @@ struct Message {
 // Option A's English messages, by id.
 const std::vector<Message>& pc_english_messages();
 
-// Option A in a language (Save_<suffix>.fnt: "EN", "FR", "GE", "IT", "JP", "SP"; tools/options_menu_sim/save_text,
+// Option A in a language (Save_<suffix>.fnt: "EN", "FR", "GE", "IT", "JP", "SP"; tools/save_text,
 // 2026-11-05): the same 29 GameCube-set ids, PC words. Empty for a language without them.
 const std::vector<Message>& pc_messages(std::string_view suffix);
 
 // The table with every message of `messages` replaced; every other entry,
 // every entry's other words and every other text are kept. False (with the
-// reason) when the table cannot be read, an id is outside it, or a text uses
-// a glyph `glyph_list` lacks.
+// reason) when the table cannot be read, does not carry a message, or a text uses
+// a glyph `glyph_list` lacks. Ids are positions in the PAL table, resolved through
+// the key they carry there, so a table with one message more or fewer before them
+// (the NTSC-U set, a mod's table) gets the same messages (docs/mods/map/REGION_DIFF.md).
 bool rewrite_table(const std::vector<u8>& table, const std::vector<u8>& glyph_list,
                    const std::vector<Message>& messages, std::vector<u8>& out, std::string& error);
 // The same over several glyph lists (the Japanese atlas has Save_JP00..02.met).
 bool rewrite_table(const std::vector<u8>& table, const std::vector<std::vector<u8>>& glyph_lists,
                    const std::vector<Message>& messages, std::vector<u8>& out, std::string& error);
-
-// The table with the texts of the messages `texts` names (by index) replaced, UTF-16 as given; every other entry,
-// word and text is kept. False (with the reason) when the table cannot be read or an index is outside it. Glyphs are
-// the caller's to check (gekko/native_options_display.h checks every glyph list of its language).
-bool replace_texts(const std::vector<u8>& table, const std::vector<std::pair<u32, std::u16string>>& texts,
-                   std::vector<u8>& out, std::string& error);
-
-// The table with new messages inserted in key order (entry word 1 = id * 1000 + 100, the front-end tables' lookup key),
-// each entry's other words copied from message `template_id`'s. False when an id exists already, the template is
-// missing or the table cannot be read. Glyphs are the caller's to check.
-bool insert_texts(const std::vector<u8>& table, const std::vector<std::pair<u32, std::u16string>>& texts,
-                  u32 template_id, std::vector<u8>& out, std::string& error);
-
-// A front-end table's message by id (not index).
-bool text_by_id(const std::vector<u8>& table, u32 id, std::u16string& text);
 
 // Every message's text of a table, in index order.
 bool texts_of(const std::vector<u8>& table, std::vector<std::u16string>& out, std::string& error);
@@ -85,8 +68,6 @@ struct Rewording {
     std::u16string original;
     std::u16string replacement;
 };
-inline constexpr std::string_view kEnglishFrontEndTable = "FONTS/ADVERTISE/Advertise_EN.fnt";
-inline constexpr std::string_view kEnglishFrontEndGlyphs = "FONTS/ADVERTISE/Advertise_EN00.met";
 
 // The rewordings of `messages`, read out of the original save table.
 bool rewordings_of(const std::vector<u8>& save_table, const std::vector<Message>& messages,

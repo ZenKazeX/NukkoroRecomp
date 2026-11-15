@@ -2,8 +2,7 @@
 # docs/NATIVE_SCALAR_MATH.md. The sqrt wrapper's sole call to the software
 # bit-by-bit implementation now passes a double to the native value API.
 site 0x803B2FA4 0x4BFFFD89 scalar_square_root
-# The inverse's singular branch retains the native 12-float copy.
-site 0x8040D004 0x4BFFFD01 affine_matrix_copy
+# (The out-of-place inverse 0x8040CF48 is a native owner now; its singular-branch copy site 0x8040D004 is gone with its body.)
 
 # Affine composition: all original direct callers; contract and exception-index
 # consumer pinned by verify_native_math.py. See docs/NATIVE_MATRIX_MATH.md.
@@ -73,7 +72,6 @@ site 0x80419588 0x4bff358d affine_matrix_compose
 site 0x804195e8 0x4bff352d affine_matrix_compose
 site 0x8041aa90 0x4bff2085 affine_matrix_compose
 site 0x8041bac0 0x4bff1055 affine_matrix_compose
-site 0x8041f15c 0x4bfed9b9 affine_matrix_compose
 site 0x8041ff04 0x4bfecc11 affine_matrix_compose
 # Retire only executable reachability of the original exception range key.
 # The index bytes and lookup remain intact; a native call creates no old frame.
@@ -644,10 +642,6 @@ site 0x8041102C 0x4BFFC16D affine_matrix_copy
 site 0x804110D0 0x4BFFC0C9 affine_matrix_copy
 site 0x8041127C 0x4BFFBF1D affine_matrix_copy
 site 0x80411370 0x4BFFBE29 affine_matrix_copy
-site 0x804121E8 0x4BFFAFB1 affine_matrix_copy
-site 0x80412208 0x4BFFAF91 affine_matrix_copy
-site 0x80412228 0x4BFFAF71 affine_matrix_copy
-site 0x80412360 0x4BFFAE39 affine_matrix_copy
 site 0x804123A4 0x4BFFADF5 affine_matrix_copy
 site 0x804124B0 0x4BFFACE9 affine_matrix_copy
 site 0x80412508 0x4BFFAC91 affine_matrix_copy
@@ -687,7 +681,6 @@ site 0x804195FC 0x4BFF3B9D affine_matrix_copy
 site 0x80419608 0x4BFF3B91 affine_matrix_copy
 site 0x80419650 0x4BFF3B49 affine_matrix_copy
 site 0x80419678 0x4BFF3B21 affine_matrix_copy
-site 0x80419830 0x4BFF3969 affine_matrix_copy
 site 0x8041A040 0x4BFF3159 affine_matrix_copy
 site 0x8041A0B8 0x4BFF30E1 affine_matrix_copy
 site 0x8041A1D4 0x4BFF2FC5 affine_matrix_copy
@@ -716,9 +709,6 @@ site 0x8041CDCC 0x4BFF03CD affine_matrix_copy
 site 0x8041CDF8 0x4BFF03A1 affine_matrix_copy
 site 0x8041CE10 0x4BFF0389 affine_matrix_copy
 site 0x8041CE2C 0x4BFF036D affine_matrix_copy
-site 0x8041EF44 0x4BFEE255 affine_matrix_copy
-site 0x8041F0C4 0x4BFEE0D5 affine_matrix_copy
-site 0x8041F11C 0x4BFEE07D affine_matrix_copy
 site 0x8041F990 0x4BFED809 affine_matrix_copy
 site 0x8041F9C0 0x4BFED7D9 affine_matrix_copy
 site 0x8041FD58 0x4BFED441 affine_matrix_copy
@@ -999,10 +989,6 @@ site 0x804108DC 0x4BC05985 msl_atan2f
 site 0x804109C8 0x4BDA1789 msl_acosf
 site 0x80410E28 0x4BBFF1C1 msl_sinf
 site 0x80410E34 0x4BBFE57D msl_cosf
-site 0x80421848 0x4BD90909 msl_acosf
-site 0x80421850 0x4BBEE799 msl_sinf
-site 0x80421864 0x4BBEE785 msl_sinf
-site 0x80421870 0x4BBEE779 msl_sinf
 site 0x8042866C 0x4BBE797D msl_sinf
 site 0x80428680 0x4BBE6D31 msl_cosf
 site 0x804286D0 0x4BBE7919 msl_sinf

@@ -12,6 +12,7 @@ Evidence, strongest first:
             contiguous) are of the same subsystem, with no other subsystem between (at most UNIT_SPAN apart)
   callers - no class; every caller is of one subsystem (to a fixed point)
   library - a library layer (spine): RenderWare, CRI, SDK, MSL, runtime, Boost; split by name prefix
+  range   - a proven address range of a library inside game code (RANGE_RULES; tools/re/range_8040.py --check)
   unknown - none of the above
 """
 from __future__ import annotations
@@ -80,6 +81,16 @@ GAME_LAYERS = ("game", "game-unit", "unresolved")
 UNIT_SPAN = 0x2000   # bytes between the two classed (or named) neighbours: 8 KB
 
 
+# Proven library ranges inside game code (docs/re/range_8040.md, tools/re/range_8040.py --check: 22 claims PASS).
+RANGE_RULES = [
+    (0x8040BC18, 0x8040BC90, "game framework (tasks, commands, character info, input)"),    # Task profiling scope
+    (0x8040BC90, 0x8040C084, "game heap (Sonicteam::System::Heap)"),                         # RTTI class + its ctor
+    (0x8040C084, 0x8040E238, "math library (matrix, vector, quaternion, generator)"),        # matrix / vector kernels, matrix stack
+    (0x8040E238, 0x8040E2A4, "game framework (tasks, commands, character info, input)"),    # DefaultDebugListener virtuals
+    (0x8040E2A4, 0x8040E440, "colour utilities (ARGB8 helpers, named colours)"),
+    (0x8040E440, 0x8040F50C, "pad / peripheral devices (managers, Pad2 implementors)"),
+]
+
 def load_functions(root: pathlib.Path) -> dict[int, dict]:
     rows = csv.DictReader(open(root / "skeleton/functions.csv", encoding="utf-8"))
     return {int(r["address"], 16): r for r in rows}
@@ -147,6 +158,15 @@ def classify(fn: dict[int, dict], bases: dict[str, list[str]], owners: dict[int,
         i = bisect.bisect_left(classed, a)
         if 0 < i < len(classed) and sub[classed[i - 1]] == sub[classed[i]] and classed[i] - classed[i - 1] <= UNIT_SPAN:
             sub[a], how[a] = sub[classed[i]], "unit"
+
+    # range: 0x8040BC18-0x8040F50C holds several libraries that the class / unit passes mislabel as "Heap" or as shared
+    # game code (docs/re/range_8040.md; tools/re/range_8040.py --check proves every boundary against the DOL). Applied to
+    # every function whatever the earlier passes said, before the callers pass, so code only these libraries call follows them.
+    for a in game_addrs:
+        for lo, hi, s in RANGE_RULES:
+            if lo <= a < hi:
+                sub[a], how[a] = s, "range"
+                break
 
     n2a = {r["name"]: a for a, r in fn.items()}
     callers = collections.defaultdict(set)

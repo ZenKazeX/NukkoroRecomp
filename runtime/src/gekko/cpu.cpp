@@ -502,7 +502,7 @@ void Cpu::reset() {
     interpreted_instructions_ = 0;
     interpreted_ns_ = 0;
     verify_ = VerifyReport{};
-    for (HleEntry& entry : hle_) entry.hits = 0;
+    for (auto& entry : hle_) entry->hits = 0;
     hle_slow_calls_ = 0;
 
     // Gekko processor version: 0x00083214 on retail GameCube hardware.
@@ -566,7 +566,7 @@ void Cpu::rebuild_hle_slots() noexcept {
     hle_index_.clear();
     hle_index_.reserve(hle_.size());
     for (std::size_t i = 0; i < hle_.size(); ++i) {
-        hle_index_[hle_[i].address] = i;
+        hle_index_[hle_[i]->address] = i;
     }
     // The old 8-address hot list was permanently incomplete once System
     // installed its 11 unconditional hooks, so every translated call paid an
@@ -584,18 +584,19 @@ void Cpu::rebuild_hle_slots() noexcept {
     std::fill(std::begin(hle_slots_), std::end(hle_slots_), all ? kHleSlotAll : kHleSlotEmpty);
     if (all) return;
     for (std::size_t i = 0; i < hle_.size(); ++i) {
-        const HleEntry& entry = hle_[i];
-        const u32 index = (entry.address >> 2) & kHleSlotMask;
+        const HleEntry& entry = *hle_[i];
+        const u32 index = hle_slot_of(entry.address);
         u32& slot = hle_slots_[index];
         const bool reserved_value = entry.address == kHleSlotEmpty || entry.address == kHleSlotAll;
         slot = (slot == kHleSlotEmpty && !reserved_value) ? entry.address : kHleSlotAll;
         hle_slot_entry_[index] = static_cast<u32>(i);  // read only while the slot names this address
+        hle_slot_ptr_[index] = hle_[i].get();          // likewise: the hot paths take the entry from here
     }
     // Each shared slot's hooks, listed together: one pass over the hooks, then grouped by slot (install_hle rebuilds
     // per hook, so this stays linear in the hook count).
     std::vector<std::pair<u32, u32>> shared;  // (slot, hle_ index)
     for (std::size_t i = 0; i < hle_.size(); ++i) {
-        const u32 index = (hle_[i].address >> 2) & kHleSlotMask;
+        const u32 index = hle_slot_of(hle_[i]->address);
         if (hle_slots_[index] == kHleSlotAll) shared.emplace_back(index, static_cast<u32>(i));
     }
     std::sort(shared.begin(), shared.end());
@@ -606,29 +607,77 @@ void Cpu::rebuild_hle_slots() noexcept {
     }
 }
 
-void Cpu::install_hle(u32 address, HleHandler handler, std::string name) {
+void Cpu::install_hle_callable(u32 address, HleCallable handler, std::string name) {
+    if (is_inlined_leaf(address)) {
+        // cs2/cpu: every direct call of this function runs its body spliced into the caller, so the hook would
+        // be bypassed. Refuse loudly: the generator excludes every address the runtime sources name.
+        char detail[224];
+        std::snprintf(detail, sizeof(detail),
+                      "hook '%s' installed at 0x%08X, a function the generator inlined into its callers "
+                      "(ppcrecomp --inline-leaves); regenerate with the address in extract/liveness-roots.txt",
+                      name.c_str(), address);
+        std::fprintf(stderr, "ERROR: %s\n", detail);
+        request_stop(StopReason::ExecutionFault, detail);
+        return;
+    }
+    // Safe while a handler runs (RC-dispatch-1; cpu.h, hle_): entries never move and a replaced one is retired, so the
+    // handler being executed - the replaced one included - keeps its storage, and so does the entry pointer the
+    // dispatch path that called it still holds. Only the pointer vector and the slot tables change here.
     for (auto& entry : hle_) {
-        if (entry.address == address) {
-            entry.handler = std::move(handler);
-            entry.name = std::move(name);
+        if (entry->address == address) {
+            auto replacement = std::make_unique<HleEntry>(HleEntry{.address = address, .handler = std::move(handler), .name = std::move(name)});
+            replacement->hits = entry->hits;  // the address's count, as when the handler was assigned in place
+            hle_retired_.push_back(std::move(entry));
+            entry = std::move(replacement);
             rebuild_hle_slots();
             return;
         }
     }
-    hle_.push_back(HleEntry{address, std::move(handler), std::move(name)});
+    hle_.push_back(std::make_unique<HleEntry>(HleEntry{.address = address, .handler = std::move(handler), .name = std::move(name)}));
     std::sort(hle_.begin(), hle_.end(),
-              [](const HleEntry& a, const HleEntry& b) { return a.address < b.address; });
+              [](const std::unique_ptr<HleEntry>& a, const std::unique_ptr<HleEntry>& b) { return a->address < b->address; });
     rebuild_hle_slots();
+}
+
+u32 Cpu::restore_host_fp_control() noexcept {
+#if defined(_M_X64) || defined(__x86_64__) || defined(_M_IX86) || defined(__i386__)
+    const u32 found = _mm_getcsr();
+    if ((found & 0xFFC0u) != kHostFpControl) _mm_setcsr((found & 0x003Fu) | kHostFpControl);
+    return found & 0xFFC0u;
+#else
+    return kHostFpControl;
+#endif
+}
+
+void Cpu::note_host_fp_control(const char* where) noexcept {
+    const u32 found = restore_host_fp_control();
+    if (found == kHostFpControl) return;
+    ++host_fp_restores_;
+    if (found == host_fp_reported_) return;
+    host_fp_reported_ = found;
+    std::fprintf(stderr,
+                 "[cpu] host SSE control word 0x%04X %s (rounding mode %u, flush-to-zero %u, denormals-are-zero %u, "
+                 "exception masks 0x%02X): guest arithmetic needs 0x%04X; restored (reported once per value)\n",
+                 found, where, (found >> 13) & 3u, (found >> 15) & 1u, (found >> 6) & 1u, (found >> 7) & 0x3Fu, kHostFpControl);
+}
+
+void Cpu::fpscr_policy_stop() {
+    char detail[224];
+    std::snprintf(detail, sizeof(detail),
+                  "FPSCR written as 0x%08X: rounding mode %u and enable bits 0x%02X are not modelled (arithmetic here rounds "
+                  "to nearest and raises no FP exception); refusing to run on with different arithmetic",
+                  fpscr, fpscr & 3u, fpscr & 0xF8u);
+    request_stop(StopReason::ExecutionFault, detail);
 }
 
 const Cpu::HleEntry* Cpu::find_hle(u32 address) const {
     // A slot that names exactly this address holds its entry index (rebuild_hle_slots); any other slot value - empty,
     // another address, kHleSlotAll - leaves the answer to the exact map.
-    const u32 slot = (address >> 2) & kHleSlotMask;
+    const u32 slot = hle_slot_of(address);
     const u32 named = hle_slots_[slot];
     // The sentinels (1, 3) are not word-aligned and never name an address: a pc equal to one goes to the map.
     if (named == address && named > kHleSlotAll) {
-        return &hle_[hle_slot_entry_[slot]];
+        return hle_slot_ptr_[slot];
     }
     // Any slot but kHleSlotAll is exact (rebuild_hle_slots): empty, or naming the one OTHER hooked address of this
     // slot, proves this address is not hooked. The dispatcher asks for every pc it enters, so the common unhooked
@@ -641,14 +690,14 @@ const Cpu::HleEntry* Cpu::find_hle(u32 address) const {
     if (!hle_slots_all_) {
         const u32 packed = hle_slot_entry_[slot];
         for (u32 k = packed >> 8, end = (packed >> 8) + (packed & 0xFFu); k < end; ++k)
-            if (hle_[hle_shared_[k]].address == address) return &hle_[hle_shared_[k]];
+            if (hle_[hle_shared_[k]]->address == address) return hle_[hle_shared_[k]].get();
         return nullptr;
     }
     const auto it = hle_index_.find(address);
     if (it == hle_index_.end()) {
         return nullptr;
     }
-    return &hle_[it->second];
+    return hle_[it->second].get();
 }
 
 bool Cpu::serve_owner(u32 address) {
@@ -720,7 +769,14 @@ bool Cpu::try_hle_slow(u32 address) {
     }
 #endif
     if (!hle_.empty()) {
-        const HleEntry* entry = find_hle(address);
+        // A slot that names exactly this address holds its entry (find_hle's first answer, inline here: the call
+        // reaches this point because its slot names the address or is shared, and the named case is the common one).
+        const u32 slot = hle_slot_of(address);
+        // `entry` stays valid across the handler whatever it installs: entries are heap objects that install_hle
+        // never moves or frees (RC-dispatch-1).
+        const HleEntry* entry = (hle_slots_[slot] == address && address > kHleSlotAll)
+                                    ? hle_slot_ptr_[slot]
+                                    : find_hle(address);
 #if defined(SHADOW_CPU_REFERENCE_BUILD)
         // Fast verification serves unsampled owners here, inline: the guest calls the handler makes are part of its
         // effect and must not be sampled and cut away from it (the dispatcher's hook path has the same guard).
@@ -781,13 +837,27 @@ bool Cpu::run_lift_site_at_pc() {
     return true;
 }
 
+// The stop for an owner that is missing or declined. Out of line and cold: it holds the message buffer, and a local
+// array in serve_native_owner itself made every call (the owner's hot path, ~1 % of the game thread) set up a stack
+// frame and a /GS cookie check for a path that never runs in a working image.
+namespace {
+GEKKO_NOINLINE void native_owner_missing(Cpu& cpu, u32 address) {
+    char detail[192];
+    std::snprintf(detail, sizeof(detail),
+                  "native owner of 0x%08X is missing or declined; the original body is not in this image",
+                  address);
+    cpu.request_stop(StopReason::ExecutionFault, detail);
+    cpu.leave_to_dispatcher(address, FallbackReason::NotRecompiled, address);
+}
+}  // namespace
+
 void Cpu::serve_native_owner(u32 address) {
     // The owner's slot names exactly this address (rebuild_hle_slots; verification and a latched fault fill every slot
     // with kHleSlotAll, so neither reaches here): call the handler straight from the flat slot table - no find_hle,
     // no second filter, no try_hle_slow frame. The accounting is try_hle_slow's, in the same order.
-    const u32 slot = (address >> 2) & kHleSlotMask;
+    const u32 slot = hle_slot_of(address);
     if (hle_slots_[slot] == address && address > kHleSlotAll && !hle_slots_all_) {
-        HleEntry& entry = hle_[hle_slot_entry_[slot]];
+        HleEntry& entry = *hle_slot_ptr_[slot];  // a heap object: valid across the handler (RC-dispatch-1)
         ++hle_slow_calls_;
 #if defined(SHADOW_CPU_REFERENCE_BUILD)
         ++handler_depth_;
@@ -804,12 +874,7 @@ void Cpu::serve_native_owner(u32 address) {
     } else if (try_hle(address)) {
         return;
     }
-    char detail[192];
-    std::snprintf(detail, sizeof(detail),
-                  "native owner of 0x%08X is missing or declined; the original body is not in this image",
-                  address);
-    request_stop(StopReason::ExecutionFault, detail);
-    leave_to_dispatcher(address, FallbackReason::NotRecompiled, address);
+    native_owner_missing(*this, address);
 }
 
 void Cpu::request_stop(StopReason reason, const std::string& detail) {
@@ -825,6 +890,8 @@ void Cpu::request_stop(StopReason reason, const std::string& detail) {
     stop_.reason = reason;
     stop_.address = pc;
     stop_.detail = detail;
+    // exiting() tests this bit instead of stop_.reason (cpu.h, kExitStop). A reason of Running stops nothing.
+    if (reason != StopReason::Running) exit_pending_ = static_cast<u8>(exit_pending_ | kExitStop);
 }
 
 void Cpu::request_stop_from_host(StopReason reason, std::string detail) {
@@ -1517,7 +1584,11 @@ void Cpu::raise_exception(Exception vector, u32 srr1_bits) {
     exception_entry(vector);
     // Bits the exception itself reports (the illegal-instruction program
     // exception's bit 12) are part of the architected entry: the OS entry
-    // saves SRR1 into the OSContext.
+    // saves SRR1 into the OSContext. A program exception that names no cause
+    // is the trap one: tw / twi are the only instructions that raise it that
+    // way (the illegal-instruction callers pass bit 12), and the architecture
+    // reports a taken trap in SRR1[14] (PowerPC OEA 6.4.7; Dolphin sets it too).
+    if (vector == Exception::Program && srr1_bits == 0u) srr1_bits = 0x00020000u;
     spr[SPR_SRR1] |= srr1_bits;
     enter_os_exception(vector);
 }
@@ -2286,9 +2357,9 @@ void Cpu::verify_dispatch(RecompiledCode::Fn native, u32 entry) {
     // An interior entry has no try_hle and never consumes the arm; clear it so
     // it cannot outlive this pass.
     verify_armed_entry_ = 0u;
-    const bool native_exited = exit_pending_ != 0u;
+    const bool native_exited = (exit_pending_ & ~kExitStop) != 0u;
     const bool native_left = (exit_pending_ & kExitLeave) != 0u;
-    exit_pending_ = 0u;
+    exit_pending_ = static_cast<u8>(exit_pending_ & kExitStop);
     const bool touched_device = memory_.journal_touched_device() || memory_.journal_overflowed();
     // The three ends the replay can find again (no instruction count exists):
     // the function returned (a taken bclr), it raised its own exception and
@@ -2311,9 +2382,10 @@ void Cpu::verify_dispatch(RecompiledCode::Fn native, u32 entry) {
     // pc, r1, LR and MSR the dispatcher's stall test compares; taken for a
     // stall, its entry instruction was stepped unverified.
     const auto keep_stalled_hand_back = [&]() {
-        exit_pending_ = (native_left && !stopped() && pc == entry && leave_site_ == entry && !cut && !faulted)
-                            ? kExitLeave
-                            : u8{0};
+        exit_pending_ = static_cast<u8>(((native_left && !stopped() && pc == entry && leave_site_ == entry && !cut && !faulted)
+                                             ? kExitLeave
+                                             : u8{0}) |
+                                        (exit_pending_ & kExitStop));
     };
     const u32 native_end_pc = pc;
     const u32 native_end_lr = lr;
@@ -2707,6 +2779,9 @@ const char* fallback_reason_name(FallbackReason reason) noexcept {
         case FallbackReason::EndOfFunction: return "ran past the analysed function";
         case FallbackReason::Yield: return "stop, interrupt or wait-point yield";
         case FallbackReason::VerifyCut: return "per-call verification cut";
+        case FallbackReason::FpUnavailable: return "FP unavailable (MSR[FP] = 0)";
+        case FallbackReason::Program: return "program exception (illegal instruction)";
+        case FallbackReason::IndirectTarget: return "computed target has no native code";
         default: return "none";
     }
 }
@@ -2755,6 +2830,8 @@ void Cpu::idle_wait() {
 }
 
 void Cpu::capture_poll_registers(PollRegisters& out) const noexcept {
+    static_assert(sizeof(fpr) == sizeof(out.fpr) && sizeof(FpReg) == 2u * sizeof(u64),
+                  "PollRegisters::fpr is the FPR file as [ps0, ps1] pairs");
     std::memcpy(out.gpr, gpr, sizeof(out.gpr));
     out.cr = cr;
     out.xer = xer;
@@ -2762,10 +2839,7 @@ void Cpu::capture_poll_registers(PollRegisters& out) const noexcept {
     out.lr = lr;
     out.fpscr = fpscr;
     out.msr = msr_;
-    for (std::size_t index = 0; index < 32u; ++index) {
-        out.fpr[2u * index] = fpr[index].bits[0];
-        out.fpr[2u * index + 1u] = fpr[index].bits[1];
-    }
+    std::memcpy(out.fpr, fpr, sizeof(out.fpr));
 }
 
 void Cpu::end_poll_tracking() noexcept {
@@ -2776,13 +2850,16 @@ void Cpu::end_poll_tracking() noexcept {
 void Cpu::poll_point(u32 site) {
     CpuDiagCounters& diag = cpu_diag();
     ++diag.poll_points;
-    PollRegisters now;
-    capture_poll_registers(now);
-    if (poll_site_ != site || std::memcmp(&now, &poll_registers_, sizeof(now)) != 0) {
-        // Another loop, or this iteration changed a register: progress.
+    const PollRegisters& last = poll_registers_;
+    const bool unchanged = poll_site_ == site && cr == last.cr && xer == last.xer && ctr == last.ctr && lr == last.lr &&
+                           fpscr == last.fpscr && msr_ == last.msr && std::memcmp(gpr, last.gpr, sizeof(last.gpr)) == 0 &&
+                           std::memcmp(fpr, last.fpr, sizeof(last.fpr)) == 0;
+    if (!unchanged) {
+        // Another loop, or this iteration changed a register: progress. The registers are captured straight into the
+        // record (no stack copy of the 700-byte file, then a second copy into it).
         memory_.watch_end();
         poll_site_ = site;
-        poll_registers_ = now;
+        capture_poll_registers(poll_registers_);
         return;
     }
     if (verifying_) {
@@ -2873,7 +2950,16 @@ void RecompiledCode::install(const Entry* entries, std::size_t count) {
                 std::abort();
             }
         }
-        slots_[(address - low_) >> 2] = delta;
+        // RC-gen-2: one address, one function. A second row for an address already filled with ANOTHER function used
+        // to win silently (the last row); which body a call then entered depended on the table's order. The generator
+        // refuses to emit such a table; a table that has one anyway is refused here like an entry that does not fit.
+        s32& slot = slots_[(address - low_) >> 2];
+        if (slot != 0 && delta != 0 && slot != delta) {
+            std::fprintf(stderr, "[dispatch-table] entry 0x%08X is listed twice with different functions\n", address);
+            std::fflush(stderr);
+            std::abort();
+        }
+        slot = delta;
     }
     if (refused != 0u) {
         std::fprintf(stderr,
@@ -2913,12 +2999,16 @@ bool Cpu::finish_transfers() {
     // or an interrupt - because the tail call this replaces tested nothing
     // either: the entered body's own recognition points decide (cpu.h,
     // transfer_to).
+    // The drive count is kept in a register and added once: a nested finish_transfers (a body that makes a linked call) adds its
+    // own, so the sum is the same; the member is read only after the run.
+    u64 driven = 0;
     while ((exit_pending_ & kExitTransfer) != 0u) {
         exit_pending_ = static_cast<u8>(exit_pending_ & ~kExitTransfer);
         const RecompiledCode::Fn entry = transfer_fn_;
-        ++native_transfers_driven;
+        ++driven;
         entry(*this);
     }
+    native_transfers_driven += driven;
     return exiting();
 }
 
@@ -2933,6 +3023,16 @@ void Cpu::run() {
     // A stop request served by an earlier run ends with that run; a new run
     // starts with none (the report itself is cleared by clear_stop()).
     stop_requested_.store(stopped(), std::memory_order_relaxed);
+    // Guest arithmetic starts from the host FP environment it assumes (cpu.h, kHostFpControl; RC-fp-2).
+    note_host_fp_control("at the start of a run");
+    // The machine is this thread's until the run ends (RC-memory-2: the flat-map fault handler resolves only its
+    // faults). Restored on every way out, so a nested run (the reference build's guest_call) keeps the outer binding.
+    struct FmThreadScope {
+        Cpu& cpu;
+        u32 previous;
+        explicit FmThreadScope(Cpu& c) noexcept : cpu(c), previous(c.fm_bind_thread()) {}
+        ~FmThreadScope() { cpu.fm_restore_thread(previous); }
+    } fm_thread_scope(*this);
     // A latched data-access fault halts the machine until reset() or
     // load_state() replaces it. A caller that cleared the stop report - the
     // savestate hotkey loop clears every stop after servicing a request - must
@@ -2998,6 +3098,9 @@ void Cpu::run() {
         if (!entering_native_call && run_lift_site_at_pc()) {
             continue;
         }
+        // The translated entry at pc, looked up once: pc is final here (the interrupt entry and the lift site above ran or
+        // continued) and find_hle below does not touch the table.
+        const RecompiledCode::Fn found_native = recompiled_ != nullptr ? recompiled_->lookup(pc) : nullptr;
         const bool hooked = !entering_native_call && recompiled_ != nullptr && !hle_.empty() && find_hle(pc) != nullptr;
         const RecompiledCode::Range* hooked_range = hooked ? recompiled_->find_range(pc) : nullptr;
         // A hooked address is entered through its owning range (the hook runs
@@ -3006,14 +3109,14 @@ void Cpu::run() {
         // hook itself (Cpu::serve_native_owner). A hooked address with neither
         // has no translated code and is refused below: a hook is never served
         // as a hidden fallback for missing code.
-        const bool hooked_owner = hooked && hooked_range == nullptr && recompiled_->lookup(pc) != nullptr;
+        const bool hooked_owner = hooked && hooked_range == nullptr && found_native != nullptr;
         if (hooked && hooked_range == nullptr && !hooked_owner) {
             ++dispatch_blocked_hle;
-        } else if (recompiled_ != nullptr && recompiled_->lookup(pc) == nullptr) {
+        } else if (recompiled_ != nullptr && found_native == nullptr) {
             ++dispatch_no_native_code;
         }
         if (recompiled_ != nullptr && (!hooked || hooked_range != nullptr || hooked_owner)) {
-            RecompiledCode::Fn native = recompiled_->lookup(pc);
+            RecompiledCode::Fn native = found_native;
             if (hooked_range != nullptr) {
                 // A hook at a translated address must not force step() to
                 // interpret its first instruction when the hook declines.
@@ -3151,7 +3254,7 @@ void Cpu::run() {
                                 .count());
                     }
                 }
-                const u8 exit_state = exit_pending_;
+                const u8 exit_state = static_cast<u8>(exit_pending_ & ~kExitStop);  // the stop bit is not a native-frame request
                 [[maybe_unused]] const bool gave_up = (exit_state & kExitLeave) != 0u;
                 // Native code unwound at a recognition point because an interrupt
                 // became deliverable inside it (R2: after a call returned). pc is
@@ -3163,7 +3266,7 @@ void Cpu::run() {
                     ++fallback_totals_[static_cast<std::size_t>(FallbackReason::Yield)];
                     if (record_fallbacks_) record_fallback(pc, FallbackReason::Yield, 0u);
                 }
-                exit_pending_ = 0u;
+                exit_pending_ = static_cast<u8>(exit_pending_ & kExitStop);
                 // A pass that gave up at the very instruction it was dispatched
                 // to (leave site == entry) executed nothing: dispatching it
                 // again would repeat it forever, so the instruction is executed
@@ -3207,7 +3310,7 @@ void Cpu::run() {
         // call then found kExitLeave still set and never resumed at its link
         // address. The native path clears the same request after every
         // dispatch, a few lines above; this is the interpreted path's copy.
-        exit_pending_ = 0u;
+        exit_pending_ = static_cast<u8>(exit_pending_ & kExitStop);
         step();
 #else
         if (!stopped()) {
@@ -4349,10 +4452,15 @@ void Cpu::op_group31(u32 instruction) {
                     set_time_base((time_base() & 0x00000000ffffffffull) |
                                   (static_cast<u64>(gpr[d]) << 32));
                     break;
-                case SPR_DEC:
-                    set_decrementer(gpr[d]);
+                case SPR_DEC: {
+                    // A write that sets the sign of a DEC whose sign is clear is a 0 -> 1 edge now (same rule as
+                    // ppc::write_spr; latch before the re-arm replaces the deadline latch_decrementer advanced).
+                    const bool software_edge = (decrementer() & 0x80000000u) == 0u && (gpr[d] & 0x80000000u) != 0u;
                     set_decrementer_delivery(true);  // the guest arms the decrementer (see cpu.h)
+                    if (software_edge) latch_decrementer();
+                    set_decrementer(gpr[d]);
                     break;
+                }
                 case SPR_HID2: write_hid2(gpr[d]); break;
                 default:
                     spr[number] = gpr[d];
@@ -4680,6 +4788,7 @@ void Cpu::op_group63(u32 instruction) {
         }
         case 38:  // mtfsb1
             fpscr |= 1u << (31u - d);
+            fpscr_written();
             if (field_rc(instruction)) update_cr1();
             break;
         case 70:  // mtfsb0
@@ -4702,6 +4811,7 @@ void Cpu::op_group63(u32 instruction) {
             const u32 value = (instruction >> 12) & 0xfu;
             const u32 shift = 28u - 4u * field;
             fpscr = (fpscr & ~(0xfu << shift)) | (value << shift);
+            fpscr_written();
             if (field_rc(instruction)) update_cr1();
             break;
         }
@@ -4727,6 +4837,7 @@ void Cpu::op_group63(u32 instruction) {
                 }
             }
             fpscr = (fpscr & ~mask) | (value & mask);
+            fpscr_written();
             if (field_rc(instruction)) update_cr1();
             break;
         }

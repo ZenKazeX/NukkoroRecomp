@@ -1,4 +1,5 @@
 #include "gekko/button_glyphs.h"
+#include "gekko/cs2_ram.h"
 
 #include <algorithm>
 #include <cmath>
@@ -230,8 +231,9 @@ u32 ButtonGlyphs::attach(assets::AssetSystem& assets) {
         if (!id.valid()) continue;
         span.assign(sheet.span_bytes, 0u);
         u64 got = 0;
-        if (!assets.resources().read(id, row.span_at, sheet.span_bytes, span.data(), got) ||
-            got != sheet.span_bytes || fnv1a64(span.data(), span.size()) != sheet.hash) {
+        const bool span_read = assets.resources().read(id, row.span_at, sheet.span_bytes, span.data(), got);
+        assets.release_pages(id);  // cs2/ram: a one-shot read of the mapped file; its pages leave the working set
+        if (!span_read || got != sheet.span_bytes || fnv1a64(span.data(), span.size()) != sheet.hash) {
             ++report_.mismatched;
             continue;
         }
@@ -239,8 +241,10 @@ u32 ButtonGlyphs::attach(assets::AssetSystem& assets) {
             // The raster header before the palette: u32 flags, u16 width, u16 height, u8 depth, u8 mip levels,
             // u8 GX format, u8 palette format (what the renderer's content hash folds in).
             got = 0;
-            if (row.span_at < 16u || !assets.resources().read(id, row.span_at - 16u, 16u, raster, got) ||
-                got != 16u) {
+            const bool header_read =
+                row.span_at >= 16u && assets.resources().read(id, row.span_at - 16u, 16u, raster, got);
+            assets.release_pages(id);
+            if (!header_read || got != 16u) {
                 ++report_.mismatched;
                 continue;
             }
@@ -253,17 +257,22 @@ u32 ButtonGlyphs::attach(assets::AssetSystem& assets) {
     }
     if (!files_.empty()) {
         // The scaled art of every sheet found, off the game thread (inputs copied: they never change after this).
-        scaled_bases_ = std::async(std::launch::async, [original = original_, header = header_]() {
-                            std::vector<std::vector<u8>> made(original.size());
-                            for (std::size_t s = 0; s < original.size(); ++s) {
-                                if (!original[s].empty() &&
-                                    !scaled_base(kSheets[s], header[s].gx_format, header[s].tlut_format, original[s],
-                                                 made[s])) {
-                                    made[s].clear();
+        // cs2/ram: with GEKKO_CS2_RAM on it is made per sheet when the sheet is first served (sharp_sheet's own fallback,
+        // the same function over the same inputs, so the same bytes): 4 of the 27 sheets are served in a Westopolis run,
+        // and the 27 held ~8 MiB (the scaled art and the copy of the originals the worker captured) for the whole run.
+        if (!cs2_ram::enabled()) {
+            scaled_bases_ = std::async(std::launch::async, [original = original_, header = header_]() {
+                                std::vector<std::vector<u8>> made(original.size());
+                                for (std::size_t s = 0; s < original.size(); ++s) {
+                                    if (!original[s].empty() &&
+                                        !scaled_base(kSheets[s], header[s].gx_format, header[s].tlut_format, original[s],
+                                                     made[s])) {
+                                        made[s].clear();
+                                    }
                                 }
-                            }
-                            return made;
-                        }).share();
+                                return made;
+                            }).share();
+        }
         assets.set_read_patch([this](assets::AssetId id, u64 offset, u8* dest, u64 length) {
             patch(id, offset, dest, length);
         });
@@ -353,6 +362,17 @@ static bool scaled_base(const SheetRow& sheet, u32 gx_format, u32 tlut_format, c
     }
     out = resize_rgba(base.data(), sheet.width, sheet.height, sheet.width * kSharpNum / kSharpDen,
                       sheet.height * kSharpNum / kSharpDen);
+    return true;
+}
+
+bool ButtonGlyphs::sheet_cells(u32 sheet_index, std::vector<CellInfo>& cells) {
+    cells.clear();
+    if (sheet_index >= kSheetCount) return false;
+    const SheetRow& sheet = kSheets[sheet_index];
+    for (u32 c = 0; c < sheet.cell_count; ++c) {
+        const CellRow& cell = kCells[sheet.first_cell + c];
+        cells.push_back({cell.x0, cell.y0, cell.x1, cell.y1, static_cast<u32>(cell.kind)});
+    }
     return true;
 }
 

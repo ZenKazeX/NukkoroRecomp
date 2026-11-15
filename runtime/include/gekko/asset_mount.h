@@ -22,8 +22,10 @@
 //
 // See docs/native-asset-pipeline-20261005/README.md.
 
+#include <exception>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -70,6 +72,12 @@ private:
 // There is no disc source, no residency budget, no I/O engine and no second
 // copy of anything. A read is a decode and one copy out of a mapped page into
 // the destination the caller names.
+// Load-time stamps (measurement only; docs/agents/PERF_2026-11-14.md, field "load"): with GEKKO_PF_LOAD_STAMP=1 each
+// call prints "[pf-load] <label> uptime_ms <process age> thread_cpu_ms <this thread> process_cpu_ms <all threads>
+// tick <game tick>" to stderr; otherwise it does nothing.
+bool pf_load_stamps_on() noexcept;
+void pf_load_stamp(const char* label, u64 tick = 0u) noexcept;
+
 class AssetSystem {
 public:
     AssetSystem() : resources_(registry_) {
@@ -86,17 +94,22 @@ public:
     using TreeReader = std::function<bool(std::string_view path, std::vector<u8>& bytes)>;
     using Replacement = std::function<bool(const TreeReader& read, std::vector<u8>& bytes, std::string& error)>;
     void replace(std::string path, Replacement build);
-    // A file with several native contents, one served at a time by `selector` (asked at every read; MemoryProvider::
-    // add_switchable): every variant is built at the mount, the file's declared size is the largest one's and a
-    // shorter variant reads as zeros past its end. The setting `selector` reads takes effect at the next read, with
-    // no remount. Same failure rules as replace(): a variant that fails to build leaves the host file served.
-    void replace_switchable(std::string path, std::vector<Replacement> variants, std::function<std::size_t()> selector);
     // A file whose bytes are produced at every read by `reader` (offset, length, dest, got) - nothing is held in
     // memory or built at the mount; `size` is its declared size. For a large composed file whose content follows a
     // runtime setting (the switchable dialogue-voice archive, gekko/voice_language.h).
     using VirtualReader = std::function<bool(u64 offset, u64 length, u8* dest, u64& got)>;
     void replace_virtual(std::string path, u64 size, VirtualReader reader);
     u32 replaced_count() const noexcept { return replaced_count_; }
+    // cs2/ram: what the replacements hold privately, and what they would hold as full copies (gekko/cs2_ram.h).
+    MemoryProvider::Held replacement_held() const noexcept { return replacements_.held(); }
+    // The bytes every held replacement content serves, as digests in creation order (a diagnostic: two builds that
+    // serve the same bytes print the same lines).
+    void replacement_digests(const std::function<void(const std::string& label, u64 size, u64 fnv)>& sink) {
+        replacements_.digests(sink);
+    }
+    // cs2/ram: drops the pages of a host file already read through the mapped view from the working set (no-op for a
+    // replaced or unknown asset, and when GEKKO_CS2_RAM=0).
+    void release_pages(AssetId id) noexcept;
     const std::vector<std::string>& replacement_errors() const noexcept { return replacement_errors_; }
 
     // Mounts the tree a storage backend enumerates, and keeps the backend for
@@ -198,18 +211,31 @@ private:
     MemoryProvider replacements_;
     ReadPatch read_patch_;
     std::vector<std::pair<std::string, Replacement>> pending_replacements_;
-    struct Switchable {
-        std::string path;
-        std::vector<Replacement> variants;
-        std::function<std::size_t()> selector;
-    };
-    std::vector<Switchable> pending_switchables_;
     struct Virtual {
         std::string path;
         u64 size;
         VirtualReader reader;
     };
     std::vector<Virtual> pending_virtuals_;
+    // pf-load: the replacements' builds run ahead on host threads (asset_mount.cpp, mount()), one entry per pending
+    // replacement, in that order; empty with GEKKO_PF_LOAD_MOUNT_JOBS=0.
+    // A content kept as patches over its original (cs2/ram): the original's backend key and the patches.
+    struct PreparedDelta {
+        u64 base_key = 0;
+        std::vector<MemoryProvider::Patch> patches;
+    };
+    using DeltaOf = std::function<std::optional<PreparedDelta>(const std::string& path, const std::vector<u8>& bytes)>;
+    struct PrebuiltReplacement {
+        bool built = false;
+        std::vector<u8> bytes;
+        // the hold's delta decision made ahead (empty outer: not made, the hold decides)
+        std::optional<std::optional<PreparedDelta>> delta;
+        std::string error;                      // the build error
+        std::exception_ptr exception;           // ... or what it threw (rethrown where the sequential build threw)
+        // The outcome, as the build call would have given it, and its delta decision.
+        bool take(std::vector<u8>& bytes, std::string& build_error, std::optional<std::optional<PreparedDelta>>& delta);
+    };
+    std::vector<PrebuiltReplacement> prebuild_replacements(const TreeReader& read, const DeltaOf& delta_of);
     std::vector<std::string> replacement_errors_;
     u32 replaced_count_ = 0;
     ResourceManager resources_;

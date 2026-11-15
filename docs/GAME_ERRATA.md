@@ -160,3 +160,31 @@ The exit report counts it ("E3 land layers loaded N, land pattern sets seen N, c
 - E3 on (e3-idle): 6 land layers, 1 clock aligned; the clocks are equal on all 1657 frames, the keys differ only on the
   new set's first traced frame (before its first apply).
 Not yet done: a before/after picture sequence of several corridor lights (the tape to the first corridor).
+
+## E4 - a dialogue line's subtitle window is shorter than its English voice (user decision 2026-11-10, redesigned the same day)
+
+The first design (held requests, a pinned timer) is retired; see `docs/voice_subtitle_timing/09_fix_implementation.md` for why it was tried and what it found. The user's rule: interruptions are original game logic and stay; no held requests, no artificial delays, no timer pinning.
+
+**Bug.** `MessageTask::update` (0x801FB5AC) closes a line's window at `record+0xC frames / 60` and never looks at the voice. The tables fit the Japanese clips (4,084 of 9,138 voiced records are shorter than the English clip). Expiry alone never stops the voice, but the next queued part with a voice stops it the moment it opens (0x801FB8E8), and the subtitle disappears with the voice still talking.
+
+**Fix (voice language English, `G+0x5C == 1`).** Native code in `message_system::task_update` (`runtime/src/gekko/native_message_system.cpp`), active only when the native message system owns the update (`SHADOW_NATIVE_MESSAGE`, default owner), with `SHADOW_ERRATA_E4=0` as the switch (the old `SHADOW_ERRATA=0` too):
+- Expiry is unchanged: `mgr+0x14 = -1` at the table limit, so the idle state, the enqueue's admission test and `IsFinished` see the original words.
+- **Linger** (display only, native state `WindowLifetime`, no guest word): when a window expires while its voice is really playing (a TObjSERIF slot in state 1 with that id and ADXT status 1..4), the same line is drawn again each update while that voice keeps playing. Nothing is written to the task's record or timer or the manager; the font scale is saved and restored around the draw. It ends the update the voice stops, on any manager reset (pause, Continue/Restart, an accepted enqueue, stage change), and when a window opens.
+- **Next-part gate**: with `current == -1` and a head part that has its own voice while the manager's voice is still really playing, the part waits (not opened, not erased). `mgr+0x28` is set to the part's priority, the word the original would have presented had it opened, so new requests are judged the same. The gated part keeps the original timeline: while it waits its timer runs from the update the original would have opened it, it opens with that value and expires on the original frame, and if it reached its own limit while waiting the word goes idle and the finished poll no longer counts it, as in the original; its voice still plays when the gate ends and linger shows the text. A part without a voice opens at once. A higher-priority part, or an equal-priority part of another group, is only ever considered while a window is showing: that is an interruption and is untouched. The lower-priority drop is unreachable when `current == -1`.
+- **Held requests in a voice's overrun** (user decision 2026-11-10, after listening: "Finish, then Eggman"): during a voice's overrun (linger or gate, voice really playing), a request the original would accept, of priority not strictly above the line owning the voice, waits instead of cutting it (one held; a newer request of priority >= the held one replaces it, a lower one returns -1). It is released in the update where the voice is seen to have ended, before the open decision, with the lock treated as free for the call and the priority word idle (the result is checked and counted separately); a strictly higher request, any other reset (pause, restart, task create or destroy) drops it at once. `IsFinished` answers unfinished for a held key. Only `enqueue` (fn_801FB210), not the random enqueue. Japanese, the switch off and verify mode: no holds.
+- **Deferred lines** (user 2026-11-14: Tails' "Go for it, Shadow!" must play). A held request starts late, off the game's script, which
+  issues its lines on timers. On Devil Doom, line 414 (Eggman 3283, then Tails 3284) started 108 frames late. Line 415 then arrived on
+  its scripted frame while 414's second part was still showing, and replaced it, so 3284 never played. A line released from a hold is
+  therefore *deferred*: until its last part has finished, a request of priority not strictly above it waits the same way (one held,
+  the same replace/refuse rules). "Finished" means it is no longer the current window, no queued entry of it has a record, and its last
+  voice is not lingering. A request of lower priority, which the original refuses while a higher line shows, is judged against the
+  original's timeline: once the deferred line's own table windows, counted from the tick its request arrived, have run out, the
+  original was idle and accepted it, so it waits too; before that it is refused as in the original. A strictly higher request and
+  any reset end the state at once. The delay only moves later lines; it never cuts a deferred line's later parts. Counters:
+  "deferred lines N (holds N, admitted after the original end N)".
+  Devil Doom, the user's tape: 3260, 3283 and 3284 all end naturally. 415 starts at frame 1396 instead of 1253, and the next story
+  line, 416 (frame 2455), is on its original frame. Dialogue voices started 36 (original 39, previous E4 35). Voices cut 4, all
+  combat barks of equal priority interrupting each other as in the original (original 17, previous E4 6). Checkpoints 259/259.
+- Failsafe: nothing is held beyond the ADX header length / 24 kHz + 0.5 s (120 s if unreadable); counted. A stuck stream cannot hold the queue or a linger.
+- Japanese voice language, switch off, `SHADOW_NATIVE_MESSAGE=off` and verify mode: no effect (the off and verify runs run the original / the faithful code).
+- Code: `gekko/native_message_system.h` `WindowLifetime`, `native_message_system.cpp`; test `native_message_voice_tests`; trace events `linger_start/end`, `gate_start/end`, `hold_failsafe`.

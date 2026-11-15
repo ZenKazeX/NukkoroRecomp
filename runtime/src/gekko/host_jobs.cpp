@@ -273,10 +273,6 @@ void HostJobSystem::set_notify_one(bool enabled) noexcept {
     g_notify_one.store(enabled, std::memory_order_relaxed);
 }
 
-bool HostJobSystem::notify_one_enabled() const noexcept {
-    return g_notify_one.load(std::memory_order_relaxed);
-}
-
 HostJobSystem::HostJobSystem() {
     // Plot shapes, declared once on the only path that constructs the pool. All
     // three are counts, so they are staircases: a queue depth holds its value

@@ -19,6 +19,10 @@ namespace gekko {
 
 namespace {
 
+// How long the game thread waits for a worker that is decoding the stream it needs (a decode is milliseconds; a
+// worker descheduled for longer than this falls back to the expand call's own decode, as before).
+constexpr std::chrono::milliseconds kWaitLimit{50};
+
 constexpr u64 kOneDataOffset = 0x0Cu;  // a member's stored offset counts from file + 0x0C (OneArchive)
 
 bool is_one_archive(const std::string& path) {
@@ -127,7 +131,7 @@ void PrsAhead::announce(assets::AssetId id, const std::string& path, u64 offset,
         while (!members_.empty() && pending_bytes_ + size > kMaxPendingBytes) evict_oldest();
         const u8* data = span.data + stream->first;
         const std::size_t available = static_cast<std::size_t>(span.size - stream->first);
-        auto task = std::make_shared<std::packaged_task<std::shared_ptr<const PrsDecoded>()>>(
+        auto job = std::make_shared<ClaimableTask<std::shared_ptr<const PrsDecoded>>>(
             [this, data, available, size, bytes]() -> std::shared_ptr<const PrsDecoded> {
                 auto decoded = std::make_shared<PrsDecoded>();
                 const bool ok = prs_decode_ahead(data, available, size, *decoded);
@@ -140,12 +144,12 @@ void PrsAhead::announce(assets::AssetId id, const std::string& path, u64 offset,
                 return decoded;
             });
         const u64 key = key_of(data);
-        members_.emplace(key, Member{task->get_future().share(), size, id.value, stream->first, next_order_++});
+        members_.emplace(key, Member{job, size, id.value, stream->first, next_order_++});
         pending_members_[{id.value, stream->first}] = key;
         pending_bytes_ += size;
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            queue_.push_back([task] { (*task)(); });
+            queue_.push_back([job] { job->run_once(); });  // a no-op when the game thread took it first
             ++stats_.queued;
         }
         wake_.notify_one();
@@ -156,11 +160,29 @@ std::shared_ptr<const PrsDecoded> PrsAhead::take(u64 key, const std::function<bo
     const auto range = members_.equal_range(key);
     bool waiting = false, matched = false;
     for (auto m = range.first; m != range.second; ++m) {
-        if (m->second.result.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
-            waiting = true;
-            continue;
+        // Not decoded yet: decoding it again here (the expand call's own decode) would repeat work a worker does anyway.
+        // Run the member's one decode here when no worker started it (the worker will skip it), or wait for the
+        // worker that is in the middle of it. Same decoder, same bytes; only which thread made them.
+        switch (m->second.job->finish(kWaitLimit)) {
+            case ClaimableTask<std::shared_ptr<const PrsDecoded>>::Outcome::Ready: break;
+            case ClaimableTask<std::shared_ptr<const PrsDecoded>>::Outcome::Claimed: {
+                std::lock_guard<std::mutex> lock(mutex_);
+                ++stats_.claimed;
+                break;
+            }
+            case ClaimableTask<std::shared_ptr<const PrsDecoded>>::Outcome::Waited: {
+                std::lock_guard<std::mutex> lock(mutex_);
+                ++stats_.waited;
+                break;
+            }
+            case ClaimableTask<std::shared_ptr<const PrsDecoded>>::Outcome::TimedOut: {
+                std::lock_guard<std::mutex> lock(mutex_);
+                ++stats_.wait_timeouts;
+                waiting = true;
+                continue;
+            }
         }
-        const std::shared_ptr<const PrsDecoded> decoded = m->second.result.get();
+        const std::shared_ptr<const PrsDecoded> decoded = m->second.job->result().get();
         if (decoded == nullptr) {
             // The decode failed: the entry can never serve; it leaves the table (and the budget), so a later
             // announce can queue the stream again.
@@ -187,8 +209,8 @@ std::shared_ptr<const PrsDecoded> PrsAhead::take(u64 key, const std::function<bo
 bool PrsAhead::ready(u64 key, const std::function<bool(const PrsDecoded&)>& check) {
     const auto range = members_.equal_range(key);
     for (auto m = range.first; m != range.second; ++m) {
-        if (m->second.result.wait_for(std::chrono::seconds(0)) != std::future_status::ready) continue;
-        const std::shared_ptr<const PrsDecoded> decoded = m->second.result.get();
+        if (!m->second.job->ready()) continue;
+        const std::shared_ptr<const PrsDecoded> decoded = m->second.job->result().get();
         if (decoded != nullptr && check(*decoded)) return true;
     }
     return false;

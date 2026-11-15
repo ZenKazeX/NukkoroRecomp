@@ -16,13 +16,16 @@
 // member whose stream starts at src; it serves the call from it only when the guest's stream bytes equal the decoded
 // ones, nothing overlaps and no hand-back is due (GameMemory::serve_prs_ahead); otherwise - or when the member is not
 // decoded yet - the call decodes as before. The game sees the same bytes and registers either way; timing decides
-// only which code made them. A member is dropped when taken; at most kMaxPendingBytes of output wait at a time (the
+// only which code made them. A member the game asks for before a worker finished it is not decoded a second time: if no
+// worker started it, the game thread runs that one decode itself (the worker later skips it); if a worker is in the
+// middle of it, the game thread waits for it (bounded, then the call decodes as before). A member is dropped when taken; at most kMaxPendingBytes of output wait at a time (the
 // oldest go first).
 //
 // Ownership: System owns it after the asset system (destroyed first: its workers stop and its asset handles are
 // released while the resource manager still exists). Thread use: announce and take on the game thread; the
 // workers only decode.
 
+#include <atomic>
 #include <condition_variable>
 #include <cstddef>
 #include <deque>
@@ -37,6 +40,7 @@
 #include <vector>
 
 #include "gekko/asset_runtime.h"
+#include "gekko/claimable_task.h"
 #include "gekko/game_memory.h"
 #include "gekko/types.h"
 
@@ -62,6 +66,9 @@ public:
     bool ready(u64 key, const std::function<bool(const PrsDecoded&)>& check);
 
     struct Stats {
+        u64 claimed = 0;         // not-ready members the game thread took over (queued, not started) and decoded itself, once
+        u64 waited = 0;          // not-ready members a worker was decoding that the game thread waited for
+        u64 wait_timeouts = 0;   // waits that ran out (the expand call then decodes as before)
         u64 archives = 0;        // archives parsed (once per asset)
         u64 queued = 0;          // members queued
         u64 decoded = 0;         // members decoded ahead
@@ -77,7 +84,7 @@ public:
 
 private:
     struct Member {
-        std::shared_future<std::shared_ptr<const PrsDecoded>> result;
+        std::shared_ptr<ClaimableTask<std::shared_ptr<const PrsDecoded>>> job;  // result() is the decode's future
         std::size_t size = 0;  // the declared output size (pending accounting)
         u32 asset = 0;         // which archive member it is: asset id and stream offset in the file
         u64 stream_at = 0;

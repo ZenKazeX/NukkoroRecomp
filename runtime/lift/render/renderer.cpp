@@ -572,6 +572,7 @@ void Renderer::destroy() {
     free_textures_.clear();
     free_meshes_.clear();
     pipelines_.clear();
+    last_pipeline_ = nullptr;
     screen_pipelines_.clear();
     compute_pipelines_.clear();
     skin_cache_.destroy();
@@ -842,7 +843,8 @@ TextureHandle Renderer::request_texture(Scope scope, TextureSource source, std::
                           make_texture(image, &texture, &failure);
         // Diagnostics: SHADOW_R2_DUMP_TEXTURE=<directory> writes every imported texture's levels as
         // <handle hex>.rgba (u32 width, u32 height, u32 levels, then the level bytes as imported).
-        if (const char* dump = std::getenv("SHADOW_R2_DUMP_TEXTURE"); made && dump != nullptr && dump[0] != 0) {
+        static const char* const dump = std::getenv("SHADOW_R2_DUMP_TEXTURE");  // read once: not a per-import environment scan
+        if (made && dump != nullptr && dump[0] != 0) {
             char name[32];
             std::snprintf(name, sizeof(name), "/%08X.rgba", handle_value(slot, generation));
             if (std::FILE* out = std::fopen((std::string(dump) + name).c_str(), "wb")) {
@@ -1108,8 +1110,13 @@ ID3D12PipelineState* Renderer::mesh_pipeline(Program program, const Recipe& reci
     const PipelineKey key{static_cast<std::uint8_t>(program), static_cast<std::uint8_t>(recipe.src),
                           static_cast<std::uint8_t>(recipe.dst), static_cast<std::uint8_t>(recipe.cull),
                           recipe.depth_test, recipe.depth_write, colour, samples, lines, tiles, plain, no_depth};
-    if (const auto found = pipelines_.find(key); found != pipelines_.end())
-        return found->second.Get();
+    if (last_pipeline_ != nullptr && !(key < last_pipeline_key_) && !(last_pipeline_key_ < key))
+        return last_pipeline_;
+    if (const auto found = pipelines_.find(key); found != pipelines_.end()) {
+        last_pipeline_key_ = key;
+        last_pipeline_ = found->second.Get();
+        return last_pipeline_;
+    }
     static const D3D12_INPUT_ELEMENT_DESC mesh_inputs[] = {
         {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
         {"NORMAL", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},

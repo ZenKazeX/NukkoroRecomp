@@ -79,6 +79,14 @@ bool serve_delay_init(Cpu& cpu) noexcept { return serve(cpu, judge_delay(cpu, cp
 
 void serve_shutdown(Cpu& cpu) noexcept { cpu.gpr[3] = 1u; }
 
+void serve_callback_entered(Cpu& cpu, u32 address) noexcept {
+    char detail[160];
+    std::snprintf(detail, sizeof(detail),
+                  "AXFX aux callback 0x%08X entered (context 0x%08X): no registration of it is reachable and its delay "
+                  "lines are not built (docs/agents/sdk-axfx.md)", address, cpu.gpr[4]);
+    cpu.request_stop(StopReason::ExecutionFault, detail);
+}
+
 void install(Cpu& cpu) {
     struct Entry {
         u32 address;
@@ -110,6 +118,17 @@ void install(Cpu& cpu) {
             serve_shutdown(c);
             return true;
         }, entry.name);
+    static constexpr struct { u32 address; const char* name; } kCallbacks[] = {
+        {kStdCallback, "ReverbStd: aux callback (stop owner)"},
+        {kChorusCallback, "Chorus: aux callback (stop owner)"},
+        {kDelayCallback, "Delay: aux callback (stop owner)"}};
+    for (const auto& entry : kCallbacks) {
+        const u32 address = entry.address;
+        cpu.install_hle(address, [address](Cpu& c) {
+            serve_callback_entered(c, address);
+            return true;
+        }, entry.name);
+    }
 }
 
 }  // namespace gekko::axfx_effects

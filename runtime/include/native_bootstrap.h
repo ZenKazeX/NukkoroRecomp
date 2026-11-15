@@ -60,7 +60,6 @@ private:
     std::vector<std::uint8_t> bytes_;
 };
 
-std::vector<std::uint8_t> read_binary_file(const std::filesystem::path& path);
 DiscHeader parse_disc_header(const std::vector<std::uint8_t>& bytes);
 DolImage parse_dol(std::vector<std::uint8_t> bytes);
 

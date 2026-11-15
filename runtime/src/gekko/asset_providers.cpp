@@ -5,8 +5,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
+#include <utility>
 
-#include "gekko/native_assets.h"  // prs_expand, the verified decompressor
 #include "gekko/profiling.h"
 
 #ifdef _WIN32
@@ -170,6 +171,17 @@ bool copy_with_zero_fill(const u8* base, u64 size, u64 offset, u64 length, u8* d
 
 }  // namespace
 
+void release_view_pages(const void* base, u64 size) noexcept {
+#ifdef _WIN32
+    if (base == nullptr || size == 0u) return;
+    // ERROR_NOT_LOCKED is the expected result: the call's effect on unlocked pages is the removal from the working set.
+    VirtualUnlock(const_cast<void*>(base), static_cast<SIZE_T>(size));
+#else
+    (void)base;
+    (void)size;
+#endif
+}
+
 // ---------------------------------------------------------------------------
 // FileProvider
 // ---------------------------------------------------------------------------
@@ -293,136 +305,102 @@ FileProvider::Stats FileProvider::stats() const noexcept {
 }
 
 // ---------------------------------------------------------------------------
-// ArchiveProvider
-// ---------------------------------------------------------------------------
-
-u64 ArchiveProvider::add_container(std::filesystem::path path) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    container_paths_.push_back(std::move(path));
-    containers_.push_back(nullptr);
-    return static_cast<u64>(containers_.size() - 1u);
-}
-
-u64 ArchiveProvider::add_member(const Member& member) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    members_.push_back(member);
-    return static_cast<u64>(members_.size() - 1u);
-}
-
-const ArchiveProvider::Member* ArchiveProvider::member(u64 key) const noexcept {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (key >= members_.size()) return nullptr;
-    return &members_[static_cast<std::size_t>(key)];
-}
-
-ByteSpan ArchiveProvider::stored(u64 key) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (key >= members_.size()) return ByteSpan{};
-    const Member m = members_[static_cast<std::size_t>(key)];
-    if (m.container >= containers_.size()) return ByteSpan{};
-    auto& container = containers_[static_cast<std::size_t>(m.container)];
-    if (container == nullptr) {
-        container = std::make_unique<MappedFile>();
-        if (!container->open(container_paths_[static_cast<std::size_t>(m.container)])) {
-            return ByteSpan{};
-        }
-    }
-    if (!container->valid()) return ByteSpan{};
-    if (m.offset > container->size()) return ByteSpan{};
-    const u64 usable = std::min<u64>(m.size, container->size() - m.offset);
-    return ByteSpan{container->data() + m.offset, usable};
-}
-
-ByteSpan ArchiveProvider::map(u64 key, u64 size) {
-    const Member* m = member(key);
-    if (m == nullptr || m->expanded != 0u) return ByteSpan{};  // compressed: cannot serve in place
-    const ByteSpan span = stored(key);
-    if (!span.valid()) return ByteSpan{};
-    return ByteSpan{span.data, size == 0u ? span.size : std::min<u64>(size, span.size)};
-}
-
-bool ArchiveProvider::read(u64 key, u64 offset, u64 length, u8* dest, u64& got) {
-    const ByteSpan span = stored(key);
-    if (!span.valid()) {
-        got = 0;
-        return false;
-    }
-    return copy_with_zero_fill(span.data, span.size, offset, length, dest, got);
-}
-
-// ---------------------------------------------------------------------------
-// PrsProvider
-// ---------------------------------------------------------------------------
-
-bool PrsProvider::read(u64 key, u64 offset, u64 length, u8* dest, u64& got) {
-    got = 0;
-    if (dest == nullptr) return false;
-    const ArchiveProvider::Member* m = archive_.member(key);
-    if (m == nullptr || m->expanded == 0u) return false;
-
-    const ByteSpan compressed = archive_.stored(key);
-    if (!compressed.valid()) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        ++stats_.failures;
-        return false;
-    }
-
-    // Expanded straight out of the mapped container: the compressed bytes are
-    // never copied before being decoded.
-    std::vector<u8> expanded;
-    // A stream that ends (truncated) before the member's declared size is a failure, not zeros.
-    if (!prs_expand(compressed.data, static_cast<std::size_t>(compressed.size),
-                    static_cast<std::size_t>(m->expanded), expanded) ||
-        expanded.size() < static_cast<std::size_t>(m->expanded)) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        ++stats_.failures;
-        return false;
-    }
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        ++stats_.expansions;
-        stats_.expanded_bytes += expanded.size();
-    }
-    return copy_with_zero_fill(expanded.data(), expanded.size(), offset, length, dest, got);
-}
-
-PrsProvider::Stats PrsProvider::stats() const noexcept {
-    std::lock_guard<std::mutex> lock(mutex_);
-    return stats_;
-}
-
-// ---------------------------------------------------------------------------
 // MemoryProvider
 // ---------------------------------------------------------------------------
 
 u64 MemoryProvider::add(std::vector<u8> bytes) {
     files_.push_back(std::move(bytes));
+    file_seq_.push_back(next_seq_++);
     return files_.size() - 1u;
 }
 
-u64 MemoryProvider::add_switchable(std::vector<std::vector<u8>> variants, std::function<std::size_t()> selector,
-                                   std::string name) {
-    Group group;
-    group.selector = std::move(selector);
-    group.name = std::move(name);
-    for (std::vector<u8>& v : variants) group.files.push_back(add(std::move(v)));
-    groups_.push_back(std::move(group));
-    return kGroupBit | (groups_.size() - 1u);
+u64 MemoryProvider::add_delta(AssetProvider* base, u64 base_key, u64 size, std::vector<Patch> patches) {
+    Delta delta;
+    delta.base = base;
+    delta.base_key = base_key;
+    delta.size = size;
+    delta.patches = std::move(patches);
+    delta.seq = next_seq_++;
+    deltas_.push_back(std::move(delta));
+    return kDeltaBit | (deltas_.size() - 1u);
 }
 
 const std::vector<u8>* MemoryProvider::file_of(u64 key) const {
-    if ((key & kGroupBit) != 0u) {
-        const u64 index = key & ~kGroupBit;
-        if (index >= groups_.size() || groups_[static_cast<std::size_t>(index)].files.empty()) return nullptr;
-        const Group& group = groups_[static_cast<std::size_t>(index)];
-        const std::size_t chosen = group.selector ? std::min(group.selector(), group.files.size() - 1u) : 0u;
-        // A read after the setting changed: say once which variant is now served (the live-switch evidence).
-        const std::size_t before = group.chosen->exchange(chosen, std::memory_order_relaxed);
-        if (before != chosen && before != ~std::size_t{0})
-            std::fprintf(stderr, "[assets] %s: now serving variant %zu (was %zu)\n", group.name.c_str(), chosen, before);
-        return &files_[static_cast<std::size_t>(group.files[chosen])];
-    }
+    if ((key & (kDeltaBit | kVirtualBit)) != 0u) return nullptr;
     return key < files_.size() ? &files_[static_cast<std::size_t>(key)] : nullptr;
+}
+
+bool MemoryProvider::read_delta(const Delta& delta, u64 offset, u64 length, u8* dest, u64& got) {
+    got = 0;
+    if (dest == nullptr) return false;
+    if (length == 0u) return true;
+    if (offset >= delta.size) {
+        std::memset(dest, 0, static_cast<std::size_t>(length));
+        got = length;
+        return true;
+    }
+    const u64 inside = std::min<u64>(length, delta.size - offset);
+    u64 base_got = 0;
+    if (delta.base == nullptr || !delta.base->read(delta.base_key, offset, inside, dest, base_got)) return false;
+    if (base_got < inside) std::memset(dest + base_got, 0, static_cast<std::size_t>(inside - base_got));
+    // The patches that reach [offset, offset + inside): the first whose end passes `offset`, then forward.
+    const auto first = std::partition_point(delta.patches.begin(), delta.patches.end(), [offset](const Patch& p) {
+        return p.offset + p.bytes.size() <= offset;
+    });
+    for (auto it = first; it != delta.patches.end() && it->offset < offset + inside; ++it) {
+        const u64 begin = std::max<u64>(it->offset, offset);
+        const u64 end = std::min<u64>(it->offset + it->bytes.size(), offset + inside);
+        std::memcpy(dest + (begin - offset), it->bytes.data() + (begin - it->offset),
+                    static_cast<std::size_t>(end - begin));
+    }
+    if (inside < length) std::memset(dest + inside, 0, static_cast<std::size_t>(length - inside));
+    got = length;
+    return true;
+}
+
+MemoryProvider::Held MemoryProvider::held() const noexcept {
+    Held h;
+    h.files = files_.size();
+    for (const std::vector<u8>& f : files_) h.file_bytes += f.size();
+    h.deltas = deltas_.size();
+    for (const Delta& d : deltas_) {
+        h.delta_logical_bytes += d.size;
+        for (const Patch& p : d.patches) h.delta_bytes += p.bytes.size();
+    }
+    return h;
+}
+
+void MemoryProvider::digests(const std::function<void(const std::string&, u64, u64)>& sink) {
+    const auto fnv = [](const u8* data, u64 n) {
+        u64 h = 1469598103934665603ull;
+        for (u64 i = 0; i < n; ++i) {
+            h ^= data[i];
+            h *= 1099511628211ull;
+        }
+        return h;
+    };
+    const auto of_key = [&](u64 key, const std::string& label) {
+        if ((key & kDeltaBit) != 0u) {
+            const u64 index = key & ~kDeltaBit;
+            if (index >= deltas_.size()) return;
+            const Delta& d = deltas_[static_cast<std::size_t>(index)];
+            std::vector<u8> bytes(static_cast<std::size_t>(d.size));
+            u64 got = 0;
+            if (d.size != 0u && !read_delta(d, 0, d.size, bytes.data(), got)) return;
+            sink(label, d.size, fnv(bytes.data(), d.size));
+        } else if (key < files_.size()) {
+            const std::vector<u8>& f = files_[static_cast<std::size_t>(key)];
+            sink(label, f.size(), fnv(f.data(), f.size()));
+        }
+    };
+    // Every content in creation order (the same order in any build, whether a content is held plain or as a delta).
+    std::vector<std::pair<u64, u64>> order;  // (creation number, key)
+    for (std::size_t i = 0; i < files_.size(); ++i) order.emplace_back(file_seq_[i], i);
+    for (std::size_t i = 0; i < deltas_.size(); ++i) order.emplace_back(deltas_[i].seq, kDeltaBit | i);
+    std::sort(order.begin(), order.end());
+    for (const auto& [seq, key] : order) {
+        of_key(key, "content " + std::to_string(seq));
+    }
 }
 
 u64 MemoryProvider::add_virtual(u64 size, VirtualReader reader, std::string name) {
@@ -433,7 +411,7 @@ u64 MemoryProvider::add_virtual(u64 size, VirtualReader reader, std::string name
 ByteSpan MemoryProvider::map(u64 key, u64 size) {
     if ((key & kVirtualBit) != 0u) return ByteSpan{};  // produced per read, never mapped
     const std::vector<u8>* file = file_of(key);
-    if (file == nullptr) return ByteSpan{};
+    if (file == nullptr) return ByteSpan{};  // a delta exists only as base + patches: the caller materialises
     return ByteSpan{file->data(), size == 0u ? file->size() : std::min<u64>(size, file->size())};
 }
 
@@ -450,6 +428,14 @@ bool MemoryProvider::read(u64 key, u64 offset, u64 length, u8* dest, u64& got) {
         if (produced < length) std::memset(dest + produced, 0, static_cast<std::size_t>(length - produced));
         got = length;
         return true;
+    }
+    if ((key & kDeltaBit) != 0u) {
+        const u64 index = key & ~kDeltaBit;
+        if (index >= deltas_.size()) {
+            got = 0;
+            return false;
+        }
+        return read_delta(deltas_[static_cast<std::size_t>(index)], offset, length, dest, got);
     }
     const std::vector<u8>* file = file_of(key);
     if (file == nullptr) {

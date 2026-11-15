@@ -1,0 +1,225 @@
+{
+  "about": "Scenarios for tools/mods/modtest.py (docs/mods/TESTING.md). Paths under 'install' are relative to --downloads. Westopolis tape, capture at game tick 1.2e9 (frame 1737) unless stated.",
+  "scenarios": [
+    {
+      "name": "cream-model",
+      "what": "A loose shadow.one from a .rar download replaces the player model; the game reads the mod's bytes and nothing else changes on disk reads",
+      "mods": [{"install": "gb_dl/cream.rar"}],
+      "expect": {"active": true, "must_read": ["character/shadow.one"], "frame": "differs",
+                 "log_contains": ["^  mod: Cream 1\\.0 \\(cream\\)$"]}
+    },
+    {
+      "name": "conflict-tails-above-cream",
+      "what": "Two mods replace the same file; the higher one in the list is what the game reads",
+      "mods": [{"install": "gb_dl/cream.rar", "priority": 2}, {"install": "gb_dl/playable_tails.zip", "priority": 1}],
+      "expect": {"active": true, "winner": {"character/shadow.one": "playable-tails"}, "must_read": ["character/shadow.one"],
+                 "frame": "differs"}
+    },
+    {
+      "name": "conflict-cream-above-tails",
+      "what": "The same two mods in the other order",
+      "mods": [{"install": "gb_dl/cream.rar", "priority": 1}, {"install": "gb_dl/playable_tails.zip", "priority": 2}],
+      "expect": {"active": true, "winner": {"character/shadow.one": "cream"}, "must_read": ["character/shadow.one"],
+                 "frame": "differs"}
+    },
+    {
+      "name": "texture-pack-android",
+      "what": "A Dolphin texture pack changes the picture and nothing the game holds: the end-of-run state equals stock",
+      "mods": [{"install": "gb_dl/shadow_android.zip"}],
+      "expect": {"active": true, "frame": "differs", "state": "equals",
+                 "log_contains": ["\\[texture-packs\\] directories 1, indexed 6 .*hits [1-9]"]}
+    },
+    {
+      "name": "eight-mods",
+      "what": "Eight real mods together (zip, rar, 7z, folders); 535 files with conflicts resolved by priority",
+      "mods": [{"install": "dl/shadow-event-fixes"}, {"install": "dl/shadow-model-fixes"},
+               {"install": "gb_dl/hq_gun_soldiers.zip"}, {"install": "gb_dl/text_fixes.7z"},
+               {"install": "gb_dl/xbox_buttons_files.zip"}, {"install": "gb_dl/more_reasonable_missions.zip"},
+               {"install": "gb_dl/maria_fixed_eyes.zip"}, {"install": "gb_dl/cream.rar"}],
+      "expect": {"active": true, "must_read": ["character/shadow.one", "nukkoro2.inf"], "frame": "differs"}
+    },
+    {
+      "name": "reloaded-data",
+      "what": "Reloaded's repository tree: its data loads and runs on the original code (no faults, every read accounted for); its code is offered, and nothing of it runs until chosen",
+      "mods": [{"install": "dl/ShdTH-Reloaded"}],
+      "expect": {"active": true, "must_read": ["stg0100/stg0100_cmn.dat", "nukkoro2.inf"], "frame": "differs",
+                 "log_contains": ["Mods: 1 active .*, 0 data codes\\)"],
+                 "log_absent": ["\\[codes\\]", "\\[mods\\] (warning|error).*main\\.dol"]}
+    },
+    {
+      "name": "reloaded-voices-audio",
+      "what": "Reloaded's 37 voice entries rebuilt into the archive; 90 s of Westopolis audio equals stock (no replaced line plays there; moved entries are read correctly); every read of the switchable voice archive equals the port's composition of the rebuilt archive and the player's Japanese archive",
+      "mods": [{"synthetic": "voices-from-reloaded"}],
+      "tick": 0, "budget_ms": 90000, "audio": true,
+      "expect": {"active": true, "pcm": "equals", "must_read": ["PRS_VOICE_E.afs"]}
+    },
+    {
+      "name": "installer-refuses-damaged",
+      "what": "A damaged download (a third of shadow.one) is refused by the installer, naming the file; nothing is installed and the game plays stock",
+      "mods": [{"synthetic": "truncated-shadow-one", "install_must_fail": "shadow\\.one is \\d+ bytes but its header says \\d+ \\(truncated"}],
+      "expect": {"active": false, "frame": "equals", "state": "equals"}
+    },
+    {
+      "name": "truncated-file-skipped",
+      "what": "A model file damaged after installation (a third of shadow.one) is skipped at start-up with an error; the game runs as stock",
+      "mods": [{"synthetic": "truncated-shadow-one", "place_directly": true}],
+      "expect": {"active": false, "frame": "equals", "state": "equals",
+                 "log_contains": ["\\[mods\\] error: truncated-shadow: files/character/shadow\\.one .*truncated"]}
+    },
+    {
+      "name": "missing-dependency",
+      "what": "A mod that needs an absent mod does not load; another enabled mod still does",
+      "mods": [{"synthetic": "needs-missing"}, {"install": "gb_dl/cream.rar"}],
+      "expect": {"active": true, "winner": {"character/shadow.one": "cream"},
+                 "log_contains": ["\\[mods\\] error: needs-missing: .*not loaded: it requires 'ghost'"]}
+    },
+    {
+      "name": "damaged-state-file",
+      "what": "A damaged mods.json: the game runs without mods, says why, and plays exactly as stock",
+      "mods": [{"install": "gb_dl/cream.rar"}],
+      "after_setup": ["damage-state"],
+      "expect": {"active": false, "frame": "equals", "state": "equals", "plan_matches_applied": false,
+                 "log_contains": ["\\[mods\\] error: mods\\.json is not valid JSON .* running without mods"]}
+    },
+    {
+      "name": "master-switch-off",
+      "what": "Mods installed and enabled, 'Load mods' off: stock play",
+      "mods": [{"install": "gb_dl/cream.rar"}],
+      "after_setup": ["master-off"],
+      "expect": {"active": false, "frame": "equals", "state": "equals", "log_absent": ["^Mods: "]}
+    },
+    {
+      "name": "no-mods-flag",
+      "what": "--no-mods with a mod enabled: stock play, no report written",
+      "mods": [{"install": "gb_dl/cream.rar"}],
+      "args": ["--no-mods"],
+      "expect": {"frame": "equals", "state": "equals", "log_absent": ["^Mods: "], "plan_matches_applied": false}
+    },
+    {
+      "name": "stage-chaotic-westopolis",
+      "what": "GameBanana 'Stages': Chaotic Westopolis (zip, 40 files: Westopolis layouts, stage archives, mission table, character models); the game reads the mod's layout and archives",
+      "mods": [{"install": "gb_dl2/chaotic_westopolis.zip"}],
+      "expect": {"active": true, "must_read": ["stg0100/stg0100_cmn.dat", "stg0100/stg0100_nrm.dat", "nukkoro2.inf", "setid.bin"],
+                 "frame": "differs", "state": "differs"}
+    },
+    {
+      "name": "weapon-elephant-tank-cannon",
+      "what": "GameBanana 'Weapons': Elephant over Tank Cannon (7z, files/common/WeaponResource.one); the game reads the mod's weapon archive at stage start",
+      "mods": [{"install": "gb_dl2/elephant_tank_cannon.7z"}],
+      "expect": {"active": true, "must_read": ["common/WeaponResource.one"]}
+    },
+    {
+      "name": "movie-op-re-edited-intro",
+      "what": "GameBanana 'Re-edited Intro' (7z, a loose Op.sfd): the intro movie the front end plays (cold boot, --ui-test select) is read from the mod and its picture differs",
+      "mods": [{"install": "gb_dl3/re_edited_intro.7z"}],
+      "boot": ["--ui-test", "select", "--tv-format", "ntsc"], "tape": false, "tick": 810000000, "budget_ms": 30000,
+      "expect": {"active": true, "must_read": ["Op.sfd"], "frame": "differs"}
+    },
+    {
+      "name": "movie-op-early-demo-intro",
+      "what": "GameBanana 'Early Demo Intro + Who I Am Opening' (zip, a loose Op.sfd): another intro movie; read from the mod, and its frame differs from stock and from the other intro mod",
+      "mods": [{"install": "gb_dl3/early_demo_intro.zip"}],
+      "boot": ["--ui-test", "select", "--tv-format", "ntsc"], "tape": false, "tick": 810000000, "budget_ms": 30000,
+      "expect": {"active": true, "must_read": ["Op.sfd"], "frame": "differs",
+                 "vs": {"scenario": "movie-op-re-edited-intro", "frame": "differs"}}
+    },
+    {
+      "name": "effects-no-weapon-outline",
+      "what": "GameBanana 'Effects': No Weapon Outline, original version (zip, files/stg_cmn_gdt.one); the game reads the mod's common stage archive; at the capture the green glow under the weapon on the ground is gone",
+      "mods": [{"install": "gb_dl3/no_outline_orig.zip"}],
+      "expect": {"active": true, "must_read": ["stg_cmn_gdt.one"], "frame": "differs"}
+    },
+    {
+      "name": "text-retranslated",
+      "what": "GameBanana 'Shadow the Hedgehog Retranslated' v2 (7z, 1,247 font tables/glyph sheets, NTSC-U layout); the game reads the mod's Westopolis text, and at tick 400M Shadow's first subtitle shows the mod's wording (the only pixels that differ)",
+      "mods": [{"install": "gb_dl3/retranslated_v2.7z"}],
+      "tick": 400000000,
+      "expect": {"active": true, "must_read": ["fonts/stg0100/stg0100_EN.fnt"], "frame": "differs"}
+    },
+    {
+      "name": "save-file-refused",
+      "what": "GameBanana '100% Save File (Reloaded)' (zip, one .gci): the manager says it is a save (Reloaded's own file), installs nothing and writes nothing into the game folder; play equals stock",
+      "mods": [{"install": "gb_dl3/save_100_reloaded.zip", "install_must_fail": "this download is a save, not a mod: 8P-GUPR-SHADOWRELOADED\\.gci is a GameCube save \\(game GUPR, maker 8P, file \"SHADOWRELOADED\"\\)"}],
+      "expect": {"active": false, "installed_mods": 0, "game_unchanged": true, "frame": "equals", "state": "equals"}
+    },
+    {
+      "name": "program-refused",
+      "what": "GameBanana 'ShadowRando' (7z, a randomizer program: .exe + .dll): the manager names the program, installs nothing, runs nothing; the game folder is unchanged; play equals stock",
+      "mods": [{"install": "gb_dl3/shadowrando_win.7z", "install_must_fail": "this download is a program \\(.*ShadowRando\\.exe\\), not a mod: the manager never installs or runs programs"}],
+      "expect": {"active": false, "installed_mods": 0, "game_unchanged": true, "frame": "equals", "state": "equals"}
+    },
+    {
+      "name": "reloaded-data-hud-tick",
+      "what": "Reloaded's data only, captured at tick 810M (HUD on screen): the base the code mod scenario is compared with",
+      "mods": [{"install": "dl/ShdTH-Reloaded"}],
+      "tick": 810000000,
+      "expect": {"active": true, "frame": "differs", "log_absent": ["\\[codes\\]"]}
+    },
+    {
+      "name": "code-no-hud-engine",
+      "what": "A code mod end to end: Reloaded's Gecko 'No HUD' chosen with 'ShadowModManager code', decided by build_variant.py --prepare-only (a data code: no recompile), run by the in-game engine on the stock executable; the HUD is gone against the same data without the code",
+      "mods": [{"install": "dl/ShdTH-Reloaded"}],
+      "code": [[0, "gecko:No HUD", "on"]], "prepare_variant": true,
+      "tick": 810000000,
+      "expect": {"active": true, "log_contains": ["^\\[codes\\] .*No HUD.*: runs", "^\\[codes\\] 1 data code\\(s\\) run once per retrace", "^Mods: 1 active .*, 1 data codes\\)"],
+                 "vs": {"scenario": "reloaded-data-hud-tick", "frame": "differs"}}
+    },
+    {
+      "name": "movie-wider-fmv-intro",
+      "what": "GameBanana 'Wider FMV's' (rar, all 8 movies re-encoded wider): the front end's intro Op.sfd is read from the mod and its picture differs",
+      "mods": [{"install": "gb_dl3/wider_fmv.rar"}],
+      "boot": ["--ui-test", "select", "--tv-format", "ntsc"], "tape": false, "tick": 810000000, "budget_ms": 30000,
+      "expect": {"active": true, "must_read": ["Op.sfd"], "frame": "differs"}
+    },
+    {
+      "name": "movie-wider-fmv-story",
+      "what": "The same mod on the story movie: --boot-flashback plays E1001.sfd; read from the mod, picture differs from stock",
+      "mods": [{"install": "gb_dl3/wider_fmv.rar"}],
+      "boot": ["--boot-flashback", "--tv-format", "ntsc"], "tape": false, "tick": 486000000, "budget_ms": 30000,
+      "expect": {"active": true, "must_read": ["E1001.sfd"], "frame": "differs"}
+    },
+    {
+      "name": "voices-japanese-xbox",
+      "what": "GameBanana 'Japanese Voices (XBOX)' (rar; installed: PRS_VOICE_E.afs, 78 sng_EV*_E.adx and 3 sng_jin_*_e.adx; left out: 7 Xbox 640x480 movies, 3 Xbox .pac banks): with the English voice setting the game reads the mod's archive as the English half of the switchable voice archive (every read equals that composition) and 90 s of Westopolis audio differs from stock",
+      "mods": [{"install": "gb_dl3/japanese_voices_xbox.rar"}],
+      "tick": 0, "budget_ms": 90000, "audio": true,
+      "expect": {"active": true, "must_read": ["PRS_VOICE_E.afs"], "pcm": "differs"}
+    },
+    {
+      "name": "voices-japanese-xbox-japanese-setting",
+      "what": "The same mod with the game's own Japanese voice setting (options.cfg voice=0): the port serves the player's PRS_VOICE_J.afs half, which holds the same clips as the mod's archive, so 90 s of audio equals stock with the Japanese setting",
+      "mods": [{"install": "gb_dl3/japanese_voices_xbox.rar"}],
+      "tick": 0, "budget_ms": 90000, "audio": true, "options_cfg": "voice=0",
+      "expect": {"active": true, "must_read": ["PRS_VOICE_E.afs"], "pcm": "equals"}
+    },
+    {
+      "name": "movie-japanese-xbox-story",
+      "what": "The same mod's 7 movies are the Xbox version's (640x480; the game decoded E1001 into its 512x480 picture scrambled before this rule): the installer leaves them out, naming each, and installs the rest; --boot-flashback then plays the disc's E1001.sfd, picture and audio equal stock",
+      "mods": [{"install": "gb_dl3/japanese_voices_xbox.rar",
+                "install_must_say": ["left out: files/E1001\\.sfd: is a 640x480 movie; this game's movies are 512x480"]}],
+      "boot": ["--boot-flashback", "--tv-format", "ntsc"], "tape": false, "tick": 486000000, "budget_ms": 30000, "audio": true,
+      "expect": {"active": true, "frame": "equals", "pcm": "equals"}
+    },
+    {
+      "name": "control-model-equals-stock",
+      "what": "NEGATIVE CONTROL: claims Cream's frame equals stock; the frame check must FAIL",
+      "mods": [{"install": "gb_dl/cream.rar"}],
+      "expect_fail": ["frame equals stock"],
+      "expect": {"frame": "equals"}
+    },
+    {
+      "name": "control-wrong-winner",
+      "what": "NEGATIVE CONTROL: claims the lower mod wins a conflict; the winner check must FAIL",
+      "mods": [{"install": "gb_dl/cream.rar", "priority": 2}, {"install": "gb_dl/playable_tails.zip", "priority": 1}],
+      "expect_fail": ["character/shadow.one comes from cream"],
+      "expect": {"winner": {"character/shadow.one": "cream"}}
+    },
+    {
+      "name": "control-texture-changes-state",
+      "what": "NEGATIVE CONTROL: claims a texture pack changes game state; the state check must FAIL",
+      "mods": [{"install": "gb_dl/shadow_android.zip"}],
+      "expect_fail": ["state differs stock"],
+      "expect": {"state": "differs"}
+    }
+  ]
+}

@@ -9,6 +9,7 @@
 #include "gekko/native_trk.h"
 #include "gekko/native_gx_display.h"
 #include "gekko/native_gx_texobj.h"
+#include "gekko/native_driver_callbacks.h"
 #include "gekko/menu_backgrounds.h"
 #include "gekko/world_anchor.h"
 #include "gekko/audio_audit.h"
@@ -23,12 +24,12 @@
 #endif
 
 #include "gekko/display.h"
-#include "gekko/native_hungarian_text.h"
 #include "gekko/native_save_text.h"
 #include "gekko/display_settings.h"
 #include "gekko/pc_settings.h"
-#include "gekko/settings_game.h"
 #include "gekko/voice_language.h"
+#include "gekko/voice_trace.h"
+#include "gekko/native_message_voice_owner.h"
 #include "gekko/profiling.h"
 #include "gekko/process_profile.h"
 #include "render/view.h"
@@ -1648,34 +1649,11 @@ const std::filesystem::path& System::memory_card_sram_path() const noexcept {
     return ipl_->companion_path();
 }
 
-// A menu sound as the page plays it: PlaySimple(GetSoundManager(), id, 0, 0) through the native SE manager, the
-// caller's argument registers kept.
-void System::play_menu_sound(void* system, Cpu& cpu, u32 id) {
-    auto* self = static_cast<System*>(system);
-    const u32 manager = cpu.mem_read32(se_manager::kManagerPointer);
-    if (manager == 0u) return;
-    const std::array<u32, 4> saved{cpu.gpr[3], cpu.gpr[4], cpu.gpr[5], cpu.gpr[6]};
-    cpu.gpr[3] = manager;
-    cpu.gpr[4] = id;
-    cpu.gpr[5] = 0u;
-    cpu.gpr[6] = 0u;
-    se_manager::serve_play_simple(cpu, self->se_services_);
-    cpu.gpr[3] = saved[0];
-    cpu.gpr[4] = saved[1];
-    cpu.gpr[5] = saved[2];
-    cpu.gpr[6] = saved[3];
-}
-
 bool System::mount_assets(std::unique_ptr<shadow::runtime::v1::Storage> storage, std::vector<u8> identity,
                           std::string& error) {
-    // The PC Options menu's own settings (gekko/pc_settings.h): options.cfg beside display.cfg, read once and applied
-    // (master volume, rumble strength, camera inversion; the defaults are the original behaviour).
-    // The settings registry's six categories (gekko/settings_game.h; the launcher may have added its own first).
-    {
-        char build[64];
-        std::snprintf(build, sizeof(build), "%s %s x64", __DATE__, __TIME__);
-        settings::add_default_providers(build);
-    }
+    // The PC settings (gekko/pc_settings.h, docs/PC_SETTINGS_FILES.md): options.cfg beside display.cfg, read once and
+    // applied (the volumes, the rumble strength, the camera inversion, the subtitles switch; the game's own options are
+    // applied by the save store). The defaults are the original behaviour.
     if (!pc_settings().loaded()) {
         const std::filesystem::path display_cfg = display_settings().cfg_path();
         const std::filesystem::path path =
@@ -1683,77 +1661,6 @@ bool System::mount_assets(std::unique_ptr<shadow::runtime::v1::Storage> storage,
         std::vector<std::string> warnings;
         pc_settings().load(path, &warnings);
         for (const std::string& w : warnings) std::cerr << "[options] " << w << '\n';
-        // A saved Hungarian reads as English while the option is withdrawn; options.cfg changes only if the player saves.
-        if (!hungarian::kOffered && pc_settings().current().language == hungarian::kLanguage) {
-            auto english = pc_settings().current();
-            english.language = 1;
-            pc_settings().apply(english);
-            std::cerr << "[options] Hungarian is not offered in this build: English text\n";
-        }
-    }
-    // Hungarian (gekko/native_hungarian_text.h): PC settings language 6 keeps the game on its English text language and
-    // serves the Hungarian font files under the English names. Every such file has two contents, English and
-    // Hungarian, both built at this mount; which one a read gets follows the setting at that read (hungarian::selected()),
-    // so switching needs no restart: the game re-reads the files when it reloads its language assets (a stage load, the
-    // Options language apply) and gets the content of the moment. The Front End's table is built by the Options loop below,
-    // which adds its own messages to it.
-    const auto hungarian_selector = []() -> std::size_t { return hungarian::selected() ? 1u : 0u; };
-    // The Options menu: "Magyar" is offered and served live (the menu's own texts take the Hungarian column of
-    // options_menu_texts.inc while it is selected).
-    settings::set_hungarian_state(hungarian::kOffered, hungarian::kOffered);
-    for (const std::string& family : hungarian::families()) {
-        for (const char* extension : {"fnt", "txd", "met"}) {
-            if (family == "Advertise" && std::string_view(extension) == "fnt") continue;
-            const std::string path = hungarian::font_path(family, extension);
-            const std::string kind(extension);
-            const bool pc_save_table = pc_save_text_ && path == save_text::kEnglishTable;
-            assets::AssetSystem::Replacement english = [path, pc_save_table](const assets::AssetSystem::TreeReader& read,
-                                                                           std::vector<u8>& bytes,
-                                                                           std::string& build_error) {
-                if (!pc_save_table) {
-                    if (read(path, bytes)) return true;
-                    build_error = path + " is missing";
-                    return false;
-                }
-                std::vector<u8> table;
-                std::vector<u8> glyphs;
-                if (!read(save_text::kEnglishTable, table) || !read(save_text::kEnglishGlyphs, glyphs)) {
-                    build_error = "the English save-message table or its glyph list is missing";
-                    return false;
-                }
-                return save_text::rewrite_table(table, glyphs, save_text::pc_english_messages(), bytes, build_error);
-            };
-            assets::AssetSystem::Replacement hungarian_variant =
-                [family, kind](const assets::AssetSystem::TreeReader& read, std::vector<u8>& bytes,
-                               std::string& build_error) {
-                    hungarian::Font font;
-                    if (!hungarian::build_font(family, read, font, build_error)) return false;
-                    bytes = kind == "fnt" ? std::move(font.fnt) : kind == "txd" ? std::move(font.txd) : std::move(font.met);
-                    return true;
-                };
-            std::vector<assets::AssetSystem::Replacement> variants;
-            variants.push_back(std::move(english));
-            variants.push_back(std::move(hungarian_variant));
-            assets_.replace_switchable(path, std::move(variants), hungarian_selector);
-        }
-    }
-    {
-        // The PAL 50/60 Hz screen is a picture with its words baked in (palSel/PalSelEn.txd).
-        std::vector<assets::AssetSystem::Replacement> variants;
-        variants.push_back([](const assets::AssetSystem::TreeReader& read, std::vector<u8>& bytes, std::string& build_error) {
-            if (read(hungarian::kPalSelPath, bytes)) return true;
-            build_error = "palSel/PalSelEn.txd is missing";
-            return false;
-        });
-        variants.push_back([](const assets::AssetSystem::TreeReader& read, std::vector<u8>& bytes, std::string& build_error) {
-            std::vector<u8> original;
-            if (!read(hungarian::kPalSelPath, original)) {
-                build_error = "palSel/PalSelEn.txd is missing";
-                return false;
-            }
-            return hungarian::palsel_file(original, bytes, build_error);
-        });
-        assets_.replace_switchable(std::string(hungarian::kPalSelPath), std::move(variants), hungarian_selector);
     }
     // The Japanese character voice banks (gekko/voice_language.h): the PAL disc's sound/B3/B4/B5_*_J.mlt are an
     // English-layout older set (identical to the Japanese disc's *_E.mlt); the Japanese disc's *_J.mlt have the PAL
@@ -1774,7 +1681,6 @@ bool System::mount_assets(std::unique_ptr<shadow::runtime::v1::Storage> storage,
                                         return archive->read(offset, length, dest, got, pc_settings().current().voice == 0);
                                     });
             voice_archive_ready_ = true;
-            options_display_.set_seamless_voice(true);
             std::cerr << "[voice] switchable dialogue archive: " << archive->size() << " bytes, both languages\n";
         } else {
             std::cerr << "[voice] the switchable dialogue archive is not served (" << why
@@ -1802,42 +1708,41 @@ bool System::mount_assets(std::unique_ptr<shadow::runtime::v1::Storage> storage,
                             return true;
                         });
     }
-    // The Options menu's Display tile (gekko/native_options_display.h), per language: the tile's art in Options2,
-    // and the front-end table with the tile's help line - the English one also with the save screen's PC words (its
-    // copies of the save messages, the boot's autosave notice among them, found by their original text). Reading the
-    // table's glyph sheets here hands them to the page's overlay.
-    for (u32 index = 0; index < options_display::kLanguageSuffix.size(); ++index) {
-        const auto language = static_cast<options_display::Language>(index);
-        const std::string suffix(options_display::kLanguageSuffix[index]);
-        assets_.replace("csdFiles/Options_" + suffix + ".txd",
-                        [suffix](const assets::AssetSystem::TreeReader& read, std::vector<u8>& bytes,
-                                 std::string& build_error) {
-                            std::vector<u8> txd;
-                            if (!read("csdFiles/Options_" + suffix + ".txd", txd)) {
-                                build_error = "csdFiles/Options_" + suffix + ".txd is missing";
-                                return false;
-                            }
-                            return options_display::place_tile_art(txd, bytes, build_error);
-                        });
-        const std::string base = "FONTS/ADVERTISE/Advertise_" + suffix;
-        const auto make_front_end = [this, base, language](bool hungarian_here, bool english_save_words) {
-            return assets::AssetSystem::Replacement([this, base, language, english_save_words, hungarian_here](
-                                           const assets::AssetSystem::TreeReader& read, std::vector<u8>& bytes,
-                                           std::string& build_error) {
-            std::vector<u8> table, sheets;
-            std::vector<std::vector<u8>> glyph_lists;
-            if (hungarian_here) {
-                // The Hungarian front end under the English names (gekko/native_hungarian_text.h).
-                hungarian::Font font;
-                if (!hungarian::build_font("Advertise", read, font, build_error)) return false;
-                table = std::move(font.fnt);
-                sheets = std::move(font.txd);
-                glyph_lists.push_back(std::move(font.met));
-            } else {
-                if (!read(base + ".fnt", table) || !read(base + ".txd", sheets)) {
-                    build_error = base + ".fnt or its glyph sheets are missing";
+    // The save screens in PC words (gekko/native_save_text.h, docs/SAVE_SCREEN_OPTIONS.md option A), per language:
+    // the save-message table Save_<lang>.fnt, and the copies of those messages in the front-end table
+    // Advertise_<lang>.fnt (the boot's autosave notice is drawn from it), found by their original text. English must
+    // succeed; another language whose atlas lacks a glyph keeps its original copies (logged).
+    if (pc_save_text_) {
+        for (const char* language : {"EN", "FR", "GE", "IT", "JP", "SP"}) {
+            const std::string suffix(language);
+            if (save_text::pc_messages(suffix).empty()) continue;
+            const std::string save_path = "FONTS/SAVE/Save_" + suffix + ".fnt";
+            assets_.replace(save_path, [save_path, suffix](const assets::AssetSystem::TreeReader& read,
+                                                            std::vector<u8>& bytes, std::string& build_error) {
+                std::vector<u8> table;
+                if (!read(save_path, table)) {
+                    build_error = save_path + " is missing";
                     return false;
                 }
+                std::vector<std::vector<u8>> glyph_lists;
+                for (u32 n = 0; n < 10u; ++n) {
+                    char name[16];
+                    std::snprintf(name, sizeof(name), "%02u.met", n);
+                    std::vector<u8> met;
+                    if (!read("FONTS/SAVE/Save_" + suffix + name, met)) break;
+                    glyph_lists.push_back(std::move(met));
+                }
+                return save_text::rewrite_table(table, glyph_lists, save_text::pc_messages(suffix), bytes, build_error);
+            });
+            const std::string base = "FONTS/ADVERTISE/Advertise_" + suffix;
+            assets_.replace(base + ".fnt", [base, suffix](const assets::AssetSystem::TreeReader& read,
+                                                         std::vector<u8>& bytes, std::string& build_error) {
+                std::vector<u8> table;
+                if (!read(base + ".fnt", table)) {
+                    build_error = base + ".fnt is missing";
+                    return false;
+                }
+                std::vector<std::vector<u8>> glyph_lists;
                 for (u32 n = 0; n < 100u; ++n) {
                     char name[16];
                     std::snprintf(name, sizeof(name), "%02u.met", n);
@@ -1845,104 +1750,25 @@ bool System::mount_assets(std::unique_ptr<shadow::runtime::v1::Storage> storage,
                     if (!read(base + name, met)) break;
                     glyph_lists.push_back(std::move(met));
                 }
-            }
-            if (glyph_lists.empty()) {
-                build_error = base + " has no glyph list";
-                return false;
-            }
-            std::u16string on, off;
-            save_text::message_text(table, 346u, on);  // the game's own ON / OFF
-            save_text::message_text(table, 347u, off);
-            // The Hungarian variant (served in place of the English one while Magyar is selected) does not touch the
-            // overlay's per-language state: it belongs to the language the game reports (EN).
-            if (!hungarian_here) options_display_.set_font_files(language, std::move(sheets), glyph_lists, on, off);
-            if (english_save_words) {
-                // The save messages' copies in this front-end table, in PC words (every language since 2026-11-05:
-                // save_text::pc_messages). English must succeed; another language whose front-end atlas lacks a glyph
-                // keeps its original copies (logged) rather than losing the whole table.
-                const std::string suffix = base.substr(base.rfind('_') + 1);
-                const bool english = suffix == "EN";
-                std::vector<u8> save_table, reworded;
+                std::vector<u8> save_table;
                 std::vector<save_text::Rewording> rewordings;
                 u32 count = 0;
                 std::string reword_error;
-                if (!read("FONTS/SAVE/Save_" + suffix + ".fnt", save_table) ||
-                    !save_text::rewordings_of(save_table, save_text::pc_messages(suffix), rewordings, reword_error) ||
-                    !save_text::reword_table(table, glyph_lists, rewordings, reworded, count, reword_error)) {
-                    if (reword_error.empty()) reword_error = "Save_" + suffix + ".fnt is missing";
-                    if (english) {
-                        build_error = reword_error;
-                        return false;
-                    }
-                    std::cerr << "[save-text] " << base << ".fnt: save-message copies kept as they are: " << reword_error
-                              << '\n';
-                } else {
-                    table = std::move(reworded);
+                if (glyph_lists.empty()) reword_error = base + " has no glyph list";
+                if (reword_error.empty() && read("FONTS/SAVE/Save_" + suffix + ".fnt", save_table) &&
+                    save_text::rewordings_of(save_table, save_text::pc_messages(suffix), rewordings, reword_error) &&
+                    save_text::reword_table(table, glyph_lists, rewordings, bytes, count, reword_error))
+                    return true;
+                if (reword_error.empty()) reword_error = "Save_" + suffix + ".fnt is missing";
+                if (suffix == "EN") {
+                    build_error = reword_error;
+                    return false;
                 }
-            }
-            // The PC Options menu's descriptions (gekko/native_options_menu.h): new messages the help line shows,
-            // inserted in id order with the help line's entry words (message 5001's).
-            u32 missing = 0;
-            std::vector<u8> inserted;
-            if (!options_display::insert_messages(table, glyph_lists,
-                                                  options_menu::help_messages(language, hungarian_here), 5001u,
-                                                  inserted, missing, build_error))
-                return false;
-            if (missing != 0u)
-                std::cerr << "[options] " << base << ": " << missing
-                          << " description glyphs the sheets lack were left out\n";
-            // The sound test's track names (messages 6100 + track) and the table the menu reads value texts from.
-            std::vector<std::u16string> tracks;
-            for (u32 track = 0; track < 64u; ++track) {
-                std::u16string name;
-                if (!options_display::message_by_id(table, 6100u + track, name)) break;
-                tracks.push_back(std::move(name));
-            }
-            if (!hungarian_here) {
-                options_display_.set_track_names(language, std::move(tracks));
-                options_menu::set_front_end_table(language, inserted);
-            } else {
-                // The PC Options rows while Magyar is selected (live switch): the Hungarian sheets, ON / OFF, track
-                // names and table, kept apart from the English slot's.
-                options_display_.set_hungarian_font_files(std::move(sheets), glyph_lists, on, off, std::move(tracks));
-                options_menu::set_hungarian_front_end_table(inserted);
-            }
-            options_display_.set_messages_ready(true);
-            std::cerr << "[options] " << base << ".fnt built" << (hungarian_here ? " (Hungarian)" : "") << ": "
-                      << inserted.size() << " bytes from " << table.size() << '\n';
-            bytes = std::move(inserted);
-            return true;
-        });
-        };
-        if (language == options_display::Language::EN) {
-            std::vector<assets::AssetSystem::Replacement> variants;
-            variants.push_back(make_front_end(false, pc_save_text_));
-            variants.push_back(make_front_end(true, false));
-            assets_.replace_switchable(base + ".fnt", std::move(variants), hungarian_selector);
-        } else {
-            assets_.replace(base + ".fnt", make_front_end(false, pc_save_text_));
-            // The save screen's own table in PC words (English: the Hungarian loop's switchable Save_EN.fnt above).
-            if (pc_save_text_ && !save_text::pc_messages(suffix).empty()) {
-                const std::string save_path = "FONTS/SAVE/Save_" + suffix + ".fnt";
-                assets_.replace(save_path, [save_path, suffix](const assets::AssetSystem::TreeReader& read,
-                                                                std::vector<u8>& bytes, std::string& build_error) {
-                    std::vector<u8> table;
-                    if (!read(save_path, table)) {
-                        build_error = save_path + " is missing";
-                        return false;
-                    }
-                    std::vector<std::vector<u8>> glyph_lists;
-                    for (u32 n = 0; n < 10u; ++n) {
-                        char name[16];
-                        std::snprintf(name, sizeof(name), "%02u.met", n);
-                        std::vector<u8> met;
-                        if (!read("FONTS/SAVE/Save_" + suffix + name, met)) break;
-                        glyph_lists.push_back(std::move(met));
-                    }
-                    return save_text::rewrite_table(table, glyph_lists, save_text::pc_messages(suffix), bytes,
-                                                    build_error);
-                });
-            }
+                std::cerr << "[save-text] " << base << ".fnt: save-message copies kept as they are: " << reword_error
+                          << '\n';
+                bytes = std::move(table);
+                return true;
+            });
         }
     }
     // Five menu backgrounds at full height (gekko/menu_backgrounds.h): the retail layouts leave a band at the bottom.
@@ -2061,6 +1887,18 @@ void System::enable_gameplay_scheduler() {
 }
 
 void System::request_stop_between_traversals(StopReason reason, std::string detail) {
+    // Inside a native event (a wait's callback reached a wait point of its own, and the host service ran there): a stop
+    // now would cut the callback short - guest_call fails, the handler's remaining steps never run - and leave a machine
+    // that cannot be continued or saved. The stop waits for the event's end: advance_game_time raises it at the first
+    // wait after it (RC-kernel-2).
+    if (interrupts_ != nullptr && interrupts_->sync_event_active() &&
+        (gameplay_scheduler_ == nullptr || !gameplay_scheduler_->busy())) {
+        if (boundary_stop_pending_) return;
+        boundary_stop_pending_ = true;
+        boundary_stop_reason_ = reason;
+        boundary_stop_detail_ = std::move(detail);
+        return;
+    }
     if (gameplay_scheduler_ == nullptr || !gameplay_scheduler_->busy()) {
         boundary_stop_pending_ = false;
         cpu_.request_stop(reason, std::move(detail));
@@ -2152,6 +1990,9 @@ void System::start() {
     // spine should read as one group it is renamed once, not spelled both ways.
     GEKKO_PROFILE_ZONE("cpu/start");
     cpu_.clear_stop();
+    // The game never selects a rounding mode or enables an FP exception; an FPSCR write that does is refused, not
+    // silently ignored (Cpu::fpscr_written, RC-fp-3).
+    cpu_.set_fpscr_policy_guard(true);
 
     // Diagnostics (non-shipping): GEKKO_CALL_CENSUS=<file>, GEKKO_CALL_CENSUS_ADDRS=<hex>[,<hex>...]. Every call of a
     // listed guest function appends "address,game_ticks,r3,r4,lr,f1 bits" and is then DECLINED, so the guest body runs exactly
@@ -2607,39 +2448,6 @@ void System::start() {
         },
         "GiHPGaugeEnemy draw (native health bar)");
 
-    // The PC Options menu (gekko/native_options_menu.h): six categories on the game's Options screen. The setup, page
-    // and help-line entries take notes or change an argument and decline; the row draw and the page's button queries
-    // are served for the six categories, every other caller runs the game's own code.
-    options_display_.set_sound(&System::play_menu_sound, this);
-    cpu_.install_hle(
-        options_menu::kSetup,
-        [this](Cpu& cpu) {
-            // The front-end's language: the JP disc's own, else the console's (OSGetLanguage: the SRAM byte).
-            // The menu draws in the game's own text language (settings + 0x58, the game's enum 0 JP, 1 EN, 2 FR,
-            // 3 SP, 4 GE, 5 IT - the Subtitles row, set at boot from options.cfg), so its rows match the game's text.
-            static constexpr options_display::Language kByGame[] = {
-                options_display::Language::JP, options_display::Language::EN, options_display::Language::FR,
-                options_display::Language::SP, options_display::Language::GE, options_display::Language::IT};
-            const u32 text_language = cpu.mem_read32(0x8057E7B8u);
-            options_display_.set_language(kByGame[text_language < 6u ? text_language : 1u]);
-            return options_display_.setup(cpu);
-        },
-        "Options setup (six categories shown)");
-    cpu_.install_hle(
-        options_menu::kPage, [this](Cpu& cpu) { return options_display_.page(cpu); }, "Options page input (notes)");
-    cpu_.install_hle(
-        options_menu::kDrawRows, [this](Cpu& cpu) { return options_display_.draw_rows(cpu); },
-        "Options page rows (PC menu)");
-    cpu_.install_hle(
-        options_menu::kRepeatPress, [this](Cpu& cpu) { return options_display_.repeat_press(cpu); },
-        "Options repeat press (PC menu)");
-    cpu_.install_hle(
-        options_menu::kEdgePress, [this](Cpu& cpu) { return options_display_.edge_press(cpu); },
-        "Options edge press (PC menu)");
-    cpu_.install_hle(
-        options_menu::kSetText, [this](Cpu& cpu) { return options_display_.set_text(cpu); },
-        "Options help line (PC menu descriptions)");
-
     // Subtitles on/off (options.cfg "subtitles", Audio row "Show subtitles"; the original game has no such switch -
     // its "Subtitle" item only picks the text language). Every subtitle of a spoken line - the stage hint / radio /
     // enemy lines (HintController, HintRing, HintCollision and the ~110 producers of fn_801FB210), the in-engine
@@ -2965,145 +2773,6 @@ void System::start() {
         },
         "Chao::CSD cast draw (2D decomposition observation)");
 
-    // Effect particle draw, 0x80434824. DIAGNOSTIC ONLY - inert unless
-    // SHADOW_EFFECT_PROBE is set in the environment.
-    //
-    // This function walks a particle list (head at this+0xFC, next at +0x68)
-    // and, per particle, wraps a rotation at +0x18 into [-pi, pi] with a LOOP
-    // rather than a remainder:
-    //
-    //     while (a > pi || a < -pi) a = (a >= 0.0f) ? a - 2*pi : a + 2*pi;
-    //
-    // The three constants are DOL data and were read directly: pi at
-    // 0x805FBDB0 = 3.14159274, the compare threshold at 0x8051C790 = 0.0, and
-    // the multiplier at 0x8051C798 = 2.0.
-    //
-    // That loop is only bounded while the rotation stays small. In float32 the
-    // ULP passes 2*pi at |a| >= 2^27, so a - 2*pi ROUNDS BACK TO a and the loop
-    // can never terminate; well below that it still costs |a|/(2*pi) iterations
-    // per particle per frame. The guest then never returns from the draw, which
-    // is why GX submission stops dead while instructions keep retiring.
-    //
-    // The probe reports the largest-magnitude rotation in the list so the value
-    // can be caught while it is still growing, rather than after it wedges.
-    cpu_.install_hle(
-        0x80434824u,
-        [this](Cpu& cpu) {
-            static const bool enabled = std::getenv("SHADOW_EFFECT_PROBE") != nullptr;
-            if (!enabled) return false;
-            static u64 entries = 0;
-            static u64 drawn = 0;
-            ++entries;
-            const u32 self = cpu.gpr[3];
-            const u32 flags = cpu.mem_read32(self + 0x18u);
-            if ((flags & 1u) == 0u || (flags & 8u) != 0u) return false;
-            if (cpu.mem_read32(self + 0x110u) == 0u) return false;
-            ++drawn;
-            static float reported = 4.0f;   // above pi, so a wrapped list is silent
-            u32 node = cpu.mem_read32(self + 0xfcu);
-            u32 walked = 0;
-            float worst = 0.0f;
-            u32 worst_node = 0;
-            while (node != 0u && walked < 8192u) {
-                const u32 bits = cpu.mem_read32(node + 0x18u);
-                float angle = 0.0f;
-                std::memcpy(&angle, &bits, sizeof(angle));
-                if (std::fabs(angle) > std::fabs(worst)) {
-                    worst = angle;
-                    worst_node = node;
-                }
-                node = cpu.mem_read32(node + 0x68u);
-                ++walked;
-            }
-            static const u64 verbose_from = [] {
-                const char* from = std::getenv("SHADOW_EFFECT_PROBE_FROM");
-                return from != nullptr ? std::strtoull(from, nullptr, 0)
-                                       : std::numeric_limits<u64>::max();
-            }();
-            static u32 longest = 0;
-            if (cpu.game_clock().now() >= verbose_from) {
-                std::fprintf(stderr,
-                             "[effect-trace] ticks=%llu entries=%llu emitter=0x%08X "
-                             "list_len=%u head=0x%08X msr=0x%08X FP=%d vis=0x%08X stream=0x%08X "
-                             "worst_rot=%.9g (0x%08X) at 0x%08X iters=%.4g\nchain=",
-                             static_cast<unsigned long long>(cpu.game_clock().now()),
-                             static_cast<unsigned long long>(entries), self, walked,
-                             cpu.mem_read32(self + 0xfcu), cpu.msr(),
-                             (cpu.msr() & 0x2000u) != 0u ? 1 : 0,
-                             cpu.mem_read32(self + 0x110u), cpu.mem_read32(self + 0x13cu),
-                             static_cast<double>(worst),
-                             [&] { u32 b = 0; std::memcpy(&b, &worst, sizeof(b)); return b; }(),
-                             worst_node, static_cast<double>(std::fabs(worst) / 6.2831853));
-                u32 n = cpu.mem_read32(self + 0xfcu);
-                for (u32 i = 0; i < 4u && n != 0u; ++i) {
-                    std::fprintf(stderr, "0x%08X->", n);
-                    n = cpu.mem_read32(n + 0x68u);
-                }
-                std::fprintf(stderr, "0x%08X%s\n", n,
-                             walked >= 8192u ? "  *** WALK CAPPED ***" : "");
-                // The five attribute streams the draw is about to lock, resolved
-                // exactly as FUN_80449458 would: stream = *(object + *(r13+0x5FF0)),
-                // then a (base, stride) pair per mask, with an override at +0x9C.
-                // The wrap loop's three constants, live. If the pi at 0x805FBDB0
-                // is ever 0 the loop is provably non-terminating: the condition
-                // 0 < a stays true while the body computes a = -(2*0 - a) = a.
-                {
-                    const u32 pi_bits = cpu.mem_read32(0x805fbdb0u);
-                    const u32 thr_bits = cpu.mem_read32(0x8051c790u);
-                    const u32 mul_bits = cpu.mem_read32(0x8051c798u);
-                    float pi = 0.0f, thr = 0.0f, mul = 0.0f;
-                    std::memcpy(&pi, &pi_bits, sizeof(pi));
-                    std::memcpy(&thr, &thr_bits, sizeof(thr));
-                    std::memcpy(&mul, &mul_bits, sizeof(mul));
-                    std::fprintf(stderr,
-                                 "               wrap: pi=%.9g (0x%08X) thr=%.9g mul=%.9g%s\n",
-                                 static_cast<double>(pi), pi_bits, static_cast<double>(thr),
-                                 static_cast<double>(mul),
-                                 (pi_bits != 0x40490fdbu) ? "   *** PI CORRUPTED ***" : "");
-                }
-                const u32 object = cpu.mem_read32(self + 0x13cu);
-                const u32 sda_offset = cpu.mem_read32(cpu.gpr[13] + 0x5ff0u);
-                const u32 stream = object != 0u ? cpu.mem_read32(object + sda_offset) : 0u;
-                if (stream != 0u) {
-                    const u32 present = cpu.mem_read32(stream + 0xa0u);
-                    const u32 override_stride = cpu.mem_read32(stream + 0x9cu);
-                    struct { u32 mask; u32 base_off; u32 stride_off; const char* what; } kAttrs[] = {
-                        {0x01u, 0x4cu, 0x50u, "pos"},   {0x02u, 0x6cu, 0x70u, "col"},
-                        {0x04u, 0x64u, 0x68u, "uv"},    {0x20u, 0x7cu, 0x80u, "rot"},
-                        {0x80u, 0x84u, 0x88u, "xtra"},
-                    };
-                    std::fprintf(stderr, "               stream=0x%08X present=0x%08X ovr=%u",
-                                 stream, present, override_stride);
-                    for (const auto& a : kAttrs) {
-                        const bool ok = (present & a.mask) != 0u;
-                        const u32 base = ok ? cpu.mem_read32(stream + a.base_off) : 0u;
-                        u32 stride = ok ? cpu.mem_read32(stream + a.stride_off) : 0u;
-                        if (override_stride != 0u) stride = override_stride;
-                        std::fprintf(stderr, "  %s=%s0x%08X/%u", a.what, ok ? "" : "FAIL:", base,
-                                     stride);
-                    }
-                    std::fprintf(stderr, "\n");
-                }
-                std::fflush(stderr);
-            }
-            if (walked > longest || std::fabs(worst) > reported) {
-                if (std::fabs(worst) > reported) reported = std::fabs(worst) * 2.0f;
-                if (walked > longest) longest = walked;
-                u32 bits = 0;
-                std::memcpy(&bits, &worst, sizeof(bits));
-                std::fprintf(stderr,
-                             "[effect-probe] ticks=%llu entries=%llu emitter=0x%08X "
-                             "list_len=%u head=0x%08X worst_rot=%.6g (0x%08X) node=0x%08X%s\n",
-                             static_cast<unsigned long long>(cpu.game_clock().now()),
-                             static_cast<unsigned long long>(entries), self, walked,
-                             cpu.mem_read32(self + 0xfcu), static_cast<double>(worst), bits,
-                             worst_node, walked >= 8192u ? "  *** WALK CAPPED ***" : "");
-                std::fflush(stderr);
-            }
-            return false;
-        },
-        "Effect particle draw (rotation-range probe)");
-
     // Vertex-stream attribute lock, 0x80449458. DIAGNOSTIC ONLY.
     //
     //   lock(object r3, out int[2] r4, mask r5, flags r6)
@@ -3213,6 +2882,16 @@ void System::start() {
     os_font::install(cpu_);
     // The game's 3-vector helpers (gekko/native_vec_math.h): Sub, Add, Scale, AddTo, SubFrom, Dot, Cross, Length.
     vec_math::install(cpu_);
+    // The Mtn animation library's key-frame track sampler, seeks, initialiser, Hermite interpolators and vector samplers
+    // (gekko/native_mtn_track.h, docs/agents/opt-mtn.md).
+    mtn_track::install(cpu_);
+    s1_chars::install(cpu_);  // s1/core: the character sweep query 0x80021934 (gekko/native_s1_chars.h)
+    s1_shptr::install(cpu_);  // s1/core: the counted-handle family (gekko/native_s1_shptr.h)
+    s1_core::install(cpu_);  // s1/core: the layout manager's one-player scan (gekko/native_s1_core.h, docs/re/core.md)
+    s1_target2::install(cpu_);  // s1/target: the target registry's query layer (gekko/native_s1_target2.h, docs/re/target-tree.md); hooks only with the switch on
+    mtn_pose::install(cpu_);  // the pose pass: bone-tree walk, node callbacks, slerp chain (gekko/native_mtn_pose.h, docs/agents/opt-mtn2.md)
+    // The effect system's particle update (gekko/native_effect_update.h): the command updates and the unit step.
+    effect_update::install(cpu_);
     // The AX mixer library's MIXQuit / MIXSetSoundMode (gekko/native_mix_entries.h).
     mix_entries::install(cpu_);
     // The sound-effect table lookup (gekko/native_sound_tables.h): the original lookup and its helper are not generated.
@@ -3262,6 +2941,7 @@ void System::start() {
     gx_state::install(cpu_);  // the GX state API (docs/agents/card-saves.md, gxA): served, nothing kept
     gx_display::install(cpu_);  // the display-copy and FIFO-setup leaves (gekko/native_gx_display.h)
     gx_texobj::install(cpu_);  // the GX texture-object functions, reproduced exactly (gekko/native_gx_texobj.h)
+    driver_callbacks::install(cpu_);  // the GX default region callbacks (gekko/native_driver_callbacks.h)
     rw_raster::install(cpu_, *gx_sync_);  // the RenderWare raster life cycle (docs/agents/card-saves.md, rwR2)
     // The game's saves: the native save store (one host GCI) or, with set_memory_card_path (the reference tests'
     // oracle), the card model.
@@ -3292,6 +2972,7 @@ void System::start() {
     trk::install(cpu_);
     os_machine_check::install(cpu_, debug_console_);  // DMAErrorHandler: prints its two lines, then stops (no host machine check)
     math_affine::install(cpu_);  // the 3x4 matrix leaves 0x8040C6CC / C5EC / C7E0 (docs/agents/os-other.md, step 15)
+    adx_decode::install(cpu_);   // the ADX stereo 4-bit block decoder 0x803C5B2C (docs/agents/opt-adx.md)
     ax_mix_alloc::install(cpu_);  // the AX MIX table alloc / free wrappers (class D of audio.ax)
     reset_controls_->install();
     boot_->install();
@@ -3301,6 +2982,10 @@ void System::start() {
     world_collision_->install();
     directory_scan_->install();
     game_memory_->install();
+    // The reconstructed message system and dialogue voice layer (SHADOW_NATIVE_MESSAGE; installed after every other entry hook).
+    message_voice_owner::install(cpu_);
+    // Dialogue voice / subtitle window trace: only with GEKKO_VOICE_TRACE=<file>; observers that never change a result.
+    voice_trace::install(cpu_);
     // Every listed platform site goes to the subsystem whose table lists it.
     cpu_.set_platform_sites(
         [this](Cpu& cpu, u32 site, u32 effective) { return platform_read16(cpu, site, effective); },
@@ -3572,10 +3257,24 @@ void System::install_boot_stage_hooks() {
         install_chained_hle(
             kStoryNext,
             [this](Cpu& cpu) {
-                if (boot_stage_.cutscene_handed || (cpu.lr != kStoryLoopQuery && cpu.lr != kOtherLoopQuery) ||
-                    cpu.gpr[4] == 0u) {
-                    return false;
+                if ((cpu.lr != kStoryLoopQuery && cpu.lr != kOtherLoopQuery) || cpu.gpr[4] == 0u) return false;
+                if (boot_stage_.cutscene_handed && boot_stage_.story_stage != 0u && !boot_stage_.story_stage_play_handed) {
+                    // The stage's StageManager is built and its load step is done; the next query would give the story's
+                    // own first stage (Westopolis). Answer the same stage again with the sequence's current-stage word
+                    // (caller's r31 + 0xC, still intact at this entry) set to it: 0x802D21F8 then takes the PlayAction
+                    // branch (0x802D22B8) for the stage just loaded. Developer navigation only (gated by the flag).
+                    const u32 entry = cpu.gpr[4];
+                    cpu.mem_write32(cpu.gpr[31] + 0xCu, boot_stage_.story_stage);
+                    cpu.mem_write32(entry, 0u);
+                    cpu.mem_write32(entry + 4u, boot_stage_.story_stage);
+                    cpu.mem_write32(entry + 8u, cpu.gpr[5]);
+                    cpu.gpr[3] = 1u;
+                    boot_stage_.story_stage_play_handed = true;
+                    std::fprintf(stderr, "[boot-stage] stg%04u handed again with the current-stage word set: play\n",
+                                 boot_stage_.story_stage);
+                    return true;
                 }
+                if (boot_stage_.cutscene_handed) return false;
                 const u32 entry = cpu.gpr[4];
                 cpu.mem_write32(entry, boot_stage_.cutscene);
                 cpu.mem_write32(entry + 4u, boot_stage_.story_stage);
@@ -4653,7 +4352,7 @@ void System::run_ax_mix(u32 command_list) {
     const SoundArena::Source banks = sound_banks_->arena().source();
     const SoundArena::Source ring = stream_ring_->arena().source();
 
-    // Options > Audio category volumes (gekko/audio_categories.h): each AX voice's category is read from the game's own
+    // options.cfg category volumes (gekko/audio_categories.h): each AX voice's category is read from the game's own
     // ownership tables, only while a category is off 100 % (otherwise nothing is read and VoiceFrame::gain stays unity).
     audio_category::VoiceKinds voice_kinds;
     const bool categorised = !audio_category::all_unity();
@@ -5256,12 +4955,16 @@ void System::deliver_event(GameEvent event) {
                 // A pacing tick between two host services: real-time pacing only.
                 GEKKO_PROFILE_ZONE("cpu/host-pacing");
                 if (host_pacing_) host_pacing_(now);
+                cpu_.note_host_fp_control("after the host pacing callback");
                 break;
             }
             ++host_services_;
             {
                 GEKKO_PROFILE_ZONE("cpu/host-service");
                 if (host_service_) host_service_(now);
+                // The service runs the window, the renderer's and the audio device's host code on this thread: none of
+                // it may leave the game thread with another FP environment (Cpu::note_host_fp_control, RC-fp-2).
+                cpu_.note_host_fp_control("after the host service");
             }
 #if defined(SHADOW_TRACY)
             publish_process_resources();
@@ -5349,19 +5052,35 @@ bool System::advance_game_time(u64 target) {
     } wait_scope(*this);
     cpu_.end_poll_tracking();
     GameClock& clock = cpu_.game_clock();
+    // A boundary stop that was asked for inside a native event (request_stop_between_traversals) is due once the event
+    // has ended and no traversal is running (a running traversal raises it at its own boundary).
+    if (boundary_stop_pending_ && !interrupts_->sync_event_active() &&
+        (gameplay_scheduler_ == nullptr || !gameplay_scheduler_->busy())) {
+        boundary_stop_pending_ = false;
+        cpu_.request_stop(boundary_stop_reason_, boundary_stop_detail_);
+    }
     for (;;) {
         if (cpu_.stopped() || cpu_.stop_requested()) return false;
-        // A deliverable interrupt is the guest's to take before time moves on (in a native wait, a latched source).
-        if (cpu_.interrupt_pending() || (cpu_.native_interrupt() && interrupts_->wait_active())) return false;
+        // A deliverable interrupt is the guest's to take before time moves on (in a native wait, a latched source: the
+        // wait's loop processes it before it waits again). Not inside that wait's own event: its callbacks run with
+        // MSR[EE] clear and nothing processes a latched source until they return, so a wait point reached there (a
+        // callback polling a device, CRI's Idle pass) must see time pass - returning here forever was a silent livelock
+        // (RC-kernel-2).
+        if (cpu_.interrupt_pending() ||
+            (cpu_.native_interrupt() && interrupts_->wait_active() && !interrupts_->sync_event_active()))
+            return false;
         schedule_devices();
         GameEvent event = GameEvent::Count;
         const u64 when = clock.next(event);
+        // Nothing scheduled and no target either: there is no time to move to. (This test used to sit inside
+        // `when > target`, which is never true for target == kNoDeadline, so the stop was dead and the loop below
+        // moved the clock to ~0 and span; RC-kernel-7.)
+        if (when == kNoDeadline && target == kNoDeadline) {
+            cpu_.request_stop(StopReason::ExecutionFault,
+                              "the game is waiting for time to pass and nothing is scheduled");
+            return false;
+        }
         if (when > target) {
-            if (target == kNoDeadline) {
-                cpu_.request_stop(StopReason::ExecutionFault,
-                                  "the game is waiting for time to pass and nothing is scheduled");
-                return false;
-            }
             move_clock_to(target);
             return true;
         }

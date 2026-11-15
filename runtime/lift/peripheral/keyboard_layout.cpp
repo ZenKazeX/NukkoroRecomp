@@ -53,8 +53,9 @@ ControllerSample combine(const ControllerSample& keyboard, const ControllerSampl
     sample.controls |= gamepad.controls;
     if (gamepad.stick_x != 0) sample.stick_x = gamepad.stick_x;
     if (gamepad.stick_y != 0) sample.stick_y = gamepad.stick_y;
-    sample.substick_x = gamepad.substick_x;
-    sample.substick_y = gamepad.substick_y;
+    // The camera stick is the gamepad's; the keyboard's camera keys and the mouse apply only when it rests.
+    if (gamepad.substick_x != 0 || keyboard.substick_x == 0) sample.substick_x = gamepad.substick_x;
+    if (gamepad.substick_y != 0 || keyboard.substick_y == 0) sample.substick_y = gamepad.substick_y;
     return sample;
 }
 

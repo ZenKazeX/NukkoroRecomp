@@ -26,6 +26,15 @@
 #include "gekko/ppc_ops.h"
 #include "gekko/indirect_call_trace.h"
 
+// The Cpu parameter of the generated hot bodies. With SHADOW_RECOMP_RESTRICT the compiler may assume that nothing but
+// the body's own accesses (and calls handed `c`) touches the Cpu object, so guest registers stay in host registers
+// across the volatile guest-memory accesses; without it every memory access forces the registers to be reloaded.
+#if defined(SHADOW_RECOMP_RESTRICT) && defined(_MSC_VER)
+#define GEKKO_CPU_RESTRICT __restrict
+#else
+#define GEKKO_CPU_RESTRICT
+#endif
+
 namespace gekko {
 namespace recomp {
 
@@ -42,6 +51,11 @@ extern const std::size_t kRangeCount;
 // a thunk to Cpu::serve_native_owner. Startup refuses to run without them.
 extern const u32 kNativeOwners[];
 extern const std::size_t kNativeOwnerCount;
+// cs2/cpu: guest functions whose body the generator spliced into their direct callers (ppcrecomp --inline-leaves).
+// Sorted; empty unless that option is on. A runtime hook at one of them would be bypassed by every inlined call,
+// so Cpu::set_inlined_leaves makes installing one a stop.
+extern const u32 kInlinedLeaves[];
+extern const std::size_t kInlinedLeafCount;
 // Every listed GX write-gather pipe site (extract/gx-sites.txt), sorted by
 // address: what the generator lowered each store to (gekko/gx_sites.h). The
 // interpreter applies the same table; System installs it (Cpu::set_gx_sites).
@@ -80,12 +94,14 @@ inline void call_indirect(Cpu& c, u32 target, u32 link) {
             return;
         }
     }
-    c.leave_to_dispatcher(target);
+    // RC-gen-7: its own reason, and the site (a linked call's link is the word after it), so the fallback work list
+    // names the bctrl instead of site 0.
+    c.leave_to_dispatcher(target, FallbackReason::IndirectTarget, link - 4u);
 }
 
 // Branch to a register-held target without a link (bctr, blr to a non-return
 // target, and unresolved tail jumps). Every emitted site is
-// `recomp::jump_indirect(c, tmp); return;`.
+// `recomp::jump_indirect(c, tmp, <site>); return;` (the address of the bctr / blr).
 //
 // R12 (2026-09-28): the target is PUBLISHED (Cpu::transfer_to) and the issuing
 // body returns; the frame waiting for a return runs it (Cpu::finish_transfers).
@@ -95,7 +111,13 @@ inline void call_indirect(Cpu& c, u32 target, u32 link) {
 // site is `fn(c); if (c.exiting() && c.finish_transfers()) return;` and runs
 // the chain before its own R2 check and its `c.pc != link` test, so a caller
 // frame is never unwound by a transfer.
-inline void jump_indirect(Cpu& c, u32 target) {
+//
+// RC-gen-7: `site` is the address of the bctr / blr (0: a caller that does not know it; every emitted site passes it). A hand-back is recorded as IndirectTarget at that site. The dispatcher's
+// no-progress rule (Cpu::run: gave up AT the instruction it was dispatched to, leave site == entry == pc) is unchanged
+// by a real site: a loop that closes through a bctr to an entry-less head gives up at the bctr, a later instruction,
+// so every lap is progress; only a row whose first instruction is a bctr to itself gives up at its entry, and that
+// row really has executed nothing.
+inline void jump_indirect(Cpu& c, u32 target, u32 site = 0u) {
     if (const RecompiledCode* table = c.recompiled()) {
         if (const RecompiledCode::Fn native = table->lookup(target)) {
             ++c.native_transfer_calls;
@@ -104,7 +126,7 @@ inline void jump_indirect(Cpu& c, u32 target) {
         }
     }
     ++c.native_transfer_leaves;
-    c.leave_to_dispatcher(target);
+    c.leave_to_dispatcher(target, FallbackReason::IndirectTarget, site);
 }
 
 // A callee returned somewhere other than the link address. That is ordinary
@@ -168,7 +190,7 @@ inline void system_call(Cpu& c, u32 address) {
 inline void fp_unavailable(Cpu& c, u32 address) {
     c.pc = address;
     c.raise_exception(Exception::FpUnavailable);
-    c.leave_to_dispatcher(c.npc, FallbackReason::Trap, address);
+    c.leave_to_dispatcher(c.npc, FallbackReason::FpUnavailable, address);
 }
 
 // A Gekko extension executed while HID2 disables it (audit paired-single-10):
@@ -180,7 +202,7 @@ inline void fp_unavailable(Cpu& c, u32 address) {
 inline void illegal_instruction(Cpu& c, u32 address) {
     c.pc = address;
     c.raise_exception(Exception::Program, kSrr1IllegalInstruction);
-    c.leave_to_dispatcher(c.npc, FallbackReason::Trap, address);
+    c.leave_to_dispatcher(c.npc, FallbackReason::Program, address);
 }
 
 // rfi: restore the architected MSR bits from SRR1 and resume at SRR0.

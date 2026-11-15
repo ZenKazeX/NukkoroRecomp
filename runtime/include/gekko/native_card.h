@@ -143,7 +143,6 @@ public:
     // after every card write or erase.
     void set_persist_debounce(bool enabled) noexcept;
     bool persist_debounce() const noexcept { return persist_debounce_; }
-    void set_persist_quiet_ms(u32 milliseconds) noexcept;
     // Durable write of any un-persisted bytes, now (savestate save, detach).
     void flush();
     bool dirty() const noexcept { return dirty_; }

@@ -114,6 +114,10 @@ bool japanese_voices_available() noexcept { return g_available.load(std::memory_
 
 const VoiceArchivePaths& voice_archive_paths() noexcept { return g_archives; }
 
+void override_english_voice_archive(const std::filesystem::path& archive) {
+    if (!g_archives.japanese.empty()) g_archives.english = archive;
+}
+
 namespace {
 
 using u64 = unsigned long long;

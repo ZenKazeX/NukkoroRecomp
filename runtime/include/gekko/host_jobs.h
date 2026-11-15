@@ -105,7 +105,6 @@ public:
     // are unchanged, so the guest cannot observe which arm ran. Safe to flip
     // at any time; the fork path reads it once per group.
     void set_notify_one(bool enabled) noexcept;
-    bool notify_one_enabled() const noexcept;
 
 private:
     HostJobSystem();

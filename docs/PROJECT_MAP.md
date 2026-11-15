@@ -62,7 +62,7 @@ progress, not a native port yet** (public wording rule).
 | Sound | native SE manager (phase 2), reverb heard; phases 3-4 next | GCAX_SOUND_MAP.md, SE_MANAGER_MAP.md |
 | Draw distance | far-object stand-ins; default 1 (out of the first release) | DRAW_DISTANCE.md, distant-rendering/ |
 | Effects | inventory, layer switches | EFFECTS_INVENTORY.md, effects/ |
-| Menus / UI | original 4:3 menus, Options Display tile, PC button glyphs | OPTIONS_DISPLAY_TILE.md, BUTTON_GLYPHS.md |
+| Menus / UI | original menus (the retail Options screen), PC button glyphs, PC settings files | OPTIONS_MENU_ORIGINAL_RE.md, PC_SETTINGS_FILES.md, BUTTON_GLYPHS.md |
 | Public copy | NukkoroGit: installer + dev build, not yet carrying the 2026-10-29/30 work (36 runtime files differ) | (H:\NukkoroGit\README.md) |
 
 Nothing from 2026-10-26..30 is committed or deployed to game/ShadowTheHedgehog.exe; test builds sit in game/ under

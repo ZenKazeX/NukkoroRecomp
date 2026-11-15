@@ -570,7 +570,6 @@ public:
 
     // THE decision, in world space.
     VisibilityResult test_sphere(const Sphere& world_sphere) noexcept;
-    VisibilityResult test_aabb(const Aabb& world_box) noexcept;
     VisibilityResult test_sphere(const Sphere& world_sphere,
                                  const VisibilityBudget& budget) noexcept;
 

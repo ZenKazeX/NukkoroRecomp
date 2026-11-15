@@ -4,6 +4,7 @@
 // the retail boot path, so a regression in any of them stops the game booting.
 
 #include <algorithm>
+#include <atomic>
 #include "shadow/backends/storage_backends.h"
 #include <cstdint>
 #include <cmath>
@@ -31,6 +32,8 @@
 #include "gekko/host_window.h"
 #include "gekko/guest_memory.h"
 #include "gekko/native_immediate.h"
+#include "gekko/native_interrupts.h"
+#include "gekko/native_os_threads.h"
 #include "gekko/ppc_instruction_traits.h"
 #include "gekko/ppc_ops.h"
 #include "gekko/savestate.h"
@@ -1687,6 +1690,106 @@ void install_irq_handlers(GuestMemory& memory) {
     install_os_exception(memory, Exception::SystemCall, 9u, 0u);
 }
 
+// CPU audit (2026-11-12, cs-audit): a decrementer WRITE that sets DEC[0] over a DEC whose bit 0 is clear is a 0 -> 1
+// change of the register, which is the exception condition (gekko_user_manual.txt PAGE 159 Table 4-2: "the
+// most-significant bit of the DEC register changes from 0 to 1"; Dolphin's mtspr DEC: "Software triggered
+// Decrementer exception"). Both engines' guest write (ppc::write_spr, the interpreter's mtspr 22) must latch it at
+// once; any other write only re-arms the count edge value + 1 ticks on. Expected values are the architecture's,
+// computed by hand.
+void test_decrementer_write_that_sets_the_sign_is_an_edge() {
+    struct Case {
+        u32 start;
+        u32 value;
+        bool edge_now;
+    };
+    const Case cases[] = {
+        {1000u, 0x80000000u, true},        // 0 -> 1 by the write
+        {1000u, 0xFFFFFFFFu, true},        // -1 over a positive count
+        {0x7FFFFFFFu, 0x80000000u, true},  // the narrowest
+        {0u, 0x90000000u, true},           // DEC 0 is sign-clear too
+        {1000u, 0x7FFFFFFFu, false},       // sign stays clear
+        {1000u, 0u, false},                // the edge is 1 tick away, not now
+        {0xFFFFFFFFu, 0x80000000u, false}, // the sign is already set: no 0 -> 1 change
+        {0x80000000u, 0x90000000u, false},
+    };
+    for (const bool interpreter : {false, true}) {
+        for (const Case& test : cases) {
+            Fixture f;
+            f.emit({0x7C7603A6u /* mtdec r3 */});
+            f.cpu.game_clock().set_now(500u);
+            f.cpu.set_decrementer(test.start);
+            f.cpu.set_decrementer_delivery(false);  // the boot's state: a guest mtdec turns it back on
+            f.cpu.set_msr(f.cpu.msr() | kMsrEE);
+            f.cpu.gpr[3] = test.value;
+            if (interpreter) {
+                f.cpu.step();
+            } else {
+                ppc::write_spr(f.cpu, SPR_DEC, test.value);
+            }
+            const std::string what = std::string(interpreter ? "interpreter" : "ppc::write_spr") + " mtdec 0x" +
+                                     [&] { char b[16]; std::snprintf(b, sizeof(b), "%08X", test.value); return std::string(b); }() +
+                                     " over DEC 0x" +
+                                     [&] { char b[16]; std::snprintf(b, sizeof(b), "%08X", test.start); return std::string(b); }();
+            require(f.cpu.decrementer_pending() == test.edge_now,
+                    what + (test.edge_now ? ": the sign 0 -> 1 write must latch the condition"
+                                          : ": no 0 -> 1 change, no condition"));
+            require(f.cpu.interrupt_pending() == test.edge_now && f.cpu.exiting() == test.edge_now,
+                    what + ": a latched condition is deliverable with EE = 1 and reaches the native exit check");
+            require(f.cpu.decrementer() == test.value && f.cpu.decrementer_delivery(),
+                    what + ": DEC holds the written value and delivery is on");
+            require(f.cpu.game_clock().deadline(GameEvent::Decrementer) == 500u + u64{test.value} + 1u,
+                    what + ": the count edge is value + 1 ticks after the write whatever the sign");
+        }
+    }
+}
+
+// CPU audit (2026-11-12): a taken trap (tw / twi) is a program exception with SRR1[14] set (PowerPC OEA 6.4.7 /
+// gekko_user_manual.txt PAGE 175, 0x00020000 in the register's value); the illegal-instruction exception sets
+// bit 12 (0x00080000) and never the trap bit. The OS entry saves SRR1 into the OSContext (+0x19C), so the guest's
+// program-exception handler reads the cause there.
+void test_trap_exception_sets_srr1_trap_bit() {
+    constexpr u32 kProgramHandler = 0x80005100u;
+    constexpr u32 kSrr1Trap = 0x00020000u;
+    {
+        Fixture f;
+        f.emit({0x7FE00008u /* tw 31,0,0: trap always */});
+        install_os_exception(f.bus, Exception::Program, 6u, kProgramHandler);
+        f.cpu.step();
+        require(f.cpu.pc == kProgramHandler && f.cpu.gpr[3] == 6u &&
+                    f.bus.read32(kTestContext + 0x198u) == Fixture::kBase,
+                "a taken tw enters the OS program handler with SRR0 at the trap");
+        require((f.bus.read32(kTestContext + 0x19Cu) & kSrr1Trap) != 0u,
+                "a taken tw must report SRR1[14] (trap) to the program handler");
+    }
+    {
+        Fixture f;  // twi 31,r0,0 (the recompiler's other trap shape): the same exception entry
+        f.emit({0x0FE00000u});
+        install_os_exception(f.bus, Exception::Program, 6u, kProgramHandler);
+        f.cpu.step();
+        require((f.bus.read32(kTestContext + 0x19Cu) & kSrr1Trap) != 0u,
+                "a taken twi must report SRR1[14] (trap) to the program handler");
+    }
+    {
+        Fixture f;  // the generated trap body calls raise_exception(Exception::Program) with no extra bits
+        f.emit({0x60000000u});
+        install_os_exception(f.bus, Exception::Program, 6u, kProgramHandler);
+        f.cpu.pc = Fixture::kBase;
+        f.cpu.raise_exception(Exception::Program);
+        require((f.bus.read32(kTestContext + 0x19Cu) & kSrr1Trap) != 0u,
+                "raise_exception(Program) is the trap exception: SRR1[14] set");
+    }
+    {
+        Fixture f;  // the illegal-instruction cause keeps its own bit and does not claim the trap bit
+        f.emit({0x60000000u});
+        install_os_exception(f.bus, Exception::Program, 6u, kProgramHandler);
+        f.cpu.pc = Fixture::kBase;
+        f.cpu.raise_exception(Exception::Program, kSrr1IllegalInstruction);
+        const u32 saved = f.bus.read32(kTestContext + 0x19Cu);
+        require((saved & kSrr1IllegalInstruction) != 0u && (saved & kSrr1Trap) == 0u,
+                "an illegal instruction reports SRR1[12] only");
+    }
+}
+
 // Generated shape of `<12 instructions>; sc` whose flush crosses DEC 0 -> -1.
 // Generated shape of `...; sc`: the system call hands back at the 0xC00
 // vector, SRR0 at the following instruction.
@@ -2171,6 +2274,207 @@ void test_try_hle_filter_is_exact_for_any_hook_count() {
             "switching verification off restores the inline reject");
 }
 
+// RC-dispatch-1 (docs/RECOMPILER_ISSUES.md): a handler - or anything it calls: the host service inside a native wait, a
+// capture arming its observers - may install or replace hooks while it runs. The entries used to live by value in the
+// sorted vector, so the first new address moved the std::function that was executing (its captures were then read
+// from moved-from or freed storage) and the dispatch path counted the hit through a pointer into the old buffer.
+void test_install_hle_inside_a_running_handler() {
+    Fixture fixture;
+    Cpu& cpu = fixture.cpu;
+    constexpr u32 kOuter = 0x80200000u;
+    cpu.lr = 0x80004000u;
+    // State only the handler's own, unmoved storage holds: a shared_ptr (null once moved from) and a pattern.
+    const auto canary = std::make_shared<u32>(0xC0FFEE11u);
+    u32 seen_before = 0, seen_after = 0, replacement_calls = 0, inner_calls = 0;
+    bool captures_alive = false;
+    cpu.install_hle(kOuter, [canary, pattern = u64{0x1122334455667788ull}, &seen_before, &seen_after, &captures_alive,
+                             &replacement_calls, &inner_calls](Cpu& c) {
+        seen_before = *canary;
+        // 64 new addresses below and above this hook: the entry table grows several times and is sorted after each.
+        for (u32 i = 0; i < 64u; ++i) {
+            const u32 address = (i & 1u) != 0u ? kOuter + 0x1000u + 4u * i : kOuter - 0x1000u + 4u * i;
+            c.install_hle(address, [&inner_calls](Cpu&) { ++inner_calls; return true; }, "installed inside a handler");
+        }
+        // And the handler replaces its own hook.
+        c.install_hle(kOuter, [&replacement_calls](Cpu&) { ++replacement_calls; return true; }, "replacement");
+        captures_alive = canary != nullptr && pattern == 0x1122334455667788ull;
+        if (captures_alive) seen_after = *canary;
+        return true;
+    }, "outer");
+    require(cpu.try_hle(kOuter), "the outer handler serves the call");
+    require(seen_before == 0xC0FFEE11u && captures_alive && seen_after == 0xC0FFEE11u,
+            "a handler that installs hooks must keep its own captures: its std::function may not be moved or freed under it");
+    require(canary.use_count() == 2, "the replaced handler is retired, not destroyed while it runs");
+    const auto entries = cpu.hle_entries();
+    require(entries.size() == 65u, "64 new hooks and the replaced one");
+    u32 previous = 0;
+    for (const auto& entry : entries) {
+        require(entry.address > previous, "the hook table stays sorted by address");
+        previous = entry.address;
+        // The served call is counted on the entry that served it (now retired), never on whichever entry the sort
+        // moved into its old place.
+        require(entry.hits == 0u, "a hook that never served a call has no hits");
+    }
+    require(cpu.try_hle(kOuter) && replacement_calls == 1u, "the replacement serves the next call");
+    require(cpu.try_hle(kOuter + 0x1000u + 4u) && cpu.try_hle(kOuter - 0x1000u) && inner_calls == 2u,
+            "hooks installed inside a handler serve");
+    require(!cpu.try_hle(kOuter + 0x1000u), "an address nobody hooked is still declined");
+    // A served owner that installs through the owner path (Cpu::serve_owner) and the direct owner thunk path.
+    constexpr u32 kOwner = 0x80300000u;
+    bool owner_alive = false;
+    cpu.install_hle(kOwner, [canary, &owner_alive](Cpu& c) {
+        for (u32 i = 0; i < 40u; ++i) c.install_hle(kOwner + 0x100u + 4u * i, [](Cpu&) { return true; }, "second wave");
+        owner_alive = canary != nullptr && *canary == 0xC0FFEE11u;
+        return true;
+    }, "owner");
+    require(cpu.serve_owner(kOwner) && owner_alive, "serve_owner: the running owner keeps its captures");
+    owner_alive = false;
+    cpu.serve_native_owner(kOwner);
+    require(owner_alive && !cpu.stopped(), "serve_native_owner: the running owner keeps its captures");
+}
+
+// cs-hle: the invoker path (HleCallable). A capturing handler, a captureless one, a function pointer and a
+// std::function all serve and count hits exactly as before; hooks sharing a slot, the verify fill (every slot
+// kHleSlotAll: exact map) and a replacement made from the handler's own call keep the counts; a chaining hook
+// that copies entry.handler as a std::function (System::install_chained_hle) still reaches the previous handler.
+bool cs_hle_function_pointer_handler(Cpu& c) { c.gpr[3] = 0xF00Du; return true; }
+void test_hle_invoker_kinds_hits_and_chaining() {
+    Fixture fixture;
+    Cpu& cpu = fixture.cpu;
+    cpu.lr = 0x80004000u;
+    constexpr u32 kCapturing = 0x80210000u, kCaptureless = 0x80211004u, kFnPtr = 0x80212008u, kStdFunction = 0x8021300Cu;
+    constexpr u32 kSharedA = 0x80100000u, kSharedB = 0x80101000u;  // one slot (test_try_hle_filter_is_exact...)
+    u32 capturing_calls = 0, function_calls = 0;
+    const auto token = std::make_shared<u32>(7u);
+    cpu.install_hle(kCapturing, [token, &capturing_calls](Cpu& c) { ++capturing_calls; c.gpr[3] = *token; return true; }, "capturing");
+    cpu.install_hle(kCaptureless, [](Cpu& c) { c.gpr[3] = 0xBEEFu; return true; }, "captureless");
+    cpu.install_hle(kFnPtr, &cs_hle_function_pointer_handler, "function pointer");
+    Cpu::HleHandler stdfn = [&function_calls](Cpu& c) { ++function_calls; c.gpr[3] = 0x57DFu; return true; };
+    cpu.install_hle(kStdFunction, stdfn, "std::function");
+    cpu.install_hle(kSharedA, [](Cpu&) { return true; }, "shared A");
+    cpu.install_hle(kSharedB, [&capturing_calls](Cpu&) { ++capturing_calls; return true; }, "shared B");
+
+    const auto hits_of = [&](u32 address) {
+        for (const auto& entry : cpu.hle_entries()) if (entry.address == address) return entry.hits;
+        return u64{~0ull};
+    };
+    for (u32 round = 1; round <= 3u; ++round) {
+        cpu.gpr[3] = 0u;
+        require(cpu.try_hle(kCapturing) && cpu.gpr[3] == 7u && cpu.pc == cpu.lr, "capturing handler serves, pc = lr");
+        cpu.gpr[3] = 0u;
+        require(cpu.try_hle(kCaptureless) && cpu.gpr[3] == 0xBEEFu, "captureless handler serves");
+        cpu.gpr[3] = 0u;
+        require(cpu.try_hle(kFnPtr) && cpu.gpr[3] == 0xF00Du, "function-pointer handler serves");
+        cpu.gpr[3] = 0u;
+        require(cpu.try_hle(kStdFunction) && cpu.gpr[3] == 0x57DFu, "std::function handler serves");
+        require(cpu.try_hle(kSharedA) && cpu.try_hle(kSharedB), "shared-slot hooks both serve");
+        require(hits_of(kCapturing) == round && hits_of(kCaptureless) == round && hits_of(kFnPtr) == round &&
+                hits_of(kStdFunction) == round && hits_of(kSharedA) == round && hits_of(kSharedB) == round,
+                "each served call counts one hit on its own entry");
+    }
+    require(capturing_calls == 6u && function_calls == 3u, "each handler ran once per call");
+    // The owner entry paths count the same hits.
+    cpu.serve_native_owner(kCaptureless);
+    // serve_native_owner counts the hit; serve_owner (a plain lookup-and-call) never did.
+    require(cpu.serve_owner(kCapturing) && hits_of(kCaptureless) == 4u && hits_of(kCapturing) == 3u, "owner paths count hits as before");
+    // Verify fill: every slot is kHleSlotAll, lookups go through the exact map and still find single and shared hooks.
+    cpu.set_verify_recompiled(true);
+    require(cpu.has_hle(kCapturing) && cpu.has_hle(kSharedB) && !cpu.has_hle(0x80214000u), "verify fill: exact lookup");
+    require(cpu.serve_hle_for_verify(kCapturing) && hits_of(kCapturing) == 4u, "serve_hle_for_verify serves and counts");
+    require(cpu.hle_name(kSharedA) != nullptr && *cpu.hle_name(kSharedA) == "shared A", "verify fill: names stay");
+    cpu.set_verify_recompiled(false);
+    require(cpu.try_hle(kCaptureless) && cpu.try_hle(kSharedB), "after the verify fill the slots serve again");
+
+    // A chaining hook copies entry.handler into a std::function, then replaces the entry (system.cpp's pattern).
+    Cpu::HleHandler previous;
+    for (const auto& entry : cpu.hle_entries()) if (entry.address == kCapturing) previous = entry.handler;
+    u32 chained = 0;
+    cpu.install_hle(kCapturing, [previous, &chained](Cpu& c) { ++chained; return previous(c); }, "chained");
+    cpu.gpr[3] = 0u;
+    const u64 before = hits_of(kCapturing);
+    require(cpu.try_hle(kCapturing) && chained == 1u && cpu.gpr[3] == 7u && hits_of(kCapturing) == before + 1u,
+            "the chained hook reaches the previous handler; the address's hit count carries over");
+    // Replacing a hook from its own handler with a shared-slot neighbour installed in the same call.
+    cpu.install_hle(kCaptureless, [kCaptureless](Cpu& c) {
+        c.install_hle(kCaptureless, [](Cpu&) { return true; }, "replaced from inside");
+        c.install_hle(kCaptureless + 0x1000u, [](Cpu&) { return true; }, "neighbour");
+        return true;
+    }, "replaces itself");
+    require(cpu.try_hle(kCaptureless) && cpu.try_hle(kCaptureless) && cpu.try_hle(kCaptureless + 0x1000u),
+            "a handler that replaces its own hook finishes; the replacement and the new hook serve");
+}
+
+// RC-fp-3: with the policy guard on (System::start turns it on), an instruction that leaves a rounding mode other than
+// nearest or an FP exception enable in FPSCR stops the machine naming the value; arithmetic here honours neither.
+void test_fpscr_policy_guard_refuses_unmodelled_modes() {
+    constexpr u32 kMtfsfi7_1 = 0xFF80110Cu;   // mtfsfi 7, 1: RN = 1 (round toward zero)
+    constexpr u32 kMtfsb1_24 = 0xFF00004Cu;   // mtfsb1 24: VE
+    constexpr u32 kMtfsb1_29 = 0xFFA0004Cu;   // mtfsb1 29: NI (what the game's start-up sets)
+    constexpr u32 kMtfsf_ff_1 = 0xFDFE0D8Eu;  // mtfsf 0xFF, f1
+    const auto run_one = [](u32 word, bool guard, u64 f1_bits, u32& fpscr_out) {
+        Fixture fixture;
+        fixture.cpu.set_msr(fixture.cpu.msr() | kMsrFP);
+        fixture.cpu.set_fpscr_policy_guard(guard);
+        fixture.cpu.fpr[1].bits[0] = f1_bits;
+        fixture.emit({word});
+        fixture.run(1);
+        fpscr_out = fixture.cpu.fpscr;
+        return fixture.cpu.stopped() ? fixture.cpu.stop().detail : std::string();
+    };
+    u32 fpscr = 0;
+    require(run_one(kMtfsfi7_1, false, 0, fpscr).empty() && (fpscr & 3u) == 1u, "guard off: mtfsfi writes RN and runs on (a bare Cpu)");
+    require(run_one(kMtfsfi7_1, true, 0, fpscr).find("FPSCR written as 0x00000001") != std::string::npos,
+            "guard on: a rounding mode other than nearest is refused, naming the value");
+    require(run_one(kMtfsb1_24, true, 0, fpscr).find("enable bits 0x80") != std::string::npos,
+            "guard on: an exception enable is refused");
+    require(run_one(kMtfsb1_29, true, 0, fpscr).empty() && fpscr == kFpscrNI, "guard on: NI is the game's own mode and passes");
+    require(run_one(kMtfsf_ff_1, true, 0x00000000000000F8ull, fpscr).find("FPSCR written") != std::string::npos,
+            "guard on: mtfsf loading the enables is refused");
+    require(run_one(kMtfsf_ff_1, true, 0x0000000000082004ull, fpscr).empty() && fpscr == 0x00082004u,
+            "guard on: mtfsf of status bits and NI passes unchanged");
+    System system;
+    system.start();
+    require(system.cpu().fpscr_policy_guard(), "System::start turns the guard on for the game");
+    require(!Fixture().cpu.fpscr_policy_guard(), "a bare Cpu starts with it off");
+}
+
+// RC-fp-2: guest arithmetic assumes the host's default SSE control word (round to nearest, no flush-to-zero, no
+// denormals-are-zero). Host code on the game thread that leaves another one is undone and counted: after every host
+// service and at the start of a run.
+void test_host_fp_environment_is_restored() {
+#if defined(_M_X64) || defined(__x86_64__)
+    const unsigned saved = _mm_getcsr();
+    {
+        System system;
+        system.start();
+        Cpu& cpu = system.cpu();
+        cpu.set_msr(cpu.msr() & (~kMsrEE));
+        unsigned services = 0;
+        // What a driver or a library that "optimises" denormals does: flush-to-zero, denormals-are-zero, round to zero.
+        system.set_host_service([&](u64) {
+            ++services;
+            _mm_setcsr(_mm_getcsr() | 0x8000u | 0x0040u | 0x6000u);
+        });
+        const u64 restores = cpu.host_fp_control_restores();
+        const u64 start = system.game_ticks();
+        require(system.advance_game_time(start + System::kHostServiceTicks) && services == 1u, "one host service ran");
+        require((_mm_getcsr() & 0xFFC0u) == Cpu::kHostFpControl,
+                "the host service's FP environment must not stay on the game thread");
+        require(cpu.host_fp_control_restores() == restores + 1u, "the restore is counted");
+        volatile double tiny = 4.9406564584124654e-324, one = 1.0;
+        require(tiny * one != 0.0, "denormals are arithmetic again (no flush-to-zero / denormals-are-zero)");
+        system.set_host_service({});
+        _mm_setcsr((_mm_getcsr() & ~0x6000u) | 0x2000u);  // round down, as some other code on this thread left it
+        (void)cpu.run_steps(0u);
+        require((_mm_getcsr() & 0xFFC0u) == Cpu::kHostFpControl, "a run starts from the FP environment guest arithmetic assumes");
+        require(cpu.host_fp_control_restores() == restores + 2u, "the restore at the start of a run is counted");
+        (void)cpu.run_steps(0u);
+        require(cpu.host_fp_control_restores() == restores + 2u, "a correct environment is left alone");
+    }
+    _mm_setcsr(saved);
+#endif
+}
+
 // The condition register encodes less-than as 8, greater-than as 4 and equal
 // as 2. Getting greater-than and equal the wrong way round makes every SDK
 // spin-wait invert, which is how the L2 cache invalidate loop first hung.
@@ -2397,6 +2701,340 @@ void test_wait_point_advances_one_event_at_a_time() {
     system.guest_memory().journal_end();
 }
 
+// RC-kernel-2 / RC-kernel-5 / RC-kernel-7 (docs/RECOMPILER_ISSUES.md): the native wait's seams with the game clock.
+// A System as System::start leaves it, plus the OS words the single-thread waits read (one guest thread, the OS mask
+// all masked) and VI unmasked.
+constexpr u32 kWaitTestStack = 0x817E0000u, kWaitTestThread = 0x80601000u, kWaitTestQueue = 0x80602000u;
+void prepare_native_wait_world(System& system, bool unmask_retrace = true) {
+    Cpu& cpu = system.cpu();
+    GuestMemory& memory = system.guest_memory();
+    cpu.set_msr(cpu.msr() & (~kMsrEE));
+    cpu.gpr[1] = kWaitTestStack;
+    cpu.gpr[13] = 0x805EC500u;
+    cpu.lr = 0x80004000u;
+    memory.write32(os_threads::kCurrentThreadWord, kWaitTestThread);
+    memory.write32(os_threads::kActiveThreadsHead, kWaitTestThread);
+    memory.write32(os_threads::kActiveThreadsTail, kWaitTestThread);
+    memory.write32(kWaitTestQueue, 0u);
+    memory.write32(kWaitTestQueue + 4u, 0u);
+    memory.write32(0x800000C4u, ~0u);  // the OS's global mask: all masked
+    memory.write32(0x800000C8u, 0u);
+    if (unmask_retrace) (void)system.interrupts().unmask_os_interrupts(cpu, 0x80000000u >> 24);  // OS interrupt 24: the retrace
+}
+
+// A wait point reached inside a native wait's event (the event's callback polls a device) must see time pass even while
+// a source is latched: nothing processes that source until the callback returns, so "a deliverable interrupt is the
+// guest's to take first" does not apply there. Before the fix advance_game_time returned at once, every time: a livelock
+// the wall watchdog cannot see (each wait resets it).
+void test_wait_point_inside_a_native_event_sees_time_pass() {
+    System system;
+    system.start();
+    prepare_native_wait_world(system);
+    Cpu& cpu = system.cpu();
+    NativeInterrupts& interrupts = system.interrupts();
+    using Source = NativeInterrupts::Source;
+    u64 before = 0, after = 0;
+    bool in_event = false, pending_inside = false;
+    interrupts.set_handler(Source::Vi, [&](Cpu& c, u32, u32) {
+        in_event = interrupts.sync_event_active();
+        interrupts.raise(Source::Vi);          // latched again by the event's own work (as a second retrace would)
+        pending_inside = c.native_interrupt();
+        before = system.game_ticks();
+        c.idle_wait();                         // the callback's wait point
+        after = system.game_ticks();
+        interrupts.clear(Source::Vi);
+        return false;
+    });
+    interrupts.set_wait_active(true);
+    interrupts.raise(Source::Vi);
+    require(interrupts.run_pending_event(cpu) && !cpu.stopped(), "the event runs");
+    interrupts.set_wait_active(false);
+    require(in_event && pending_inside, "the callback ran inside the event with a source latched");
+    require(after > before, "a wait point inside a native event must advance the game clock (it returned at once: livelock)");
+    // Outside an event the rule is unchanged: a latched source ends the wait before time moves.
+    interrupts.set_wait_active(true);
+    interrupts.raise(Source::Vi);
+    const u64 held = system.game_ticks();
+    cpu.idle_wait();
+    require(system.game_ticks() == held, "between events a latched source is processed before time moves");
+    interrupts.clear(Source::Vi);
+    interrupts.set_wait_active(false);
+}
+
+// A boundary stop the host service asks for inside a native event (savestate hotkey, development link, snapshot,
+// budget) waits for the event's end: a stop there cuts the callback short. It is raised at the first wait after it.
+void test_boundary_stop_inside_a_native_event_waits_for_its_end() {
+    System system;
+    system.start();
+    prepare_native_wait_world(system);
+    Cpu& cpu = system.cpu();
+    NativeInterrupts& interrupts = system.interrupts();
+    using Source = NativeInterrupts::Source;
+    bool stopped_inside = true;
+    unsigned steps = 0;
+    interrupts.set_handler(Source::Vi, [&](Cpu& c, u32, u32) {
+        ++steps;
+        system.request_stop_between_traversals(StopReason::HostRequest, "test: savestate boundary");
+        stopped_inside = c.stopped() || c.stop_requested();
+        return false;
+    });
+    interrupts.set_wait_active(true);
+    interrupts.raise(Source::Vi);
+    require(interrupts.run_pending_event(cpu) && steps == 1u, "the event runs");
+    require(!stopped_inside, "a boundary stop asked for inside a native event must not stop the machine inside it");
+    require(!cpu.stopped() && !interrupts.event_abandoned(), "the event ended whole");
+    const u64 held = system.game_ticks();
+    cpu.idle_wait();
+    require(cpu.stopped() && cpu.stop().reason == StopReason::HostRequest &&
+                cpu.stop().detail.find("savestate boundary") != std::string::npos && system.game_ticks() == held,
+            "the deferred boundary stop is raised at the first wait after the event, before time moves");
+    interrupts.set_wait_active(false);
+
+    // A stop that does cut a callback short (a fault inside it) marks the event abandoned, and a savestate of that
+    // machine is refused, as one taken while the event runs is.
+    System broken;
+    broken.start();
+    prepare_native_wait_world(broken);
+    NativeInterrupts& ni = broken.interrupts();
+    ni.set_handler(Source::Vi, [&](Cpu& c, u32, u32) {
+        c.request_stop(StopReason::ExecutionFault, "test: a fault inside the callback");
+        return false;
+    });
+    ni.set_wait_active(true);
+    ni.raise(Source::Vi);
+    require(ni.run_pending_event(broken.cpu()) && broken.cpu().stopped() && !ni.sync_event_active(), "the event was cut short");
+    require(ni.event_abandoned(), "a native event cut short by a stop must be recorded as abandoned");
+    std::string error;
+    const auto path = std::filesystem::temp_directory_path() / "gekko-core-abandoned-event.gekkostate";
+    require(!save_state(broken, path, &error) && error.find("cut a native event") != std::string::npos,
+            "a savestate after an abandoned native event must be refused, naming it (got: " + error + ")");
+    ni.reset();
+    require(!ni.event_abandoned(), "reset() replaces the machine: nothing is abandoned");
+}
+
+// RC-kernel-5: every System runs the single-thread FP policy whole - MSR[FP] forced AND the FPR snapshot around a
+// delivery - not only the one the game's launcher configures.
+void test_single_thread_fp_policy_is_set_by_the_system() {
+    System system;
+    system.start();
+    Cpu& cpu = system.cpu();
+    require(os_threads::single_thread_configuration(), "the test runs the default (single-thread) configuration");
+    require(cpu.interrupt_fpr_shadow(), "System::start must turn the FPR snapshot on in the single-thread configuration");
+    // What the snapshot does is "exception restores user fprs on rfi" above; the policy survives a machine reset.
+    cpu.reset();
+    require(cpu.interrupt_fpr_shadow(), "Cpu::reset keeps the policy");
+}
+
+// RC-kernel-13 (4) and (7): one whole delivery in the single-thread configuration - deliver, a guest call that
+// clobbers the FPRs and FPSCR, callback_return, finish, resume - from interrupted code whose MSR[FP] is CLEAR. What it
+// proves: the host FPR snapshot gives the interrupted code its registers and FPSCR back; Reschedule is raised by the
+// delivery and lowered by its end (balanced); no SelectThread ran; the OS words are as they were; and, for
+// os_set_current_context's single-thread branch, MSR[FP] is forced on in the live MSR and in the handler's exception
+// context SRR1 and (through finish) in the interrupted context SRR1, so the interrupted code resumes with FP set.
+void test_single_thread_delivery_round_trip_restores_fprs_and_balances_reschedule() {
+    constexpr u32 kLoop = 0x80100A00u, kCallee = 0x80100B00u;
+    constexpr u32 kSdaRescheduleOffset = 0x5AE8u;
+    System system;
+    system.start();
+    prepare_native_wait_world(system);
+    Cpu& cpu = system.cpu();
+    GuestMemory& memory = system.guest_memory();
+    NativeInterrupts& interrupts = system.interrupts();
+    using Source = NativeInterrupts::Source;
+    require(os_threads::single_thread_configuration(), "the test runs the single-thread configuration");
+    memory.write32(kLoop, 0x60000000u);          // nop
+    memory.write32(kLoop + 4u, 0x48000000u);     // b .
+    memory.write32(kCallee, 0xFC200850u);        // fneg f1,f1
+    memory.write32(kCallee + 4u, 0xFC011000u);   // fcmpu cr0,f1,f2   (FPCC <- "less than")
+    memory.write32(kCallee + 8u, 0x4E800020u);   // blr
+    // The interrupted thread: its OSContext current, interrupts on, the FPU not in use (MSR[FP] clear).
+    memory.write32(0x800000D4u, kWaitTestThread);  // OS current context
+    memory.write32(0x800000D8u, 0u);               // nobody owns the FPU
+    const u32 sda = cpu.gpr[13];
+    memory.write32(sda + kSdaRescheduleOffset, 3u);  // an arbitrary non-zero count: the delivery must leave it alone
+    cpu.set_msr((cpu.msr() | kMsrEE | kMsrRI) & ~kMsrFP);
+    cpu.fpr[1].bits[0] = 0x400921FB54442D18ull;
+    cpu.fpr[2].bits[0] = 0x4000000000000000ull;
+    cpu.fpr[5].bits[0] = 0x3FF0000000000000ull;
+    cpu.fpscr = 0x00000004u;
+    cpu.gpr[3] = 0x11111111u;
+    cpu.gpr[4] = 0x22222222u;
+    const u32 stack = cpu.gpr[1];
+    unsigned steps_seen = 0;
+    bool fp_in_handler = false, exception_srr1_fp = false, current_is_exception = false, reschedule_raised = false;
+    bool callee_clobbered = false, fpscr_clobbered = false;
+    interrupts.set_handler(Source::Vi, [&](Cpu& c, u32 frame, u32 step) {
+        ++steps_seen;
+        if (step == 0u) {
+            fp_in_handler = (c.msr() & kMsrFP) != 0u;  // os_set_current_context forced it (the interrupted MSR had it clear)
+            exception_srr1_fp = (c.mem_read32(NativeInterrupts::exception_context(frame) + 0x19Cu) & kMsrFP) != 0u;
+            current_is_exception = c.mem_read32(0x800000D4u) == NativeInterrupts::exception_context(frame);
+            reschedule_raised = c.mem_read32(c.gpr[13] + kSdaRescheduleOffset) == 4u;
+            c.fpr[5].bits[0] = 0x7FF8000000000000ull;  // the handler's own FP work
+            interrupts.call_guest(c, frame, kCallee, 0u, 0u);
+            return true;
+        }
+        callee_clobbered = c.fpr[1].bits[0] == 0xC00921FB54442D18ull;
+        fpscr_clobbered = c.fpscr != 0x00000004u;
+        return false;
+    });
+    cpu.set_entry(kLoop);
+    interrupts.raise(Source::Vi);
+    const u64 delivered_before = interrupts.stats().delivered[NativeInterrupts::slot(Source::Vi)];
+    unsigned guard = 0;
+    while (!cpu.stopped() && guard++ < 200000u &&
+           !(interrupts.stats().delivered[NativeInterrupts::slot(Source::Vi)] == delivered_before + 1u && cpu.pc == kLoop &&
+             interrupts.stats().native_returns == 1u)) {
+        cpu.run_steps(1u);
+    }
+    require(!cpu.stopped(), "the delivery stopped the machine: " + cpu.stop().detail);
+    require(steps_seen == 2u && fp_in_handler && exception_srr1_fp && current_is_exception,
+            "os_set_current_context (single thread) must force MSR[FP] live and in the exception context's SRR1");
+    require(reschedule_raised, "the delivery raises Reschedule (OSDisableScheduler) for its handler");
+    require(callee_clobbered && fpscr_clobbered, "the guest call did clobber f1 and FPSCR (the test's premise)");
+    require(cpu.pc == kLoop && cpu.gpr[1] == stack && cpu.gpr[3] == 0x11111111u && cpu.gpr[4] == 0x22222222u,
+            "the interrupted code resumes with its pc, stack and r3/r4");
+    require(cpu.fpr[1].bits[0] == 0x400921FB54442D18ull && cpu.fpr[2].bits[0] == 0x4000000000000000ull &&
+                cpu.fpr[5].bits[0] == 0x3FF0000000000000ull,
+            "the FPR snapshot must give the interrupted code its registers back");
+    require(cpu.fpscr == 0x00000004u, "the FPR snapshot must give the interrupted code its FPSCR back");
+    require(memory.read32(sda + kSdaRescheduleOffset) == 3u, "Reschedule must be balanced by the delivery's end");
+    require(interrupts.stats().reschedules == 0u && interrupts.stats().native_returns == 1u && interrupts.stats().guest_calls == 1u,
+            "no SelectThread; one host context restore; one guest call");
+    require(memory.read32(0x800000D4u) == kWaitTestThread, "the interrupted context is current again");
+    require((cpu.msr() & kMsrFP) != 0u && (memory.read32(kWaitTestThread + 0x19Cu) & kMsrFP) != 0u,
+            "single thread: the interrupted code resumes with MSR[FP] set (its context's SRR1 was forced)");
+    interrupts.set_handler(Source::Vi, NativeInterrupts::Handler());
+}
+
+// RC-kernel-13 (5): the wait-point watchdog. A guest that runs past the limit without reaching a game-clock wait point is
+// stopped by the watchdog thread (ExecutionFault naming it); one that keeps reaching wait points is not; 0 turns it off.
+System* g_watchdog_system = nullptr;
+int g_watchdog_mode = 0;  // 0: spin for ever, 1: spin 900 ms reaching a wait point every 10 ms, then stop
+void watchdog_spin_entry(Cpu& c) {
+    constexpr u32 kSpin = 0x80100C00u;
+    if (c.try_hle(kSpin)) return;
+    const auto start = std::chrono::steady_clock::now();
+    auto next_wait = start;
+    for (;;) {
+        c.pc = kSpin;
+        if (c.needs_dispatch()) {
+            c.leave_to_dispatcher(kSpin, FallbackReason::Yield, kSpin);
+            return;
+        }
+        const auto now = std::chrono::steady_clock::now();
+        if (g_watchdog_mode == 1) {
+            if (now - start > std::chrono::milliseconds(900)) {
+                c.request_stop(StopReason::HostRequest, "test: the spin ended by itself");
+                return;
+            }
+            if (now >= next_wait) {
+                (void)g_watchdog_system->advance_game_time(g_watchdog_system->game_ticks() + 1u);
+                next_wait = std::chrono::steady_clock::now() + std::chrono::milliseconds(10);
+            }
+        }
+    }
+}
+
+void test_wait_watchdog_stops_a_guest_that_never_waits() {
+    constexpr u32 kSpin = 0x80100C00u;
+    const RecompiledCode::Entry entries[] = {{kSpin, 4u, &watchdog_spin_entry, "watchdog spin"}};
+    RecompiledCode code;
+    code.install(entries, 1u);
+    const auto run_case = [&](u32 limit_ms, int mode, std::chrono::milliseconds guard_after) {
+        System system;
+        system.start();
+        prepare_native_wait_world(system, false);
+        system.guest_memory().write32(kSpin, 0x48000000u);  // b .
+        system.cpu().attach_recompiled(&code);
+        system.cpu().set_entry(kSpin);
+        g_watchdog_system = &system;
+        g_watchdog_mode = mode;
+        system.set_wait_watchdog(limit_ms);
+        std::atomic<bool> finished{false};
+        std::thread guard([&] {
+            const auto until = std::chrono::steady_clock::now() + guard_after;
+            while (!finished.load() && std::chrono::steady_clock::now() < until) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            if (!finished.load()) system.cpu().request_stop_from_host(StopReason::HostRequest, "test guard: the watchdog did not fire");
+        });
+        system.run();
+        finished.store(true);
+        guard.join();
+        system.set_wait_watchdog(0u);
+        g_watchdog_system = nullptr;
+        return std::pair<StopReason, std::string>(system.cpu().stop().reason, system.cpu().stop().detail);
+    };
+    {
+        const auto [reason, detail] = run_case(120u, 0, std::chrono::milliseconds(5000));
+        require(reason == StopReason::ExecutionFault && detail.find("wait-point watchdog") != std::string::npos &&
+                    detail.find("limit 120 ms") != std::string::npos,
+                "a guest that never reaches a wait point must be stopped by the watchdog, naming it (got: " + detail + ")");
+    }
+    {
+        const auto [reason, detail] = run_case(300u, 1, std::chrono::milliseconds(5000));
+        require(reason == StopReason::HostRequest && detail.find("ended by itself") != std::string::npos,
+                "a guest that keeps reaching wait points must not be stopped by the watchdog (got: " + detail + ")");
+    }
+    {
+        const auto [reason, detail] = run_case(0u, 0, std::chrono::milliseconds(400));
+        require(reason == StopReason::HostRequest && detail.find("test guard") != std::string::npos,
+                "limit 0 switches the watchdog off (got: " + detail + ")");
+    }
+}
+
+// RC-kernel-7: a native sleep whose waker never comes is bounded in game time (the host-service grid is always
+// scheduled, so "nothing is scheduled" never fires for it); and advance_game_time with no target and nothing scheduled
+// stops instead of spinning.
+void test_native_sleep_without_a_waker_is_bounded() {
+    System system;
+    system.start();
+    prepare_native_wait_world(system, false);  // the retrace stays masked: no source is driven, only time passes
+    Cpu& cpu = system.cpu();
+    const u64 start = system.game_ticks();
+    constexpr u64 kBound = 2u * kGameTicksPerSecond;
+    // The guard that ends an unbounded wait, so the unfixed code fails this test instead of hanging it.
+    system.set_host_service([&](u64 ticks) {
+        if (ticks > start + 2u * kBound) cpu.request_stop(StopReason::HostRequest, "test guard: the wait was not bounded");
+    });
+    os_threads::MainWait wait;
+    cpu.gpr[3] = kWaitTestQueue;
+    require(os_threads::serve_sleep_thread(cpu, system.interrupts(), wait, os_threads::IdlePass(), os_threads::kSleepThread, kBound),
+            "the sleep is served");
+    require(cpu.stopped() && cpu.stop().reason == StopReason::ExecutionFault &&
+                cpu.stop().detail.find("was not woken") != std::string::npos &&
+                cpu.stop().detail.find("0x80602000") != std::string::npos,
+            "a sleep nobody wakes must stop naming its queue (got: " + cpu.stop().detail + ")");
+    require(system.game_ticks() - start > kBound && system.game_ticks() - start < kBound + kGameTicksPerSecond,
+            "the bound is measured in game time");
+    require(cpu.pc == os_threads::kSleepThread && cpu.gpr[3] == kWaitTestQueue, "the stopped sleep is left at its entry");
+}
+
+void test_advance_game_time_with_nothing_scheduled_stops() {
+    System system;
+    system.start();
+    Cpu& cpu = system.cpu();
+    cpu.set_msr(cpu.msr() & (~kMsrEE));
+    for (std::size_t event = 0; event < static_cast<std::size_t>(GameEvent::Count); ++event)
+        cpu.game_clock().cancel(static_cast<GameEvent>(event));
+    const u64 now = system.game_ticks();
+    // The unfixed loop span here for ever; a host-thread stop after 5 s ends it so that the test fails instead of hanging.
+    std::atomic<bool> finished{false};
+    std::thread guard([&] {
+        for (int i = 0; i < 100 && !finished.load(); ++i) std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        if (!finished.load()) cpu.request_stop_from_host(StopReason::HostRequest, "test guard: advance_game_time span");
+    });
+    const bool advanced = system.advance_game_time(kNoDeadline);
+    finished.store(true);
+    guard.join();
+    require(!advanced && cpu.stopped() && cpu.stop().detail.find("nothing is scheduled") != std::string::npos &&
+                system.game_ticks() == now,
+            "no target and nothing scheduled: the machine stops and the clock does not move");
+    cpu.clear_stop();
+    (void)cpu.run_steps(0u);
+    require(system.advance_game_time(now + 1000u) && system.game_ticks() == now + 1000u,
+            "a target with nothing scheduled is simply reached");
+}
+
 // Cpu::poll_point waits only at a fixed point: an iteration that left every
 // register as the previous visit found it AND made no net change to memory.
 void test_poll_point_waits_only_at_a_fixed_point() {
@@ -2456,6 +3094,43 @@ void test_poll_point_waits_only_at_a_fixed_point() {
     f.cpu.poll_point(0x80100704u);
     f.cpu.poll_point(kSite);
     require(waits == 2u && !f.bus.watch_active(), "visits of another site restart the tracking");
+}
+
+// poll_point's fixed point needs EVERY tracked register unchanged: a difference in any one of them (a GPR, CR, XER, CTR, LR, FPSCR,
+// either half of an FPR, the last register of either file) is progress, and the record then holds the new value.
+void test_poll_point_sees_every_register() {
+    Fixture f;
+    u64 waits = 0;
+    f.cpu.set_idle_handler([&](Cpu&) { ++waits; });
+    constexpr u32 kSite = 0x80100700u;
+    const auto settle = [&]() {  // record, start a watch, reach the fixed point: one wait, tracking restarts
+        f.cpu.end_poll_tracking();
+        const u64 before = waits;
+        f.cpu.poll_point(kSite);
+        f.cpu.poll_point(kSite);
+        f.cpu.poll_point(kSite);
+        require(waits == before + 1u, "three visits of an unchanged state must reach a fixed point");
+    };
+    const auto progress = [&](const char* what, auto&& change) {
+        settle();
+        change();
+        const u64 before = waits;
+        f.cpu.poll_point(kSite);  // the changed register is progress: recorded, no watch
+        f.cpu.poll_point(kSite);  // unchanged against the record again: starts the watch
+        require(waits == before && f.bus.watch_active(), what);
+        f.cpu.poll_point(kSite);
+        require(waits == before + 1u, what);
+    };
+    progress("gpr[0] is part of the state", [&] { ++f.cpu.gpr[0]; });
+    progress("gpr[31] is part of the state", [&] { ++f.cpu.gpr[31]; });
+    progress("cr is part of the state", [&] { ++f.cpu.cr; });
+    progress("xer is part of the state", [&] { ++f.cpu.xer; });
+    progress("ctr is part of the state", [&] { ++f.cpu.ctr; });
+    progress("lr is part of the state", [&] { ++f.cpu.lr; });
+    progress("fpscr is part of the state", [&] { ++f.cpu.fpscr; });
+    progress("fpr[0].ps0 is part of the state", [&] { ++f.cpu.fpr[0].bits[0]; });
+    progress("fpr[0].ps1 is part of the state", [&] { ++f.cpu.fpr[0].bits[1]; });
+    progress("fpr[31].ps1 is part of the state", [&] { ++f.cpu.fpr[31].bits[1]; });
 }
 
 // The one cross-thread entry into the core: a host thread stops a guest that
@@ -2521,6 +3196,159 @@ void test_reset_drops_a_posted_host_stop() {
     require(f.cpu.stop().reason == StopReason::HostRequest && f.cpu.gpr[3] == 0u &&
                 f.cpu.stop().detail.find("fresh host stop; guest pc=0x80100900") != std::string::npos,
             "a host stop posted after the reset is served at the next dispatch: " + f.cpu.stop().detail);
+}
+
+// exiting() is one byte test of the exit word; its kExitStop bit (0x08) must equal stopped() after EVERY writer of the stop
+// (request_stop, clear_stop, reset, load_state, the host stop served by the run loop, a latched data fault re-raised by run,
+// a stop raised inside native code) and across every re-arm of the exit word (rearm_native_entry, native entry by run).
+bool g_exiting_after_native_stop = false;
+constexpr u32 kExitTestCaller = 0x80100A00u;
+constexpr u32 kExitTestCallee = 0x80100A40u;
+void exit_test_callee(Cpu& c) {
+    if (c.try_hle(kExitTestCallee)) return;
+    c.request_stop(StopReason::ExecutionFault, "native stop in the callee");
+    g_exiting_after_native_stop = c.exiting();
+}
+void exit_test_caller(Cpu& c) {
+    if (c.try_hle(kExitTestCaller)) return;
+    c.gpr[9] = 1u;
+    exit_test_callee(c);
+    if (c.exiting() && c.finish_transfers()) return;
+    c.gpr[10] = 0xBADu;  // must not run after the callee stopped the machine
+}
+void exit_test_spin(Cpu& c) {
+    constexpr u32 kSpin = 0x80100B00u;
+    if (c.try_hle(kSpin)) return;
+    for (;;) {
+        c.pc = kSpin;
+        if (c.needs_dispatch()) {
+            c.leave_to_dispatcher(kSpin, FallbackReason::Yield, kSpin);
+            return;
+        }
+    }
+}
+
+void test_exiting_agrees_with_stopped_on_every_stop_path() {
+    constexpr u8 kStopBit = 0x08u;  // Cpu::kExitStop (private)
+    const auto agree = [](const Cpu& cpu, bool expect_stopped, const char* where) {
+        const bool bit = (cpu.exit_state() & kStopBit) != 0u;
+        require(cpu.stopped() == expect_stopped, std::string(where) + ": stopped() is not what the path leaves");
+        require(bit == cpu.stopped(), std::string(where) + ": the exit word's stop bit disagrees with stopped()");
+        if (cpu.stopped()) require(cpu.exiting(), std::string(where) + ": a stopped machine must be exiting()");
+        if (cpu.exit_state() == 0u || cpu.exit_state() == kStopBit)
+            require(cpu.exiting() == cpu.stopped(), std::string(where) + ": exiting() must equal stopped() with no other bit");
+    };
+
+    {  // request_stop outside a run: first writer wins, a Running reason stops nothing, clear_stop releases it
+        Fixture f;
+        agree(f.cpu, false, "fresh machine");
+        f.cpu.request_stop(StopReason::Running, "not a stop");
+        agree(f.cpu, false, "request_stop(Running)");
+        require(!f.cpu.exiting(), "a request with reason Running must not make exiting() true");
+        f.cpu.request_stop(StopReason::ExecutionFault, "first");
+        agree(f.cpu, true, "request_stop");
+        f.cpu.request_stop(StopReason::HostRequest, "second");
+        agree(f.cpu, true, "second request_stop");
+        require(f.cpu.stop().detail == "first", "the first stop wins");
+        f.cpu.rearm_native_entry();
+        agree(f.cpu, true, "rearm_native_entry while stopped");
+        f.cpu.leave_to_dispatcher(Fixture::kBase, FallbackReason::Yield, Fixture::kBase);
+        agree(f.cpu, true, "leave_to_dispatcher while stopped");
+        f.cpu.clear_stop();
+        agree(f.cpu, false, "clear_stop");
+        require(f.cpu.exit_state() == 0x01u, "clear_stop keeps the leave bit (not a stop) and drops only the stop bit");
+        f.cpu.rearm_native_entry();
+        agree(f.cpu, false, "rearm_native_entry after clear_stop");
+        require(!f.cpu.exiting(), "a re-armed, cleared machine is not exiting");
+        f.cpu.request_stop(StopReason::HleExit, "again");  // a new stop after clear_stop + re-arm
+        agree(f.cpu, true, "request_stop after clear_stop");
+        f.cpu.reset();
+        agree(f.cpu, false, "reset");
+    }
+    {  // an interrupt bit is independent of the stop bit in both directions
+        Fixture f;
+        f.cpu.set_msr(f.cpu.msr() | 0x00008000u);  // MSR[EE]
+        f.cpu.set_external_interrupt(true);
+        require(f.cpu.exiting() && !f.cpu.stopped(), "a deliverable interrupt makes exiting() true without a stop");
+        f.cpu.request_stop(StopReason::HostRequest, "stop with an interrupt pending");
+        agree(f.cpu, true, "stop with interrupt");
+        f.cpu.clear_stop();
+        agree(f.cpu, false, "clear_stop with interrupt pending");
+        require(f.cpu.exiting(), "clear_stop must not clear the interrupt request");
+        f.cpu.rearm_native_entry();
+        require(f.cpu.exiting() && !f.cpu.stopped(), "re-arm keeps a still-deliverable interrupt");
+        f.cpu.set_external_interrupt(false);
+        f.cpu.rearm_native_entry();
+        agree(f.cpu, false, "re-arm with the line low");
+    }
+    {  // a latched data fault: the stop is machine state and run() re-raises it after clear_stop
+        Fixture f;
+        f.cpu.set_unmapped_access_stops(true);
+        (void)f.cpu.mem_read32(0u);
+        agree(f.cpu, true, "memory fault latch");
+        f.cpu.clear_stop();
+        agree(f.cpu, false, "clear_stop after a latched fault");
+        (void)f.cpu.run_steps(1u);
+        agree(f.cpu, true, "run re-raises the latched fault");
+        f.cpu.reset();
+        agree(f.cpu, false, "reset after a latched fault");
+    }
+    {  // load_state replaces the machine: a stop raised after the save is gone
+        Fixture f;
+        std::vector<u8> blob;
+        f.cpu.save_state(blob);
+        f.cpu.request_stop(StopReason::ExecutionFault, "after the save");
+        agree(f.cpu, true, "stop before load_state");
+        const u8* cursor = blob.data();
+        require(f.cpu.load_state(cursor, blob.data() + blob.size(), 33u), "the machine's own state loads");
+        agree(f.cpu, false, "load_state");
+        require(!f.cpu.exiting(), "a loaded machine is not exiting");
+    }
+    {  // a stop raised inside native code unwinds the caller at its exiting() check, and ends the run
+        Fixture f;
+        f.bus.write32(kExitTestCaller, 0x48000000u);
+        f.bus.write32(kExitTestCallee, 0x48000000u);
+        g_exiting_after_native_stop = false;
+        const RecompiledCode::Entry entries[] = {
+            {kExitTestCaller, 4u, exit_test_caller, "caller"},
+            {kExitTestCallee, 4u, exit_test_callee, "callee"},
+        };
+        RecompiledCode code;
+        code.install(entries, 2u);
+        f.cpu.attach_recompiled(&code);
+        f.cpu.set_entry(kExitTestCaller);
+        f.cpu.run_steps(4u);
+        agree(f.cpu, true, "stop inside a native callee");
+        require(g_exiting_after_native_stop && f.cpu.gpr[9] == 1u && f.cpu.gpr[10] != 0xBADu,
+                "the callee saw exiting() true right after its request_stop and the caller unwound");
+        f.cpu.clear_stop();
+        agree(f.cpu, false, "clear_stop after a native stop");
+        g_exiting_after_native_stop = false;
+        f.cpu.set_entry(kExitTestCaller);
+        f.cpu.gpr[10] = 0u;
+        f.cpu.run_steps(4u);  // a new run after clear_stop enters native code with a re-armed word, and stops again
+        agree(f.cpu, true, "second native stop after clear_stop + run");
+        require(g_exiting_after_native_stop && f.cpu.gpr[10] != 0xBADu, "the second run's caller unwound too");
+    }
+    {  // a host-thread stop served at the dispatcher (the spinning guest of the host-stop test)
+        constexpr u32 kSpin = 0x80100B00u;
+        Fixture f;
+        f.bus.write32(kSpin, 0x48000000u);
+        const RecompiledCode::Entry entries[] = {{kSpin, 4u, exit_test_spin, "spin"}};
+        RecompiledCode code;
+        code.install(entries, 1u);
+        f.cpu.attach_recompiled(&code);
+        f.cpu.set_entry(kSpin);
+        std::thread host([&f] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            f.cpu.request_stop_from_host(StopReason::HostRequest, "exiting host stop");
+        });
+        f.cpu.run_steps(~0ull);
+        host.join();
+        agree(f.cpu, true, "host stop served by the run loop");
+        f.cpu.clear_stop();
+        agree(f.cpu, false, "clear_stop after a host stop");
+    }
 }
 
 // ---- native video (docs/native-time-20261005/STAGE2_VI.md) -----------------
@@ -5596,6 +6424,8 @@ const TestCase kTests[] = {
     {"cpu savestate carries the game clock", test_cpu_savestate_carries_the_game_clock},
     {"cpu reset matches fresh construction", test_cpu_reset_matches_fresh_construction},
     {"decrementer delivery: off by the boot, on by mtdec, named stop", test_decrementer_delivery_off_by_boot_on_by_mtdec},
+    {"decrementer write that sets the sign is an edge", test_decrementer_write_that_sets_the_sign_is_an_edge},
+    {"trap exception sets SRR1 trap bit", test_trap_exception_sets_srr1_trap_bit},
     {"decrementer condition is delayed, not discarded", test_decrementer_condition_is_delayed_not_discarded},
     {"deliverable interrupt reaches every native poll", test_deliverable_interrupt_reaches_every_native_poll},
     {"wait point event reaches the back-edge poll", test_wait_point_event_reaches_the_back_edge_poll},
@@ -5603,6 +6433,10 @@ const TestCase kTests[] = {
     {"host diagnostic peeks have no side effects", test_host_peeks_have_no_side_effects},
     {"bus translation listeners are per cpu", test_translation_listeners_are_per_cpu},
     {"try_hle filter is exact for any hook count", test_try_hle_filter_is_exact_for_any_hook_count},
+    {"install_hle inside a running handler", test_install_hle_inside_a_running_handler},
+    {"hle invoker kinds, hits and chaining", test_hle_invoker_kinds_hits_and_chaining},
+    {"FPSCR policy guard refuses unmodelled modes", test_fpscr_policy_guard_refuses_unmodelled_modes},
+    {"host FP environment is restored", test_host_fp_environment_is_restored},
     {"condition register encoding", test_condition_register_encoding},
     {"system call return address", test_system_call_return_address},
     {"rotate and mask", test_rotate_and_mask},
@@ -5612,7 +6446,16 @@ const TestCase kTests[] = {
     {"window page table fast path", test_window_page_table_fast_path},
     {"game clock delivers events in order", test_game_clock_delivers_events_in_order},
     {"wait point advances one event at a time", test_wait_point_advances_one_event_at_a_time},
+    {"wait point inside a native event sees time pass", test_wait_point_inside_a_native_event_sees_time_pass},
+    {"boundary stop inside a native event waits for its end", test_boundary_stop_inside_a_native_event_waits_for_its_end},
+    {"single-thread FP policy is set by the System", test_single_thread_fp_policy_is_set_by_the_system},
+    {"single-thread delivery round trip restores FPRs and balances Reschedule", test_single_thread_delivery_round_trip_restores_fprs_and_balances_reschedule},
+    {"wait watchdog stops a guest that never waits", test_wait_watchdog_stops_a_guest_that_never_waits},
+    {"native sleep without a waker is bounded", test_native_sleep_without_a_waker_is_bounded},
+    {"advance_game_time with nothing scheduled stops", test_advance_game_time_with_nothing_scheduled_stops},
     {"poll point waits only at a fixed point", test_poll_point_waits_only_at_a_fixed_point},
+    {"exiting agrees with stopped on every stop path", test_exiting_agrees_with_stopped_on_every_stop_path},
+    {"poll point sees every register", test_poll_point_sees_every_register},
     {"host thread stop reaches a spinning guest", test_host_thread_stop_reaches_a_spinning_guest},
     {"reset drops a posted host stop", test_reset_drops_a_posted_host_stop},
     {"native video field clock", test_native_video_field_clock},

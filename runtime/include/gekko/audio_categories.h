@@ -1,6 +1,6 @@
 #pragma once
 
-// Per-category volume (Options > Audio: Music, Sound effects, Voices), applied per AX voice in the native mixer.
+// Per-category volume (options.cfg music_volume, sfx_volume, voice_volume), applied per AX voice in the native mixer.
 //
 // The game mixes everything into one stereo stream, so the categories are told apart at the AX voice, by who owns it:
 //
@@ -40,7 +40,7 @@ enum class Kind : std::uint8_t { Other = 0, Music = 1, Voice = 2, Sfx = 3 };
 
 inline constexpr std::uint32_t kUnityGain = 0x8000u;  // Q15, matches shadow::audio::kUnityVoiceGain
 
-// The three user-set gains (Kind::Other has none). Written by the Options menu thread, read by the mixer thread.
+// The three user-set gains (Kind::Other has none). Written at start from options.cfg (gekko/pc_settings.h), read by the mixer thread.
 inline std::atomic<std::uint32_t>& gain_slot(Kind kind) noexcept {
     static std::atomic<std::uint32_t> slots[4] = {kUnityGain, kUnityGain, kUnityGain, kUnityGain};
     return slots[static_cast<unsigned>(kind) & 3u];

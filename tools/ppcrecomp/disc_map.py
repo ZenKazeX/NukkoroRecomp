@@ -41,7 +41,7 @@ rest of a changed function, the data between proof points of different deltas,
 heap addresses above the image. A consumer must refuse such an address, never
 guess one.
 
-  disc_map.py identify --catalog extract/discs.json --dol <main.dol>
+  disc_map.py identify --catalog extract/discs.json --dol <main.dol> [--variant-of <retail PAL main.dol>]
   disc_map.py build --catalog extract/discs.json --canonical <PAL main.dol>
                     --dol <other main.dol> --functions extract/functions.csv --out <map>
   disc_map.py check ... --check <map>
@@ -158,6 +158,18 @@ def identify(catalog: dict, dol: Dol) -> dict:
     known = ", ".join(f"{d['game_id']} ({d['region']} rev {d['revision']})" for d in catalog["discs"])
     raise LookupError(f"{dol.path}: unknown main.dol (SHA-1 {dol.sha1}, {len(dol.raw)} bytes); "
                       f"known releases: {known}")
+
+
+def identify_variant(catalog: dict, dol: Dol, base: Dol) -> dict:
+    """A code-mod variant: `dol` is the retail canonical DOL with words changed in place (same size, same header,
+    so every section keeps its address and length). Returns the canonical disc entry, or raises. This is the
+    gate a variant build passes instead of the SHA-1 lookup; it proves the layout, not that the patch is sound."""
+    disc = identify(catalog, base)
+    if disc["game_id"] != catalog["canonical"]:
+        raise LookupError(f"{base.path}: --variant-of must name the canonical {catalog['canonical']} main.dol")
+    if len(dol.raw) != len(base.raw) or dol.raw[:DOL_HEADER] != base.raw[:DOL_HEADER]:
+        raise LookupError(f"{dol.path}: not an in-place variant of {disc['game_id']} (size or section header differs)")
+    return disc
 
 
 def read_boot_id(boot_bin: Path) -> tuple[str, int]:
@@ -856,12 +868,16 @@ def main(argv=None) -> int:
     p.add_argument("--out", type=Path)
     p.add_argument("--check", type=Path)
     p.add_argument("--map", type=Path)
+    p.add_argument("--variant-of", help="identify: the retail canonical main.dol this --dol is an in-place patched copy of")
     p.add_argument("--field", help="identify: print only this catalogue field (e.g. game_id)")
     p.add_argument("addresses", nargs="*")
     a = p.parse_args(argv)
     try:
         if a.command == "identify":
-            disc = identify(load_catalog(a.catalog), Dol(a.dol))
+            if a.variant_of:
+                disc = identify_variant(load_catalog(a.catalog), Dol(a.dol), Dol(a.variant_of))
+            else:
+                disc = identify(load_catalog(a.catalog), Dol(a.dol))
             print(disc[a.field] if a.field else json.dumps(disc, indent=2))
             return 0
         if a.command in ("build", "check"):

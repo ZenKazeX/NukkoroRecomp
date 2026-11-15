@@ -20,6 +20,8 @@ by the API it goes through:
                  serves (the SDK body itself still runs around it)
   probe          a measurement probe table row (diagnostics)
   comparison     the address compared with a PC / LR / target
+  owner-link     `c.lr = ADDR;` whose next code line is serve_owner(...): the link argument handed to a native owner
+                 (the owner returns to the native caller; no SDK body runs)
   declaration    the constant's own definition (not a use)
   unclassified   none of the above: read the line (listed with file:line)
 
@@ -161,6 +163,21 @@ def owner_loop(lines, n):
     return False
 
 
+LR_SET = re.compile(r"^\s*c\.lr\s*=\s*(?:k[A-Z]\w*|0x[0-9A-Fa-f]{8}u?)\s*;\s*$")
+
+
+def owner_link(lines, n):
+    """Line n (1-based) only sets LR to an address and the next code line serves a native owner: the address is the
+    link argument of that owner call (see owner-link in the module docstring)."""
+    if not LR_SET.search(strip_comment(lines[n - 1])):
+        return False
+    for line in lines[n:n + 2]:
+        code = strip_comment(line).strip()
+        if code:
+            return bool(re.search(r"\bserve_owner\s*\(", code))
+    return False
+
+
 def classify(code):
     for name, rx in RULES:
         if rx.search(code):
@@ -233,7 +250,8 @@ def main(argv=None):
             if in_string:
                 kind = "trace-or-message"
             else:
-                kind = "owner-table" if n in table_rows[rel] else classify(statement(files[rel], n))
+                kind = ("owner-table" if n in table_rows[rel] else "owner-link" if owner_link(files[rel], n) else
+                        classify(statement(files[rel], n)))
             declared = [k for k, v in declarators(files[rel], n, code).items() if v == literal]
             if declared:
                 out.append({"file": rel, "line": n, "use": "declaration", "code": code[:200]})
@@ -248,7 +266,8 @@ def main(argv=None):
                         if word.search(c) and name not in declarators(files[f], k, c):
                             stmt = statement(files[f], k)
                             use = ("owner-table" if k in table_rows[f] else
-                                   "owner-hook" if owner_loop(files[f], k) else refine(classify(stmt), stmt, name, literal, owned))
+                                   "owner-hook" if owner_loop(files[f], k) else
+                                   "owner-link" if owner_link(files[f], k) else refine(classify(stmt), stmt, name, literal, owned))
                             out.append({"file": f, "line": k, "use": use, "via": name,
                                         "code": c.strip()[:200]})
             else:

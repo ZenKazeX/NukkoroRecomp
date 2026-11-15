@@ -97,3 +97,6 @@ include("${CMAKE_CURRENT_LIST_DIR}/difftest_f1b.cmake")
 
 # F1c (host-stack integrity and long-run corruption canaries): generated set, drivers and ctest entries.
 include("${CMAKE_CURRENT_LIST_DIR}/difftest_f1c.cmake")
+
+# cs2/cpu: ppcrecomp --inline-leaves contract test (+ negative control): the leaf family only.
+include("${CMAKE_CURRENT_LIST_DIR}/difftest_leaf.cmake")

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -36,8 +37,18 @@ def main() -> int:
     if not (a.files / a.stage).exists():
         print(f'render_determinism: no game data at {a.files / a.stage} - skipped')
         return 0
-    out = a.out or Path(tempfile.mkdtemp(prefix='render-determinism-'))
+    scratch = None if a.out else Path(tempfile.mkdtemp(prefix='render-determinism-'))
+    out = a.out or scratch
     out.mkdir(parents=True, exist_ok=True)
+    try:
+        return compare(a, out)
+    finally:
+        # A run without --out used to leave its folder in %TEMP% every time.
+        if scratch is not None:
+            shutil.rmtree(scratch, ignore_errors=True)
+
+
+def compare(a, out: Path) -> int:
     first_log = render(a.tool, a.files, a.stage, out / 'first.png')
     second_log = render(a.tool, a.files, a.stage, out / 'second.png')
     failures = []

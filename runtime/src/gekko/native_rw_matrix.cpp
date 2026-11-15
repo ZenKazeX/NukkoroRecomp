@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include "gekko/cpu.h"
+#include "gekko/fast_single.h"
 #include "gekko/native_guest_call.h"
 #include "gekko/native_rw_refusal.h"
 #include "gekko/ppc_ops.h"
@@ -83,14 +84,35 @@ bool serve_scale(Cpu& c) {
         o.st(matrix + kUp + 4u, sy);
         o.st(matrix + kAt + 8u, sz);
     } else {
-        const u64 sx = o.ld(scale), sy = o.ld(scale + 4u), sz = o.ld(scale + 8u);
         // pre-concatenate (1) scales the rows by x, y, z; post-concatenate (2) scales the columns, and the translation too
-        const u64 factors[3] = {sx, sy, sz};
-        for (u32 row = 0; row < (op == 1 ? 3u : 4u); ++row)
-            for (u32 col = 0; col < 3u; ++col) {
-                const u32 address = matrix + 0x10u * row + 4u * col;
-                o.st(address, o.mul(o.ld(address), factors[op == 1 ? row : col]));
+        const u32 rows = op == 1 ? 3u : 4u;
+        bool done = false;
+        if constexpr (fast::kAvailable) {
+            // The plain-float route (gekko/fast_single.h): the factors are read first and every element is read and
+            // written once, at its own address, so all reads before the stores is the same order.
+            fast::Check k;
+            const float factors[3] = {k.in(c.mem_read32(scale)), k.in(c.mem_read32(scale + 4u)), k.in(c.mem_read32(scale + 8u))};
+            u32 result[12];
+            for (u32 row = 0; row < rows; ++row)
+                for (u32 col = 0; col < 3u; ++col)
+                    result[3u * row + col] = float_to_bits(
+                        k.out(k.in(c.mem_read32(matrix + 0x10u * row + 4u * col)) * factors[op == 1 ? row : col]));
+            if (k.ok()) {
+                for (u32 row = 0; row < rows; ++row)
+                    for (u32 col = 0; col < 3u; ++col)
+                        c.mem_write32(matrix + 0x10u * row + 4u * col, result[3u * row + col]);
+                done = true;
             }
+        }
+        if (!done) {
+            const u64 sx = o.ld(scale), sy = o.ld(scale + 4u), sz = o.ld(scale + 8u);
+            const u64 factors[3] = {sx, sy, sz};
+            for (u32 row = 0; row < rows; ++row)
+                for (u32 col = 0; col < 3u; ++col) {
+                    const u32 address = matrix + 0x10u * row + 4u * col;
+                    o.st(address, o.mul(o.ld(address), factors[op == 1 ? row : col]));
+                }
+        }
     }
     c.mem_write32(matrix + kFlags, c.mem_read32(matrix + kFlags) & ~(kInternalIdentity | kTypeMask));
     return true;
@@ -117,6 +139,28 @@ bool serve_translate(Cpu& c) {
         o.st(matrix + kPos + 8u, tz);
     } else if (op == 1) {
         // pos.k += tx * right.k + ty * up.k + tz * at.k: ty * up (product), then tx * right fused, tz * at fused, then added to pos
+        bool done = false;
+        if constexpr (fast::kAvailable) {
+            // The plain-float route: t is read first; the loop reads the four words of one column (right.k, up.k, at.k, pos.k) and
+            // stores pos.k, which no later iteration reads, so reading all before storing is the same order.
+            fast::Check check;
+            const float ty = check.in(c.mem_read32(t + 4u)), tx = check.in(c.mem_read32(t)), tz = check.in(c.mem_read32(t + 8u));
+            u32 result[3];
+            for (u32 k = 0; k < 3u; ++k) {
+                float sum = check.out(ty * check.in(c.mem_read32(matrix + kUp + 4u * k)));
+                const float right = check.in(c.mem_read32(matrix + kRight + 4u * k));
+                const float at = check.in(c.mem_read32(matrix + kAt + 4u * k));
+                const float pos = check.in(c.mem_read32(matrix + kPos + 4u * k));
+                sum = check.out(fast::fma(tx, right, sum));
+                sum = check.out(fast::fma(tz, at, sum));
+                result[k] = float_to_bits(check.out(pos + sum));
+            }
+            if (check.ok()) {
+                for (u32 k = 0; k < 3u; ++k) c.mem_write32(matrix + kPos + 4u * k, result[k]);
+                done = true;
+            }
+        }
+        if (!done) {
         const u64 ty = o.ld(t + 4u), tx = o.ld(t), tz = o.ld(t + 8u);
         for (u32 k = 0; k < 3u; ++k) {
             u64 sum = o.mul(ty, o.ld(matrix + kUp + 4u * k));
@@ -126,6 +170,7 @@ bool serve_translate(Cpu& c) {
             sum = o.madd(tx, right, sum);
             sum = o.madd(tz, at, sum);
             o.st(matrix + kPos + 4u * k, ppc::fps_add(c, pos, sum));
+        }
         }
     } else {
         const u64 tx = o.ld(t);

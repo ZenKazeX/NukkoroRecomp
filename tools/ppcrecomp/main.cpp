@@ -37,6 +37,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <unordered_map>
 #include <unordered_set>
@@ -96,6 +97,24 @@ bool g_wide_entries = true;
 // call returns an empty string and the generated text is byte-identical to a
 // build without this code.
 bool g_annotate_lines = false;
+
+// s3/gen: hot-body GPR read cache (see GprCache). --no-gpr-cache restores the previous text
+// byte for byte (A/B and the differential test use both spellings from one binary).
+bool g_gpr_cache = true;
+std::uint64_t g_gpr_cache_reads_cached = 0;
+std::uint64_t g_gpr_cache_reads_filled = 0;
+
+// cs2/cpu: leaf inlining at direct bl sites of the HOT body (--inline-leaves N; see build_leaf_inline).
+// The callee is a small straight-line translated row (no calls, no loops, ends in blr) that no runtime
+// hook can name (it is not in the liveness-roots list). Off by default: the generated text is then
+// byte-identical to a build without this code.
+bool g_inline_leaves = false;
+std::uint32_t g_inline_leaf_max = 24;
+std::uint64_t g_inlined_leaf_sites = 0;
+// Test fixtures have no runtime hooks (nothing names a guest address): --inline-no-hooks replaces --prune-roots.
+bool g_inline_no_hooks = false;
+// Negative control of the contract test (difftest leaf tree, WILL_FAIL): 1 drops the callee's first instruction.
+std::uint32_t g_inline_leaf_mutant = 0;
 
 // --wait-points (extract/wait-points.txt, tools/ppcrecomp/wait_points.py):
 // back-edge site -> loop head of every side-effect-free polling loop. Taking
@@ -757,6 +776,8 @@ struct EmitContext {
     bool fusion_allowed = false;
     bool share_indirect_dispatch = false;
     bool indirect_dispatch_used = false;
+    // cs2/cpu: this context is a hot body that may splice a leaf callee at a bl (see leaf_inline_wanted).
+    bool inline_leaf_ok = false;
     u32 current_address = 0;
     int cr_fuse_field = -1;        // field the instruction being emitted may fuse with
     std::string cr_fuse_bit[4];    // LT, GT, EQ, SO
@@ -922,9 +943,16 @@ std::string transfer_symbol(const EmitContext& e, u32 target) {
 // check; the bcctrl emitter uses it too.
 constexpr const char* kCallExitCheck = "if (c.exiting() && c.finish_transfers()) return;";
 
+bool leaf_inline_wanted(u32 target);
+
 void emit_call_transfer(EmitContext& e, u32 target, u32 link) {
     if (e.recompiled->find(target) != e.recompiled->end()) {
-        line(e, transfer_symbol(e, target) + "(c);");
+        // cs2/cpu: a leaf callee is spliced in after the GPR cache pass (substitute_leaf_sites); the marker line
+        // is a barrier for the cache exactly like the call it stands for.
+        if (e.inline_leaf_ok && leaf_inline_wanted(target))
+            line(e, "gekko_leaf_inline(" + hexu(target) + ");");
+        else
+            line(e, transfer_symbol(e, target) + "(c);");
     } else {
         line(e, "recomp::call_indirect(c, " + hexu(target) + ", " + hexu(link) + ");");
     }
@@ -1069,6 +1097,14 @@ void emit_jump(EmitContext& e, u32 target, u32 site, FallbackReasonTag tag = Fal
 //   * any other value keeps the jump_indirect path.
 // A label resets the FP-check hoist and forbids CR fusion, so arriving here
 // from the switch assumes nothing about the straight-line predecessor.
+// RC-gen-6: a computed transfer that leaves this extent by a LOWER address (a cycle closed through another
+// row: function-pointer loops, longjmp-style retries) is a recognition point exactly like a local backward
+// branch; without it a stop, interrupt or budget waits for the loop to end on its own.
+std::string indirect_back_edge_poll(const std::string& site) {
+    return "if (tmp <= " + site + " && c.needs_dispatch()) { c.pc = tmp; "
+           "c.leave_to_dispatcher(tmp, FallbackReason::Yield, " + site + "); return; }";
+}
+
 void emit_indirect_jump(EmitContext& e, u32 site) {
     // Multiple computed jumps share the same target set. Carry the actual
     // branch site to one dispatch block rather than duplicating its switches
@@ -1086,7 +1122,8 @@ void emit_indirect_jump(EmitContext& e, u32 site) {
         (*it <= site ? backward : forward).push_back(*it);
     }
     if (forward.empty() && backward.empty()) {
-        line(e, "recomp::jump_indirect(c, tmp);");
+        line(e, indirect_back_edge_poll(hexu(site)));
+        line(e, "recomp::jump_indirect(c, tmp, " + hexu(site) + ");");
         line(e, "return;");
         return;
     }
@@ -1109,7 +1146,8 @@ void emit_indirect_jump(EmitContext& e, u32 site) {
         line(e, "        break;");
     }
     line(e, "    default:");
-    line(e, "        recomp::jump_indirect(c, tmp);");
+    line(e, "        " + indirect_back_edge_poll(hexu(site)));
+    line(e, "        recomp::jump_indirect(c, tmp, " + hexu(site) + ");");
     line(e, "        return;");
     line(e, "}");
     if (backward.empty()) {
@@ -1125,7 +1163,7 @@ void emit_indirect_jump(EmitContext& e, u32 site) {
     line(e, "    default:");
     line(e, "        break;");
     line(e, "}");
-    line(e, "recomp::jump_indirect(c, tmp);");
+    line(e, "recomp::jump_indirect(c, tmp, " + hexu(site) + ");");
     line(e, "return;");
 }
 
@@ -1140,7 +1178,9 @@ void emit_shared_indirect_dispatch(EmitContext& e) {
             line(e, "    case " + hexu(target) + ":");
     }
     line(e, "        goto gekko_indirect_local;");
-    line(e, "    default: recomp::jump_indirect(c, tmp); return;");
+    line(e, "    default:");
+    line(e, "        " + indirect_back_edge_poll("gekko_indirect_site"));
+    line(e, "        recomp::jump_indirect(c, tmp, gekko_indirect_site); return;");
     line(e, "}");
     e.body += "gekko_indirect_local:\n";
     line(e, "if (tmp <= gekko_indirect_site) {");
@@ -2681,6 +2721,8 @@ bool emit_group63(EmitContext& e, u32 address, u32 instruction) {
             return true;
         case 38:  // mtfsb1
             line(e, "c.fpscr |= " + hexu(1u << (31u - d)) + ";");
+            // RC-fp-3: only a bit of the unmodelled set (RN, the enables) can break the FPSCR policy's premise.
+            if (((1u << (31u - d)) & 0xFBu) != 0u) line(e, "c.fpscr_written();");
             emit_cr1(e, instruction);
             return true;
         case 70:  // mtfsb0
@@ -2706,6 +2748,7 @@ bool emit_group63(EmitContext& e, u32 address, u32 instruction) {
             const u32 shift = 28u - 4u * field;
             line(e, "c.fpscr = (c.fpscr & " + hexu(~(0xfu << shift)) + ") | " +
                         hexu(value << shift) + ";");
+            if (((value << shift) & 0xFBu) != 0u) line(e, "c.fpscr_written();");  // RC-fp-3
             emit_cr1(e, instruction);
             return true;
         }
@@ -2731,6 +2774,7 @@ bool emit_group63(EmitContext& e, u32 address, u32 instruction) {
             }
             line(e, "tmp = static_cast<u32>(" + ps0(b) + " & 0xffffffffull);");
             line(e, "c.fpscr = (c.fpscr & " + hexu(~mask) + ") | (tmp & " + hexu(mask) + ");");
+            if ((mask & 0xFBu) != 0u) line(e, "c.fpscr_written();");  // RC-fp-3
             emit_cr1(e, instruction);
             return true;
         }
@@ -2977,6 +3021,45 @@ bool parse_hex32(const std::string& text, u32& value) {
 }
 
 // A platform-site kind: the name the runtime switches on, [a-z0-9_]+.
+// A decimal number or "0x" hex, the whole token (a count column, --shards / --limit).
+bool parse_u32_token(const std::string& text, u32& value) {
+    if (text.empty()) return false;
+    if (text.size() > 2u && text[0] == '0' && (text[1] == 'x' || text[1] == 'X')) return parse_hex32(text, value);
+    if (text.size() > 10u) return false;
+    unsigned long long wide = 0;
+    for (const char ch : text) {
+        if (ch < '0' || ch > '9') return false;
+        wide = wide * 10u + static_cast<unsigned>(ch - '0');
+    }
+    if (wide > 0xFFFFFFFFull) return false;
+    value = static_cast<u32>(wide);
+    return true;
+}
+
+// RC-gen-12: one line of an address list (native owners, liveness roots, --only). The lists used a bare strtoul on
+// the whole line, so a typo, a stray character or a line of spaces became address 0 or a truncated number and was
+// accepted. A line is: nothing or a '#' comment (skipped: returns false with `bad` clear), or "0x" + up to eight hex
+// digits as its FIRST token (the rest, a name or a note, is the caller's: `rest`). Anything else sets `bad`.
+bool list_line_address(const std::string& line_text, u32& address, std::istringstream& rest, bool& bad) {
+    bad = false;
+    const std::size_t first = line_text.find_first_not_of(" \t\r");
+    if (first == std::string::npos || line_text[first] == '#') return false;
+    rest.clear();
+    rest.str(line_text);
+    std::string token;
+    if (!(rest >> token) || !parse_hex32(token, address)) {
+        bad = true;
+        return false;
+    }
+    return true;
+}
+
+bool refuse_list_line(const std::string& list, std::size_t line_number, const std::string& line_text, const char* expected) {
+    std::fprintf(stderr, "%s:%zu: malformed line (expected %s): %s\n", list.c_str(), line_number, expected,
+                 line_text.c_str());
+    return false;
+}
+
 bool platform_kind_valid(const std::string& kind) {
     if (kind.empty()) return false;
     for (const char ch : kind) {
@@ -2986,6 +3069,15 @@ bool platform_kind_valid(const std::string& kind) {
 }
 
 struct Options {
+    // RC-gen-2: refuse a tree in which a surviving non-owner row translates an instruction of a native owner (the
+    // shipping configuration passes it; without it the generator names the overlaps and goes on, which the reference
+    // tree needs: there the original bodies exist and its rows legitimately run through owners' words).
+    bool strict_owner_extents = false;
+    // RC-gen-4: ignore the output directory's recomp_layout.csv (plan_shards).
+    bool fresh_layout = false;
+    // RC-gen-12: an option that takes a value was the last argument (its value used to become "" and silently
+    // switch the feature off), or a number option was not a number.
+    std::string bad_option;
     // A/B control for the D1 loop-extent merge. The merge changes record
     // boundaries, so the ONLY honest way to measure it is to produce both trees
     // from the same binary with the same arguments - reconstructing a
@@ -3064,17 +3156,35 @@ bool parse_options(int argc, char** argv, Options& options) {
     for (int index = 1; index < argc; ++index) {
         const std::string argument = argv[index];
         auto value = [&]() -> std::string {
-            return index + 1 < argc ? std::string(argv[++index]) : std::string();
+            if (index + 1 < argc) return std::string(argv[++index]);
+            if (options.bad_option.empty()) options.bad_option = argument + " needs a value";
+            return std::string();
+        };
+        auto number = [&](std::size_t minimum) -> std::size_t {
+            const std::string text = value();
+            u32 parsed = 0;
+            if (!parse_u32_token(text, parsed) || parsed < minimum) {
+                if (options.bad_option.empty())
+                    options.bad_option = argument + " needs a number >= " + std::to_string(minimum) + ", got '" + text + "'";
+                return minimum;
+            }
+            return parsed;
         };
         if (argument == "--dol") options.dol = value();
         else if (argument == "--functions") options.functions = value();
         else if (argument == "--no-gap-sweep") g_gap_sweep = false;
+        else if (argument == "--no-gpr-cache") g_gpr_cache = false;
+        else if (argument == "--inline-no-hooks") g_inline_no_hooks = true;
+        else if (argument == "--inline-leaves-mutant") g_inline_leaf_mutant = static_cast<std::uint32_t>(number(0u));
+        else if (argument == "--inline-leaves") { g_inline_leaf_max = static_cast<std::uint32_t>(number(1u)); g_inline_leaves = true; }
         else if (argument == "--no-wide-entries") g_wide_entries = false;
         else if (argument == "--annotate-lines") g_annotate_lines = true;
         else if (argument == "--out") options.out = value();
         else if (argument == "--only") options.only = value();
-        else if (argument == "--shards") options.shards = std::strtoul(value().c_str(), nullptr, 10);
-        else if (argument == "--limit") options.limit = std::strtoul(value().c_str(), nullptr, 10);
+        else if (argument == "--shards") options.shards = number(1u);
+        else if (argument == "--limit") options.limit = number(0u);
+        else if (argument == "--strict-owner-extents") options.strict_owner_extents = true;
+        else if (argument == "--fresh-layout") options.fresh_layout = true;
         else if (argument == "--report") options.report = value();
         else if (argument == "--no-loop-merge") options.loop_merge = false;
         else if (argument == "--prune-roots") options.prune_roots = value();
@@ -3094,6 +3204,10 @@ bool parse_options(int argc, char** argv, Options& options) {
             std::fprintf(stderr, "unknown option %s\n", argument.c_str());
             return false;
         }
+    }
+    if (!options.bad_option.empty()) {
+        std::fprintf(stderr, "%s\n", options.bad_option.c_str());
+        return false;
     }
     return !options.dol.empty() && !options.functions.empty() && !options.out.empty();
 }
@@ -3162,12 +3276,19 @@ bool empty_variadic_kind(const DolImage& image, const Candidate& candidate, Empt
 struct ShardLayout {
     std::vector<std::size_t> placement;
     std::string text;
+    bool carried = false;  // an existing layout file decided where surviving rows stay
 };
 
+// RC-gen-4: the layout is sticky by design (a row keeps its shard while it survives, so an edit recompiles one shard),
+// which makes it a function of the build directory's HISTORY: identical inputs give different translation units and
+// link order in two trees with different pasts, and a performance comparison between them is confounded.
+// `fresh` (--fresh-layout) ignores the existing file and derives the layout from the inputs alone; the fingerprint
+// printed with every run says whether two trees have the same layout.
 bool plan_shards(const std::string& path, const std::vector<Candidate>& candidates,
-                 std::size_t shards, ShardLayout& result) {
+                 std::size_t shards, ShardLayout& result, bool fresh) {
     std::map<u32, std::size_t> previous;
-    std::ifstream input(path);
+    std::ifstream input;
+    if (!fresh) input.open(path);
     if (input.is_open()) {
         std::string line;
         std::getline(input, line);
@@ -3204,6 +3325,7 @@ bool plan_shards(const std::string& path, const std::vector<Candidate>& candidat
             if (input.bad()) return false;
         }
     }
+    result.carried = !previous.empty();
     result.placement.resize(candidates.size(), shards);
     std::vector<u64> weights(shards, 0u);
     const auto weight = [](const Candidate& candidate) -> u64 {
@@ -3262,9 +3384,621 @@ std::size_t retarget_hot_accessors(std::string& code) {
     return changed;
 }
 
+// ---------------------------------------------------------------------------
+// Hot-body GPR read cache (s3/gen, 2026-11-12)
+// ---------------------------------------------------------------------------
+//
+// c.gpr[n] stays the single source of truth and is written by EVERY statement
+// that changes a register (write-through), so whatever reads the Cpu struct -
+// a call, an owner, an exception, the interpreter, a lifted subsystem - sees
+// exactly what it saw before. Only READS inside an unlabeled straight-line run
+// of the hot body are served from host locals gp<n>: the compiler cannot keep
+// c.gpr[n] in a register across a guest store (the volatile fm_store is an
+// ordering point under /volatile:ms) and reloads it, but it can keep a local.
+//
+// A cached local is valid from its fill or write until the first statement that
+// is not in the strict allowlist below (calls, owners, lift sites, helpers the
+// pass does not know, blocks that are not provably transparent) and until the
+// next label. ppc_ops.h contains no `gpr` token, so no ppc:: helper can change
+// a cached register; the allowlisted statements are the only ones that write
+// c.gpr[n], and each is a literal-index assignment the pass sees.
+bool gpr_is_ident_char(char ch) {
+    return (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_';
+}
+
+bool gpr_starts_with(std::string_view text, std::string_view prefix) {
+    return text.size() >= prefix.size() && text.compare(0, prefix.size(), prefix) == 0;
+}
+
+bool gpr_ends_with(std::string_view text, std::string_view suffix) {
+    return text.size() >= suffix.size() && text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
+// Parses `c.gpr[<digits>]` at text[at]; on success returns the register and the length.
+bool gpr_parse_ref(std::string_view text, std::size_t at, u32& reg, std::size_t& length) {
+    if (at + 6 > text.size() || text.compare(at, 6, "c.gpr[") != 0) return false;
+    std::size_t i = at + 6;
+    u32 value = 0;
+    std::size_t digits = 0;
+    while (i < text.size() && text[i] >= '0' && text[i] <= '9' && digits < 3) {
+        value = value * 10u + static_cast<u32>(text[i] - '0');
+        ++i;
+        ++digits;
+    }
+    if (digits == 0 || i >= text.size() || text[i] != ']' || value > 31u) return false;
+    reg = value;
+    length = i + 1 - at;
+    return true;
+}
+
+// Consumes a `c.<member>` the cache understands starting at text[start]; returns
+// the end offset, or npos when it is anything else (so the caller refuses the line).
+std::size_t gpr_member_end(std::string_view text, std::size_t start) {
+    const std::string_view rest = text.substr(start);
+    u32 reg = 0;
+    std::size_t length = 0;
+    if (gpr_parse_ref(text, start, reg, length)) return start + length;
+    if (gpr_starts_with(rest, "c.fpr[")) {
+        std::size_t j = 6;
+        std::size_t digits = 0;
+        while (j < rest.size() && rest[j] >= '0' && rest[j] <= '9') { ++j; ++digits; }
+        if (digits == 0 || !gpr_starts_with(rest.substr(j), "].bits[")) return std::string::npos;
+        j += 7;
+        if (j + 1 >= rest.size() || (rest[j] != '0' && rest[j] != '1') || rest[j + 1] != ']') return std::string::npos;
+        return start + j + 2;
+    }
+    static const char* const kFields[] = {"c.cr", "c.lr", "c.ctr", "c.xer", "c.pc"};
+    for (const char* field : kFields) {
+        const std::size_t n = std::strlen(field);
+        if (gpr_starts_with(rest, field) && (rest.size() == n || !gpr_is_ident_char(rest[n]))) return start + n;
+    }
+    if (gpr_starts_with(rest, "c.time_base()")) return start + 13;
+    if (gpr_starts_with(rest, "c.msr()")) return start + 7;
+    const bool read = gpr_starts_with(rest, "c.mem_read");
+    if (read || gpr_starts_with(rest, "c.mem_write")) {
+        std::size_t j = read ? 10 : 11;
+        std::size_t digits = 0;
+        while (j < rest.size() && rest[j] >= '0' && rest[j] <= '9') { ++j; ++digits; }
+        if (digits == 0) return std::string::npos;
+        if (gpr_starts_with(rest.substr(j), "_hot")) j += 4;
+        if (j >= rest.size() || rest[j] != '(') return std::string::npos;
+        return start + j + 1;
+    }
+    return std::string::npos;
+}
+
+// True when every construct of `text` is one the cache understands: guest
+// register / FPR / SPR-mirror reads, guest memory accessors, ppc:: helpers
+// (which take the Cpu but never touch a GPR), plain value casts and locals.
+// Any other call, any `c` that is not one of the above, any string: false.
+bool gpr_expr_ok(std::string_view text) {
+    static const char* const kCalls[] = {
+        "bits_to_double", "double_to_bits", "single_to_double_bits", "double_to_single_bits",
+        "bswap16", "bswap32", "bswap64",
+    };
+    std::size_t i = 0;
+    while (i < text.size()) {
+        const char ch = text[i];
+        if (ch == '"' || ch == '\'') return false;
+        if (!gpr_is_ident_char(ch)) { ++i; continue; }
+        const std::size_t start = i;
+        while (i < text.size() && gpr_is_ident_char(text[i])) ++i;
+        if (ch >= '0' && ch <= '9') continue;  // a number (0x1Cu, 12u ...)
+        std::string_view word = text.substr(start, i - start);
+        if (word == "c" && i < text.size() && text[i] == '.') {
+            if (start > 0 && (gpr_is_ident_char(text[start - 1]) || text[start - 1] == '.')) return false;
+            const std::size_t end = gpr_member_end(text, start);
+            if (end == std::string::npos) return false;
+            i = end;
+            continue;
+        }
+        bool is_ppc = false;
+        if (word == "ppc" && i + 1 < text.size() && text[i] == ':' && text[i + 1] == ':') {
+            i += 2;
+            const std::size_t name_start = i;
+            while (i < text.size() && gpr_is_ident_char(text[i])) ++i;
+            if (i == name_start) return false;
+            is_ppc = true;
+        } else if (i < text.size() && text[i] == ':') {
+            return false;  // some other qualified name
+        }
+        const bool is_cast = word == "static_cast";
+        std::size_t after = i;
+        if ((is_ppc || is_cast) && after < text.size() && text[after] == '<') {
+            int angle = 0;
+            while (after < text.size()) {
+                if (text[after] == '<') ++angle;
+                else if (text[after] == '>' && --angle == 0) { ++after; break; }
+                ++after;
+            }
+        }
+        while (after < text.size() && text[after] == ' ') ++after;
+        const bool is_call = after < text.size() && text[after] == '(';
+        if (!is_call) {
+            if (word == "c" || is_ppc || is_cast) return false;  // a bare Cpu, ppc:: or cast without a call
+            continue;                                             // a plain value (local, constant)
+        }
+        if (is_ppc) {
+            // ppc::name(c, ...) / ppc::name(c): the Cpu is the first argument.
+            std::size_t arg = after + 1;
+            if (arg >= text.size() || text[arg] != 'c') return false;
+            ++arg;
+            if (arg < text.size() && gpr_is_ident_char(text[arg])) return false;
+            i = arg;
+            continue;
+        }
+        bool allowed = is_cast;
+        for (const char* call : kCalls) allowed = allowed || word == call;
+        if (!allowed) return false;
+        i = after + 1;
+    }
+    return true;
+}
+
+// Statement kinds of the hot body the cache distinguishes.
+enum class GprStmt { Barrier, Transparent, Assign, Jump };
+
+bool gpr_local_assign(std::string_view text) {
+    static const char* const kLocals[] = {"ea", "tmp", "tmp64", "cnd", "cra", "crb", "fa", "fb"};
+    for (const char* local : kLocals) {
+        const std::size_t n = std::strlen(local);
+        if (!gpr_starts_with(text, local) || text.size() <= n || gpr_is_ident_char(text[n])) continue;
+        std::size_t i = n;
+        while (i < text.size() && text[i] == ' ') ++i;
+        if (gpr_starts_with(text.substr(i), "<<") || gpr_starts_with(text.substr(i), ">>")) i += 2;
+        else if (i < text.size() && (text[i] == '+' || text[i] == '-' || text[i] == '|' || text[i] == '&' || text[i] == '^')) ++i;
+        return i < text.size() && text[i] == '=' && (i + 1 >= text.size() || text[i + 1] != '=');
+    }
+    return false;
+}
+
+GprStmt gpr_classify(std::string_view text, u32& assign_reg, std::string_view& assign_rhs, bool& substitute) {
+    substitute = false;
+    if (gpr_starts_with(text, "goto ") || text == "return;") return GprStmt::Jump;
+    // One-line exits: the path that continues past them is the one where the guard was false.
+    if (gpr_ends_with(text, "return; }") && text.find("c.gpr") == std::string_view::npos &&
+        (gpr_starts_with(text, "if ((c.msr() & ") ||
+         gpr_starts_with(text, "if (c.needs_dispatch()) { c.leave_to_dispatcher(") ||
+         text == "if (cnd) { c.pc = tmp; return; }")) {
+        return GprStmt::Transparent;
+    }
+    if (gpr_starts_with(text, "{ const u64 ps1_result = ") && gpr_ends_with(text, "}") &&
+        text.find("c.gpr") == std::string_view::npos && gpr_expr_ok(text.substr(1, text.size() - 2))) {
+        return GprStmt::Transparent;
+    }
+    if (!gpr_ends_with(text, ";") || std::count(text.begin(), text.end(), ';') != 1 ||
+        text.find('{') != std::string_view::npos || text.find('}') != std::string_view::npos) {
+        return GprStmt::Barrier;
+    }
+    u32 reg = 0;
+    std::size_t length = 0;
+    if (gpr_parse_ref(text, 0, reg, length)) {
+        if (!gpr_starts_with(text.substr(length), " = ")) return GprStmt::Barrier;
+        const std::string_view rhs = text.substr(length + 3, text.size() - length - 4);
+        if (!gpr_expr_ok(rhs)) return GprStmt::Barrier;
+        assign_reg = reg;
+        assign_rhs = rhs;
+        substitute = true;
+        return GprStmt::Assign;
+    }
+    const bool shaped = gpr_local_assign(text) || gpr_starts_with(text, "c.mem_write") ||
+                        gpr_starts_with(text, "c.fpr[") || gpr_starts_with(text, "c.lr = ") ||
+                        gpr_starts_with(text, "c.ctr = ") || gpr_starts_with(text, "c.pc = ") ||
+                        gpr_starts_with(text, "c.cr = ") || gpr_starts_with(text, "c.xer = ") ||
+                        text == "--c.ctr;" || gpr_starts_with(text, "ppc::");
+    if (!shaped || !gpr_expr_ok(text.substr(0, text.size() - 1))) return GprStmt::Barrier;
+    substitute = true;
+    return GprStmt::Transparent;
+}
+
+bool gpr_block_header_ok(std::string_view text) { return text == "if (cnd) {" || text == "if (!cnd) {"; }
+
+bool gpr_block_line_ok(std::string_view text) {
+    if (text == "}" || text == "return;") return true;
+    if (text.find("c.gpr") != std::string_view::npos) return false;
+    if (gpr_starts_with(text, "goto L_") && gpr_ends_with(text, ";")) return true;
+    if (gpr_starts_with(text, "c.pc = ") && gpr_ends_with(text, ";") &&
+        std::count(text.begin(), text.end(), ';') == 1) {
+        return true;
+    }
+    if (gpr_starts_with(text, "if (c.needs_dispatch()) { c.leave_to_dispatcher(") &&
+        gpr_ends_with(text, "return; }")) {
+        return true;
+    }
+    return text == "if (cnd) { c.pc = tmp; return; }";
+}
+
+bool gpr_label_like(std::string_view text) {
+    if (gpr_starts_with(text, "case ") || gpr_starts_with(text, "default:")) return true;
+    if (text.empty() || text.back() != ':') return false;
+    for (std::size_t i = 0; i + 1 < text.size(); ++i) {
+        if (!gpr_is_ident_char(text[i])) return false;
+    }
+    return true;
+}
+
+class GprCache {
+public:
+    void flush() { valid_ = 0u; }
+    u32 used() const { return used_; }
+
+    // Rewrites one instruction's hot snippet (self-contained, brace-balanced).
+    std::string rewrite(const std::string& code) {
+        std::string out;
+        out.reserve(code.size() + code.size() / 4u);
+        int depth = 0;
+        bool dirty = false;
+        std::size_t pos = 0;
+        while (pos < code.size()) {
+            std::size_t nl = code.find('\n', pos);
+            if (nl == std::string::npos) nl = code.size();
+            const std::string_view whole(code.data() + pos, nl - pos);
+            pos = nl < code.size() ? nl + 1u : nl;
+            std::size_t indent = 0;
+            while (indent < whole.size() && whole[indent] == ' ') ++indent;
+            const std::string_view text = whole.substr(indent);
+            if (text.empty() || text[0] == '#') { emit(out, whole); continue; }
+            const int open = static_cast<int>(std::count(text.begin(), text.end(), '{'));
+            const int close = static_cast<int>(std::count(text.begin(), text.end(), '}'));
+            if (depth > 0) {
+                if (!gpr_block_line_ok(text)) dirty = true;
+                depth += open - close;
+                emit(out, whole);
+                if (depth <= 0) {
+                    if (depth < 0 || dirty) flush();
+                    depth = 0;
+                    dirty = false;
+                }
+                continue;
+            }
+            if (gpr_label_like(text)) { flush(); emit(out, whole); continue; }
+            if (open != close) {
+                depth = open - close;
+                dirty = !gpr_block_header_ok(text);
+                if (depth < 0) { depth = 0; flush(); }
+                emit(out, whole);
+                continue;
+            }
+            u32 assign_reg = 0;
+            std::string_view rhs;
+            bool substitute = false;
+            const GprStmt kind = gpr_classify(text, assign_reg, rhs, substitute);
+            if (kind == GprStmt::Barrier || kind == GprStmt::Jump) { emit(out, whole); flush(); continue; }
+            if (!substitute) { emit(out, whole); continue; }
+            // Fill the registers this statement reads that are not cached yet, then
+            // rewrite its reads to the locals.
+            const std::string_view body = kind == GprStmt::Assign ? rhs : text;
+            u32 need = 0;
+            for (std::size_t at = body.find("c.gpr["); at != std::string_view::npos; at = body.find("c.gpr[", at + 1)) {
+                u32 reg = 0;
+                std::size_t length = 0;
+                if (gpr_parse_ref(body, at, reg, length)) need |= 1u << reg;
+            }
+            for (u32 reg = 0; reg < 32u; ++reg) {
+                if ((need & (1u << reg)) == 0u) continue;
+                if ((valid_ & (1u << reg)) != 0u) { ++g_gpr_cache_reads_cached; continue; }
+                out.append(indent, ' ');
+                out += "gp" + std::to_string(reg) + " = c.gpr[" + std::to_string(reg) + "];\n";
+                valid_ |= 1u << reg;
+                used_ |= 1u << reg;
+                ++g_gpr_cache_reads_filled;
+            }
+            std::string rewritten;
+            rewritten.reserve(body.size());
+            for (std::size_t at = 0; at < body.size();) {
+                u32 reg = 0;
+                std::size_t length = 0;
+                if (body[at] == 'c' && gpr_parse_ref(body, at, reg, length)) {
+                    rewritten += "gp" + std::to_string(reg);
+                    at += length;
+                } else {
+                    rewritten.push_back(body[at++]);
+                }
+            }
+            out.append(indent, ' ');
+            if (kind == GprStmt::Assign) {
+                const std::string n = std::to_string(assign_reg);
+                out += "gp" + n + " = " + rewritten + "; c.gpr[" + n + "] = gp" + n + ";\n";
+                valid_ |= 1u << assign_reg;
+                used_ |= 1u << assign_reg;
+            } else {
+                out += rewritten;
+                out += "\n";
+            }
+        }
+        if (depth != 0) flush();
+        return out;
+    }
+
+private:
+    static void emit(std::string& out, std::string_view line) {
+        out.append(line);
+        out.push_back('\n');
+    }
+    u32 valid_ = 0u;
+    u32 used_ = 0u;
+};
+
+// ---------------------------------------------------------------------------
+// cs2/cpu: leaf inlining
+//
+// A direct `bl` to a small straight-line leaf costs the call sequence around its few instructions: LR store,
+// call, the entry thunk's hook filter, the body's frame, the pc store, ret, and the caller's exiting() and
+// pc tests. The leaf's HOT text is spliced into the caller's HOT body instead:
+//     c.lr = L;  { leaf text, every `return;` -> goto end }  end:  <the caller's own exit and pc checks>
+// so every way the callee used to return (blr, fp_unavailable, a latched fault) reaches the same checks the
+// call returned to. Nothing about guest-visible state changes: LR, pc, CR, the registers and every memory
+// access are the callee's own statements in the callee's own order.
+//
+// Eligible callee: a native row of its own (not an owner, not an empty-variadic leaf), at most
+// g_inline_leaf_max reachable instructions inside its extent, only sequential instructions, FORWARD direct
+// branches inside the function and a non-linking bclr (no bl/bctr/sc/rfi, so no loop and no poll), a last
+// instruction that does not fall through, no lowered site of any kind (lift, GX, platform, psq, wait), an
+// address that no runtime source names (g_inline_roots = the liveness roots: every address a hook can be
+// installed at), and a text that passes the token ban below. The runtime re-checks the hook rule
+// (kInlinedLeaves: Cpu::set_inlined_leaves stops the machine when a hook lands on an inlined leaf).
+// ---------------------------------------------------------------------------
+struct LeafInline {
+    bool ok = false;
+    std::string text;  // with "@@" at every per-site name suffix
+};
+std::unordered_set<u32> g_inline_roots;
+std::unordered_map<u32, const Candidate*> g_leaf_rows;
+const DolImage* g_leaf_image = nullptr;
+const std::unordered_map<u32, u32>* g_leaf_recompiled = nullptr;
+std::unordered_map<u32, LeafInline> g_leaf_cache;
+std::set<u32> g_inlined_leaf_targets;
+
+bool leaf_ident_char(char ch) {
+    return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || ch == '_';
+}
+
+bool leaf_is_label_name(std::string_view word) {
+    if (word.size() != 10u || word[0] != 'L' || word[1] != '_') return false;
+    for (std::size_t i = 2; i < 10u; ++i) {
+        const char ch = word[i];
+        if (!((ch >= '0' && ch <= '9') || (ch >= 'A' && ch <= 'F'))) return false;
+    }
+    return true;
+}
+
+// Every construct that would make a spliced callee differ from a called one.
+bool leaf_text_safe(const std::string& text) {
+    static const char* const kBanned[] = {
+        "call_indirect", "jump_indirect", "transfer_to", "resume_elsewhere", "needs_dispatch", "leave_to_dispatcher",
+        "system_call", "idle_wait", "poll_point", "gekko_indirect_site", "lift_site", "try_hle", "enter_slow",
+        "hle_clear", "entry", "finish_transfers", "exiting", "platform", "gx_"};
+    if (text.find("c.lr =") != std::string::npos || text.find("c.lr=") != std::string::npos) return false;
+    for (std::size_t i = 0; i < text.size();) {
+        if (!leaf_ident_char(text[i])) { ++i; continue; }
+        const std::size_t start = i;
+        while (i < text.size() && leaf_ident_char(text[i])) ++i;
+        const std::string_view word(text.data() + start, i - start);
+        if (word[0] >= '0' && word[0] <= '9') continue;
+        if (word.size() > 3u && word.substr(0, 3) == "fn_") return false;
+        for (const char* banned : kBanned) {
+            if (word.find(banned) != std::string_view::npos) return false;
+        }
+    }
+    return true;
+}
+
+// Per-site renaming: scratch locals, cached GPR locals and labels get "@@" appended; `return;` becomes a jump to
+// the end label. `used_gp` collects the cached registers the text names.
+std::string leaf_rename(const std::string& text, u32& used_gp) {
+    std::string out;
+    out.reserve(text.size() + text.size() / 8u);
+    for (std::size_t i = 0; i < text.size();) {
+        const char ch = text[i];
+        if (!leaf_ident_char(ch)) { out.push_back(ch); ++i; continue; }
+        const std::size_t start = i;
+        while (i < text.size() && leaf_ident_char(text[i])) ++i;
+        const std::string word = text.substr(start, i - start);
+        const char before = start > 0 ? text[start - 1] : '\n';
+        if ((ch >= '0' && ch <= '9') || before == '.' || before == ':') { out += word; continue; }
+        if (word == "return") {
+            std::size_t k = i;
+            while (k < text.size() && text[k] == ' ') ++k;
+            if (k < text.size() && text[k] == ';') { out += "goto gekko_leaf_end@@"; continue; }
+        }
+        bool rename = word == "ea" || word == "tmp" || word == "tmp64" || word == "cnd" || word == "cra" ||
+                      word == "crb" || word == "fa" || word == "fb" || leaf_is_label_name(word);
+        if (!rename && word.size() >= 3u && word[0] == 'g' && word[1] == 'p') {
+            u32 reg = 0;
+            bool digits = true;
+            for (std::size_t k = 2; k < word.size(); ++k) {
+                if (word[k] < '0' || word[k] > '9') { digits = false; break; }
+                reg = reg * 10u + static_cast<u32>(word[k] - '0');
+            }
+            if (digits && reg < 32u) { rename = true; used_gp |= 1u << reg; }
+        }
+        out += word;
+        if (rename) out += "@@";
+    }
+    return out;
+}
+
+LeafInline build_leaf_inline(u32 target) {
+    LeafInline none;
+    const auto row = g_leaf_rows.find(target);
+    if (row == g_leaf_rows.end() || g_leaf_image == nullptr || g_leaf_recompiled == nullptr) return none;
+    const Candidate& candidate = *row->second;
+    const DolImage& image = *g_leaf_image;
+    if (candidate.native_owner || candidate.record.address != target) return none;
+    if (g_empty_variadic_leaves.count(target) != 0u || g_inline_roots.count(target) != 0u ||
+        g_hot_set.count(target) != 0u) {
+        return none;
+    }
+    const std::set<u32>& reachable = candidate.analysis.reachable;
+    if (reachable.empty() || reachable.size() > g_inline_leaf_max) return none;
+    const u32 begin = target;
+    const u32 end = target + candidate.record.size;
+    u32 last = 0;
+    for (const u32 address : reachable) {
+        if (address < begin || address >= end) return none;
+        if (g_lift_sites.count(address) != 0u || g_gx_sites.count(address) != 0u ||
+            g_platform_sites.count(address) != 0u || g_psq_sites.count(address) != 0u ||
+            g_wait_points.count(address) != 0u || g_poll_points.count(address) != 0u) {
+            return none;
+        }
+        const u32 word = image.read32(address);
+        const u32 primary = op_primary(word);
+        if (primary == 17u) return none;
+        if (primary == 19u) {
+            const u32 extended = op_extended(word);
+            if (extended == 528u || extended == 50u) return none;
+            if (extended == 16u && (word & 1u) != 0u) return none;
+        }
+        const Decoded decoded = classify(word, address);
+        if (!decoded.supported) return none;
+        switch (decoded.flow) {
+            case Flow::Normal:
+            case Flow::Return:
+                break;
+            case Flow::Branch:
+            case Flow::CondBranch:
+                if (primary == 19u) break;  // a conditional bclr
+                if (decoded.target <= address || decoded.target >= end || reachable.count(decoded.target) == 0u ||
+                    candidate.analysis.labels.count(decoded.target) == 0u) {
+                    return none;
+                }
+                break;
+            default:
+                return none;
+        }
+        last = address;
+    }
+    if (flow_falls_through(classify(image.read32(last), last).flow)) return none;
+
+    EmitContext ctx;
+    ctx.image = &image;
+    ctx.recompiled = g_leaf_recompiled;
+    ctx.function_start = begin;
+    ctx.function_end = end;
+    ctx.labels = candidate.analysis.labels;
+    ctx.fusion_allowed = true;
+    ctx.share_indirect_dispatch = false;
+    ctx.inline_leaf_ok = false;
+    struct Piece {
+        u32 address = 0;
+        bool label = false;
+        bool falls = true;
+        std::string code;
+    };
+    std::vector<Piece> pieces;
+    u32 prev = 0;
+    bool first = true;
+    for (const u32 address : reachable) {
+        if (!first && address != prev + 4u) {
+            ctx.fp_guard_live = false;
+            ctx.hid2_proven = 0u;
+            ctx.cr_fuse_field = -1;
+            ctx.cr_fuse_armed_field = -1;
+        }
+        Piece piece;
+        piece.address = address;
+        piece.label = ctx.labels.count(address) != 0u;
+        const u32 word = image.read32(address);
+        piece.falls = flow_falls_through(classify(word, address).flow);
+        const std::size_t at = ctx.body.size();
+        if (!emit_instruction(ctx, address, word)) return none;
+        piece.code = ctx.body.substr(at);
+        ctx.body.resize(at);
+        pieces.push_back(std::move(piece));
+        prev = address;
+        first = false;
+    }
+    if (g_inline_leaf_mutant == 1u && !pieces.empty()) pieces.front().code.clear();
+    // The cache pass, as for a hot body (its statistics are not this function's).
+    const std::uint64_t saved_filled = g_gpr_cache_reads_filled;
+    const std::uint64_t saved_cached = g_gpr_cache_reads_cached;
+    GprCache cache;
+    if (g_gpr_cache) {
+        u32 previous = 0;
+        bool is_first = true;
+        bool broken = true;
+        for (Piece& piece : pieces) {
+            if (is_first || piece.label || broken || piece.address != previous + 4u) cache.flush();
+            piece.code = cache.rewrite(piece.code);
+            broken = !piece.falls;
+            previous = piece.address;
+            is_first = false;
+        }
+    }
+    g_gpr_cache_reads_filled = saved_filled;
+    g_gpr_cache_reads_cached = saved_cached;
+    std::string body;
+    for (const Piece& piece : pieces) {
+        if (piece.label) body += label(piece.address) + ":\n";
+        body += piece.code;
+    }
+    if (!leaf_text_safe(body)) return none;
+    u32 used_gp = 0;
+    const std::string renamed = leaf_rename(body, used_gp);
+    LeafInline result;
+    result.ok = true;
+    std::string& text = result.text;
+    text += "    {\n";
+    text += "    u32 ea@@ = 0; u32 tmp@@ = 0; u32 cra@@ = 0; u32 crb@@ = 0; bool cnd@@ = false;\n";
+    text += "    u64 tmp64@@ = 0; double fa@@ = 0.0; double fb@@ = 0.0;\n";
+    text += "    (void)ea@@; (void)tmp@@; (void)cra@@; (void)crb@@; (void)cnd@@;\n";
+    text += "    (void)tmp64@@; (void)fa@@; (void)fb@@;\n";
+    for (u32 reg = 0; reg < 32u; ++reg) {
+        if ((used_gp & (1u << reg)) != 0u) text += "    u32 gp" + std::to_string(reg) + "@@ = 0;\n";
+    }
+    text += renamed;
+    text += "    }\n";
+    text += "    gekko_leaf_end@@: ;\n";
+    return result;
+}
+
+bool leaf_inline_wanted(u32 target) {
+    if (!g_inline_leaves || g_leaf_rows.empty()) return false;
+    const auto it = g_leaf_cache.find(target);
+    if (it != g_leaf_cache.end()) return it->second.ok;
+    return g_leaf_cache.emplace(target, build_leaf_inline(target)).first->second.ok;
+}
+
+// Replaces every marker line of one instruction's hot snippet by the callee's text (names made unique with
+// `counter`, per hot body).
+void substitute_leaf_sites(std::string& code, unsigned& counter) {
+    static const std::string kMarker = "gekko_leaf_inline(0x";
+    if (code.find(kMarker) == std::string::npos) return;
+    std::string out;
+    std::size_t pos = 0;
+    while (pos < code.size()) {
+        std::size_t nl = code.find('\n', pos);
+        const bool has_nl = nl != std::string::npos;
+        if (!has_nl) nl = code.size();
+        const std::string_view whole(code.data() + pos, nl - pos);
+        std::size_t indent = 0;
+        while (indent < whole.size() && whole[indent] == ' ') ++indent;
+        const std::string_view text = whole.substr(indent);
+        if (text.size() > kMarker.size() && text.substr(0, kMarker.size()) == kMarker) {
+            const std::string hex(text.substr(kMarker.size() - 2u + 2u, 8u));
+            const u32 target = static_cast<u32>(std::strtoul(hex.c_str(), nullptr, 16));
+            const LeafInline& leaf = g_leaf_cache.at(target);
+            std::string block = leaf.text;
+            const std::string suffix = "_i" + std::to_string(counter++);
+            for (std::size_t at = block.find("@@"); at != std::string::npos; at = block.find("@@", at + suffix.size()))
+                block.replace(at, 2u, suffix);
+            out += block;
+            g_inlined_leaf_targets.insert(target);
+            ++g_inlined_leaf_sites;
+        } else {
+            out.append(whole);
+            if (has_nl) out.push_back('\n');
+        }
+        pos = has_nl ? nl + 1u : nl;
+    }
+    code.swap(out);
+}
+
 std::string emit_function(const DolImage& image, const Candidate& candidate,
                           const std::unordered_map<u32, u32>& recompiled,
                           std::string& failure, bool validate_only = false) {
+    g_leaf_image = &image;
+    g_leaf_recompiled = &recompiled;
     EmitContext context;
     context.image = &image;
     context.recompiled = &recompiled;
@@ -3361,6 +4095,7 @@ std::string emit_function(const DolImage& image, const Candidate& candidate,
         ctx.labels = context.labels;
         ctx.fusion_allowed = fusion;
         ctx.share_indirect_dispatch = indirect_sites > 1u;
+        ctx.inline_leaf_ok = g_inline_leaves && fusion;
         return ctx;
     };
 
@@ -3418,6 +4153,34 @@ std::string emit_function(const DolImage& image, const Candidate& candidate,
         g_hot_set_sites += changed;
     }
 
+    // s3/gen: serve register reads of an unlabeled run from host locals (hot
+    // text only; every write still goes to c.gpr). Runs break at labels, at
+    // non-contiguous addresses and after anything that cannot fall through.
+    GprCache gpr_cache;
+    if (g_gpr_cache) {
+        u32 previous = 0;
+        bool first = true;
+        bool broken = true;
+        for (IrInsn& insn : ir) {
+            if (first || insn.hot_label || broken || insn.address != previous + 4u) gpr_cache.flush();
+            insn.hot_code = gpr_cache.rewrite(insn.hot_code);
+            broken = !insn.falls_through;
+            previous = insn.address;
+            first = false;
+        }
+    }
+    if (g_inline_leaves) {
+        unsigned leaf_site = 0;
+        for (IrInsn& insn : ir) substitute_leaf_sites(insn.hot_code, leaf_site);
+    }
+    std::string gpr_cache_decl;
+    for (u32 reg = 0; reg < 32u; ++reg) {
+        if ((gpr_cache.used() & (1u << reg)) == 0u) continue;
+        gpr_cache_decl += gpr_cache_decl.empty() ? "    u32 gp" : " u32 gp";
+        gpr_cache_decl += std::to_string(reg) + " = 0;";
+    }
+    if (!gpr_cache_decl.empty()) gpr_cache_decl += "\n";
+
     std::string hot_body;
     std::size_t hot_annotation_bytes = 0;  // --annotate-lines only; kept out of the report
     const auto hot_annotate = [&](char kind, u32 address) {
@@ -3457,13 +4220,14 @@ std::string emit_function(const DolImage& image, const Candidate& candidate,
                 hot_entries.push_back(insn.address);
             }
         }
-        text += "static void " + body_symbol + "(Cpu& c, u32 entry) {\n";
+        text += "static void " + body_symbol + "(Cpu& GEKKO_CPU_RESTRICT c, u32 entry) {\n";
         if (hot_cap.indirect_dispatch_used) text += "    u32 gekko_indirect_site = 0;\n";
         text += annotate('g', candidate.record.address);
         text += "    u32 ea = 0; u32 tmp = 0; u32 cra = 0; u32 crb = 0; bool cnd = false;\n";
         text += "    u64 tmp64 = 0; double fa = 0.0; double fb = 0.0;\n";
         text += "    (void)ea; (void)tmp; (void)cra; (void)crb; (void)cnd;\n";
         text += "    (void)tmp64; (void)fa; (void)fb;\n";
+        text += gpr_cache_decl;
         if (hot_entries.empty()) {
             text += "    (void)entry;\n";
             text += hot_body;
@@ -3508,8 +4272,16 @@ std::string emit_function(const DolImage& image, const Candidate& candidate,
         interior.push_back(&insn);
         last_interior = insn.address;
     }
+    // RC-gen-8: an entry this function has no case for - an address between its instructions, one the reachability
+    // analysis did not keep, a misaligned value - used to fall out of the switch and run the body from the function's
+    // FIRST instruction, which is not what the guest asked for. No caller passes such an entry by construction (thunks
+    // pass literals, kRanges covers reachable runs only), so this is the fail-closed arm: hand back AT the entry. The
+    // dispatcher then finds no progress there and stops naming the address (production) or interprets the instruction
+    // (reference build).
+    const std::string unknown_entry =
+        "    c.leave_to_dispatcher(entry, FallbackReason::NotRecompiled, entry);\n    return;\n";
     if (interior.empty()) {
-        text += "    (void)entry;\n";
+        text += "    if (entry != " + hexu(dispatch_base) + ") {\n    " + unknown_entry + "    }\n";
         text += "    " + body_symbol + "(c, " + hexu(dispatch_base) + ");\n";
         text += "}\n";
     } else {
@@ -3534,8 +4306,7 @@ std::string emit_function(const DolImage& image, const Candidate& candidate,
         text += "            }\n";
         text += "        }\n";
         text += "    }\n";
-        text += "    " + body_symbol + "(c, " + hexu(dispatch_base) + ");\n";
-        text += "    return;\n";
+        text += unknown_entry;
         // Backward branches in cold snippets target the function start with
         // `goto L_<start>`. That label lives in the hot body; provide a
         // trampoline here so the goto stays in this function.
@@ -3609,7 +4380,42 @@ std::string emit_function(const DolImage& image, const Candidate& candidate,
 
 }  // namespace
 
+// Test hook (tools/ppcrecomp/test_gpr_cache.py): runs the GPR read cache over snippets
+// read from stdin and prints the rewritten text. Input lines: "@insn" starts the next
+// instruction's snippet (no label before it), "@label" starts one that follows a label
+// (the run is flushed first), "@end" ends the input. Output repeats the markers and ends
+// with "@used <mask>".
+int run_gpr_cache_filter() {
+    GprCache cache;
+    std::string current;
+    bool have = false;
+    const auto finish = [&]() {
+        if (have) std::fputs(cache.rewrite(current).c_str(), stdout);
+        current.clear();
+    };
+    char buffer[4096];
+    while (std::fgets(buffer, sizeof(buffer), stdin) != nullptr) {
+        std::string text(buffer);
+        while (!text.empty() && (text.back() == '\n' || text.back() == '\r')) text.pop_back();
+        if (text == "@insn" || text == "@label" || text == "@end") {
+            finish();
+            if (text == "@label") cache.flush();
+            if (text == "@end") break;
+            have = true;
+            std::fputs((text + "\n").c_str(), stdout);
+            continue;
+        }
+        current += text;
+        current += '\n';
+    }
+    std::printf("@used %u\n", cache.used());
+    return 0;
+}
+
 int main(int argc, char** argv) {
+    for (int index = 1; index < argc; ++index) {
+        if (std::strcmp(argv[index], "--gpr-cache-filter") == 0) return run_gpr_cache_filter();
+    }
     Options options;
     if (!parse_options(argc, argv, options)) {
         std::fprintf(stderr,
@@ -3708,11 +4514,14 @@ int main(int argc, char** argv) {
             return 1;
         }
         std::string line_text;
+        std::size_t line_number = 0;
         while (std::getline(file, line_text)) {
-            if (line_text.empty() || line_text[0] == '#') {
-                continue;
-            }
-            filter.insert(static_cast<u32>(std::strtoul(line_text.c_str(), nullptr, 0)));
+            ++line_number;
+            u32 address = 0;
+            std::istringstream rest;
+            bool bad = false;
+            if (list_line_address(line_text, address, rest, bad)) filter.insert(address);
+            else if (bad) return refuse_list_line(options.only, line_number, line_text, "0x<address>") ? 0 : 1;
         }
     }
 
@@ -4143,10 +4952,19 @@ int main(int argc, char** argv) {
     std::set<u32> owner_rows;
     for (const std::string& owners_list : options.native_owners) {
         std::ifstream file(owners_list);
+        if (!file) {
+            std::fprintf(stderr, "cannot read %s\n", owners_list.c_str());
+            return 1;
+        }
         std::string line_text;
+        std::size_t line_number = 0;
         while (std::getline(file, line_text)) {
-            if (line_text.empty() || line_text[0] == '#') continue;
-            owner_rows.insert(static_cast<u32>(std::strtoul(line_text.c_str(), nullptr, 0)));
+            ++line_number;
+            u32 address = 0;
+            std::istringstream rest;
+            bool bad = false;
+            if (list_line_address(line_text, address, rest, bad)) owner_rows.insert(address);
+            else if (bad) return refuse_list_line(owners_list, line_number, line_text, "0x<address> [name]") ? 0 : 1;
         }
     }
     {
@@ -4230,13 +5048,24 @@ int main(int argc, char** argv) {
             return 1;
         }
         std::string line_text;
+        std::size_t line_number = 0;
         while (std::getline(file, line_text)) {
-            if (line_text.empty() || line_text[0] == '#') continue;
-            std::istringstream fields(line_text);
-            std::string site_text, head_text, kind;
-            fields >> site_text >> head_text >> kind;
-            const u32 site = static_cast<u32>(std::strtoul(site_text.c_str(), nullptr, 0));
-            const u32 head = static_cast<u32>(std::strtoul(head_text.c_str(), nullptr, 0));
+            ++line_number;
+            u32 site = 0, head = 0;
+            std::istringstream fields;
+            bool bad = false;
+            if (!list_line_address(line_text, site, fields, bad)) {
+                if (bad) return refuse_list_line(options.wait_points, line_number, line_text, "0x<site> 0x<head> <class>") ? 0 : 1;
+                continue;
+            }
+            std::string head_text, kind;
+            if (!(fields >> head_text >> kind) || !parse_hex32(head_text, head))
+                return refuse_list_line(options.wait_points, line_number, line_text, "0x<site> 0x<head> <class>") ? 0 : 1;
+            if (g_wait_points.count(site) != 0u) {
+                std::fprintf(stderr, "%s:%zu: wait point %s is listed twice\n", options.wait_points.c_str(), line_number,
+                             hex32(site).c_str());
+                return 1;
+            }
             // A stale list must not put a wait anywhere else: the site must be
             // a non-linking direct branch back to the listed head.
             const bool executable = image.executable_at(site);
@@ -4587,9 +5416,14 @@ int main(int argc, char** argv) {
                 return 1;
             }
             std::string line_text;
+            std::size_t line_number = 0;
             while (std::getline(file, line_text)) {
-                if (line_text.empty() || line_text[0] == '#') continue;
-                owners.insert(static_cast<u32>(std::strtoul(line_text.c_str(), nullptr, 0)));
+                ++line_number;
+                u32 address = 0;
+                std::istringstream rest;
+                bool bad = false;
+                if (list_line_address(line_text, address, rest, bad)) owners.insert(address);
+                else if (bad) return refuse_list_line(owners_list, line_number, line_text, "0x<address> [name]") ? 0 : 1;
             }
         }
         for (Candidate& candidate : accepted) {
@@ -4642,6 +5476,10 @@ int main(int argc, char** argv) {
             }
         }
     }
+    if (g_inline_leaves && options.prune_roots.empty() && !g_inline_no_hooks) {
+        std::fprintf(stderr, "--inline-leaves needs --prune-roots (the addresses a runtime hook may name) or --inline-no-hooks\n");
+        return 1;
+    }
     std::size_t pruned_rows = 0;
     std::size_t pruned_instructions = 0;
     if (!options.prune_roots.empty()) {
@@ -4658,22 +5496,38 @@ int main(int argc, char** argv) {
                 return 1;
             }
             std::string line_text;
+            std::size_t line_number = 0;
             while (std::getline(file, line_text)) {
-                if (line_text.empty() || line_text[0] == '#') continue;
-                std::istringstream fields(line_text);
-                std::string first, kind;
-                fields >> first;
-                const u32 address = static_cast<u32>(std::strtoul(first.c_str(), nullptr, 0));
-                if (fields >> kind && kind == "census") {
-                    CensusRoot root{address, {}};
-                    std::string site;
-                    while (fields >> site) root.sites.push_back(static_cast<u32>(std::strtoul(site.c_str(), nullptr, 0)));
-                    census_roots.push_back(std::move(root));
-                } else {
-                    extra_roots.push_back(address);
+                ++line_number;
+                // RC-gen-12: "0x<address>" or "0x<address> census [0x<site> ...]", nothing else. A misspelt `census`
+                // used to make the line a plain (unconditional) root, and a bad address became root 0.
+                u32 address = 0;
+                std::istringstream fields;
+                bool bad = false;
+                if (!list_line_address(line_text, address, fields, bad)) {
+                    if (bad) return refuse_list_line(options.prune_roots, line_number, line_text, "0x<address> [census 0x<site>...]") ? 0 : 1;
+                    continue;
                 }
+                std::string kind;
+                if (!(fields >> kind)) {
+                    extra_roots.push_back(address);
+                    continue;
+                }
+                if (kind != "census")
+                    return refuse_list_line(options.prune_roots, line_number, line_text, "0x<address> [census 0x<site>...]") ? 0 : 1;
+                CensusRoot root{address, {}};
+                std::string site_text;
+                while (fields >> site_text) {
+                    u32 site = 0;
+                    if (!parse_hex32(site_text, site))
+                        return refuse_list_line(options.prune_roots, line_number, line_text, "0x<address> census 0x<site>...") ? 0 : 1;
+                    root.sites.push_back(site);
+                }
+                census_roots.push_back(std::move(root));
             }
         }
+        for (const u32 root : extra_roots) g_inline_roots.insert(root);
+        for (const CensusRoot& root : census_roots) g_inline_roots.insert(root.root);
         std::vector<std::pair<u32, u32>> owned;  // (reachable address, row)
         for (std::size_t i = 0; i < accepted.size(); ++i) {
             for (const u32 address : accepted[i].analysis.reachable) {
@@ -4716,14 +5570,22 @@ int main(int argc, char** argv) {
                 return 1;
             }
             std::string line_text;
+            std::size_t line_number = 0;
             while (std::getline(file, line_text)) {
-                if (line_text.empty() || line_text[0] == '#') continue;
-                std::istringstream fields(line_text);
-                std::string site_text, table_text, count_text;
-                fields >> site_text >> table_text >> count_text;
-                listed_tables.push_back(ListedTable{static_cast<u32>(std::strtoul(site_text.c_str(), nullptr, 0)),
-                                                    static_cast<u32>(std::strtoul(table_text.c_str(), nullptr, 0)),
-                                                    static_cast<u32>(std::strtoul(count_text.c_str(), nullptr, 0))});
+                ++line_number;
+                u32 site = 0;
+                std::istringstream fields;
+                bool bad = false;
+                if (!list_line_address(line_text, site, fields, bad)) {
+                    if (bad) return refuse_list_line(options.jump_tables, line_number, line_text, "0x<site> 0x<table> <entries>") ? 0 : 1;
+                    continue;
+                }
+                std::string table_text, count_text, extra;
+                u32 table = 0, entries = 0;
+                if (!(fields >> table_text >> count_text) || (fields >> extra) || !parse_hex32(table_text, table) ||
+                    !parse_u32_token(count_text, entries) || entries == 0u)
+                    return refuse_list_line(options.jump_tables, line_number, line_text, "0x<site> 0x<table> <entries>") ? 0 : 1;
+                listed_tables.push_back(ListedTable{site, table, entries});
             }
         }
         std::vector<std::pair<u32, u32>> listed_ranges;  // [table, end), sorted
@@ -5205,6 +6067,43 @@ int main(int argc, char** argv) {
                 }
             }
         }
+        // RC-gen-2: the rule above sees only a direct branch that crosses rows. A row can also translate an owner's
+        // instructions itself - its extent overlaps the owner's (a late row start inside it, a D1-widened or
+        // jump-table-extended row), or it runs into it by fall-through - and then the owner's ORIGINAL words run
+        // natively in place of, or interleaved with, the native owner. Every surviving non-owner row is checked
+        // against every owned instruction; an absorbed row is covered by its absorber.
+        {
+            std::size_t overlapping_rows = 0, overlapping_words = 0;
+            for (const Candidate& c : accepted) {
+                if (c.native_owner || c.absorbed_by != 0u) continue;
+                std::size_t words = 0;
+                u32 first = 0;
+                for (const u32 address : c.analysis.reachable) {
+                    if (owned_instructions.count(address) == 0u) continue;
+                    if (words++ == 0u) first = address;
+                }
+                if (words == 0u) continue;
+                ++overlapping_rows;
+                overlapping_words += words;
+                u32 owner_start = 0;
+                for (const Candidate& owner : accepted) {
+                    if (owner.native_owner && owner.analysis.reachable.count(first) != 0u) {
+                        owner_start = owner.record.address;
+                        break;
+                    }
+                }
+                std::fprintf(stderr, "%s: row %s translates %zu instruction(s) of native owner %s (first at %s)\n",
+                             options.strict_owner_extents ? "error" : "note", hex32(c.record.address).c_str(), words,
+                             hex32(owner_start).c_str(), hex32(first).c_str());
+            }
+            if (overlapping_rows != 0u) {
+                std::fprintf(stderr,
+                             "native owners: %zu surviving row(s) translate %zu owned instruction(s)%s\n",
+                             overlapping_rows, overlapping_words,
+                             options.strict_owner_extents ? " (--strict-owner-extents: refused)" : "");
+                if (options.strict_owner_extents) return 1;
+            }
+        }
         for (Candidate& c : accepted) {
             if (!c.native_owner) continue;
             for (const u32 address : c.entries) {
@@ -5303,12 +6202,27 @@ int main(int argc, char** argv) {
     g_cold_src_bytes = 0;
     g_hot_set_rows = 0;
     g_hot_set_sites = 0;
+    g_inlined_leaf_targets.clear();
+    g_inlined_leaf_sites = 0;
+    g_leaf_cache.clear();
+    g_leaf_rows.clear();
+    if (g_inline_leaves) {
+        for (const Candidate& candidate : accepted) g_leaf_rows.emplace(candidate.record.address, &candidate);
+    }
     // ---- write the generated sources ----
     const std::string out = options.out;
     OutputStats output_stats;
     const std::size_t shards = std::max<std::size_t>(1, options.shards);
     ShardLayout layout;
-    if (!plan_shards(out + "/recomp_layout.csv", accepted, shards, layout)) return 1;
+    if (!plan_shards(out + "/recomp_layout.csv", accepted, shards, layout, options.fresh_layout)) return 1;
+    {
+        u32 fingerprint = 0x811C9DC5u;  // FNV-1a of the layout file's text
+        for (const char ch : layout.text) fingerprint = (fingerprint ^ static_cast<u8>(ch)) * 0x01000193u;
+        std::fprintf(stderr, "shard layout: fingerprint %s over %zu rows in %zu shards (%s)\n", hex32(fingerprint).c_str(),
+                     accepted.size(), shards,
+                     layout.carried ? "carried over from this directory's recomp_layout.csv; --fresh-layout derives it from the inputs alone"
+                                    : "derived from the inputs alone");
+    }
     std::vector<std::vector<std::size_t>> shard_rows(shards);
     for (std::size_t index = 0; index < accepted.size(); ++index)
         shard_rows[layout.placement[index]].push_back(index);
@@ -5420,6 +6334,16 @@ int main(int argc, char** argv) {
                      static_cast<unsigned long long>(g_hot_set_rows), g_hot_set.size(),
                      static_cast<unsigned long long>(g_hot_set_sites));
     }
+    if (g_inline_leaves) {
+        std::fprintf(stderr, "leaf inlining (<= %u instructions): %zu callees spliced at %llu hot call sites\n",
+                     static_cast<unsigned>(g_inline_leaf_max), g_inlined_leaf_targets.size(),
+                     static_cast<unsigned long long>(g_inlined_leaf_sites));
+    }
+    if (g_gpr_cache) {
+        std::fprintf(stderr, "gpr cache: %llu register reads filled from c.gpr, %llu served from locals\n",
+                     static_cast<unsigned long long>(g_gpr_cache_reads_filled),
+                     static_cast<unsigned long long>(g_gpr_cache_reads_cached));
+    }
     // Every listed GX pipe site a surviving translation holds was lowered: a
     // site in a row that is neither a native owner nor absorbed must have been
     // emitted (a listed site the generator left as an ordinary store would be
@@ -5449,6 +6373,30 @@ int main(int argc, char** argv) {
         if (required && g_psq_sites_emitted.count(listed.first) == 0u) {
             std::fprintf(stderr, "stale psq site %s (%s): translated but not specialised\n",
                          hex32(listed.first).c_str(), options.psq_sites.c_str());
+            return 1;
+        }
+    }
+    // RC-gen-5: a listed wait point whose back edge a surviving translation holds must have been emitted WITH its wait
+    // (emit_wait_point). A back edge that lost it - emitted through a path that does not wait, e.g. as a hand-back
+    // because its head has no translation - spins without advancing the game clock: a hang with nothing to see. Sites
+    // no surviving row holds are not required (their function is pruned or owned); the report line counts those.
+    {
+        std::size_t missing_waits = 0;
+        for (const auto& listed : g_wait_points) {
+            if (g_wait_points_emitted.count(listed.first) != 0u) continue;
+            for (const Candidate& candidate : accepted) {
+                if (candidate.native_owner || candidate.absorbed_by != 0u) continue;
+                if (candidate.analysis.reachable.count(listed.first) == 0u) continue;
+                std::fprintf(stderr,
+                             "wait point %s -> %s (%s): row %s translates the back edge without its wait\n",
+                             hex32(listed.first).c_str(), hex32(listed.second).c_str(), options.wait_points.c_str(),
+                             hex32(candidate.record.address).c_str());
+                ++missing_waits;
+                break;
+            }
+        }
+        if (missing_waits != 0u) {
+            std::fprintf(stderr, "%zu listed wait point(s) translated without a wait\n", missing_waits);
             return 1;
         }
     }
@@ -5630,6 +6578,33 @@ GEKKO_NOINLINE bool call_type_query(Cpu& c, u32 site, u16 query, u32 target) {
 
 )CPP";
         }
+        // RC-gen-2: one table row per address. Two rows for one address (an owner entry declared at an address that
+        // is also another row's start or entry) used to be emitted and RecompiledCode::install kept the last.
+        {
+            std::map<u32, u32> table_rows;  // address -> the row that lists it
+            std::size_t duplicates = 0;
+            const auto claim = [&](u32 address, u32 row) {
+                const auto inserted = table_rows.emplace(address, row);
+                if (inserted.second) return;
+                std::fprintf(stderr, "function table: %s is listed by row %s and by row %s\n", hex32(address).c_str(),
+                             hex32(inserted.first->second).c_str(), hex32(row).c_str());
+                ++duplicates;
+            };
+            for (const Candidate& candidate : accepted) {
+                claim(candidate.record.address, candidate.record.address);
+                if (candidate.native_owner) {
+                    for (const u32 address : candidate.owner_entries) claim(address, candidate.record.address);
+                    continue;
+                }
+                for (const u32 address : candidate.entries) {
+                    if (address != candidate.record.address) claim(address, candidate.record.address);
+                }
+            }
+            if (duplicates != 0u) {
+                std::fprintf(stderr, "%zu address(es) have more than one function table row\n", duplicates);
+                return 1;
+            }
+        }
         table << "const RecompiledCode::Entry kFunctions[] = {\n";
         for (const Candidate& candidate : accepted) {
             std::string name = candidate.record.name;
@@ -5731,6 +6706,19 @@ GEKKO_NOINLINE bool call_type_query(Cpu& c, u32 site, u16 query, u32 target) {
         if (owner_count == 0u) table << "0u";
         table << "};\n";
         table << "const std::size_t kNativeOwnerCount = " << owner_count << ";\n\n";
+        // cs2/cpu: the leaves the generator spliced into their callers (sorted). A hook at one of them would be
+        // bypassed by every inlined call, so the runtime refuses it (Cpu::set_inlined_leaves).
+        table << "const u32 kInlinedLeaves[] = {";
+        {
+            bool first_leaf = true;
+            for (const u32 address : g_inlined_leaf_targets) {
+                table << (first_leaf ? "" : ", ") << hexu(address);
+                first_leaf = false;
+            }
+            if (first_leaf) table << "0u";
+        }
+        table << "};\n";
+        table << "const std::size_t kInlinedLeafCount = " << g_inlined_leaf_targets.size() << ";\n\n";
         // Every listed GX pipe site, sorted, for the interpreter: a store it
         // executes at one of these words means what the generated code calls.
         table << "const GxSiteRecord kGxSites[] = {\n";

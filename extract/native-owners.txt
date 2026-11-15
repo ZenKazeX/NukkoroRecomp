@@ -461,11 +461,12 @@
 # sets the state main reads and runs OSInit, the constructors and main as guest calls; the three return points of the
 # original __start are its continuations. With __start owned nothing reaches __init_registers, __init_hardware, the
 # paired-single / FPR / HID0 setup or the debug monitor's entry, and the generator prunes them. Must equal
-# NativeBoot::addresses().
+# NativeBoot::addresses(). The fourth return point, 0x803796FC (a constructor returned to the table walk), is listed in
+# native-owners-r2.txt with the __init_cpp owner it lies in (RC-gen-2): the reference build keeps the original __init_cpp body for its
+# --original-boot, so there it is a hook inside that body's row, not an owner row overlapping it.
 0x80003154 __start
 0x80370E68 OSInit
 0x800032A0 entry: native boot: the constructors returned
-0x803796FC entry: native boot: a constructor returned to the table walk (the native __init_cpp, docs/agents/cri-threads.md)
 0x800032AC entry: native boot: main returned
 
 # runtime/src/gekko/native_axfx_effects.cpp (axfx_effects::install): the three further AXFX effects the sound start-up
@@ -479,6 +480,11 @@
 0x803896AC AXFXChorusShutdown
 0x80389FF4 AXFXDelayInit
 0x8038A03C AXFXDelayShutdown
+# The three aux callbacks (sdk-axfx, docs/agents/sdk-axfx.md): stop owners. The selector 0x8043F304 is called with modes 0 and 2 only,
+# so modes 1, 3, 4 (these callbacks) are never registered; an entry stops the run. Frees the callbacks' interiors.
+0x803890B0 AXFXReverbStdCallback
+0x8038980C AXFXChorusCallback
+0x80389B5C AXFXDelayCallback
 # runtime/src/gekko/save_store.cpp (SaveStore::install): the game's saves (docs/agents/card-saves.md). The card job
 # runner (the game's TMemoryCardCtrl code 0x8029A66C..0x8029C2A4: seven jobs of fourteen CARD operations, an issue and
 # a poll step each) is served by the host save file, so the runner's steps and the CARD library under them have no
@@ -702,6 +708,8 @@
 0x8040C6CC matrix 3x4 point transform
 0x8040C5EC matrix 3x4 translate by rotated vector
 0x8040C7E0 matrix 3x4 scale columns
+# runtime/src/gekko/native_adx_decode.cpp (docs/agents/opt-adx.md): the ADX stereo 4-bit block decoder.
+0x803C5B2C ADX stereo 4-bit block decoder
 #
 # runtime/src/gekko/native_vec_math.cpp (vec_math::install): the game's 3-vector helpers on {float x, y, z}
 # (docs/agents/native-math.md). Scalar single arithmetic in the original's load/store order with the FPSCR[NI] policy
@@ -714,3 +722,67 @@
 0x8040DFE0 Vec3Dot
 0x8040E008 Vec3Cross
 0x8040E048 Vec3AddTo
+#
+# runtime/src/gekko/native_mtn_track.cpp (mtn_track::install): the Mtn animation library's key-frame track sampler, seeks,
+# initialiser, Hermite interpolators and vector samplers (docs/agents/opt-mtn.md). Every float step is the original's ppc::fps_*
+# in the original's order; an interpolator or sampler pointer the owner does not serve is called as guest code. Must equal
+# mtn_track::Owners (native_file_api_tests).
+0x804162AC Mtn TrackSample
+0x80416728 Mtn HermiteValue
+0x8041669C Mtn HermiteSlope
+0x80415300 Mtn TrackSeekForward
+0x80415170 Mtn TrackSeekBackward
+0x80414B80 Mtn TrackInit
+0x80421358 Mtn SampleVec3Reciprocal
+0x804213FC Mtn SampleVec3
+0x8042148C Mtn SampleVec3At20
+0x80421518 Mtn SampleVec3Scaled
+#
+# runtime/src/gekko/native_effect_update.cpp (effect_update::install): the effect system's particle update
+# (docs/agents/opt-effects.md): the three command updates (alpha ramp, scalar, vector; 0x80424958 is the vector code again for
+# the 2D scale command) and the particle system's unit step. Must equal effect_update::Owners (native_file_api_tests).
+0x80423F20 effect command alpha ramp update
+0x80425B20 effect command scalar update
+0x80425544 effect command vector update
+0x80424958 effect command 2D scale update
+0x80428044 effect particle system unit step
+#
+# runtime/src/gekko/native_math_affine.cpp (docs/agents/opt-matrix.md, round 2): the rest of the 3x4 matrix / vector library -
+# rotate vector, the float-argument translate / scale, squared length, concat and both inverses - each with a plain-float fast
+# path and the exact ppc::fps_* fallback. The three rows of the os-other block above are the same file. Must equal math_affine::Owners.
+0x8040C668 matrix 3x4 rotate vector
+0x8040C57C matrix 3x4 translate by floats
+0x8040C770 matrix 3x4 scale columns by floats
+0x8040DF7C vec3 squared length
+0x8040C94C matrix 3x4 concat
+0x8040CD24 matrix 3x4 invert in place
+0x8040CF48 matrix 3x4 invert
+#
+# runtime/src/gekko/native_mtn_pose.cpp (mtn_pose::install): the Mtn pose pass (docs/agents/opt-mtn2.md): the bone-tree walk, the node
+# callbacks (rotations, scales, translations, one bone's Euler angles) and the matrix -> quaternion -> slerp -> matrix chain with the
+# column normaliser. Must equal mtn_pose::Owners (native_file_api_tests).
+0x804196F0 Mtn NodeWalk
+0x8041EC24 Mtn RotationPass
+0x8041E5D0 Mtn ScalePass
+0x8041E8EC Mtn ScaleLengthsPass
+0x8041F174 Mtn TranslationPass
+0x80420B9C Mtn EulerBone
+0x8042167C Mtn MatrixBlend
+0x80421774 Mtn QuatSlerp
+0x8042193C Mtn MatrixToQuat
+0x80421BB0 Mtn QuatToMatrix
+0x804121BC Mtn MatrixNormalize
+#
+# runtime/src/gekko/native_rw_raster.cpp (rw_raster::install, clear_arm): the five interior entries of GcnRasterClearRect 0x8049A124 - the
+# arms of its switch on the raster depth (docs/agents/sdk-rwnum.md). Each is the continuation of the body: fill, the common tail (unlock
+# if r31), r3 = 1, the function's epilogue. Must equal rw_raster::Owners (native_file_api_tests).
+0x8049A304 GcnRasterClearRect arm: 4-bit depth
+0x8049A364 GcnRasterClearRect arm: 8-bit depth
+0x8049A3B4 GcnRasterClearRect arm: 16-bit depth
+0x8049A41C GcnRasterClearRect arm: 32-bit depth
+0x8049A480 GcnRasterClearRect arm: unsupported depth
+#
+# runtime/src/gekko/native_driver_callbacks.cpp (driver_callbacks::install; docs/agents/sdk-rwdrv.md, group B): the GX default
+# texture / TLUT region callbacks (__GXData + 0x4C8 / 0x4CC), exact.
+0x80393634 GX default texture region callback
+0x80393730 GX default TLUT region callback

@@ -86,11 +86,16 @@ const DynamicCastIntrinsic::Result& DynamicCastIntrinsic::remembered(Cpu& cpu, u
     const u32 rtti = cpu.mem_read32(vtable);
     const u32 top = cpu.mem_read32(vtable + 4u);
     const Key key{vtable, vptr_offset, to, from};
+    Slot& slot = front_[(KeyHash{}(key) >> 7) & (kFront - 1u)];
+    if (slot.result != nullptr && slot.key == key && slot.result->rtti == rtti && slot.result->top == top)
+        return *slot.result;
     auto found = memo_.find(key);
     if (found == memo_.end() || found->second.rtti != rtti || found->second.top != top) {
         ++computed_;
         found = memo_.insert_or_assign(key, walk(cpu, vtable, rtti, top, to, from)).first;
     }
+    slot.key = key;
+    slot.result = &found->second;
     return found->second;
 }
 

@@ -57,6 +57,11 @@ private:
     void coefficients() noexcept;
     float exchange(std::size_t line, float input) noexcept;
     template <math::SubnormalMode M>
+    void crossfeed(const std::array<std::int32_t*, 3>& channels, std::size_t frames) noexcept;
+    // The three channels side by side in vector lanes (AVX2 + FMA builds); run is the scalar reference.
+    template <math::SubnormalMode M>
+    void run_vector(const std::array<std::int32_t*, 3>& channels, std::size_t frames) noexcept;
+    template <math::SubnormalMode M>
     void run(const std::array<std::int32_t*, 3>& channels, std::size_t frames) noexcept;
     History history_{};
     std::array<float, 3> comb_{};

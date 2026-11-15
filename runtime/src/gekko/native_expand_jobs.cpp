@@ -14,6 +14,7 @@
 #include <tuple>
 #include <vector>
 
+#include "gekko/asset_mount.h"
 #include "gekko/cpu.h"
 #include "gekko/game_memory.h"
 #include "gekko/recomp.h"
@@ -509,7 +510,36 @@ bool NativeExpandJobs::install() {
             return false;  // the reaper runs as before and deletes them
         },
         "native expand jobs: publication at the reaper (declines)");
+    install_load_stamps();
     return true;
+}
+
+// Load-time stamps (measurement only, GEKKO_PF_LOAD_STAMP=1; docs/agents/PERF_2026-11-14.md, field "load"): the first
+// call of three stage-sequence markers prints the process's age, the game thread's CPU and the game tick. Every hook
+// declines (the original runs); with the variable unset nothing is installed.
+void NativeExpandJobs::install_load_stamps() {
+    if (!assets::pf_load_stamps_on()) return;
+    struct Marker {
+        u32 address;
+        const char* label;
+    };
+    static constexpr Marker kMarkers[] = {
+        {0x801783D4u, "state0"},     // StageManager state 0 builds the stage (docs/STAGE_LOADING.md 2)
+        {0x80177704u, "init_done"},  // the init task ends: the loading screen closes
+        {0x8020618Cu, "play"},       // StageAction::PlayAction: the first gameplay frame
+    };
+    for (const Marker& m : kMarkers) {
+        cpu_.install_hle(
+            m.address,
+            [m, fired = false](Cpu& c) mutable {
+                if (!fired) {
+                    fired = true;
+                    assets::pf_load_stamp(m.label, c.game_clock().now());
+                }
+                return false;
+            },
+            std::string("pf-load stamp: ") + m.label);
+    }
 }
 
 // Mode 3's publication, at the reaper's entry: each queued job in submission order as TExpandBG's step would finish

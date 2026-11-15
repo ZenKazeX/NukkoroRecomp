@@ -312,6 +312,37 @@ unsigned run_waits(const std::vector<u8>& dol) {
             "sleep changed the MSR, r1 or a preserved register");
     for (u32 i = 0; i < before.size(); ++i) require(m.memory.read32(kThreadA + 4u * i) == before[i], "sleep wrote an OSThread word");
     ++checks;
+    // RC-kernel-3: what the event's callbacks leave in GQR1-7 and FPSCR is theirs. The original gave the sleeping thread its
+    // own back (OSLoadContext: the GQRs; the FPU state: FPSCR), as deliver() does for an interrupted thread.
+    one_thread_world(m, 0);
+    steps = ok_results = idles = 0;
+    set_up_vi(steps, ok_results, true);
+    {
+        const auto inner = [&](Cpu& c, u32 frame, u32 step) {
+            if (step == 0u) {
+                for (u32 g = 1; g < 8u; ++g) c.spr[SPR_GQR0 + g] = 0x00070007u + g;   // CRI Sofdec's quantisation set-up
+                c.fpscr = (c.fpscr & ~0x0000F000u) | 0x00008000u;                      // an FP compare's FPCC
+                ni.call_guest(c, frame, kGetCurrentThread, 0u, 0u);
+                return true;
+            }
+            c.gpr[3] = kQueue;
+            (void)serve_wakeup_thread(c, wait, kWakeupThread);
+            return false;
+        };
+        ni.set_handler(NativeInterrupts::Source::Vi, inner);
+    }
+    wait = MainWait{};
+    m.cpu.set_idle_handler([&](Cpu&) { ni.raise(NativeInterrupts::Source::Vi); });
+    for (u32 g = 0; g < 8u; ++g) m.cpu.spr[SPR_GQR0 + g] = 0x3C003C00u + g;
+    m.cpu.fpscr = 0x00002004u;
+    m.cpu.fpr[5].bits[0] = 0x400921FB54442D18ull;
+    m.cpu.gpr[3] = kQueue;
+    require(serve_sleep_thread(m.cpu, ni, wait, IdlePass(), kSleepThread) && !stopped(), "sleep over a callback that writes GQR / FPSCR");
+    for (u32 g = 0; g < 8u; ++g)
+        require(m.cpu.spr[SPR_GQR0 + g] == 0x3C003C00u + g, "the sleeping thread's GQRs must come back after the event");
+    require(m.cpu.fpscr == 0x00002004u, "the sleeping thread's FPSCR must come back after the event");
+    require(m.cpu.fpr[5].bits[0] == 0x400921FB54442D18ull, "the sleeping thread's FPRs come back after the event");
+    ++checks;
     // An event that wakes nobody: the wait goes on to the next event (the second one wakes).
     one_thread_world(m, 0);
     steps = ok_results = idles = 0;
@@ -327,6 +358,52 @@ unsigned run_waits(const std::vector<u8>& dol) {
     });
     m.cpu.gpr[3] = kQueue;
     require(serve_sleep_thread(m.cpu, ni, wait, IdlePass(), kSleepThread) && !stopped() && idles == 3 && steps == 4, "sleep over events that wake nobody"); ++checks;
+    // RC-kernel-1: a host stop (a savestate boundary asked for by the host service inside idle_wait) ends the wait before
+    // the queue is woken. The stopped machine must be a resume point: pc at the sleep's entry, r3 the queue again (the first
+    // event's callback result had replaced it), LR / r1 / MSR / preserved registers as on entry; a run that continues enters
+    // the wait again and ends as an uninterrupted one. Also the stop that arrives together with the wake: the call is
+    // complete, so the resume point is the return site.
+    for (const u32 stop_at : {1u, 2u}) {
+        one_thread_world(m, 0);
+        steps = ok_results = idles = 0;
+        set_up_vi(steps, ok_results, false);
+        wait = MainWait{};
+        m.cpu.set_idle_handler([&, stop_at](Cpu& c) {
+            ++idles;
+            if (idles == stop_at) { c.request_stop(StopReason::HostRequest, "test: savestate boundary"); return; }
+            ni.raise(NativeInterrupts::Source::Vi);
+            if (idles == 4u) wait.woken = true;
+        });
+        m.cpu.gpr[3] = kQueue;
+        m.cpu.gpr[20] = 0x20202020u;
+        m.cpu.pc = 0x80001234u;  // whatever the caller chain published last
+        const u32 msr0 = m.cpu.msr();
+        require(serve_sleep_thread(m.cpu, ni, wait, IdlePass(), kSleepThread) && stopped(), "a stop inside the wait ends it");
+        require(m.cpu.pc == kSleepThread && m.cpu.gpr[3] == kQueue, "a stop inside the wait must leave pc at the entry and r3 the queue");
+        require(m.cpu.lr == kReturn && m.cpu.gpr[1] == kStack && m.cpu.msr() == msr0 && m.cpu.gpr[20] == 0x20202020u && !wait.active &&
+                    !ni.wait_active(),
+                "a stop inside the wait must leave LR, r1, the MSR and the preserved registers as on entry");
+        m.cpu.clear_stop();
+        (void)m.cpu.run_steps(0u);  // a new run starts with no stop request
+        m.cpu.rearm_native_entry();  // ... and the dispatcher clears the hand-back's exit word before it enters the owner again
+        require(serve_sleep_thread(m.cpu, ni, wait, IdlePass(), kSleepThread) && !stopped() && idles == 4u, "the resumed wait ends at the wake");
+        require(m.cpu.msr() == msr0 && m.cpu.gpr[1] == kStack && m.cpu.gpr[20] == 0x20202020u && !wait.active && m.cpu.lr == kReturn,
+                "the resumed wait ends as an uninterrupted one");
+        ++checks;
+    }
+    one_thread_world(m, 0);
+    steps = ok_results = idles = 0;
+    set_up_vi(steps, ok_results, false);
+    wait = MainWait{};
+    m.cpu.set_idle_handler([&](Cpu& c) {
+        wait.woken = true;
+        c.request_stop(StopReason::HostRequest, "test: a stop together with the wake");
+    });
+    m.cpu.gpr[3] = kQueue;
+    m.cpu.pc = 0x80001234u;
+    require(serve_sleep_thread(m.cpu, ni, wait, IdlePass(), kSleepThread) && stopped() && m.cpu.pc == kReturn,
+            "a stop together with the wake must leave pc at the return site");
+    ++checks;
     // The loud stops.
     one_thread_world(m, 1);
     m.cpu.gpr[3] = kQueue;
@@ -346,8 +423,35 @@ unsigned run_waits(const std::vector<u8>& dol) {
     ni.raise(NativeInterrupts::Source::HostWork);
     m.cpu.gpr[3] = kQueue;
     wait = MainWait{};
-    require(serve_sleep_thread(m.cpu, ni, wait, IdlePass(), kSleepThread) && stopped() && stop_text().find("host work") != std::string::npos,
-            "a latched HostWork must stop the wait, naming it"); ++checks;
+    require(serve_sleep_thread(m.cpu, ni, wait, IdlePass(), kSleepThread) && stopped() && stop_text().find("host work") != std::string::npos &&
+                stop_text().find("no handler") != std::string::npos,
+            "a latched source with no handler (here HostWork) must stop the wait, naming it"); ++checks;
+    // Before-run (2026-11-12, docs/agents/cs-issues.md): with run_pending_event changed to refuse HostWork even with a handler, the
+    // case above (no handler) still passed - it tests the generic "no handler" stop - and this one failed ("HostWork with a handler
+    // must be driven by the wait"); the pre-66372e9 test passed against that runtime.
+    // RC-kernel-6: HostWork is a source like the others - with its handler installed (System gives it NativeCri's) the wait
+    // drives it; CRI's deferred tick depends on that (NativeCri::run_idle_in_wait raises it on purpose).
+    one_thread_world(m, 0);
+    ni.reset();
+    {
+        unsigned host_work_steps = 0;
+        ni.set_handler(NativeInterrupts::Source::HostWork, [&](Cpu& c, u32, u32) {
+            ++host_work_steps;
+            require((c.msr() & kEnableBit) == 0u, "host work ran with MSR[EE] set");
+            c.gpr[3] = kQueue;
+            (void)serve_wakeup_thread(c, wait, kWakeupThread);
+            return false;
+        });
+        ni.raise(NativeInterrupts::Source::HostWork);
+        m.cpu.set_idle_handler([&](Cpu&) { require(false, "the latched host work must be driven before the wait idles"); });
+        m.cpu.gpr[3] = kQueue;
+        wait = MainWait{};
+        require(serve_sleep_thread(m.cpu, ni, wait, IdlePass(), kSleepThread) && !stopped() && host_work_steps == 1u &&
+                    !ni.status(NativeInterrupts::Source::HostWork),
+                "HostWork with a handler must be driven by the wait");
+        ++checks;
+        ni.set_handler(NativeInterrupts::Source::HostWork, NativeInterrupts::Handler());
+    }
     one_thread_world(m, 0);
     ni.reset();
     m.cpu.set_external_interrupt(true);

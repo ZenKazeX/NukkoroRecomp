@@ -17,8 +17,14 @@ namespace detail {
 extern const bool g_enabled;
 }  // namespace detail
 
+#if defined(GEKKO_SHIPPING)
+// GEKKO_SHIPPING: the trace does not exist in the user's exe (as audio_audit and MeasureProbes); the flag test every translated
+// indirect call carried folds away. SHADOW_INDIRECT_TRACE is then ignored.
+constexpr bool enabled() noexcept { return false; }
+#else
 // A plain load: called on every linked indirect call, so it must not be an out-of-line call with a guarded static.
 inline bool enabled() noexcept { return detail::g_enabled; }
+#endif
 void record(std::uint32_t site, std::uint32_t target);
 
 }  // namespace gekko::indirect_call_trace

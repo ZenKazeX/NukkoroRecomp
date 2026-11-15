@@ -25,6 +25,7 @@
 #include "gekko/native_rw_device_state.h"
 #include "gekko/native_rw_registry.h"
 #include "gekko/native_gx_texobj.h"
+#include "gekko/native_driver_callbacks.h"
 #include "test_scratch.h"
 #include "gekko/cpu.h"
 #include "gekko/guest_memory.h"
@@ -549,6 +550,7 @@ void owner_list_matches(const char* owners_path) {
     add_owner_addresses<trk::Owners>(installed, total);
     add_owner_addresses<gx_display::Owners>(installed, total);
     add_owner_addresses<gx_texobj::Owners>(installed, total);
+    add_owner_addresses<driver_callbacks::Owners>(installed, total);
     add_owner_addresses<os_settings::Owners>(installed, total);
     add_owner_addresses<os_heap::Owners>(installed, total);
     add_owner_addresses<os_panic::Owners>(installed, total);
@@ -556,11 +558,15 @@ void owner_list_matches(const char* owners_path) {
     add_owner_addresses<os_machine_check::Owners>(installed, total);
     add_owner_addresses<ax_mix_alloc::Owners>(installed, total);
     add_owner_addresses<math_affine::Owners>(installed, total);
+    add_owner_addresses<adx_decode::Owners>(installed, total);
     add_owner_addresses<rw_image::Owners>(installed, total);
     add_owner_addresses<rw_pixel::Owners>(installed, total);
     add_owner_addresses<os_threads::Owners>(installed, total);
     add_owner_addresses<os_font::Owners>(installed, total);
     add_owner_addresses<vec_math::Owners>(installed, total);
+    add_owner_addresses<mtn_track::Owners>(installed, total);
+    add_owner_addresses<mtn_pose::Owners>(installed, total);
+    add_owner_addresses<effect_update::Owners>(installed, total);
     add_owner_addresses<mix_entries::Owners>(installed, total);
     add_owner_addresses<sound_tables::Owners>(installed, total);
     add_owner_addresses<gcax_midi::Owners>(installed, total);

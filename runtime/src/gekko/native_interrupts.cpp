@@ -261,11 +261,6 @@ std::size_t NativeInterrupts::best_pending() const {
     return best;
 }
 
-bool NativeInterrupts::other_pending(Source except) const {
-    const std::size_t found = best_pending();
-    return found != kSourceCount && found != index(except);
-}
-
 void NativeInterrupts::clear_exception_context(Cpu& c, u32 frame) {
     os_clear_context(c, frame + kHandlerExcOffset);
 }
@@ -346,11 +341,17 @@ void NativeInterrupts::reset() noexcept {
     yield_on_finish_ = false;
     upcall_kind_ = 0u;
     upcall_stack_ = 0u;
+    event_abandoned_ = false;
     update_line();
 }
 
 void NativeInterrupts::install() {
     Cpu& cpu = cpu_;
+    // The single-thread FP policy (os_set_current_context forces MSR[FP]: no lazy FPU switch ever runs) needs the
+    // host's FPR save / restore around every delivery, or a callback's FP work lands in the interrupted code's registers.
+    // The policy is set where the code that needs it is installed, so every System runs it - not only the game's
+    // launcher, which used to be the one place that set it (RC-kernel-5).
+    if (os_threads::single_thread_configuration()) cpu.set_interrupt_fpr_shadow(true);
     const auto own = [&cpu](u32 address, const char* name, auto&& serve) {
         cpu.install_hle(address, [serve](Cpu& c) {
             serve(c);
@@ -621,6 +622,13 @@ bool NativeInterrupts::drive_sync(Cpu& c, const std::function<bool(Cpu&, u32, u3
     std::array<FpReg, 32> saved_fpr;
     std::memcpy(saved_fpr.data(), c.fpr, sizeof(c.fpr));
     for (auto& r : c.fpr) r = {};
+    // The rest of what the original gave back to the sleeping thread with its context (OSLoadContext: GQR1-7) and with its
+    // FPU state (FPSCR, loaded with the FPRs): the callbacks ran on the interrupt's context, so what they leave in the
+    // quantisation registers (CRI Sofdec writes GQR2-7) or in FPSCR (every FP compare moves FPCC) is theirs. deliver()
+    // already does both (the context's GQR words; FPSCR through the FPR shadow). RC-kernel-3.
+    u32 saved_gqr[7];
+    for (u32 g = 1; g < 8u; ++g) saved_gqr[g - 1u] = c.spr[SPR_GQR0 + g];
+    const u32 saved_fpscr = c.fpscr;
     c.set_msr(msr & ~kMsrEE);
     sync_ = true;
     sync_call_ = SyncCall{};
@@ -668,12 +676,18 @@ bool NativeInterrupts::drive_sync(Cpu& c, const std::function<bool(Cpu&, u32, u3
         c.mem_write32(frame + kHandlerStepOffset, step + 1u);
     }
     sync_ = false;
+    // A callback that did not run to its end (a stop inside it: guest_call does not unwind the callee's registers or
+    // finish the handler's steps) leaves a machine no later run can continue; a savestate of it is refused
+    // (savestate.cpp), as one taken while the event runs is. RC-kernel-2.
+    if (!ok) event_abandoned_ = true;
     yield_on_finish_ = false;  // the reschedule it asked for does not exist here: nothing else is ready to run
     c.gpr[1] = caller_r1;
     c.mem_write32(kCurrentContext, saved_context);
     c.mem_write32(kCurrentContextPhysical, saved_physical);
     c.mem_write32(kFpuContext, saved_fpu);
     std::memcpy(c.fpr, saved_fpr.data(), sizeof(c.fpr));
+    for (u32 g = 1; g < 8u; ++g) c.spr[SPR_GQR0 + g] = saved_gqr[g - 1u];
+    c.fpscr = saved_fpscr;
     c.set_msr(msr);
     return ok;
 }
@@ -976,6 +990,7 @@ bool NativeInterrupts::load_state(const u8*& cursor, const u8* end) {
         unmasked_[index(Source::HostWork)] = true;
     }
     if (!unmasked_[index(Source::Card)]) return false;  // never saved masked
+    event_abandoned_ = false;  // the loaded machine replaces the one whose event was abandoned
     update_line();
     return true;
 }

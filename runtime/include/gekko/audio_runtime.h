@@ -357,7 +357,7 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-// The player's master volume (Options > Audio): a linear gain 0..1 on the endpoint stream after the game's mix, any
+// The player's master volume (options.cfg master_volume): a linear gain 0..1 on the endpoint stream after the game's mix, any
 // thread. 1 (the default) leaves the output bit-identical.
 void set_audio_output_gain(float gain) noexcept;
 float audio_output_gain() noexcept;

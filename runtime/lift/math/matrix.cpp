@@ -48,6 +48,75 @@ bool compose_ordinary(const float* left, const float* right, float* output) noex
     }
     return _mm_movemask_ps(valid) == 15;
 }
+
+// The disjoint-spans form (left and right do not overlap by even one float): both operands are loaded before the
+// first store, so no copy is needed, and the product is computed a row per vector. Returns false having written
+// nothing when the contract's slow cases may arise; the caller then runs the general code below, from the same inputs.
+//  - Preserve (no flush): every operation is the IEEE operation the scalar contract performs, denormals included, so
+//    only an output NaN (the contract's NaN rules: operand payload priority, the default NaN) needs the scalar code.
+//    An input NaN or an invalid operation (inf * 0, inf - inf) always reaches an output as a NaN.
+//  - Flush: an operand or an intermediate that is zero or a normal finite value above 2^-126, as for ordinary_mask.
+// The running minimum / maximum of |bits| - 1 (unsigned) and |bits| answer all those tests at once at the end.
+struct RangeCheck {
+    __m128i low = _mm_set1_epi32(-1);  // min of (|bits| - 1): 0 < |v| <= kMinNormal gives a value below 0x00800000
+    __m128i high = _mm_setzero_si128();  // max of |bits|: a NaN or an infinity reaches 0x7F800000
+    void note(__m128 value) noexcept {
+        const __m128i magnitude = _mm_and_si128(_mm_castps_si128(value), _mm_set1_epi32(0x7FFFFFFF));
+        low = _mm_min_epu32(low, _mm_sub_epi32(magnitude, _mm_set1_epi32(1)));
+        high = _mm_max_epi32(high, magnitude);
+    }
+    __m128 pass(__m128 value) noexcept {
+        note(value);
+        return value;
+    }
+    bool ordinary() const noexcept {
+        const __m128i small = _mm_cmpeq_epi32(_mm_min_epu32(low, _mm_set1_epi32(0x007FFFFF)), low);  // low <= 0x7FFFFF
+        const __m128i large = _mm_cmpgt_epi32(high, _mm_set1_epi32(0x7F7FFFFF));
+        return _mm_movemask_ps(_mm_castsi128_ps(_mm_or_si128(small, large))) == 0;
+    }
+};
+
+bool compose_disjoint(float* left, const float* right, SubnormalMode mode) noexcept {
+    const __m128 r0 = _mm_loadu_ps(right), r1 = _mm_loadu_ps(right + 4), r2 = _mm_loadu_ps(right + 8);
+    const __m128 l[3] = {_mm_loadu_ps(left), _mm_loadu_ps(left + 4), _mm_loadu_ps(left + 8)};
+    __m128 result[3];
+    if (mode == SubnormalMode::Preserve) {
+        for (unsigned row = 0; row < 3; ++row) {
+            const __m128 x = _mm_shuffle_ps(l[row], l[row], _MM_SHUFFLE(0, 0, 0, 0));
+            const __m128 y = _mm_shuffle_ps(l[row], l[row], _MM_SHUFFLE(1, 1, 1, 1));
+            const __m128 z = _mm_shuffle_ps(l[row], l[row], _MM_SHUFFLE(2, 2, 2, 2));
+            const __m128 w = _mm_shuffle_ps(l[row], l[row], _MM_SHUFFLE(3, 3, 3, 3));
+            __m128 sum = _mm_mul_ps(y, r1);
+            sum = _mm_fmadd_ps(x, r0, sum);
+            sum = _mm_fmadd_ps(z, r2, sum);
+            // Do not add zero to the linear columns: that can change a signed zero.
+            result[row] = _mm_blend_ps(sum, _mm_add_ps(sum, w), 8);
+        }
+        const __m128 unordered = _mm_or_ps(_mm_cmpunord_ps(result[0], result[0]),
+                                           _mm_or_ps(_mm_cmpunord_ps(result[1], result[1]), _mm_cmpunord_ps(result[2], result[2])));
+        if (_mm_movemask_ps(unordered) != 0) return false;
+    } else {
+        RangeCheck check;
+        check.note(r0), check.note(r1), check.note(r2);
+        for (unsigned row = 0; row < 3; ++row) {
+            const __m128 x = _mm_shuffle_ps(l[row], l[row], _MM_SHUFFLE(0, 0, 0, 0));
+            const __m128 y = _mm_shuffle_ps(l[row], l[row], _MM_SHUFFLE(1, 1, 1, 1));
+            const __m128 z = _mm_shuffle_ps(l[row], l[row], _MM_SHUFFLE(2, 2, 2, 2));
+            const __m128 w = _mm_shuffle_ps(l[row], l[row], _MM_SHUFFLE(3, 3, 3, 3));
+            check.note(l[row]);
+            __m128 sum = check.pass(_mm_mul_ps(y, r1));
+            sum = check.pass(_mm_fmadd_ps(x, r0, sum));
+            sum = check.pass(_mm_fmadd_ps(z, r2, sum));
+            const __m128 translated = check.pass(_mm_add_ps(sum, w));
+            result[row] = _mm_blend_ps(sum, translated, 8);
+        }
+        if (!check.ordinary()) return false;
+    }
+    _mm_storeu_ps(left, result[0]);
+    _mm_storeu_ps(left + 4, result[1]);
+    _mm_storeu_ps(left + 8, result[2]);
+    return true;
+}
 #endif
 }  // namespace
 
@@ -71,6 +140,14 @@ void copy_affine_matrix(void* destination, const void* source) noexcept {
 }
 
 void compose_affine_matrix(float* left, const float* right, SubnormalMode mode) noexcept {
+#if defined(__AVX2__) || defined(__FMA__)
+    {
+        const auto distance = reinterpret_cast<std::uintptr_t>(left) - reinterpret_cast<std::uintptr_t>(right);
+        // |left - right| >= 48 bytes: the spans share no float.
+        if (distance + (kAffineMatrixBytes - 1) > 2 * (kAffineMatrixBytes - 1) && compose_disjoint(left, right, mode))
+            return;
+    }
+#endif
     float a[12], b[12], output[12];
     std::memcpy(a, left, sizeof(a));
     std::memcpy(b, right, sizeof(b));

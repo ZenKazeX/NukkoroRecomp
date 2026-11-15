@@ -614,10 +614,6 @@ void NativeCard::set_persist_debounce(bool enabled) noexcept {
     if (!enabled) persist();
 }
 
-void NativeCard::set_persist_quiet_ms(u32 milliseconds) noexcept {
-    persist_quiet_cycles_ = std::max<u64>(1u, (kCoreClockHz / 1000u) * static_cast<u64>(milliseconds));
-}
-
 void NativeCard::flush() { persist(); }
 
 // ---------------------------------------------------------------------------

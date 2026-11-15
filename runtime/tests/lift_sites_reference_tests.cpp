@@ -67,9 +67,9 @@ void table_is_sorted_and_complete(Cpu& cpu) {
     check(cpu.find_lift_site(0x8043F730u) != nullptr, "the sound-bank release site is generated");
     check(cpu.find_lift_site(0x801F2EA0u) != nullptr && cpu.find_lift_site(0x801F2EA4u) != nullptr,
           "the game constructor's ARInit and ARQInit sites are generated");
-    check(recomp::kLiftSiteCount == 1046u,
-          "eleven lift-sites.txt sites, 1018 lift-sites-math.txt and (this unlifted tree) 4 lift-sites-math-unlifted.txt "
-          "sites, 10 lift-sites-native.txt sites and the three empty variadic leaves: 1046");
+    check(recomp::kLiftSiteCount == 1032u,
+          "eleven lift-sites.txt sites, 1004 lift-sites-math.txt and (this unlifted tree) 4 lift-sites-math-unlifted.txt "
+          "sites, 10 lift-sites-native.txt sites and the three empty variadic leaves: 1032");
     unsigned math_sites = 0, copy_sites = 0, retired_copy_sites = 0;
     for (std::size_t i = 0; i < recomp::kLiftSiteCount; ++i) {
         math_sites += recomp::kLiftSiteWords[i] == 0x4BFFFD89u;
@@ -77,9 +77,10 @@ void table_is_sorted_and_complete(Cpu& cpu) {
         retired_copy_sites += recomp::kLiftSiteWords[i] == 0x480001C1u;
     }
     check(math_sites == 1u, "the additional site has the pinned scalar square-root call word");
-    check(copy_sites == 1u, "the retained inverse copy site has its pinned call word");
+    // The inverse 0x8040CF48 is a native owner: its singular-branch copy site 0x8040D004 went with its body.
+    check(copy_sites == 0u, "no lowered copy site remains inside the owned inverse");
     check(retired_copy_sites == 0u, "the retired composition's internal copy site is absent");
-    // native_matrix_call_tests executes all 68 composition boundaries. Their
+    // native_matrix_call_tests executes all 67 composition boundaries. Their
     // complete direct-edge list is pinned independently by verify_native_math.py.
     for (std::size_t i = 1; i < recomp::kLiftSiteCount; ++i) {
         check(recomp::kLiftSites[i - 1].address < recomp::kLiftSites[i].address, "the site table is sorted");

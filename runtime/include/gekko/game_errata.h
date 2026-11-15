@@ -44,7 +44,15 @@
 //   live land set - a TTextureChange in group 3 whose handle a loaded TObjLand slot holds - takes the clock of the
 //   oldest one (group 3 appends children at its tail, 0x8004F014). The blocks there since the stage started keep
 //   their original clock; every later block joins it. Sets of objects (0x8004FA40) are untouched. Read from guest
-//   memory only, so a savestate needs nothing extra.
+//   memory only, so a savestate needs nothing extra.//
+// E4 (user 2026-11-10) A dialogue line's subtitle window is shorter than its English voice.
+//   MessageTask::update (0x801FB5AC) closes a line's window at record +0xC frames / 60 s (the tables fit the Japanese
+//   clips: 4,084 of 9,138 voiced records are shorter than the English clip) and never looks at the voice. The voice is
+//   then cut by the next queued part of the message (0x801FB8E8) or by an enqueue of equal or higher priority
+//   (0x801FB210 -> reset 0x801FAEF4), even after the window had gone. Fix, voice language English only, in the native
+//   MessageTask update (gekko/native_message_system.h): the game's interruptions stay. The manager's words stay the original
+//   state machine; the subtitle stays on screen until its voice really ends (drawn natively, no game state), and the next
+//   part with its own voice waits for that voice instead of cutting it. Details: docs/GAME_ERRATA.md E4.
 
 #include "gekko/types.h"
 
@@ -99,6 +107,7 @@ bool land_layer_ready_entry(Cpu& c, Stats& stats);
 
 // Installs every fix unless SHADOW_ERRATA=0 (an A/B against the original only). Returns whether they are installed.
 bool install(Cpu& cpu, Stats& stats);
+// E4 is installed with the native message system (native_message_voice_owner.cpp), not here: it needs the owner.
 
 }  // namespace errata
 }  // namespace gekko

@@ -337,7 +337,15 @@ void RwDriver::submit_frame(Cpu& c) {
         appear_.end_frame(nullptr);
     }
     const u64 dropped_before = frames_.stats().dropped;
-    frames_.push(std::move(packet));
+    if (recycle_dropped_) {
+        render::FramePacket dropped;
+        bool gave = false;
+        frames_.push(std::move(packet), &dropped, &gave);
+        if (gave)
+            builder_.recycle(std::move(dropped));
+    } else {
+        frames_.push(std::move(packet));
+    }
     stats_.frames_dropped += frames_.stats().dropped - dropped_before;
     ++stats_.frames;
     uv_stage_check(c);

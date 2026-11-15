@@ -50,7 +50,7 @@ bool PcSettingsService::validate(const PcSettings& s, std::string* error) {
     if (s.sfx_volume < 0 || s.sfx_volume > 100) return fail("sfx_volume must be 0..100");
     if (s.voice_volume < 0 || s.voice_volume > 100) return fail("voice_volume must be 0..100");
     if (s.rumble_strength < 25 || s.rumble_strength > 100) return fail("rumble_strength must be 25..100");
-    if (s.language < -1 || s.language > 6) return fail("language must be 0..6 (or unset; 6 = Hungarian)");
+    if (s.language < -1 || s.language > 5) return fail("language must be 0..5 (or unset)");
     if (s.speaker < -1 || s.speaker > 2) return fail("speaker must be 0..2 (or unset)");
     if (s.vibration < -1 || s.vibration > 1) return fail("vibration must be 0 or 1 (or unset)");
     if (s.autosave < -1 || s.autosave > 1) return fail("autosave must be 0 or 1 (or unset)");
@@ -77,7 +77,16 @@ void PcSettingsService::load(const std::filesystem::path& path, std::vector<std:
         else if (e.key == "invert_camera_x") ok = parse_bool(e.value, t.invert_camera_x);
         else if (e.key == "invert_camera_y") ok = parse_bool(e.value, t.invert_camera_y);
         else if (e.key == "subtitles") ok = parse_bool(e.value, t.subtitles);
-        else if (e.key == "language") ok = parse_int(e.value, t.language);
+        else if (e.key == "language") {
+            ok = parse_int(e.value, t.language);
+            // 6 was the Hungarian text of earlier builds, which ran on the game's English: English now.
+            if (ok && t.language == 6) {
+                t.language = 1;
+                if (warnings != nullptr)
+                    warnings->push_back(path.string() + ":" + std::to_string(e.line) +
+                                        ": language 6 (Hungarian) is no longer offered; English (1) is used");
+            }
+        }
         else if (e.key == "speaker") ok = parse_int(e.value, t.speaker);
         else if (e.key == "voice") ok = parse_int(e.value, t.voice);
         else if (e.key == "vibration") {

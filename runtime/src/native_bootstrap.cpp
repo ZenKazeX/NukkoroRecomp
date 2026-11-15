@@ -1,8 +1,6 @@
 #include "native_bootstrap.h"
 
 #include <algorithm>
-#include <fstream>
-#include <limits>
 #include <stdexcept>
 #include <unordered_set>
 
@@ -82,30 +80,6 @@ std::string read_c_string(
 }
 
 }  // namespace
-
-std::vector<std::uint8_t> read_binary_file(const std::filesystem::path& path) {
-    std::ifstream stream(path, std::ios::binary | std::ios::ate);
-    if (!stream) {
-        throw std::runtime_error("Cannot open file: " + path.string());
-    }
-    const auto end = stream.tellg();
-    if (end < 0) {
-        throw std::runtime_error("Cannot determine file size: " + path.string());
-    }
-    const auto unsigned_size = static_cast<std::uintmax_t>(end);
-    if (unsigned_size > static_cast<std::uintmax_t>(std::numeric_limits<std::size_t>::max())) {
-        throw std::runtime_error("File is too large for this host: " + path.string());
-    }
-    std::vector<std::uint8_t> bytes(static_cast<std::size_t>(unsigned_size));
-    stream.seekg(0, std::ios::beg);
-    if (!bytes.empty()) {
-        stream.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-        if (!stream) {
-            throw std::runtime_error("Cannot read complete file: " + path.string());
-        }
-    }
-    return bytes;
-}
 
 DiscHeader parse_disc_header(const std::vector<std::uint8_t>& bytes) {
     if (bytes.size() < 0x440) {

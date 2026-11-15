@@ -1,7 +1,7 @@
 #pragma once
 
-// The PC Options menu's own settings file, options.cfg beside display.cfg (its own file because display.cfg refuses
-// unknown keys, so an older executable would refuse the whole file). Two groups:
+// The PC settings file, options.cfg beside display.cfg (its own file because display.cfg refuses unknown keys, so an
+// older executable would refuse the whole file). Every key is listed in docs/PC_SETTINGS_FILES.md. Two groups:
 //
 //   PC settings (applied here, at once - each value is an atomic its owner reads):
 //     master_volume    0..100 %  the endpoint gain after the game's mix (gekko/audio_runtime.h set_audio_output_gain)
@@ -14,12 +14,15 @@
 //     subtitles        bool      show the subtitles of the spoken lines (default true = the original); false skips
 //                                only their drawing (system.cpp, "Subtitles on/off")
 //   The game's own options (the user's decision of 2026-11-05, docs/SAVE_REROUTE_PLAN.md option C: they live here,
-//   not in the save or SRAM). The menu applies them through the game's own apply; the save path applies these values
-//   over what the game reads at boot and after a load. -1 = not set (the first start fills them from the save):
-//     language         0 JP, 1 EN, 2 FR, 3 SP, 4 GE, 5 IT (the game's enum)
+//   not in the save or SRAM). The save store applies these values over what the game reads at boot and after a load,
+//   and takes the Options screen's applied choices back into this file (gekko/save_store.h). -1 = not set (the first
+//   start fills them from the save):
+//     language         0 JP, 1 EN, 2 FR, 3 SP, 4 GE, 5 IT (the game's enum; 6, the Hungarian of earlier builds,
+//                      reads as 1 with a warning)
 //     speaker          0 stereo, 1 monaural, 2 Dolby Pro Logic II
 //     vibration        0 off, 1 on
-//     voice            0 Japanese, 1 English (the spoken language; Japanese needs the Japanese voice files)
+//     voice            0 Japanese, 1 English (the spoken language; Japanese needs the Japanese voice files; the
+//                      Options screen's voice item is hidden on PAL, so this file is its only place)
 //     autosave         0 off, 1 on (the game's autosave switch, settings + 0x7D)
 //
 // Defaults are the original behaviour. The file is read at startup; a bad value is reported and replaced by its

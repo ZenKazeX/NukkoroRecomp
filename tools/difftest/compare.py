@@ -534,7 +534,7 @@ def main():
         "back_edge_poll": r"if \(c\.needs_dispatch\(\)\) \{ c\.leave_to_dispatcher\(0x",
         "bctr_switch_backward_poll": r"c\.pc = tmp;\n\s+if \(c\.needs_dispatch\(\)\)",
         "bctr_switch_forward_case": r"case 0x[0-9A-F]+u: (if \(c\.try_hle\(0x[0-9A-F]+u\)\) return; )?goto L_",
-        "jump_indirect": r"recomp::jump_indirect\(c, tmp\)",
+        "jump_indirect": r"recomp::jump_indirect\(c, tmp(?:, [^)]*)?\)",
         "call_indirect": r"recomp::call_indirect\(c, tmp, ",
         # R12 (2026-09-28) forms: a linked call checks for published transfers, an LK=0 transfer is published.
         "direct_call_exiting_check": r"if \(c\.exiting\(\) && c\.finish_transfers\(\)\) return;",

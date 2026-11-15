@@ -11,11 +11,11 @@
 //
 // Each product is a ps_muls0/1 and each sum a ps_madds0/1 (one rounding to single, Gekko semantics).
 //
-// The common call is computed four lanes at a time (AVX2 fused multiply-add on doubles, then rounding to single:
-// what each ppc_ops helper computes on its fast path), after proving per lane that no operation could leave that
-// fast path - a tiny operand or result, a NaN, a fused double on a single-precision midpoint. The fast path changes
-// no FPSCR bit, so the order of the 48 operations is then not observable. Any other call - such a lane, or an output
-// overlapping an input or the stack frame - runs the ordered body below, as does every call on a host without AVX2.
+// The common call is computed one output row per vector (AVX2 single-precision products and fused multiply-adds:
+// what each ppc_ops helper computes on its fast path), after proving that no operation could leave that fast path - a
+// tiny operand, intermediate or result, a NaN. The fast path changes no FPSCR bit, so the order of the 48 operations
+// is then not observable. Any other call - such a value, or an output overlapping an input or the stack frame - runs
+// the ordered body below, as does every call on a host without AVX2.
 //
 // The ordered body is the guest body's instruction sequence with the register file held in host registers: every arithmetic
 // operation is the same ppc_ops helper in the same order (so the FPSCR updates of an operation that leaves the fast
@@ -54,10 +54,14 @@ public:
     u64 overlapping() const noexcept { return overlapping_; }      // ordered: an output overlapping an input
     u64 off_fast_path() const noexcept { return off_fast_path_; }  // ordered: a lane off the fast path
 
-private:
+    // The two bodies, public for the differential test (runtime/tests/opt_intrinsics_diff_tests.cpp): `run` is the ordered
+    // body (the guest's operation sequence), `run_wide` the single-precision fast body (false, nothing written, when the
+    // ordered one must run). `execute` is what a served call runs: run_wide, else run.
     bool execute(Cpu& cpu);
-    bool run_wide(Cpu& cpu);  // false (nothing written) when the ordered body must run
-    bool run(Cpu& cpu);       // the ordered body
+    bool run_wide(Cpu& cpu);
+    bool run(Cpu& cpu);
+
+private:
     bool verify(Cpu& cpu);
 
     bool verify_ = false;

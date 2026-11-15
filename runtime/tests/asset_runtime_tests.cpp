@@ -22,12 +22,14 @@
 #include <memory>
 #include "gekko/asset_providers.h"
 #include "gekko/asset_runtime.h"
+#include "gekko/cs2_ram.h"
 #include "support/fst_oracle.h"
 
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <fstream>
 #include <string>
 #include <thread>
@@ -715,50 +717,162 @@ void test_a_replaced_file_is_served_from_native_content() {
     std::filesystem::remove_all(root, ignored);
 }
 
-// A switchable file (AssetSystem::replace_switchable, the live Hungarian text): the selector picks the variant at
-// every read, the declared size is the largest variant's and a shorter one reads as zeros past its end. Regression:
-// the group key once carried bit 63, the mount's signed replacement slot took it for "not replaced", and every
-// switchable file was served from the disc instead (the Options help band went empty).
-void test_a_switchable_file_follows_its_selector() {
-    std::string error;
-    const std::filesystem::path root = scratch_dir() / "switch-tree";
-    std::filesystem::create_directories(root / "Fonts");
-    const std::vector<u8> original = pattern(64, 3);
-    std::ofstream(root / "Fonts" / "text.fnt", std::ios::binary)
-        .write(reinterpret_cast<const char*>(original.data()), static_cast<std::streamsize>(original.size()));
-    const std::vector<u8> english(100u, 0xE1u), hungarian(80u, 0x48u);
-    std::size_t selected = 0;
-    AssetSystem assets;
-    std::vector<AssetSystem::Replacement> variants;
-    variants.push_back([&](const AssetSystem::TreeReader&, std::vector<u8>& bytes, std::string&) {
-        bytes = english;
-        return true;
-    });
-    variants.push_back([&](const AssetSystem::TreeReader&, std::vector<u8>& bytes, std::string&) {
-        bytes = hungarian;
-        return true;
-    });
-    assets.replace_switchable("FONTS/TEXT.FNT", std::move(variants), [&selected] { return selected; });
-    check(shadow::backends::mount_host_directory(assets, root, std::vector<u8>(0x20u, 0u), error),
-          "a mount with a switchable file succeeds: " + error);
-    check(assets.replacement_errors().empty(), "the switchable file builds");
-    const s32 entry = assets.names().resolve("Fonts/text.fnt");
-    check(entry > 0 && assets.names().entry(static_cast<u32>(entry)).size == english.size(),
-          "the declared size is the largest variant's");
-    const auto read_all = [&] {
-        std::vector<u8> bytes(english.size(), 0x11u);
+// cs2/ram: replacements kept as patches over the mapped original (MemoryProvider::add_delta; AssetSystem::mount's hold)
+// must serve exactly the bytes a full private copy would: every read, any offset and length, past the end zero-filled.
+// Run twice by ctest: shipped default (GEKKO_CS2_RAM unset: deltas used) and GEKKO_CS2_RAM=0 (full copies only).
+std::vector<u8> noise(std::size_t n, u32 seed) {
+    std::vector<u8> v(n);
+    u32 x = seed * 2654435761u + 12345u;
+    for (u8& b : v) {
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        b = static_cast<u8>(x);
+    }
+    return v;
+}
+
+// All the reads the comparison makes: edges of the file, 1-byte reads at every patch edge candidate, long reads.
+bool serves(const std::function<bool(u64 offset, u64 length, u8* dest, u64& got)>& read, const std::vector<u8>& expected) {
+    const u64 size = expected.size();
+    std::vector<std::pair<u64, u64>> reads = {{0, size}, {0, 1}, {size - 1, 1}, {size, 32}, {size + 100, 5}, {size - 7, 64},
+                                                {0, size + 4096}, {1, size}, {size / 2, 3}};
+    u32 x = 99u;
+    for (int i = 0; i < 400; ++i) {
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        const u64 offset = x % (size + 50u);
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        reads.emplace_back(offset, 1u + x % 3000u);
+    }
+    for (const auto& [offset, length] : reads) {
+        std::vector<u8> got_bytes(static_cast<std::size_t>(length), 0x5Au);
         u64 got = 0;
-        const bool ok = assets.read(assets.token_of(static_cast<u32>(entry)), bytes.size(), bytes.data(), got) ==
-                        AssetSystem::ReadStatus::Ok;
-        return ok ? bytes : std::vector<u8>{};
+        if (!read(offset, length, got_bytes.data(), got) || got != length) return false;
+        for (u64 i = 0; i < length; ++i) {
+            const u8 want = offset + i < size ? expected[static_cast<std::size_t>(offset + i)] : u8{0};
+            if (got_bytes[static_cast<std::size_t>(i)] != want) return false;
+        }
+    }
+    return true;
+}
+
+void test_replacements_held_as_patches_serve_the_same_bytes() {
+    std::string error;
+    const std::filesystem::path root = scratch_dir() / "delta-tree";
+    std::filesystem::create_directories(root);
+    const std::size_t kSize = 70000;
+    const std::vector<u8> original = noise(kSize, 1);
+    for (const char* name : {"same.bin", "few.bin", "most.bin", "grow.bin", "patched.bin"})
+        std::ofstream(root / name, std::ios::binary)
+            .write(reinterpret_cast<const char*>(original.data()), static_cast<std::streamsize>(original.size()));
+
+    // identical to the original; a few separate edits (first byte, last byte, two runs 10 bytes apart, one far away);
+    // most of the file changed; a different size; one byte patched
+    std::vector<u8> few = original;
+    few[0] ^= 0xFFu;
+    few[kSize - 1] ^= 0x01u;
+    few[1000] ^= 0x55u;
+    few[1010] ^= 0xAAu;
+    for (std::size_t i = 30000; i < 30200; ++i) few[i] = static_cast<u8>(i);
+    std::vector<u8> most = noise(kSize, 2);
+    std::vector<u8> grow = original;
+    grow.insert(grow.end(), {1u, 2u, 3u, 4u, 5u, 6u, 7u});
+    std::vector<u8> patched = original;
+    patched[4096] ^= 0x77u;
+
+    AssetSystem assets;
+    const auto simple = [&](const std::string& path, const std::vector<u8>& want) {
+        assets.replace(path, [want](const AssetSystem::TreeReader&, std::vector<u8>& bytes, std::string&) {
+            bytes = want;
+            return true;
+        });
     };
-    check(read_all() == english, "selector 0 serves the first variant, not the disc file");
-    selected = 1;
-    std::vector<u8> expected = hungarian;
-    expected.resize(english.size(), 0u);
-    check(read_all() == expected, "selector 1 serves the second variant at the next read, zero-filled to the size");
-    selected = 0;
-    check(read_all() == english, "and back");
+    simple("same.bin", original);
+    simple("few.bin", few);
+    simple("most.bin", most);
+    simple("grow.bin", grow);
+    simple("patched.bin", patched);
+    check(shadow::backends::mount_host_directory(assets, root, std::vector<u8>(0x20u, 0u), error),
+          "a mount with deltas succeeds: " + error);
+    check(assets.replacement_errors().empty(), "every replacement builds");
+
+    // Through the provider the way the resource manager reads it: the registry record's key, any offset and length.
+    const auto provider_reader = [&](const std::string& path) {
+        const s32 entry = assets.names().resolve(path);
+        const AssetId id = assets.asset_of(static_cast<u32>(entry));
+        return std::function<bool(u64, u64, u8*, u64&)>([&assets, id](u64 offset, u64 length, u8* dest, u64& got) {
+            return assets.resources().read(id, offset, length, dest, got);
+        });
+    };
+    check(serves(provider_reader("same.bin"), original), "an identical replacement serves the original's bytes");
+    check(serves(provider_reader("few.bin"), few), "a few-ranges replacement serves its own bytes");
+    check(serves(provider_reader("most.bin"), most), "a mostly-changed replacement serves its own bytes");
+    check(serves(provider_reader("grow.bin"), grow), "a longer replacement serves its own bytes");
+    check(serves(provider_reader("patched.bin"), patched), "a one-byte replacement serves its own bytes");
+
+    const MemoryProvider::Held held = assets.replacement_held();
+    if (gekko::cs2_ram::enabled()) {
+        check(held.deltas >= 3u, "same, few and patched are held as patches");
+        check(held.delta_bytes < 4096u, "the patches hold only the changed ranges (a few hundred bytes), not the files");
+        check(held.files == 2u, "the mostly-changed and the longer file stay full copies");
+    } else {
+        check(held.deltas == 0u, "GEKKO_CS2_RAM=0: no deltas");
+    }
+
+    // The digest list (the diagnostic the gates compare ON against OFF) covers every content.
+    std::vector<std::string> labels;
+    std::vector<u64> sizes;
+    assets.replacement_digests([&](const std::string& label, u64 size, u64) {
+        labels.push_back(label);
+        sizes.push_back(size);
+    });
+    check(labels.size() == 5u, "five contents are listed");
+
+    // NEGATIVE CONTROL: a delta with one patch byte wrong, and one with a patch missing, must be caught by the same comparison.
+    MemoryProvider direct;
+    class Base final : public AssetProvider {
+    public:
+        explicit Base(const std::vector<u8>& bytes) : bytes_(bytes) {}
+        const char* name() const noexcept override { return "test-base"; }
+        ByteSpan map(u64, u64) override { return {}; }
+        bool read(u64, u64 offset, u64 length, u8* dest, u64& got) override {
+            got = 0;
+            if (offset >= bytes_.size()) return false;
+            const u64 n = std::min<u64>(length, bytes_.size() - offset);
+            std::memcpy(dest, bytes_.data() + offset, static_cast<std::size_t>(n));
+            got = n;
+            return true;
+        }
+
+    private:
+        const std::vector<u8>& bytes_;
+    } base(original);
+    std::vector<u8> expected = original;
+    expected[500] ^= 0x10u;
+    expected[501] ^= 0x10u;
+    const auto key_of = [&](std::vector<MemoryProvider::Patch> patches) {
+        return direct.add_delta(&base, 0u, original.size(), std::move(patches));
+    };
+    std::vector<MemoryProvider::Patch> right(1);
+    right[0].offset = 500;
+    right[0].bytes = {expected[500], expected[501]};
+    const u64 good = key_of(right);
+    std::vector<MemoryProvider::Patch> wrong = right;
+    wrong[0].bytes[1] ^= 0x01u;  // one byte wrong
+    const u64 bad_byte = key_of(wrong);
+    const u64 missing = key_of({});  // a patch missing
+    const auto direct_reader = [&](u64 key) {
+        return std::function<bool(u64, u64, u8*, u64&)>(
+            [&direct, key](u64 offset, u64 length, u8* dest, u64& got) { return direct.read(key, offset, length, dest, got); });
+    };
+    check(serves(direct_reader(good), expected), "the control's correct delta is served exactly");
+    check(!serves(direct_reader(bad_byte), expected), "NEGATIVE CONTROL: a wrong patch byte is caught");
+    check(!serves(direct_reader(missing), expected), "NEGATIVE CONTROL: a missing patch is caught");
+
     std::error_code ignored;
     std::filesystem::remove_all(root, ignored);
 }
@@ -766,8 +880,8 @@ void test_a_switchable_file_follows_its_selector() {
 }  // namespace
 
 int main() {
+    test_replacements_held_as_patches_serve_the_same_bytes();
     test_a_replaced_file_is_served_from_native_content();
-    test_a_switchable_file_follows_its_selector();
     test_mount_rewrites_only_word1();
     test_the_published_token_decodes_to_the_asset_the_guest_named();
     test_a_malformed_table_is_refused_without_publishing();

@@ -10,7 +10,7 @@
 //   PSEnvironment  the environment reflection: coefficient x environment texture, UV from the view-space normal
 //                  (u = 1/2 + 1/2 n.x, v = 1/2 - 1/2 n.y with x screen right), added (blend ONE / ONE).
 //   PSDual  the second texture over the base colour, from UV0 or UV1, blended by the material's pair.
-//   PSBase with kBumpEnvironment: MatFX BUMPENVMAP, the original one-pass combine (four stages):
+//   PSBase with kBumpEnvironment: MatFX BUMPENVMAP, the original's one-pass combine (four stages; lighting_materials.md 2):
 //           T = bumped texture at uv0 (height in its alpha), h0 = T.a, h1 = its alpha at uv0 + s (1 - 2 env),
 //           C = sat(T x R); P = sat(sat(C x sat(1 - h0)) + h1 x C); colour = sat(P + k x E), alpha = R.a,
 //           k = min(coefficient, 1) (x h1 with useFrameBufferAlpha), E = the environment map at the env UV.
@@ -193,7 +193,7 @@ void dissolve_test(float4 position)
         discard;
 }
 
-// MatFX BUMPENVMAP. The original combine, stage by stage:
+// MatFX BUMPENVMAP (docs/effects/lighting_materials.md 2 and its address notes). The original's combiner, stage by stage:
 //   0  map0 (the bumped texture) at uv0, ras COLOR0A0:  C0 = sat(TEXC x RASC);      A = sat(KONST 1 x (1 - TEXA))
 //   1  map0 at uv0 + coord1 (indirect add-previous, no matrix):  C = sat(APREV x C0);  A = TEXA
 //   2  no texture:  C = sat(CPREV + APREV x C0);  A = KONST (K0.a = coefficient), x APREV with useFrameBufferAlpha

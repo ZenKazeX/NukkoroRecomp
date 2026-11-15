@@ -35,7 +35,7 @@ bool japanese_bank_compatible(const std::vector<unsigned char>& japanese, const 
 // The Japanese voice files for the game root (its files/ is the PAL tree); empty when they are not complete.
 std::vector<std::filesystem::path> find_japanese_voice_files(const std::filesystem::path& game_root);
 
-// Whether the Japanese voices are served (the launcher sets it after the mount; the Options menu reads it).
+// Whether the Japanese voices are served (the launcher sets it after the mount).
 void set_japanese_voices_available(bool available) noexcept;
 bool japanese_voices_available() noexcept;
 
@@ -45,6 +45,9 @@ struct VoiceArchivePaths {
     std::filesystem::path japanese;  // the Japanese disc's PRS_VOICE_J.afs
 };
 const VoiceArchivePaths& voice_archive_paths() noexcept;
+// An enabled mod's PRS_VOICE_E.afs (gekko/mod_overlay.h) as the English half of the switchable archive. No effect
+// unless find_japanese_voice_files found the Japanese files.
+void override_english_voice_archive(const std::filesystem::path& archive);
 
 // The dialogue-voice archive both languages share (the user's request of 2026-11-05: a voice change as seamless as
 // the text change - no reload, no sound stop, the menu music goes on). PRS_VOICE_E.afs and PRS_VOICE_J.afs both hold

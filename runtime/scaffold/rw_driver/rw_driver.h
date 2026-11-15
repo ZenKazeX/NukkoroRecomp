@@ -23,6 +23,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include "gekko/flat_word_map.h"
 #include "gekko/hud_listener.h"
 #include "gekko/appear_fade.h"
 #include "far_objects.h"
@@ -294,6 +295,9 @@ public:
     static RwDriver* installed() noexcept;
     // Sees every finished frame on the game thread before it is handed over (headless captures: the exact frame,
     // whatever the render thread keeps up with). Set before the game runs.
+    // Headless: the packet the full queue drops goes back to the frame builder (its vectors keep their capacity, as the
+    // windowed game's rendered packets' do) instead of being freed and regrown every frame.
+    void set_recycle_dropped(bool on) { recycle_dropped_ = on; }
     void set_frame_observer(std::function<void(const shadow::render::FramePacket&)> observer) {
         frame_observer_ = std::move(observer);
     }
@@ -519,6 +523,7 @@ public:
         u64 light_slot_vertices_moved = 0, light_slots_added = 0;  // assets/light_slots.h
         u64 textures_built = 0, texture_failures = 0, textures_released = 0, meshes_released = 0;
         u64 textures_overridden = 0;  // drawn from gekko/texture_overrides.h (the sharp button sheets)
+        u64 textures_from_packs = 0;  // drawn from a texture pack (gekko/texture_packs.h)
         u64 camera_mismatches = 0;    // a later begin of the same view moved the camera
         u64 passes = 0;               // passes opened (a bracket's first draw, unless it continues the open pass)
         u64 view_offsets = 0;         // cameras with a non-zero view offset (not applied yet)
@@ -654,7 +659,10 @@ private:
     float alpha_cutoff() const;
     shadow::render::Sampler sampler_of(u32 filter_addressing) const;
     // `mips`: generate the mip chain (not for a movie picture, which is only ever magnified).
-    bool build_texture(Cpu& c, u32 raster, u32 ext, shadow::render::TextureHandle* out, bool mips = true);
+    // rw_texture (0 when unknown) gives texture packs the sampler's mip flag; allow_pack false skips the pack lookup
+    // (movie pictures, rebuilt every frame).
+    bool build_texture(Cpu& c, u32 raster, u32 ext, shadow::render::TextureHandle* out, bool mips = true,
+                       u32 rw_texture = 0u, bool allow_pack = true);
     shadow::render::MeshHandle sector_mesh(Cpu& c, u32 sector);
     // `skin`: the geometry's RpSkin when a skin pipeline draws it (its weights go into the mesh), else 0.
     // `dmorph`: receives the geometry's delta-morph data (rpDMorphGeometryData) when the mesh carries its targets -
@@ -786,7 +794,9 @@ private:
     std::vector<Owned> textures_;
     // C2 (HW_REPORT S): textures_ indexed by word (the handle it owns), rebuilt when textures_ changed - texture_of
     // ran a linear scan of every owned texture per draw (about 0.13 s of the game thread on the Lava replay).
-    std::unordered_map<u32, u32> texture_index_;
+    // Open addressing (gekko/flat_word_map.h): the lookup runs once per drawn material, and the node-based map's hash
+    // and pointer chase were 0.47 % of the game thread.
+    FlatWordMap texture_index_;
     bool texture_index_dirty_ = true;
     std::vector<Owned> meshes_;
     std::vector<shadow::render::Particle> particle_records_;  // one batch's records, reused
@@ -807,6 +817,7 @@ private:
     // and the raster type of the latest bracket (0xFF: none this frame, 0xFE: no raster).
     u32 frame_screen_brackets_ = 0, frame_other_brackets_ = 0, last_bracket_type_ = 0xFFu;
     std::function<void(const shadow::render::FramePacket&)> frame_observer_;
+    bool recycle_dropped_ = false;
     AppearFade appear_;  // the fade-in of models that appear inside the view
     FarObjects far_;     // the far-object proxies
     MaterialProbe material_probe_;  // diagnostics: GEKKO_MATERIAL_PROBE

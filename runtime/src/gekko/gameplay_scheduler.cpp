@@ -1064,8 +1064,8 @@ std::string FpProbe::summary() const {
             ull(starts[0]), ull(begin_fp_off_), ull(starts[1]), ull(starts[2]), ull(starts[3]),
             ull(starts[4]), ull(starts[5]), ull(fp_exceptions() - fp_exceptions_at_enable_));
     if (cpu_.interrupt_fpr_shadow() || fpr_shadow_at_enable_) {
-        out += "[r3] WARNING: --fpr-shadow is on; rfi restores host FPRs, so the wrong-f1 / "
-               "caller-f31 predictions do not apply to this run\n";
+        out += "[r3] NOTE: the FPR shadow is on (always, in the single-thread configuration; --fpr-shadow otherwise): "
+               "rfi restores host FPRs, so the wrong-f1 / caller-f31 predictions do not apply to this run\n";
     }
     if (fp_handler_read_ && fp_handler_word_ != kOsSwitchFpuContext) {
         appendf(out,

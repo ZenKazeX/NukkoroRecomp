@@ -1,4 +1,5 @@
 #include "native_audio_mixer.h"
+#include "native_audio_src.h"
 
 #include <algorithm>
 
@@ -412,15 +413,13 @@ void Mixer::render_voice(const VoiceFrame& voice, MixStats& stats) noexcept {
     }
     std::array<std::int32_t, kFrameSamples> y{};
     if (voice.src == SrcMode::Linear && use_flat) {
-        // As the loop below, reading the flat window.
-        for (std::uint32_t i = 0; i < kFrameSamples; ++i) {
-            const std::uint64_t t = voice.frac + static_cast<std::uint64_t>(i + 1u) * voice.ratio;
-            const std::size_t k = static_cast<std::size_t>(t >> 16);
-            const std::int64_t f = static_cast<std::int64_t>(t & 0xFFFFu);
-            const std::int32_t s0 = flat[k + 2u];
-            const std::int32_t d = sat16(static_cast<std::int64_t>(flat[k + 3u]) - s0);
-            y[i] = sat16(s0 + product_round16(static_cast<std::int64_t>(d) * f));
-        }
+        // use_flat bounds frac + 160 * ratio below 2^27 (native_audio_src.h states the arithmetic it needs).
+#if defined(__AVX2__)
+        static_assert(kFrameSamples % 8 == 0, "SIMD blocks must contain whole vectors");
+        linear_src_avx2(flat.data(), voice.frac, voice.ratio, y.data(), kFrameSamples);
+#else
+        linear_src_scalar(flat.data(), voice.frac, voice.ratio, y.data(), kFrameSamples);
+#endif
     } else if (voice.src == SrcMode::Linear) {
         // src_type 1 (IRAM 0x0753..0x0813): per output the phase is advanced FIRST (0x07D9 ADDAX), the two NEWEST taps
         // of the window are taken (0x07DA..0x07DD), their difference is stored through the saturating accumulator read

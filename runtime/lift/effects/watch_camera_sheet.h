@@ -21,13 +21,14 @@ struct SheetScale {
     float y = 1.0f;
 };
 
-// The sheet's distance in front of the eye, along the camera's view.
+// The sheet's distance in front of the eye, along the camera's view (a game constant: docs/effects/lighting_materials.md,
+// "Address notes for the lifted sources").
 inline constexpr float kWatchSheetDistance = 1.1f;
-// A window half-extent to the unit quad's whole extent.
+// A window half-extent to the unit quad's whole extent (the constant next to it; same note).
 inline constexpr float kWatchSheetSpan = 2.0f;
 
-// The original scale of a window, in its order: span x (window x distance), each step one
-// single-precision multiply.
+// The game's scale of a window, in the game's own order of operations (same note): span x (window x distance), each
+// step one single-precision multiply.
 inline SheetScale watch_camera_sheet_scale(render::ViewWindow window) noexcept {
     return SheetScale{kWatchSheetSpan * (window.x * kWatchSheetDistance),
                       kWatchSheetSpan * (window.y * kWatchSheetDistance)};

@@ -94,6 +94,10 @@ Other boundaries were considered and not recommended:
 
 ### C. Where the options live
 
+> **2026-11-14 (retail Options menu):** the game's own Options screen sets text language, speaker mode and vibration
+> again; its apply (0x802B85D8) is observed at its last call and the values are written to options.cfg at once
+> (gekko/save_store.h). Leaving Options still skips the 16 KiB save. docs/PC_SETTINGS_FILES.md lists every key.
+
 The game-owned options are text language, voice language, speaker mode and vibration. They are stored twice today
 (the save record and SRAM), and the Options menu's own settings live in display.cfg / options.cfg. Proposal:
 - **One source of truth: the PC settings files.**

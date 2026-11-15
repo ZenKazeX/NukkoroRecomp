@@ -582,6 +582,52 @@ class Gen:
             mem = self.mem_around(ea, 16, 16, 16)
             self.with_prefixes_and_entries("lsseq", words, st, mem, "compare", "", names)
 
+    def fam_gprc(self, count):
+        """s3/gen: register-reuse sequences for the hot-body GPR read cache (reads served from host locals).
+
+        Long unlabeled runs that keep re-reading a few registers across guest stores, loads that overwrite a
+        register that was just cached, and updates of the base register, so a stale cached value changes a
+        result. Entered at the start, at every prefix length and mid-block (with_prefixes_and_entries)."""
+        rng = self.rng
+        for _ in range(count):
+            st = self.base_state()
+            base = rng.choice((28, 29))
+            ea = self.ea_in_window(64, 4)
+            st["gpr"][base] = ea
+            pool = [3, 4, 5, 9, 10, 11]
+            words, names = [], []
+            for _step in range(rng.randrange(8, 17)):
+                kind = rng.random()
+                if kind < 0.40:
+                    word = None
+                    for _attempt in range(40):
+                        w, nm = self.int_word()
+                        if ((w >> 21) & 31) != base and ((w >> 16) & 31) != base:
+                            word, name = w, nm
+                            break
+                    if word is None:
+                        continue
+                    words.append(word)
+                    names.append(name)
+                elif kind < 0.65:
+                    s = rng.choice(pool)
+                    words.append(E.d_form(rng.choice((36, 38, 44)), s, base, 4 * rng.randrange(0, 12)))
+                    names.append("st")
+                elif kind < 0.90:
+                    d = rng.choice(pool)
+                    op, name = rng.choice(((32, "lwz"), (34, "lbz"), (40, "lhz")))
+                    words.append(E.d_form(op, d, base, 4 * rng.randrange(0, 12)))
+                    names.append(name)
+                else:
+                    words.append(E.addi(rng.choice(pool), rng.choice(pool), rng.randrange(-8, 9)))
+                    names.append("addi")
+            if len(words) < 3:
+                continue
+            for w in words:
+                self.shape_operands(w, st)
+            mem = self.mem_around(ea, 64, 16, 16)
+            self.with_prefixes_and_entries("gprc", words, st, mem, "compare", "", names)
+
     # ================================================================================
     # branches
     # ================================================================================
@@ -964,6 +1010,53 @@ class Gen:
                                  mnemonic=name if r3 == 0 else "cmpi,bc,addi")
 
 
+    def fam_leafi(self, count):
+        """cs2/cpu: calls of small straight-line leaves (the generator splices them into the caller's hot body
+        with --inline-leaves): memory, conditional blr, a forward branch, floating point, LR/CTR reads, CR fields.
+        Each leaf is entered directly and through one or two bl; native and interpreter must agree."""
+        rng = self.rng
+        fadds = (59 << 26) | (1 << 21) | (1 << 16) | (2 << 11) | (21 << 1)
+        for i in range(count):
+            st = self.base_state()
+            ea = self.ea_in_window(64, 4)
+            st["gpr"][3] = ea
+            st["gpr"][4] = ea + 16
+            mem = self.mem_around(ea, 64, 16, 16)
+            kind = i % 6
+            if kind == 0:
+                words = [E.d_form(32, 5, 3, 0), E.addi(5, 5, 1), E.d_form(36, 5, 4, 0), E.BLR]
+            elif kind == 1:
+                words = [E.cmp_imm(11, 0, 6, 0), E.bclr(12, 2), E.addi(6, 6, 1), E.d_form(36, 6, 3, 8), E.BLR]
+                st["gpr"][6] = rng.choice((0, 0, 1, 0xFFFFFFFF, self.v32()))
+            elif kind == 2:
+                words = None  # position dependent, built below
+                st["gpr"][6] = rng.choice((0, 0, 1, 0x80000000, self.v32()))
+            elif kind == 3:
+                words = [E.d_form(32, 11, 3, 0), E.d_form(32, 12, 3, 4), E.addi(11, 11, 3), E.d_form(36, 11, 3, 8), E.BLR]
+            elif kind == 4:
+                words = [E.MFLR(8), E.mfspr(9, 9), E.mtspr(6, 9), E.addi(10, 8, 4), E.BLR]
+            else:
+                words = [E.cmplw(1, 6, 7), E.bclr(12, 6), E.cmplw(2, 7, 6), E.mfcr(10), E.BLR]
+                st["gpr"][6] = rng.choice((0, 5, 5, 0xFFFFFFFF, self.v32()))
+                st["gpr"][7] = rng.choice((0, 5, 5, 0xFFFFFFFF, self.v32()))
+            if words is None:
+                leaf = self.alloc(5)
+                self.put_row(leaf, [E.cmp_imm(11, 0, 6, 0), E.bc(12, 2, leaf + 4, leaf + 16), E.addi(7, 7, 5),
+                                    E.d_form(36, 7, 3, 12), E.BLR], "leafi_fwd")
+            else:
+                leaf = self.row_pic(words, f"leafi_{kind}")
+            caller = self.alloc(7)
+            if i % 2 == 0:
+                self.put_row(caller, [E.MFLR(30), E.b(caller + 4, leaf, lk=1), E.MTLR(30), E.addi(9, 9, 1), E.BLR],
+                             "leafi_caller1")
+            else:
+                self.put_row(caller, [E.MFLR(30), E.b(caller + 4, leaf, lk=1), E.addi(9, 9, 1),
+                                      E.b(caller + 12, leaf, lk=1), E.MTLR(30), E.BLR], "leafi_caller2")
+            self.add("leafi", [caller, leaf], caller, st, f"call leaf kind {kind}", mem=mem, mnemonic="bl,leaf")
+            st2 = json.loads(json.dumps(st))
+            self.add("leafi", [leaf], leaf, st2, f"enter leaf kind {kind}", mem=mem, mnemonic="leaf")
+
+
 # ------------------------------------------------------------------------------------
 # outputs
 # ------------------------------------------------------------------------------------
@@ -1043,6 +1136,9 @@ def main() -> int:
     parser.add_argument("--scale", type=float, default=1.0, help="multiplies every family count")
     parser.add_argument("--shards", type=int, default=4)
     parser.add_argument("--spec", type=Path, default=None, help="spec model directory (encoder cross-check)")
+    parser.add_argument("--families", default="", help="comma-separated families to generate (default: all)")
+    parser.add_argument("--inline-leaves", type=int, default=0, help="run ppcrecomp with --inline-leaves N (no runtime hooks)")
+    parser.add_argument("--inline-leaves-mutant", type=int, default=0, help="negative control: ppcrecomp --inline-leaves-mutant K")
     args = parser.parse_args()
 
     out = args.out
@@ -1055,20 +1151,25 @@ def main() -> int:
     def n(base):
         return max(1, int(round(base * args.scale)))
 
-    gen.fam_int1(n(700))
-    gen.fam_spr1(n(60))
-    gen.fam_clock(n(120))
-    gen.fam_ls1(n(450))
-    gen.fam_alias(n(3))
-    gen.fam_hint()
-    gen.fam_seq(n(60))
-    gen.fam_lsseq(n(40))
-    gen.fam_br(n(300))
-    gen.fam_invalid(n(40))
-    # String families last: the families above keep their exact vectors (known-candidate fingerprints).
-    gen.fam_str1(n(240))
-    gen.fam_strseq(n(30))
-    gen.fam_strcall(n(40))
+    if args.families:
+        for family in args.families.split(","):
+            getattr(gen, "fam_" + family)(n(60))
+    else:
+        gen.fam_int1(n(700))
+        gen.fam_spr1(n(60))
+        gen.fam_clock(n(120))
+        gen.fam_ls1(n(450))
+        gen.fam_alias(n(3))
+        gen.fam_hint()
+        gen.fam_seq(n(60))
+        gen.fam_lsseq(n(40))
+        gen.fam_br(n(300))
+        gen.fam_invalid(n(40))
+        # String families last: the families above keep their exact vectors (known-candidate fingerprints).
+        gen.fam_str1(n(240))
+        gen.fam_strseq(n(30))
+        gen.fam_strcall(n(40))
+        gen.fam_gprc(n(60))   # s3/gen: after every older family, so their vectors keep their ids
 
     problems = spec_mnemonic_check(gen, args.spec) if args.spec else []
     if problems:
@@ -1088,6 +1189,10 @@ def main() -> int:
     # Production arguments (CMakeLists.txt SHADOW_RECOMP_ARGS): no --no-gap-sweep, no --no-wide-entries.
     command = [str(args.generator.resolve()), "--dol", str(dol), "--functions", str(out / "functions.csv"),
                "--out", str(out), "--shards", str(args.shards), "--report", str(out / "recomp_report.txt")]
+    if args.inline_leaves:
+        command += ["--inline-leaves", str(args.inline_leaves), "--inline-no-hooks"]
+        if args.inline_leaves_mutant:
+            command += ["--inline-leaves-mutant", str(args.inline_leaves_mutant)]
     result = subprocess.run(command, capture_output=True, text=True)
     (out / "ppcrecomp.log").write_text(result.stdout + result.stderr, encoding="utf-8")
     if result.returncode != 0:

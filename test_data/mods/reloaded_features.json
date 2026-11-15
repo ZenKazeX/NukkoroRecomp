@@ -1,0 +1,5319 @@
+{
+ "schema": 1,
+ "summary": {
+  "library_entries": 110,
+  "library_patches": 224,
+  "by_kind": {
+   "branch-to-cave": 85,
+   "inline-code": 69,
+   "data": 70
+  },
+  "by_confidence": {
+   "high": 220,
+   "medium": 4
+  },
+  "pal_status": {
+   "exact": 209,
+   "shape": 15
+  },
+  "pal_via": {
+   "address-map": 222,
+   "signature": 2
+  },
+  "original_matches_ntsc_dol": {
+   "True": 220,
+   "None": 4
+  },
+  "dol_changed_bytes_total": 5670,
+  "dol_header_bytes_changed": 19,
+  "dol_changed_bytes_in_cave_area": 4892,
+  "dol_changed_bytes_outside_cave_area": 759,
+  "dol_changed_bytes_outside_cave_area_and_not_within_64_bytes_of_a_library_patch": 0,
+  "cave_words_in_use": 1390,
+  "cave_area": [
+   "0x800034AC",
+   "0x800053E0"
+  ],
+  "gecko_codes": 33,
+  "gecko_writes": 73,
+  "features": 31,
+  "features_by_kind": {
+   "code": 15,
+   "both": 12,
+   "data": 4
+  }
+ },
+ "features": [
+  {
+   "id": "skip-cutscenes",
+   "name": "Cutscenes, title screen and logos always skippable",
+   "readme": "Cutscenes are always skippable",
+   "kind": "code",
+   "effect_without_code": "The stock skip rules apply: cutscenes, title animation and intro logos are skippable only where the original game allows it.",
+   "evidence": "static",
+   "reimpl": "small-code",
+   "reimpl_note": "Removes three conditional branches (two in the cutscene player, one in the title sequence) and adds a start-button test to the logo sequence.",
+   "library_entries": [
+    {
+     "entry": "Always Skippable Cutscenes",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x80174380",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x80174764",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x801746F0",
+       "pal_function_size": 172,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x802D29A0",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x802D2EF8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x802D2DB0",
+       "pal_function_size": 392,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Title always skippable",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x802BDF48",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x802BE33C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x802BE284",
+       "pal_function_size": 408,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Skippable Logos (ASM)",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x802B6480",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003EA4",
+       "cave_words": 12,
+       "pal": "0x802B688C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x802B687C",
+       "pal_function_size": 84,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [],
+   "dependent_data": []
+  },
+  {
+   "id": "menu-shortcuts",
+   "name": "Select Mode shortcuts and extra stage entries",
+   "readme": "Select Mode usability (Last Way and Devil Doom entries, cursor memory, start-message shortcut)",
+   "kind": "both",
+   "effect_without_code": "No X shortcut on the start message, the stage cursor resets to the first stage, and The Last Way / Devil Doom get no select entries. Reloaded's SelectMode layout and textures are still loaded by the stock menu.",
+   "evidence": "unverified",
+   "reimpl": "code",
+   "reimpl_note": "One hook in the select menu plus two table words that add the entries; the art is already in the mod's files.",
+   "library_entries": [
+    {
+     "entry": "Select Mode Shortcut",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x802B6484",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x8000377C",
+       "cave_words": 18,
+       "pal": "0x802B6890",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x802B687C",
+       "pal_function_size": 84,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Select Mode cursor no reset",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x802C7EA0",
+       "original_matches_ntsc_dol": null,
+       "kind": "inline-code",
+       "pal": "0x802C83F8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x802C83F4",
+       "pal_function_size": 44,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Last Way & Devil Doom in Select Menu v2",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x802BF400",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003A44",
+       "cave_words": 12,
+       "pal": "0x802BF980",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x802BF940",
+       "pal_function_size": 212,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x804FF700",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805007D8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x804FF7A0",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x80500878",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [
+    "csdFiles/SelectMode.gncp",
+    "csdFiles/SelectMode_*.txd"
+   ],
+   "dependent_data": [
+    {
+     "pattern": "csdFiles/SelectMode.gncp",
+     "files": 1,
+     "new": 0,
+     "changed": 1
+    },
+    {
+     "pattern": "csdFiles/SelectMode_*.txd",
+     "files": 6,
+     "new": 0,
+     "changed": 6
+    }
+   ]
+  },
+  {
+   "id": "unlock-last-story",
+   "name": "Last Story unlocks after 3 story endings",
+   "readme": "Last Story unlocks after 3 endings instead of 10",
+   "kind": "code",
+   "effect_without_code": "Last Story needs all ten endings, as in the original.",
+   "evidence": "static",
+   "reimpl": "small-code",
+   "reimpl_note": "One compare constant (10 to 3) in the unlock test.",
+   "library_entries": [
+    {
+     "entry": "3 Endings unlocks Last Story",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x802D11B0",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x802D1708",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x802D1670",
+       "pal_function_size": 344,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [],
+   "dependent_data": []
+  },
+  {
+   "id": "expert-unlock",
+   "name": "Expert Mode unlocks by beating Last Story",
+   "readme": "Expert Mode unlocks after Last Story instead of every A rank",
+   "kind": "code",
+   "effect_without_code": "Expert Mode keeps the original unlock rule (every mission ranked A).",
+   "evidence": "static",
+   "reimpl": "small-code",
+   "reimpl_note": "Three hooks in the rank/progress code (unlock on Last Story clear, two bug fixes in the A-rank count).",
+   "library_entries": [
+    {
+     "entry": "Beating Last Story unlocks Expert (ASM)",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector, dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x802D11A0",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003ED4",
+       "cave_words": 4,
+       "pal": "0x802D16F8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x802D1670",
+       "pal_function_size": 344,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80204FB8",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x802052C8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80205010",
+       "pal_function_size": 928,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80205078",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x80205388",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80205010",
+       "pal_function_size": 928,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [],
+   "dependent_data": []
+  },
+  {
+   "id": "expert-select",
+   "name": "Practise Expert stages from Select Mode",
+   "readme": "Expert levels can be practised in Select Mode with X",
+   "kind": "both",
+   "effect_without_code": "Select Mode cannot start the Expert version of a stage. The hard-mode layouts (stgNNNN_hrd.dat) are only read when a normal Expert run is started, which still needs the original unlock.",
+   "evidence": "static",
+   "reimpl": "code",
+   "reimpl_note": "Needs the select menu to set the same hard-mode flag the Expert run sets (G+0x125 per docs/STAGE_LOADING.md), plus lives/progress handling.",
+   "library_entries": [
+    {
+     "entry": "Expert Select v2",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector, BlazinZzetti]",
+     "patches": [
+      {
+       "ntsc": "0x80206334",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800036D4",
+       "cave_words": 10,
+       "pal": "0x802066B8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80206680",
+       "pal_function_size": 88,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Expert Select Mode Lives",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti, dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x8016F014",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800046C4",
+       "cave_words": 10,
+       "pal": "0x8016F3F8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8016F3CC",
+       "pal_function_size": 172,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Dont Update Expert Progress In Select Mode",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti, dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x80204E60",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800046A4",
+       "cave_words": 8,
+       "pal": "0x80205170",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80205010",
+       "pal_function_size": 928,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Prevent Saving Expert Lives in Select Mode",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti, dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x801E33BC",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800046EC",
+       "cave_words": 8,
+       "pal": "0x801E36CC",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x801E364C",
+       "pal_function_size": 200,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80204E74",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x8000470C",
+       "cave_words": 8,
+       "pal": "0x80205184",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80205010",
+       "pal_function_size": 928,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [
+    "stg*/stg*_hrd.dat"
+   ],
+   "dependent_data": [
+    {
+     "pattern": "stg*/stg*_hrd.dat",
+     "files": 39,
+     "new": 16,
+     "changed": 23
+    }
+   ]
+  },
+  {
+   "id": "expert-ending",
+   "name": "Unique Expert Mode ending",
+   "readme": "Expert Mode has a unique ending animation",
+   "kind": "both",
+   "effect_without_code": "The Expert ending plays the stock movies and music. The six .flo movies and sng_EV_music4.adx are never opened: the stock DOL names only .sfd movies and sng_EV_music1..3, and the Reloaded code rewrites those name strings at run time when the Expert run starts.",
+   "evidence": "static",
+   "reimpl": "code",
+   "reimpl_note": "A name-string switch (extension and music digit) when the game kind is Expert; a native version could resolve the names through the file layer instead.",
+   "library_entries": [
+    {
+     "entry": "Expert Ending v2",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x802CF1DC",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800036FC",
+       "cave_words": 32,
+       "pal": "0x802CF734",
+       "pal_via": "address-map",
+       "pal_status": "shape",
+       "pal_window": "13/13",
+       "pal_function": "0x802CF734",
+       "pal_function_size": 8,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [
+    "Op.flo",
+    "E4101.flo",
+    "E4102.flo",
+    "E4201.flo",
+    "E8003.flo",
+    "E8201.flo",
+    "sng_EV_music4.adx"
+   ],
+   "dependent_data": [
+    {
+     "pattern": "Op.flo",
+     "files": 1,
+     "new": 1,
+     "changed": 0
+    },
+    {
+     "pattern": "E4101.flo",
+     "files": 1,
+     "new": 1,
+     "changed": 0
+    },
+    {
+     "pattern": "E4102.flo",
+     "files": 1,
+     "new": 1,
+     "changed": 0
+    },
+    {
+     "pattern": "E4201.flo",
+     "files": 1,
+     "new": 1,
+     "changed": 0
+    },
+    {
+     "pattern": "E8003.flo",
+     "files": 1,
+     "new": 1,
+     "changed": 0
+    },
+    {
+     "pattern": "E8201.flo",
+     "files": 1,
+     "new": 1,
+     "changed": 0
+    },
+    {
+     "pattern": "sng_EV_music4.adx",
+     "files": 1,
+     "new": 1,
+     "changed": 0
+    }
+   ]
+  },
+  {
+   "id": "expert-ring-loss",
+   "name": "Expert Mode: a hit costs all rings",
+   "readme": "(part of the Expert Mode rework)",
+   "kind": "code",
+   "effect_without_code": "Expert Mode rings behave as in the original.",
+   "evidence": "static",
+   "reimpl": "code",
+   "reimpl_note": "Two hooks in the damage code.",
+   "library_entries": [
+    {
+     "entry": "Expert Ring Loss v2",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax, LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x800CB8D8",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003F4C",
+       "cave_words": 14,
+       "pal": "0x800CBCC0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x800CBC54",
+       "pal_function_size": 308,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x800B7E24",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003F84",
+       "cave_words": 8,
+       "pal": "0x800B820C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x800B8130",
+       "pal_function_size": 248,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [],
+   "dependent_data": []
+  },
+  {
+   "id": "mission-lock",
+   "name": "Mission lock-in and always-switchable missions",
+   "readme": "Partners do not change your mission when you locked one in",
+   "kind": "code",
+   "effect_without_code": "Partners still swap the active mission as you pass them; missions can only be switched after meeting the partner.",
+   "evidence": "static",
+   "reimpl": "code",
+   "reimpl_note": "Seven hooks and one free flag byte; behaviour logic, not data.",
+   "library_entries": [
+    {
+     "entry": "Missions Unlocked",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x800BC14C",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x8000359C",
+       "cave_words": 4,
+       "pal": "0x800BC534",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x800BC4A8",
+       "pal_function_size": 676,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Mission Focus",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x8016DFDC",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x8016E3C0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8016E360",
+       "pal_function_size": 124,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x8016DFD8",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800035AC",
+       "cave_words": 8,
+       "pal": "0x8016E3BC",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8016E360",
+       "pal_function_size": 124,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80073CB8",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800035CC",
+       "cave_words": 6,
+       "pal": "0x80073DE0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80073C54",
+       "pal_function_size": 884,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x8016DF58",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800035E4",
+       "cave_words": 6,
+       "pal": "0x8016E33C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8016E2D8",
+       "pal_function_size": 136,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x8016E134",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800035FC",
+       "cave_words": 6,
+       "pal": "0x8016E518",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8016E4EC",
+       "pal_function_size": 612,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x801E39B4",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003614",
+       "cave_words": 6,
+       "pal": "0x801E3CC4",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x801E3714",
+       "pal_function_size": 1572,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x800A1BB4",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x8000362C",
+       "cave_words": 14,
+       "pal": "0x800A1F80",
+       "pal_via": "signature",
+       "pal_status": "exact",
+       "pal_window": "17/17",
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [],
+   "dependent_data": []
+  },
+  {
+   "id": "partner-intro",
+   "name": "No partner camera introductions",
+   "readme": "Partner characters no longer stop you with a camera zoom",
+   "kind": "code",
+   "effect_without_code": "The camera introduction plays when the partner is first met. Observed on this build: Westopolis with Reloaded's remixed layout, game tick 1.2e9 (frame 1737) shows the Sonic introduction camera and subtitle where stock shows Shadow running.",
+   "evidence": "observed",
+   "reimpl": "small-code",
+   "reimpl_note": "One conditional branch made unconditional.",
+   "library_entries": [
+    {
+     "entry": "Disable Partner Intro",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x80073E10",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x80073F38",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80073C54",
+       "pal_function_size": 884,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [],
+   "dependent_data": []
+  },
+  {
+   "id": "forgiving-missions",
+   "name": "More forgiving mission requirements",
+   "readme": "Many missions allow missing a few enemies or objects",
+   "kind": "data",
+   "effect_without_code": "Works as intended: the stock code reads nukkoro2.inf (two reads seen in the asset trace of a boot) and Reloaded's file is larger (12,702 bytes against 9,769). nukkoro.inf only drops comments, its 9 settings are unchanged.",
+   "evidence": "observed",
+   "reimpl": "files-only",
+   "reimpl_note": "Nothing to do.",
+   "library_entries": [],
+   "dependent_data_paths": [
+    "nukkoro2.inf"
+   ],
+   "dependent_data": [
+    {
+     "pattern": "nukkoro2.inf",
+     "files": 1,
+     "new": 0,
+     "changed": 1
+    }
+   ]
+  },
+  {
+   "id": "srank",
+   "name": "S Rank",
+   "readme": "S Rank added to the rank system",
+   "kind": "both",
+   "effect_without_code": "The rank score table is read by the stock rank code (ScoreData.bin is opened at stage start) but the S letter, the S-aware A-rank counters and the Devil Doom result screen are code. Result: stock rank letters computed from Reloaded's table. ScoreDatb.bin is named nowhere in either DOL (inert).",
+   "evidence": "unverified",
+   "reimpl": "code",
+   "reimpl_note": "Table already in the files; the display and counters need the rank code changed.",
+   "library_entries": [
+    {
+     "entry": "S Rank System",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x80204FFC",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x8020530C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80205010",
+       "pal_function_size": 928,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80205000",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x80205310",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80205010",
+       "pal_function_size": 928,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80205040",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x80205350",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80205010",
+       "pal_function_size": 928,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80205044",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x80205354",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80205010",
+       "pal_function_size": 928,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Devil Doom is a Ranked Mission",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x80205670",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x80205980",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x802058D8",
+       "pal_function_size": 1380,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [
+    "common/ScoreData.bin",
+    "common/ScoreDatb.bin",
+    "csdFiles/Result_*.gncp",
+    "csdFiles/honban*",
+    "stafroll/StafRoll.srd"
+   ],
+   "dependent_data": [
+    {
+     "pattern": "common/ScoreData.bin",
+     "files": 1,
+     "new": 0,
+     "changed": 1
+    },
+    {
+     "pattern": "common/ScoreDatb.bin",
+     "files": 1,
+     "new": 1,
+     "changed": 0
+    },
+    {
+     "pattern": "csdFiles/Result_*.gncp",
+     "files": 6,
+     "new": 0,
+     "changed": 6
+    },
+    {
+     "pattern": "csdFiles/honban*",
+     "files": 7,
+     "new": 0,
+     "changed": 7
+    },
+    {
+     "pattern": "stafroll/StafRoll.srd",
+     "files": 1,
+     "new": 0,
+     "changed": 1
+    }
+   ]
+  },
+  {
+   "id": "red-rings",
+   "name": "Red Rings instead of Secret Keys, ghost Red Rings",
+   "readme": "Secret Keys replaced by Red Rings",
+   "kind": "both",
+   "effect_without_code": "The key objects (class SECRETKEY, 115 in the stock layouts and 115 in Reloaded's, same count) are drawn with Reloaded's red-ring model from stg_cmn_gdt.one. The ghost state is missing: stg_cmn_gd2.one is only selected by the Reloaded code (it rewrites one letter of the archive name, gdt to gd2) and is never opened. The 26 stock SECRETDOOR objects are gone from the layouts, so keys no longer open anything.",
+   "evidence": "static",
+   "reimpl": "code",
+   "reimpl_note": "Needs the per-stage all-five-collected state and the archive switch; the ghost models are already in the files.",
+   "library_entries": [
+    {
+     "entry": "Ghost Red Rings",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x8011BE8C",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800037C4",
+       "cave_words": 24,
+       "pal": "0x8011C274",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8011C1FC",
+       "pal_function_size": 136,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x8011BDF0",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003824",
+       "cave_words": 4,
+       "pal": "0x8011C1D8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8011C18C",
+       "pal_function_size": 112,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [
+    "stg_cmn_gdt.one",
+    "stg_cmn_gd2.one"
+   ],
+   "dependent_data": [
+    {
+     "pattern": "stg_cmn_gdt.one",
+     "files": 1,
+     "new": 0,
+     "changed": 1
+    },
+    {
+     "pattern": "stg_cmn_gd2.one",
+     "files": 1,
+     "new": 1,
+     "changed": 0
+    }
+   ]
+  },
+  {
+   "id": "secret-doors",
+   "name": "Secret doors reworked into extra routes",
+   "readme": "Secret door system reworked into additional pathways",
+   "kind": "data",
+   "effect_without_code": "Works as data: the layouts contain only object classes the stock game already has (no new class, no new parameter length), SECRETDOOR is simply no longer placed (26 to 0) and the extra routes are layout, block and path data.",
+   "evidence": "static",
+   "reimpl": "files-only",
+   "reimpl_note": "Nothing to do.",
+   "library_entries": [],
+   "dependent_data_paths": [
+    "stg*/stg*_cmn.dat",
+    "stg*/stg*_nrm.dat",
+    "stg*/stg*_hrd.dat",
+    "stg*/stg*_gdt.one",
+    "stg*/stg*_dat.one"
+   ],
+   "dependent_data": [
+    {
+     "pattern": "stg*/stg*_cmn.dat",
+     "files": 39,
+     "new": 0,
+     "changed": 39
+    },
+    {
+     "pattern": "stg*/stg*_nrm.dat",
+     "files": 39,
+     "new": 16,
+     "changed": 23
+    },
+    {
+     "pattern": "stg*/stg*_hrd.dat",
+     "files": 39,
+     "new": 16,
+     "changed": 23
+    },
+    {
+     "pattern": "stg*/stg*_gdt.one",
+     "files": 23,
+     "new": 0,
+     "changed": 23
+    },
+    {
+     "pattern": "stg*/stg*_dat.one",
+     "files": 13,
+     "new": 0,
+     "changed": 12
+    }
+   ]
+  },
+  {
+   "id": "stage-remix",
+   "name": "Stage remixes, boss-stage layouts, Lost Impact area",
+   "readme": "Levels remixed; inaccessible Lost Impact area reachable; faster waiting sections",
+   "kind": "data",
+   "effect_without_code": "Works as intended with the stock loader. Boss stages get new normal and hard layouts (stg0210, 0310, 0410 to 0412, 0510, 0511 and 0610 to 0618: 16 stages, 32 new files) that the stock layout loader asks for by name (stg0210_nrm.dat read at pc 0x800CB1C0 in a boot on this build). Reloaded trimmed 14 stage archives (stg*_gdt.one and one fx archive lose 21 to 131 members each); they only suit Reloaded's own layouts. The Diablon boss gimmick of the hard layout also needs the 'Diablon warp' code change.",
+   "evidence": "observed",
+   "reimpl": "files-only",
+   "reimpl_note": "Nothing to do for layouts; mixing Reloaded stage archives with another mod's layouts is unsafe (missing members).",
+   "library_entries": [],
+   "dependent_data_paths": [
+    "stg*/*"
+   ],
+   "dependent_data": [
+    {
+     "pattern": "stg*/*",
+     "files": 244,
+     "new": 32,
+     "changed": 211
+    }
+   ]
+  },
+  {
+   "id": "speedrun-timer",
+   "name": "In-game time for speedruns (ShadowSX timing, Race Mode)",
+   "readme": "In-game timing usable for speedruns",
+   "kind": "both",
+   "effect_without_code": "Stock timer and HUD. The IGT message that Reloaded shows before autosave (text ids 43 and 44 redirected to a custom string by the code) is not shown; the font/subtitle files are otherwise normal. Many entries cite helper .asm files that Reloaded's repository does not ship; the injected code itself is in the DOL.",
+   "evidence": "static",
+   "reimpl": "code",
+   "reimpl_note": "About 30 hooks and a dozen free flag words; a native timer would be a new feature rather than a patch.",
+   "library_entries": [
+    {
+     "entry": "SX - Set \"In Checkpoint\" True",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti]",
+     "patches": [
+      {
+       "ntsc": "0x80117FE8",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80004124",
+       "cave_words": 6,
+       "pal": "0x801183D0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "SX - Set \"In Checkpoint\" False",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti]",
+     "patches": [
+      {
+       "ntsc": "0x80117644",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x8000413C",
+       "cave_words": 8,
+       "pal": "0x80117A2C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x801179FC",
+       "pal_function_size": 84,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "SX - Dont stop time in checkpoint",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti]",
+     "patches": [
+      {
+       "ntsc": "0x80337030",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x8000415C",
+       "cave_words": 16,
+       "pal": "0x80337E0C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80337DD4",
+       "pal_function_size": 164,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80337048",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x8000419C",
+       "cave_words": 6,
+       "pal": "0x80337E24",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80337DD4",
+       "pal_function_size": 164,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "SX - Reload Time On Death Checks",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti]",
+     "patches": [
+      {
+       "ntsc": "0x80178BC4",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800041B4",
+       "cave_words": 22,
+       "pal": "0x80178F78",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80178F34",
+       "pal_function_size": 212,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "SX - Set \"In Checkpoint\" False after Warp",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti]",
+     "patches": [
+      {
+       "ntsc": "0x80129BCC",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x8000420C",
+       "cave_words": 8,
+       "pal": "0x80129FB0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "12/13",
+       "pal_function": "0x80129F38",
+       "pal_function_size": 204,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "SX - Mission Complete Events",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti, dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x80205BC8",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x8000422C",
+       "cave_words": 36,
+       "pal": "0x80205ED8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80205ED8",
+       "pal_function_size": 168,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "SX - Reset Checkpoint Flag on Stage -1",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti, dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x80203894",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800042BC",
+       "cave_words": 6,
+       "pal": "0x80203BA4",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80203BA0",
+       "pal_function_size": 36,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "SX - Use New IGT variable for UI Display",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti, dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x80201854",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800042D4",
+       "cave_words": 20,
+       "pal": "0x80201B64",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80201620",
+       "pal_function_size": 1860,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "SX - Only Increment New IGT if in Normal Level",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti, dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x80337034",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80004324",
+       "cave_words": 34,
+       "pal": "0x80337E10",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80337DD4",
+       "pal_function_size": 164,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "SX - Set In Cutscene Flag",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti]",
+     "patches": [
+      {
+       "ntsc": "0x802D1CCC",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800043AC",
+       "cave_words": 8,
+       "pal": "0x802D2224",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x802D21B4",
+       "pal_function_size": 412,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "SX - Set In Cutscene False on Stage Load",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti,]",
+     "patches": [
+      {
+       "ntsc": "0x802038C8",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800043CC",
+       "cave_words": 6,
+       "pal": "0x80203BD8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80203BC4",
+       "pal_function_size": 188,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Set Flag to Show Time Message",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti]",
+     "patches": [
+      {
+       "ntsc": "0x80342398",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800043E4",
+       "cave_words": 10,
+       "pal": "0x803431A0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x803431A0",
+       "pal_function_size": 112,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "IGT Message Before Auto Save",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti]",
+     "patches": [
+      {
+       "ntsc": "0x8035B1DC",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x8000440C",
+       "cave_words": 44,
+       "pal": "0x8035C024",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8035BE5C",
+       "pal_function_size": 600,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "IGT Message Render",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti, dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x8004A480",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800044BC",
+       "cave_words": 122,
+       "pal": "0x8004A4A8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8004A4A4",
+       "pal_function_size": 184,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "SX - New IGT Timer Reset",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti, dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x80178458",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x8000472C",
+       "cave_words": 4,
+       "pal": "0x8017880C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x801783D4",
+       "pal_function_size": 1120,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x8020623C",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x8000473C",
+       "cave_words": 10,
+       "pal": "0x802065C0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80206574",
+       "pal_function_size": 116,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "SX - Adjustments to Mission Timer Resets",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti]",
+     "patches": [
+      {
+       "ntsc": "0x80336FB8",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x80337D94",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80337D90",
+       "pal_function_size": 12,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80336FA4",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x80337D80",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80337D74",
+       "pal_function_size": 28,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "SX - Reset Race Timers",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x802D2130",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80004764",
+       "cave_words": 6,
+       "pal": "0x802D2688",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x802D2618",
+       "pal_function_size": 432,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x802D2214",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x8000477C",
+       "cave_words": 6,
+       "pal": "0x802D276C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x802D2618",
+       "pal_function_size": 432,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x8035503C",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80004794",
+       "cave_words": 6,
+       "pal": "0x80355E44",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80355DEC",
+       "pal_function_size": 312,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Dont Pause IGT during Egg Dealer Attacks",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti]",
+     "patches": [
+      {
+       "ntsc": "0x801E33DC",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80004890",
+       "cave_words": 8,
+       "pal": "0x801E36EC",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x801E364C",
+       "pal_function_size": 200,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80204CE8",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800048B0",
+       "cave_words": 8,
+       "pal": "0x80204FF8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80204EEC",
+       "pal_function_size": 292,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80204BB4",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800048D0",
+       "cave_words": 6,
+       "pal": "0x80204EC4",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80204E34",
+       "pal_function_size": 184,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80312190",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800048E8",
+       "cave_words": 26,
+       "pal": "0x803137E0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x803137C4",
+       "pal_function_size": 256,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Boss IGT Penalties",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti]",
+     "patches": [
+      {
+       "ntsc": "0x80290EF8",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80004950",
+       "cave_words": 62,
+       "pal": "0x802912EC",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x802911E8",
+       "pal_function_size": 328,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Sonic&Diablon IGT Penalties",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti]",
+     "patches": [
+      {
+       "ntsc": "0x802D4A80",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80004A48",
+       "cave_words": 12,
+       "pal": "0x802D4FD8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x802D4F5C",
+       "pal_function_size": 512,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "FNT Data Override Redirect",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti]",
+     "patches": [
+      {
+       "ntsc": "0x80049E0C",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80004A78",
+       "cave_words": 20,
+       "pal": "0x80049E34",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Rounding Patch for IGT Displays",
+     "file": "4_SX_MCM-rld-modified-sx1-1.txt",
+     "authors": "[BlazinZzetti]",
+     "patches": [
+      {
+       "ntsc": "0x801E45E0",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80004AC8",
+       "cave_words": 10,
+       "pal": "0x801E48F0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x801E48B4",
+       "pal_function_size": 104,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x801E45F4",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80004AF0",
+       "cave_words": 8,
+       "pal": "0x801E4904",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x801E48B4",
+       "pal_function_size": 104,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x801E46B8",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80004B10",
+       "cave_words": 10,
+       "pal": "0x801E49C8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x801E4988",
+       "pal_function_size": 108,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x801E46CC",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80004B38",
+       "cave_words": 8,
+       "pal": "0x801E49DC",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x801E4988",
+       "pal_function_size": 108,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Custom Autosave Colors",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x805EC6E8",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805ED798",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x805EC6F0",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805ED7A0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x805EC6F4",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805ED7A4",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [
+    "fonts/*"
+   ],
+   "dependent_data": [
+    {
+     "pattern": "fonts/*",
+     "files": 269,
+     "new": 0,
+     "changed": 268
+    }
+   ]
+  },
+  {
+   "id": "lives-checkpoints",
+   "name": "Lives, checkpoints and score rules",
+   "readme": "(rules tweaks)",
+   "kind": "code",
+   "effect_without_code": "Lives count down and restarts cost lives as in the original; respawn uses the highest checkpoint id; time bonus uses the original curve; Last Way hero/dark points count as in stock.",
+   "evidence": "static",
+   "reimpl": "small-code",
+   "reimpl_note": "Few instructions each.",
+   "library_entries": [
+    {
+     "entry": "Life System Modifier",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector, dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x80178BCC",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x80178F80",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80178F34",
+       "pal_function_size": 212,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80178D20",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x801790D4",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80179008",
+       "pal_function_size": 268,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x802FB6F8",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x802FBC70",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x802FBBE8",
+       "pal_function_size": 332,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Respawn at last activated checkpoint",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x8016F4B4",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x8016F898",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8016F7B8",
+       "pal_function_size": 276,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x8016F4B8",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x8016F89C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8016F7B8",
+       "pal_function_size": 276,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Time Bonus Penalty Always Active",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x80202740",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x80202A50",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x802029FC",
+       "pal_function_size": 484,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "The Last Way Inclusive Scoring",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x8016F5FC",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003A74",
+       "cave_words": 10,
+       "pal": "0x8016F9E0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8016F99C",
+       "pal_function_size": 116,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x8016F60C",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003A9C",
+       "cave_words": 10,
+       "pal": "0x8016F9F0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8016F99C",
+       "pal_function_size": 116,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [],
+   "dependent_data": []
+  },
+  {
+   "id": "player-tuning",
+   "name": "Shadow movement and object tuning constants",
+   "readme": "Shadow is faster and more responsive",
+   "kind": "code",
+   "effect_without_code": "Stock values: each tweak is a number in the DOL's constant data (or a one-instruction change), not a file. Nothing of this reaches the PC build.",
+   "evidence": "static",
+   "reimpl": "constants",
+   "reimpl_note": "Most are float words in the DOL data area (listed below with their PAL addresses and stock/Reloaded values); a runtime constant-override table would apply them without code. The five that change instructions (LightDash transitions, ValidRing distance, run threshold, spindash delay, strafe speed) swap a float load for an immediate value.",
+   "library_entries": [
+    {
+     "entry": "Jump Ball Turn Speed",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x805F2788",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F3828",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 6.5,
+       "mod_value_float": 25.0,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Jump Attack Friction",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x805E4588",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805E5648",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 10.0,
+       "mod_value_float": 4.0,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Light Dash ValidRing Angle",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x805F280C",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F38AC",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 45.0,
+       "mod_value_float": 75.0,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Light Dash ValidRing Distance",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector, dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x8008A600",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x8008A7E8",
+       "pal_via": "address-map",
+       "pal_status": "shape",
+       "pal_window": "2/13",
+       "pal_function": "0x8008A7E4",
+       "pal_function_size": 20,
+       "confidence": "medium"
+      },
+      {
+       "ntsc": "0x8008A604",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x8008A7F0",
+       "pal_via": "address-map",
+       "pal_status": "shape",
+       "pal_window": "7/13",
+       "pal_function": "0x8008A7E4",
+       "pal_function_size": 20,
+       "confidence": "medium"
+      }
+     ]
+    },
+    {
+     "entry": "Homing Attack Speed",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x805F2720",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F37C0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 1000.0,
+       "mod_value_float": 2000.0,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Homing Attack Turn Strength",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x805F2724",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F37C4",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 8.0,
+       "mod_value_float": 16.0,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Triangle Jump Recover Time",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x805F295C",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F3A04",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 0.125,
+       "mod_value_float": 1e-06,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Triangle Jump Speed",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x805F2978",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F3A20",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 450.0,
+       "mod_value_float": 1000.0,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "WallRun Speed",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x805F2958",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F3A00",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 500.0,
+       "mod_value_float": 550.0,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Walk Turn Speed",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x805F268C",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F372C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 15.0,
+       "mod_value_float": 20.0,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Strafe Walk Speed",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax, LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x800840A4",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x800841E8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x800841E0",
+       "pal_function_size": 28,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x800840B0",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x800841F4",
+       "pal_via": "address-map",
+       "pal_status": "shape",
+       "pal_window": "13/13",
+       "pal_function": "0x800841E0",
+       "pal_function_size": 28,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Slide Run Threshhold",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector, dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x800840A0",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x800841E4",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x800841E0",
+       "pal_function_size": 28,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x800840AC",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x800841F0",
+       "pal_via": "address-map",
+       "pal_status": "shape",
+       "pal_window": "13/13",
+       "pal_function": "0x800841E0",
+       "pal_function_size": 28,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Spindash Startup Delay",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector, dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x8008F7B8",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x8008FAA4",
+       "pal_via": "address-map",
+       "pal_status": "shape",
+       "pal_window": "3/13",
+       "pal_function": "0x8008FA9C",
+       "pal_function_size": 28,
+       "confidence": "medium"
+      },
+      {
+       "ntsc": "0x8008F7C0",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x8008FAB0",
+       "pal_via": "address-map",
+       "pal_status": "shape",
+       "pal_window": "8/13",
+       "pal_function": "0x8008FA9C",
+       "pal_function_size": 28,
+       "confidence": "medium"
+      }
+     ]
+    },
+    {
+     "entry": "Red Slime Speed",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector, dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x805F2570",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F3610",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 340.0,
+       "mod_value_float": 425.0,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Pulley Speed",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x805F409C",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F5144",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 0.18,
+       "mod_value_float": 0.25,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Idle Chatter Tweak",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x805F2BBC",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F3C64",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 20.0,
+       "mod_value_float": 15.0,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x805F2BE4",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F3C8C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 10.0,
+       "mod_value_float": 7.5,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Triple Spring Origin Shift",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x805F3B1C",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F4BC4",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 10.0,
+       "mod_value_float": 5.0,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Heal Unit Explosion Hitbox Size",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x805F39D8",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F4A80",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 20.0,
+       "mod_value_float": 45.0,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "LightDash Transition Expansion",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x800A1518",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800039A4",
+       "cave_words": 20,
+       "pal": "0x800A18E4",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x800A18B0",
+       "pal_function_size": 384,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x8008A498",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800039F4",
+       "cave_words": 20,
+       "pal": "0x8008A67C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8008A650",
+       "pal_function_size": 216,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "LightDash Exit State Change to Launched for Westopolis",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x80089F34",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003E44",
+       "cave_words": 8,
+       "pal": "0x8008A084",
+       "pal_via": "signature",
+       "pal_status": "exact",
+       "pal_window": "17/17",
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "No Skidding",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x80083338",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x8008347C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Keep Melee Weapons when Mounting Vehicles",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x8007EB60",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x8007ECA4",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8007ECA0",
+       "pal_function_size": 32,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [],
+   "dependent_data": []
+  },
+  {
+   "id": "jumpdash-l",
+   "name": "Hold L to Jump Dash instead of Homing Attack",
+   "readme": "Hold L performs a Jump Dash instead of a Homing Attack",
+   "kind": "code",
+   "effect_without_code": "L does nothing extra; the homing attack always targets.",
+   "evidence": "static",
+   "reimpl": "code",
+   "reimpl_note": "One hook reading the pad state.",
+   "library_entries": [
+    {
+     "entry": "Hold L to JumpDash instead of HomingAttack v5",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x800A0324",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003834",
+       "cave_words": 30,
+       "pal": "0x800A06F0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x800A0130",
+       "pal_function_size": 4564,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [],
+   "dependent_data": []
+  },
+  {
+   "id": "slide",
+   "name": "Slide changes (hold to slide, slide out of attacks, steer, fixes)",
+   "readme": "Shadow can slide out of spindash, homing attack and jump dash; slide length is player controlled",
+   "kind": "code",
+   "effect_without_code": "Stock slide (B on the ground, fixed duration).",
+   "evidence": "static",
+   "reimpl": "code",
+   "reimpl_note": "Several hooks in the player ground/slide behaviours.",
+   "library_entries": [
+    {
+     "entry": "Disable Slide on B-press on ground and state extension V3",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax,]",
+     "patches": [
+      {
+       "ntsc": "0x800A0238",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800038AC",
+       "cave_words": 22,
+       "pal": "0x800A0604",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x800A0130",
+       "pal_function_size": 4564,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Holdable Slide v2",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax, LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x8008DC2C",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003FA4",
+       "cave_words": 26,
+       "pal": "0x8008DE18",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8008DC70",
+       "pal_function_size": 592,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Slide Steer",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector, dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x8008DADC",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x8008DCC8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8008DC70",
+       "pal_function_size": 592,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x8008DBC8",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x8008DDB4",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8008DC70",
+       "pal_function_size": 592,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Fix Sliding on Steep Slopes",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x8008DD80",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x8008DF6C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8008DEC0",
+       "pal_function_size": 316,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Slide State Extension - Bad Transition Bugfix",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x80083A70",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800040B4",
+       "cave_words": 10,
+       "pal": "0x80083BB4",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80083B94",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800040DC",
+       "cave_words": 10,
+       "pal": "0x80083CD8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "No Tri-Jump Exit v2",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x80092D58",
+       "original_matches_ntsc_dol": null,
+       "kind": "inline-code",
+       "pal": "0x80093048",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80092FE0",
+       "pal_function_size": 208,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [],
+   "dependent_data": []
+  },
+  {
+   "id": "melee-revamp",
+   "name": "Melee weapons rework (hold B, Z switches style)",
+   "readme": "Z toggles Original and Reloaded melee weapon styles; hold B for the hitbox",
+   "kind": "both",
+   "effect_without_code": "Melee weapons work the stock way. Reloaded's SHADOW.MTP (the 158-clip motion pack, +7,480 bytes) is loaded by the stock state code; the library marks the pack as required by the new code, so some melee/jump clips may not match the stock states (not looked at in play). Ammo counts are DOL constants, unchanged.",
+   "evidence": "unverified",
+   "reimpl": "code",
+   "reimpl_note": "Eleven hooks and a modified motion pack; both halves are needed.",
+   "library_entries": [
+    {
+     "entry": "Melee Weapon Core Revamp v3",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x80067B5C",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x80067C84",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80067C34",
+       "pal_function_size": 112,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x8051A10C",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x8051B224",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x800C6344",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003AC4",
+       "cave_words": 18,
+       "pal": "0x800C672C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x800C6608",
+       "pal_function_size": 792,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80176E84",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003B0C",
+       "cave_words": 6,
+       "pal": "0x80177268",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80177268",
+       "pal_function_size": 356,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x8051A114",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x8051B22C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x800A8600",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003B24",
+       "cave_words": 24,
+       "pal": "0x800A89E8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x800A8998",
+       "pal_function_size": 364,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x8009F260",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003B84",
+       "cave_words": 28,
+       "pal": "0x8009F62C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8009F62C",
+       "pal_function_size": 40,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x800AA29C",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003BF4",
+       "cave_words": 24,
+       "pal": "0x800AA684",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x800AA684",
+       "pal_function_size": 68,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x800B39F8",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003C54",
+       "cave_words": 42,
+       "pal": "0x800B3DE0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x800B3CB0",
+       "pal_function_size": 484,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x800B3A20",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003CFC",
+       "cave_words": 40,
+       "pal": "0x800B3E08",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x800B3CB0",
+       "pal_function_size": 484,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x800B3A0C",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003D9C",
+       "cave_words": 42,
+       "pal": "0x800B3DF4",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x800B3CB0",
+       "pal_function_size": 484,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Melee Ammo Adjustments",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x8054D308",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x8054E410",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_int": 8,
+       "mod_value_int": 32,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x8051E8AC",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x8051F9CC",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_int": 6,
+       "mod_value_int": 18,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80547D54",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x80548E5C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_int": 4,
+       "mod_value_int": 12,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x8051F738",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x80520858",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_int": 4,
+       "mod_value_int": 12,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x8051F054",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x80520174",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_int": 6,
+       "mod_value_int": 18,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x8051F000",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x80520120",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_int": 6,
+       "mod_value_int": 18,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80559DEC",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x8055AEF4",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_int": 6,
+       "mod_value_int": 18,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x8054D2D8",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x8054E3E0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_int": 4,
+       "mod_value_int": 18,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [
+    "character/shadow.one",
+    "character/shadow2py.one",
+    "character/shadow2pmtlp.one"
+   ],
+   "dependent_data": [
+    {
+     "pattern": "character/shadow.one",
+     "files": 1,
+     "new": 0,
+     "changed": 1
+    },
+    {
+     "pattern": "character/shadow2py.one",
+     "files": 1,
+     "new": 0,
+     "changed": 1
+    },
+    {
+     "pattern": "character/shadow2pmtlp.one",
+     "files": 1,
+     "new": 0,
+     "changed": 1
+    }
+   ]
+  },
+  {
+   "id": "circuit-speed",
+   "name": "Cyber circuit speed control (A faster, B slower)",
+   "readme": "A and B change speed on the cyberspace circuits",
+   "kind": "code",
+   "effect_without_code": "Circuit speed is fixed as in the original.",
+   "evidence": "static",
+   "reimpl": "code",
+   "reimpl_note": "One hook reading pad state, patches one speed constant.",
+   "library_entries": [
+    {
+     "entry": "Circuit Speed Control v2",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax, LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x800763AC",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003904",
+       "cave_words": 36,
+       "pal": "0x800764E0",
+       "pal_via": "address-map",
+       "pal_status": "shape",
+       "pal_window": "13/13",
+       "pal_function": "0x800764C4",
+       "pal_function_size": 220,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [],
+   "dependent_data": []
+  },
+  {
+   "id": "vehicles",
+   "name": "Vehicle handling: cars, bikes, GUN mechs, Air Saucer",
+   "readme": "Cars/motorcycles accelerate with A taps; Air Saucers more mobile with a downward spike",
+   "kind": "both",
+   "effect_without_code": "Original vehicle physics and controls. Air Saucer speeds are DOL constants.",
+   "evidence": "static",
+   "reimpl": "code",
+   "reimpl_note": "Hooks in the vehicle update code plus a few constants.",
+   "library_entries": [
+    {
+     "entry": "CarType Vehicles Revamp r3",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x801BD8C0",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x801BDC60",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x801BDBA0",
+       "pal_function_size": 644,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x801BD3F4",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x801BD794",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x801BD694",
+       "pal_function_size": 616,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x801BDA58",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x801BDDF8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x801BDBA0",
+       "pal_function_size": 644,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x801BD928",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x801BDCC8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x801BDBA0",
+       "pal_function_size": 644,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x801BD92C",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x801BDCCC",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x801BDBA0",
+       "pal_function_size": 644,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Disable CarType Vehicle Drifting",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x801BD710",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x801BDAB0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x801BD8FC",
+       "pal_function_size": 676,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "GUNMech Physics Revamp",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x801ACF70",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x801AD310",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x801AD1D4",
+       "pal_function_size": 804,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x801ACF74",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x801AD314",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x801AD1D4",
+       "pal_function_size": 804,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x801ACCFC",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x801AD09C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x801AD024",
+       "pal_function_size": 432,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x801AE7B0",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x801AEB50",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x801AE994",
+       "pal_function_size": 1064,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Super AirSaucer v2",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x805F5984",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F6A2C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 250.0,
+       "mod_value_float": 8000.0,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x805F59A4",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F6A4C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 270.0,
+       "mod_value_float": 540.0,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x805F59B4",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F6A5C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 220.0,
+       "mod_value_float": 440.0,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x805F5944",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F69EC",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 100.0,
+       "mod_value_float": 200.0,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "AirSaucer Replace Second Jump with Stomp",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x801B177C",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003994",
+       "cave_words": 4,
+       "pal": "0x801B1B1C",
+       "pal_via": "address-map",
+       "pal_status": "shape",
+       "pal_window": "13/13",
+       "pal_function": "0x801B1AF4",
+       "pal_function_size": 100,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [],
+   "dependent_data": []
+  },
+  {
+   "id": "combat-balance",
+   "name": "Weapon, enemy and boss balance",
+   "readme": "(balance changes)",
+   "kind": "code",
+   "effect_without_code": "Original damage, health and timing values.",
+   "evidence": "static",
+   "reimpl": "constants",
+   "reimpl_note": "Mostly float words (health, damage, timers) in the DOL data; four entries change instructions (invulnerability frames, knockback, charged spears).",
+   "library_entries": [
+    {
+     "entry": "Chaos Blast Damage",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x80520200",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x80521320",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 12.0,
+       "mod_value_float": 36.0,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Instant HealUnit/BombUnit Server Respawn",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x805F99F8",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805FAAC0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 4.0,
+       "mod_value_float": 0.0,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "EscapePlane Stat Adjustment",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x802556A0",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x80255A24",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x802559F8",
+       "pal_function_size": 280,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x805F76C8",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F8750",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 800.0,
+       "mod_value_float": 2200.0,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x805F76C0",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F8748",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 600.0,
+       "mod_value_float": 1600.0,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x805F76BC",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F8744",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 400.0,
+       "mod_value_float": 1000.0,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x805F76B8",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F8740",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 200.0,
+       "mod_value_float": 300.0,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "EggBalloon Stat Adjustment",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x801468C4",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x80146CA8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80146C7C",
+       "pal_function_size": 320,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x805F45F8",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F56A0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 400.0,
+       "mod_value_float": 1100.0,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x805F45F0",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F5698",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 300.0,
+       "mod_value_float": 800.0,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x805F45EC",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F5694",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 200.0,
+       "mod_value_float": 500.0,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x805F45E8",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F5690",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 100.0,
+       "mod_value_float": 200.0,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "LaserRifle Damage Adjustment",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x80545F74",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x8054707C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 3.0,
+       "mod_value_float": 6.0,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "ElecCode Enemy Faster Movement Speed",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x805F4990",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F5A38",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 50.0,
+       "mod_value_float": 350.0,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Enemy AppearType WARP Faster Spawn",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x805F5510",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F65B8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 1.0,
+       "mod_value_float": 0.25,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x8017D4B0",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x8017D864",
+       "pal_via": "address-map",
+       "pal_status": "shape",
+       "pal_window": "13/13",
+       "pal_function": "0x8017D7C0",
+       "pal_function_size": 192,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x805F52E0",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F6388",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 1.0,
+       "mod_value_float": 0.25,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Devil Doom Ring Spawn Adjustment",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x805F9828",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805FA8F0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 600.0,
+       "mod_value_float": 240.0,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Global Lock-On Revamp v4",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax, LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x805F2000",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F30A0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 0.1,
+       "mod_value_float": 0.3,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x805F2004",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F30A4",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 0.0,
+       "mod_value_float": 0.175,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Cannon & Lock On Weapons No Knockback",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x8023D3B0",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x8023D734",
+       "pal_via": "address-map",
+       "pal_status": "shape",
+       "pal_window": "13/13",
+       "pal_function": "0x8023D524",
+       "pal_function_size": 608,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x8023BC50",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x8023BFD4",
+       "pal_via": "address-map",
+       "pal_status": "shape",
+       "pal_window": "13/13",
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "SuperShadow Always Has Fully Charged Spears while ChaosPowers Active",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x802F0D20",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x8000400C",
+       "cave_words": 14,
+       "pal": "0x802F1298",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x802F1194",
+       "pal_function_size": 808,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x802F0D94",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80004044",
+       "cave_words": 12,
+       "pal": "0x802F130C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x802F1194",
+       "pal_function_size": 808,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x802F0FFC",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x8000407C",
+       "cave_words": 12,
+       "pal": "0x802F1574",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x802F1504",
+       "pal_function_size": 176,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [],
+   "dependent_data": []
+  },
+  {
+   "id": "stage-fixes",
+   "name": "Stage and boss bug fixes",
+   "readme": "Bug fixes and oversights",
+   "kind": "both",
+   "effect_without_code": "The original bugs remain (for example the Armored Egg Pierrot model on Air Fleet, and coaster collision). Layouts made for the changed behaviour (Diablon hard layout, collision-trigger objects) run with the original behaviour.",
+   "evidence": "static",
+   "reimpl": "small-code",
+   "reimpl_note": "One or two instructions each.",
+   "library_entries": [
+    {
+     "entry": "Coaster/Zipline Fix Bad Collision v3",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x80133854",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x80133C38",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80133978",
+       "pal_function_size": 1140,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "SolidCollision Triggers are GroundCollision",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x8011D174",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x8011D55C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8011D55C",
+       "pal_function_size": 1248,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "EggPierrot Stage Fix",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x80289844",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x80289C38",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80289C0C",
+       "pal_function_size": 272,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Restore EggBreaker0411 Digitize Effect",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x802AB39C",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x802AB7A8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x802AB744",
+       "pal_function_size": 176,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x802AB584",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x802AB990",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x802AB92C",
+       "pal_function_size": 184,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Disable Diablon Warp Player Function",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x802D3934",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x802D3E8C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x802D3E8C",
+       "pal_function_size": 416,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Devil Doom Boss Has No Awake Music",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x800A4FEC",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003E64",
+       "cave_words": 8,
+       "pal": "0x800A53D4",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x800A53D4",
+       "pal_function_size": 92,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x800A4D80",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003E84",
+       "cave_words": 8,
+       "pal": "0x800A5168",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x800A50C4",
+       "pal_function_size": 300,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [],
+   "dependent_data": []
+  },
+  {
+   "id": "music",
+   "name": "Restored music: ending tracks and Lava Shelter Egg Dealer remix",
+   "readme": "Unused tracks added to boss fight and endings",
+   "kind": "both",
+   "effect_without_code": "Endings and the Lava Shelter boss use the original tracks. sng_vox07.adx and sng_stg0613.adx are never opened (the code patches a digit inside the stock track-name strings per stage); sng_vox06.adx is Reloaded's replacement of an existing track and is played wherever the stock game plays vox06.",
+   "evidence": "static",
+   "reimpl": "code",
+   "reimpl_note": "Digit patches of three name strings by stage id; a native file-name table could do the same.",
+   "library_entries": [
+    {
+     "entry": "Music Update Ending Tracks and Lava Shelter Boss",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector, dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x801D3B50",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003664",
+       "cave_words": 28,
+       "pal": "0x801D3EF0",
+       "pal_via": "address-map",
+       "pal_status": "shape",
+       "pal_window": "13/13",
+       "pal_function": "0x801D3EA8",
+       "pal_function_size": 220,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [
+    "sng_vox06.adx",
+    "sng_vox07.adx",
+    "sng_stg0613.adx"
+   ],
+   "dependent_data": [
+    {
+     "pattern": "sng_vox06.adx",
+     "files": 1,
+     "new": 0,
+     "changed": 1
+    },
+    {
+     "pattern": "sng_vox07.adx",
+     "files": 1,
+     "new": 1,
+     "changed": 0
+    },
+    {
+     "pattern": "sng_stg0613.adx",
+     "files": 1,
+     "new": 1,
+     "changed": 0
+    }
+   ]
+  },
+  {
+   "id": "unused-dialogue",
+   "name": "Restored dialogue, Last Way idle lines, new voice entries",
+   "readme": "Some unused dialogue restored",
+   "kind": "both",
+   "effect_without_code": "Voice entries, subtitles and event files load and play where the stock code asks for them. The table of four idle-line ids in the DOL (NTSC-U 0x80509914) keeps the stock ids, so the restored lines Reloaded points it at are never chosen.",
+   "evidence": "static",
+   "reimpl": "files-only",
+   "reimpl_note": "Only the four-word id table needs code; the rest is files.",
+   "library_entries": [
+    {
+     "entry": "The Last Way idle lines",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[LimblessVector]",
+     "patches": [
+      {
+       "ntsc": "0x80509914",
+       "original_matches_ntsc_dol": null,
+       "kind": "data",
+       "pal": "0x8050AA04",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [
+    "@afs/PRS_VOICE_E/*",
+    "fonts/*",
+    "event/*"
+   ],
+   "dependent_data": [
+    {
+     "pattern": "afs/PRS_VOICE_E/*",
+     "resolved": "outside files/ (mod afs/ or options/ folder)"
+    },
+    {
+     "pattern": "fonts/*",
+     "files": 269,
+     "new": 0,
+     "changed": 268
+    },
+    {
+     "pattern": "event/*",
+     "files": 138,
+     "new": 0,
+     "changed": 138
+    }
+   ]
+  },
+  {
+   "id": "widescreen",
+   "name": "Widescreen and 4:3 interface/projection code",
+   "readme": "Widescreen and 4:3 ratio options",
+   "kind": "both",
+   "effect_without_code": "The mod's UI layout files (gncp) are drawn on this build's own widescreen path; the Dolphin-style projection patches are absent. The layouts were adjusted for Reloaded's code, so HUD placement may differ (not compared pixel by pixel).",
+   "evidence": "unverified",
+   "reimpl": "n/a",
+   "reimpl_note": "This build has its own aspect handling; the code is not wanted.",
+   "library_entries": [
+    {
+     "entry": "Advanced Full Widescreen v5 with UI/GNCP Code",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax, Dolphin Wiki]",
+     "patches": [
+      {
+       "ntsc": "0x805F67A0",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F7828",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 120.0,
+       "mod_value_float": -15.0,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x805F67A8",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F7830",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 520.0,
+       "mod_value_float": 660.0,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x805F67E0",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F7868",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 560.0,
+       "mod_value_float": 700.0,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x805F67D0",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F7858",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 84.0,
+       "mod_value_float": -56.0,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x805F67F0",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F7878",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 78.0,
+       "mod_value_float": -62.0,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80343228",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x80344030",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80344030",
+       "pal_function_size": 288,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x804AB5CC",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x804AC62C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x805F7D4C",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F8DD4",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 2.0,
+       "mod_value_float": 2.75,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80519F60",
+       "original_matches_ntsc_dol": null,
+       "kind": "data",
+       "pal": "0x8051B078",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80036764",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x80036764",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x800366D4",
+       "pal_function_size": 156,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x8036328C",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x803640D4",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80364024",
+       "pal_function_size": 196,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80363180",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x80363FC8",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80363F48",
+       "pal_function_size": 152,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x800BCA54",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x800BCE3C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x800BCCDC",
+       "pal_function_size": 508,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80345D98",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x80346BA0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80346A94",
+       "pal_function_size": 272,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x800BC8D8",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003EE4",
+       "cave_words": 16,
+       "pal": "0x800BCCC0",
+       "pal_via": "address-map",
+       "pal_status": "shape",
+       "pal_window": "13/13",
+       "pal_function": "0x800BCBA4",
+       "pal_function_size": 880,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x800622A8",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x800623D0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8006227C",
+       "pal_function_size": 552,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80062300",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x80062428",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8006227C",
+       "pal_function_size": 552,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x8049475C",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003F24",
+       "cave_words": 6,
+       "pal": "0x804957AC",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x804956F4",
+       "pal_function_size": 1464,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80484334",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80003F3C",
+       "cave_words": 4,
+       "pal": "0x80485384",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80485318",
+       "pal_function_size": 2020,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [
+    "csdFiles/*.gncp",
+    "csdFiles/pause/*",
+    "@options/workspace-widescreen-shadowth-overrides-*"
+   ],
+   "dependent_data": [
+    {
+     "pattern": "csdFiles/*.gncp",
+     "files": 25,
+     "new": 0,
+     "changed": 25
+    },
+    {
+     "pattern": "csdFiles/pause/*",
+     "files": 20,
+     "new": 0,
+     "changed": 20
+    },
+    {
+     "pattern": "options/workspace-widescreen-shadowth-overrides-*",
+     "resolved": "outside files/ (mod afs/ or options/ folder)"
+    }
+   ]
+  },
+  {
+   "id": "bloom",
+   "name": "Reduced bloom",
+   "readme": "Bloom effect reduced",
+   "kind": "code",
+   "effect_without_code": "Original bloom strength; this build has its own bloom setting in the Options menu.",
+   "evidence": "static",
+   "reimpl": "constants",
+   "reimpl_note": "One float word.",
+   "library_entries": [
+    {
+     "entry": "Bloom Reduction (Reloaded Default)",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[TheHatedGravity]",
+     "patches": [
+      {
+       "ntsc": "0x8056AC30",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x8056BCF0",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "stock_value_float": 0.95,
+       "mod_value_float": 0.375,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [],
+   "dependent_data": []
+  },
+  {
+   "id": "visual-fixes",
+   "name": "Model, texture, movie-frame and palette fixes",
+   "readme": "Visual fixes (Maria's eyes, HP bar pixel, Chaos eye glow, Bigfoot glare, ring inhibitors, Commander hands, emerald colour, stage palettes)",
+   "kind": "data",
+   "effect_without_code": "Works as data. mc_icon01.tp, mc_bunner_e.tp (save icon/banner) and opening.bnr are memory-card/disc banner art that this build's own save screen does not show.",
+   "evidence": "static",
+   "reimpl": "files-only",
+   "reimpl_note": "Nothing to do.",
+   "library_entries": [],
+   "dependent_data_paths": [
+    "character/*",
+    "common/CommonEffect.one",
+    "enemy/*",
+    "event/*",
+    "stg*/*_texCM.one",
+    "stg_cmn_gdt.one",
+    "FadeLogo.txd",
+    "mc_*.tp",
+    "opening.bnr"
+   ],
+   "dependent_data": [
+    {
+     "pattern": "character/*",
+     "files": 4,
+     "new": 0,
+     "changed": 4
+    },
+    {
+     "pattern": "common/CommonEffect.one",
+     "files": 1,
+     "new": 0,
+     "changed": 1
+    },
+    {
+     "pattern": "enemy/*",
+     "files": 3,
+     "new": 0,
+     "changed": 3
+    },
+    {
+     "pattern": "event/*",
+     "files": 138,
+     "new": 0,
+     "changed": 138
+    },
+    {
+     "pattern": "stg*/*_texCM.one",
+     "files": 7,
+     "new": 0,
+     "changed": 7
+    },
+    {
+     "pattern": "stg_cmn_gdt.one",
+     "files": 1,
+     "new": 0,
+     "changed": 1
+    },
+    {
+     "pattern": "FadeLogo.txd",
+     "files": 1,
+     "new": 0,
+     "changed": 1
+    },
+    {
+     "pattern": "mc_*.tp",
+     "files": 2,
+     "new": 0,
+     "changed": 2
+    },
+    {
+     "pattern": "opening.bnr",
+     "files": 1,
+     "new": 0,
+     "changed": 1
+    }
+   ]
+  },
+  {
+   "id": "save-identity",
+   "name": "Separate save file id and save description text",
+   "readme": "(compatibility)",
+   "kind": "code",
+   "effect_without_code": "Not applicable: this build uses its own save location and wording.",
+   "evidence": "static",
+   "reimpl": "n/a",
+   "reimpl_note": "Not wanted.",
+   "library_entries": [
+    {
+     "entry": "Separate Save File - GUPR8P",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x805F85E0",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x805F9668",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Save Data Description Update",
+     "file": "1_Reloaded_MCM.txt",
+     "authors": "[BlazinZzetti]",
+     "patches": [
+      {
+       "ntsc": "0x804FB964",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x804FCA34",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x804FB968",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x804FCA38",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x804FB96C",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x804FCA3C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x804FB970",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x804FCA40",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x804FB99C",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x804FCA6C",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x804FB9A0",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x804FCA70",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x804FB9A4",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x804FCA74",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x804FB9A8",
+       "original_matches_ntsc_dol": true,
+       "kind": "data",
+       "pal": "0x804FCA78",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "0/0",
+       "pal_value_equals_ntsc": true,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [],
+   "dependent_data": []
+  },
+  {
+   "id": "optional-battle-and-colors",
+   "name": "2P and optional libraries shipped with the mod",
+   "readme": "(2P compatibility)",
+   "kind": "code",
+   "effect_without_code": "Not applied: original jump-ball colours, radial blur in Westopolis, no BATTLE characters in 1P.",
+   "evidence": "static",
+   "reimpl": "code",
+   "reimpl_note": "Library entries from the common MCM file, also present in the Reloaded DOL.",
+   "library_entries": [
+    {
+     "entry": "2P Optionals Unique Android JumpBall Colors",
+     "file": "0_Common_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x800A5AB0",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800034AC",
+       "cave_words": 20,
+       "pal": "0x800A5E98",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x800A5E40",
+       "pal_function_size": 476,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80087190",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x800034FC",
+       "cave_words": 20,
+       "pal": "0x800872D4",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x800872A8",
+       "pal_function_size": 96,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x80080734",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x8000354C",
+       "cave_words": 20,
+       "pal": "0x80080878",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x80080814",
+       "pal_function_size": 180,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Remove Radial Blur for Westopolis (Only for Reloaded Do NOT use with 2PReloaded or 2PMod)",
+     "file": "1_zNotCompat_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x801FA2DC",
+       "original_matches_ntsc_dol": true,
+       "kind": "branch-to-cave",
+       "cave": "0x80004104",
+       "cave_words": 8,
+       "pal": "0x801FA5EC",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x801FA5EC",
+       "pal_function_size": 592,
+       "confidence": "high"
+      }
+     ]
+    },
+    {
+     "entry": "Play as BATTLE Characters in 1P Mode v2",
+     "file": "1_zNotCompat_Reloaded_MCM.txt",
+     "authors": "[dreamsyntax]",
+     "patches": [
+      {
+       "ntsc": "0x8017707C",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x80177430",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x801773CC",
+       "pal_function_size": 324,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x801770F4",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x801774A8",
+       "pal_via": "address-map",
+       "pal_status": "shape",
+       "pal_window": "13/13",
+       "pal_function": "0x801773CC",
+       "pal_function_size": 324,
+       "confidence": "high"
+      },
+      {
+       "ntsc": "0x8040DB30",
+       "original_matches_ntsc_dol": true,
+       "kind": "inline-code",
+       "pal": "0x8040EB80",
+       "pal_via": "address-map",
+       "pal_status": "exact",
+       "pal_window": "13/13",
+       "pal_function": "0x8040EA6C",
+       "pal_function_size": 336,
+       "confidence": "high"
+      }
+     ]
+    }
+   ],
+   "dependent_data_paths": [],
+   "dependent_data": []
+  }
+ ],
+ "gecko": [
+  {
+   "name": "No Idle ChaosPowers Music v2",
+   "authors": "dreamsyntax",
+   "section": "Preference Codes",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x800A4FF0",
+     "pal": "0x800A53D8",
+     "pal_status": "shape",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x800A4D84",
+     "pal": "0x800A516C",
+     "pal_status": "shape",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    }
+   ],
+   "related_feature": null
+  },
+  {
+   "name": "Mute music and cutscenes",
+   "authors": "",
+   "section": "Preference Codes",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x8058F99C",
+     "pal": null,
+     "pal_status": "none",
+     "pal_window": "0/0",
+     "region": "bss-or-heap (not in the DOL image)"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x8058FA90",
+     "pal": null,
+     "pal_status": "none",
+     "pal_window": "0/0",
+     "region": "bss-or-heap (not in the DOL image)"
+    }
+   ],
+   "related_feature": null
+  },
+  {
+   "name": "Skip Loading Any Events In Story Mode / Last Story",
+   "authors": "dreamsyntax",
+   "section": "Preference Codes",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x8025D460",
+     "pal": "0x8025D854",
+     "pal_status": "exact",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    }
+   ],
+   "related_feature": null
+  },
+  {
+   "name": "Allow Resetting Timer in All Modes",
+   "authors": "dreamsyntax",
+   "section": "Preference Codes",
+   "writes": [
+    {
+     "kind": "asm-insert",
+     "ntsc": "0x80206238",
+     "pal": "0x802065BC",
+     "pal_status": "shape",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    }
+   ],
+   "related_feature": null
+  },
+  {
+   "name": "Race Mode ON",
+   "authors": "BlazinZzetti",
+   "section": "Preference Codes",
+   "writes": [
+    {
+     "kind": "write8",
+     "ntsc": "0x80577B2D",
+     "pal": null,
+     "pal_status": "none",
+     "pal_window": "0/0",
+     "region": "bss-or-heap (not in the DOL image)"
+    }
+   ],
+   "related_feature": null
+  },
+  {
+   "name": "Race Mode OFF",
+   "authors": "BlazinZzetti",
+   "section": "Preference Codes",
+   "writes": [
+    {
+     "kind": "write8",
+     "ntsc": "0x80577B2D",
+     "pal": null,
+     "pal_status": "none",
+     "pal_window": "0/0",
+     "region": "bss-or-heap (not in the DOL image)"
+    }
+   ],
+   "related_feature": null
+  },
+  {
+   "name": "No Subtitles",
+   "authors": "LimblessVector",
+   "section": "Preference Codes",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x805E1B9C",
+     "pal": null,
+     "pal_status": "none",
+     "pal_window": "0/0",
+     "region": "bss-or-heap (not in the DOL image)"
+    }
+   ],
+   "related_feature": null
+  },
+  {
+   "name": "No HUD",
+   "authors": "BlazinZzetti",
+   "section": "Preference Codes",
+   "writes": [
+    {
+     "kind": "write8",
+     "ntsc": "0x8057D7E8",
+     "pal": null,
+     "pal_status": "none",
+     "pal_window": "0/0",
+     "region": "bss-or-heap (not in the DOL image)"
+    }
+   ],
+   "related_feature": null
+  },
+  {
+   "name": "Restore Partner Intro Cutscene Behavior",
+   "authors": "dreamsyntax",
+   "section": "Preference Codes",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x80073E10",
+     "pal": "0x80073F38",
+     "pal_status": "exact",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    }
+   ],
+   "related_feature": "partner-intro"
+  },
+  {
+   "name": "All Partners Can Homing Attack",
+   "authors": "dreamsyntax",
+   "section": "Preference Codes",
+   "writes": [
+    {
+     "kind": "write8",
+     "ntsc": "0x804F1894",
+     "pal": "0x804F2964",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write8",
+     "ntsc": "0x804F18C0",
+     "pal": "0x804F2990",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write8",
+     "ntsc": "0x804F18EC",
+     "pal": "0x804F29BC",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write8",
+     "ntsc": "0x804F1918",
+     "pal": "0x804F29E8",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write8",
+     "ntsc": "0x804F1944",
+     "pal": "0x804F2A14",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write8",
+     "ntsc": "0x804F1970",
+     "pal": "0x804F2A40",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write8",
+     "ntsc": "0x804F199C",
+     "pal": "0x804F2A6C",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write8",
+     "ntsc": "0x804F19C8",
+     "pal": "0x804F2A98",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write8",
+     "ntsc": "0x804F19C9",
+     "pal": "0x804F2A98",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    }
+   ],
+   "related_feature": null
+  },
+  {
+   "name": "Restore Original Escape Pod Health in Air Fleet",
+   "authors": "dreamsyntax",
+   "section": "Preference Codes",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x805F76C8",
+     "pal": "0x805F8750",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x805F76C0",
+     "pal": "0x805F8748",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x805F76BC",
+     "pal": "0x805F8744",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x805F76B8",
+     "pal": "0x805F8740",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    }
+   ],
+   "related_feature": "combat-balance"
+  },
+  {
+   "name": "Invuln/Recovery Adjustment",
+   "authors": "dreamsyntax",
+   "section": "Preference Codes",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x80079028",
+     "pal": "0x8007915C",
+     "pal_status": "exact",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x8007CC28",
+     "pal": "0x8007CD5C",
+     "pal_status": "exact",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x8007CC98",
+     "pal": "0x8007CDCC",
+     "pal_status": "exact",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x8007CCA0",
+     "pal": "0x8007CDD4",
+     "pal_status": "exact",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    }
+   ],
+   "related_feature": "combat-balance"
+  },
+  {
+   "name": "Restore Multiplayer (not recommended)",
+   "authors": "dreamsyntax",
+   "section": "Preference Codes",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x8017707C",
+     "pal": "0x80177430",
+     "pal_status": "exact",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x801770F4",
+     "pal": "0x801774A8",
+     "pal_status": "shape",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    }
+   ],
+   "related_feature": "optional-battle-and-colors"
+  },
+  {
+   "name": "Restore Skid (not recommended)",
+   "authors": "dreamsyntax",
+   "section": "Preference Codes",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x80083338",
+     "pal": "0x8008347C",
+     "pal_status": "exact",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    }
+   ],
+   "related_feature": "player-tuning"
+  },
+  {
+   "name": "Restore Original Bloom (not recommended)",
+   "authors": "TheHatedGravity",
+   "section": "Preference Codes",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x8056AC30",
+     "pal": "0x8056BCF0",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    }
+   ],
+   "related_feature": "bloom"
+  },
+  {
+   "name": "Restore Car Type Vehicle Physics (not recommended)",
+   "authors": "dreamsyntax",
+   "section": "Preference Codes",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x801BD8C0",
+     "pal": "0x801BDC60",
+     "pal_status": "exact",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x801BD3F4",
+     "pal": "0x801BD794",
+     "pal_status": "exact",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x801BDA58",
+     "pal": "0x801BDDF8",
+     "pal_status": "exact",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x801BD928",
+     "pal": "0x801BDCC8",
+     "pal_status": "exact",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x801BD92C",
+     "pal": "0x801BDCCC",
+     "pal_status": "exact",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x801BD710",
+     "pal": "0x801BDAB0",
+     "pal_status": "exact",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    }
+   ],
+   "related_feature": "vehicles"
+  },
+  {
+   "name": "Restore Air Saucer Physics (not recommended)",
+   "authors": "dreamsyntax",
+   "section": "Preference Codes",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x805F5984",
+     "pal": "0x805F6A2C",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x805F59A4",
+     "pal": "0x805F6A4C",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x805F59B4",
+     "pal": "0x805F6A5C",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x805F5944",
+     "pal": "0x805F69EC",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x801B177C",
+     "pal": "0x801B1B1C",
+     "pal_status": "shape",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    }
+   ],
+   "related_feature": "vehicles"
+  },
+  {
+   "name": "Replace Air Saucer Stomp with Double Jump (not recommended)",
+   "authors": "dreamsyntax",
+   "section": "Preference Codes",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x801B177C",
+     "pal": "0x801B1B1C",
+     "pal_status": "shape",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    }
+   ],
+   "related_feature": "vehicles"
+  },
+  {
+   "name": "Restore Cannon & Lock On Weapons Knockback (not recommended)",
+   "authors": "dreamsyntax",
+   "section": "Preference Codes",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x8023D3B0",
+     "pal": "0x8023D734",
+     "pal_status": "shape",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x8023BC50",
+     "pal": "0x8023BFD4",
+     "pal_status": "shape",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    }
+   ],
+   "related_feature": "combat-balance"
+  },
+  {
+   "name": "Moonjump",
+   "authors": "LimblessVector",
+   "section": "Cheats",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x805F2BD8",
+     "pal": "0x805F3C80",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x805F2BD8",
+     "pal": "0x805F3C80",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    }
+   ],
+   "related_feature": null
+  },
+  {
+   "name": "Expert CC Stop",
+   "authors": "LimblessVector",
+   "section": "Cheats",
+   "writes": [
+    {
+     "kind": "write8",
+     "ntsc": "0x8057D750",
+     "pal": null,
+     "pal_status": "none",
+     "pal_window": "0/0",
+     "region": "bss-or-heap (not in the DOL image)"
+    }
+   ],
+   "related_feature": null
+  },
+  {
+   "name": "1-hit kill Chaos Blast Damage",
+   "authors": "dreamsyntax",
+   "section": "Cheats",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x80520200",
+     "pal": "0x80521320",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    }
+   ],
+   "related_feature": null
+  },
+  {
+   "name": "No Ammo for Melee Weapons",
+   "authors": "dreamsyntax",
+   "section": "Cheats",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x8023D60C",
+     "pal": "0x8023D990",
+     "pal_status": "shape",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    }
+   ],
+   "related_feature": null
+  },
+  {
+   "name": "Instant Lock-On and Shot Interval",
+   "authors": "dreamsyntax",
+   "section": "Cheats",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x805F2004",
+     "pal": "0x805F30A4",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    }
+   ],
+   "related_feature": null
+  },
+  {
+   "name": "Fill Hero Meter Z+R",
+   "authors": "Zzetti",
+   "section": "Cheats",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x805766C8",
+     "pal": null,
+     "pal_status": "none",
+     "pal_window": "0/0",
+     "region": "bss-or-heap (not in the DOL image)"
+    }
+   ],
+   "related_feature": null
+  },
+  {
+   "name": "Fill Dark Meter Z+L",
+   "authors": "Zzetti",
+   "section": "Cheats",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x805766D4",
+     "pal": null,
+     "pal_status": "none",
+     "pal_window": "0/0",
+     "region": "bss-or-heap (not in the DOL image)"
+    }
+   ],
+   "related_feature": null
+  },
+  {
+   "name": "Clear Both Meters with Z + L + R",
+   "authors": "Zzetti",
+   "section": "Cheats",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x805766C8",
+     "pal": null,
+     "pal_status": "none",
+     "pal_window": "0/0",
+     "region": "bss-or-heap (not in the DOL image)"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x805766D4",
+     "pal": null,
+     "pal_status": "none",
+     "pal_window": "0/0",
+     "region": "bss-or-heap (not in the DOL image)"
+    }
+   ],
+   "related_feature": null
+  },
+  {
+   "name": "SuperShadow TestVer v0.7",
+   "authors": "dreamsyntax",
+   "section": "Cheats",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x8017711C",
+     "pal": "0x801774D0",
+     "pal_status": "exact",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x805F077C",
+     "pal": null,
+     "pal_status": "none",
+     "pal_window": "0/0",
+     "region": "bss-or-heap (not in the DOL image)"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x805F936C",
+     "pal": "0x805FA3F4",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x805F2720",
+     "pal": "0x805F37C0",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    },
+    {
+     "kind": "branch",
+     "ntsc": "0x800AF2E4",
+     "pal": "0x800AF6CC",
+     "pal_status": "exact",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    },
+    {
+     "kind": "asm-insert",
+     "ntsc": "0x800A860C",
+     "pal": "0x800A89F4",
+     "pal_status": "exact",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    },
+    {
+     "kind": "asm-insert",
+     "ntsc": "0x802EB21C",
+     "pal": "0x802EB794",
+     "pal_status": "exact",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    }
+   ],
+   "related_feature": null
+  },
+  {
+   "name": "Jump Ball Color Switch v2",
+   "authors": "dreamsyntax",
+   "section": "Cheats",
+   "writes": [
+    {
+     "kind": "asm-insert",
+     "ntsc": "0x800A5AB0",
+     "pal": "0x800A5E98",
+     "pal_status": "exact",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    },
+    {
+     "kind": "asm-insert",
+     "ntsc": "0x80080734",
+     "pal": "0x80080878",
+     "pal_status": "exact",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    }
+   ],
+   "related_feature": null
+  },
+  {
+   "name": "Playable cutscenes WIP 1",
+   "authors": "LimblessVector",
+   "section": "Cheats",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x805F4E54",
+     "pal": "0x805F5EFC",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x8057D6BC",
+     "pal": null,
+     "pal_status": "none",
+     "pal_window": "0/0",
+     "region": "bss-or-heap (not in the DOL image)"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x8057D768",
+     "pal": null,
+     "pal_status": "none",
+     "pal_window": "0/0",
+     "region": "bss-or-heap (not in the DOL image)"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x80570B88",
+     "pal": null,
+     "pal_status": "none",
+     "pal_window": "0/0",
+     "region": "bss-or-heap (not in the DOL image)"
+    },
+    {
+     "kind": "write32",
+     "ntsc": "0x8057D7E8",
+     "pal": null,
+     "pal_status": "none",
+     "pal_window": "0/0",
+     "region": "bss-or-heap (not in the DOL image)"
+    }
+   ],
+   "related_feature": null
+  },
+  {
+   "name": "Shadow Dab",
+   "authors": "LimblessVector",
+   "section": "Cheats",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x800B5298",
+     "pal": "0x800B5680",
+     "pal_status": "exact",
+     "pal_window": "13/13",
+     "region": "dol-image"
+    }
+   ],
+   "related_feature": null
+  },
+  {
+   "name": "Unlimited Wallrun Distance",
+   "authors": "dreamsyntax",
+   "section": "Cheats",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x805F2950",
+     "pal": "0x805F39F8",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    }
+   ],
+   "related_feature": null
+  },
+  {
+   "name": "Unlimited Wallcling Time",
+   "authors": "dreamsyntax",
+   "section": "Cheats",
+   "writes": [
+    {
+     "kind": "write32",
+     "ntsc": "0x805F2960",
+     "pal": "0x805F3A08",
+     "pal_status": "exact",
+     "pal_window": "0/0",
+     "region": "dol-image"
+    }
+   ],
+   "related_feature": null
+  }
+ ],
+ "unexplained_dol_diff_ranges": []
+}

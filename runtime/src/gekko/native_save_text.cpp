@@ -130,6 +130,35 @@ bool glyph_codes(const std::vector<u8>& met, std::set<u32>& codes, std::string& 
     return true;
 }
 
+// The message ids this file names are positions in the PAL tables: Save_*.fnt 80-126 (all six languages share these
+// keys) and Advertise_*.fnt 346-347. A table from another disc or a mod can hold one message more or fewer before
+// them (the NTSC-U Save and Advertise tables lack key 5489100, so every later position is one off), so a position
+// is resolved through the key it carries on the PAL disc. On the PAL tables this is the position itself.
+constexpr u32 kPalSaveKeys[47] = {
+    6012100u, 6013100u, 6014100u, 6015100u, 6016100u, 6017100u, 6018100u, 6019100u, 6020100u, 6021100u,
+    6022100u, 6023100u, 6024100u, 6025100u, 6026100u, 6027100u, 6028100u, 6029100u, 6030100u, 6031100u,
+    6032100u, 6033100u, 6034100u, 6035100u, 6036100u, 6037100u, 6038100u, 6039100u, 6040100u, 6041100u,
+    6042100u, 6043100u, 6044100u, 6045100u, 6046100u, 6047100u, 6048100u, 6049100u, 6051100u, 6052100u,
+    6053100u, 6054100u, 6055100u, 6056100u, 6057100u, 6058100u, 6059100u};
+
+u32 pal_key_of(u32 id) noexcept {
+    if (id >= 80u && id <= 126u) return kPalSaveKeys[id - 80u];
+    if (id == 346u) return 5414100u;  // Advertise: ON
+    if (id == 347u) return 5415100u;  // Advertise: OFF
+    return 0u;
+}
+
+// The position of PAL message `id` in `table`, or -1 when the table does not carry that message.
+std::ptrdiff_t resolve(const Table& table, u32 id) {
+    const u32 key = pal_key_of(id);
+    const auto key_at = [&](std::size_t i) { return load_le32(table.entries[i].data() + 4u); };
+    if (key == 0u) return id < table.entries.size() ? static_cast<std::ptrdiff_t>(id) : -1;
+    if (id < table.entries.size() && key_at(id) == key) return static_cast<std::ptrdiff_t>(id);
+    for (std::size_t i = 0; i < table.entries.size(); ++i)
+        if (key_at(i) == key) return static_cast<std::ptrdiff_t>(i);
+    return -1;
+}
+
 }  // namespace
 
 const std::vector<Message>& pc_english_messages() {
@@ -173,7 +202,7 @@ const std::vector<Message>& pc_english_messages() {
 }
 
 namespace {
-#include "pc_save_texts.inc"  // kPcSaveTexts: {suffix, id, UTF-8 text}, generated from tools/options_menu_sim/save_text
+#include "pc_save_texts.inc"  // kPcSaveTexts: {suffix, id, UTF-8 text}, generated from tools/save_text
 }  // namespace
 
 const std::vector<Message>& pc_messages(std::string_view suffix) {
@@ -206,8 +235,9 @@ bool rewrite_table(const std::vector<u8>& table_bytes, const std::vector<std::ve
     for (const std::vector<u8>& list : glyph_lists)
         if (!glyph_codes(list, glyphs, error)) return false;
     for (const Message& message : messages) {
-        if (message.id >= table.texts.size()) {
-            error = "message " + std::to_string(message.id) + " is outside the table";
+        const std::ptrdiff_t at = resolve(table, message.id);
+        if (at < 0) {
+            error = "message " + std::to_string(message.id) + " is not in the table";
             return false;
         }
         std::u16string text = utf16_of(message.text);
@@ -218,7 +248,7 @@ bool rewrite_table(const std::vector<u8>& table_bytes, const std::vector<std::ve
                 return false;
             }
         }
-        table.texts[message.id] = std::move(text);
+        table.texts[static_cast<std::size_t>(at)] = std::move(text);
     }
     out = serialize(table);
     return true;
@@ -230,11 +260,12 @@ bool rewordings_of(const std::vector<u8>& save_table, const std::vector<Message>
     if (!parse(save_table, table, error)) return false;
     out.clear();
     for (const Message& message : messages) {
-        if (message.id >= table.texts.size()) {
-            error = "message " + std::to_string(message.id) + " is outside the table";
+        const std::ptrdiff_t at = resolve(table, message.id);
+        if (at < 0) {
+            error = "message " + std::to_string(message.id) + " is not in the table";
             return false;
         }
-        out.push_back(Rewording{table.texts[message.id], utf16_of(message.text)});
+        out.push_back(Rewording{table.texts[static_cast<std::size_t>(at)], utf16_of(message.text)});
     }
     return true;
 }
@@ -271,21 +302,6 @@ bool reword_table(const std::vector<u8>& table_bytes, const std::vector<std::vec
     return true;
 }
 
-bool replace_texts(const std::vector<u8>& table_bytes, const std::vector<std::pair<u32, std::u16string>>& texts,
-                   std::vector<u8>& out, std::string& error) {
-    Table table;
-    if (!parse(table_bytes, table, error)) return false;
-    for (const auto& [index, text] : texts) {
-        if (index >= table.texts.size()) {
-            error = "message " + std::to_string(index) + " is outside the table";
-            return false;
-        }
-        table.texts[index] = text;
-    }
-    out = serialize(table);
-    return true;
-}
-
 bool texts_of(const std::vector<u8>& table_bytes, std::vector<std::u16string>& out, std::string& error) {
     Table table;
     if (!parse(table_bytes, table, error)) return false;
@@ -296,55 +312,11 @@ bool texts_of(const std::vector<u8>& table_bytes, std::vector<std::u16string>& o
 bool message_text(const std::vector<u8>& table_bytes, u32 id, std::u16string& text) {
     Table table;
     std::string error;
-    if (!parse(table_bytes, table, error) || id >= table.texts.size()) return false;
-    text = table.texts[id];
-    return true;
-}
-
-bool insert_texts(const std::vector<u8>& table_bytes, const std::vector<std::pair<u32, std::u16string>>& texts,
-                  u32 template_id, std::vector<u8>& out, std::string& error) {
-    Table table;
     if (!parse(table_bytes, table, error)) return false;
-    const auto key_of = [](const std::array<u8, kEntryBytes>& e) { return load_le32(e.data() + 4u); };
-    const auto find_key = [&](u32 key) -> std::ptrdiff_t {
-        for (std::size_t i = 0; i < table.entries.size(); ++i)
-            if (key_of(table.entries[i]) == key) return static_cast<std::ptrdiff_t>(i);
-        return -1;
-    };
-    const std::ptrdiff_t model = find_key(template_id * 1000u + 100u);
-    if (model < 0) {
-        error = "the template message " + std::to_string(template_id) + " is not in the table";
-        return false;
-    }
-    for (const auto& [id, text] : texts) {
-        const u32 key = id * 1000u + 100u;
-        if (find_key(key) >= 0) {
-            error = "message " + std::to_string(id) + " already exists";
-            return false;
-        }
-        // The game binary-searches the keys: insert in order.
-        std::size_t at = 0;
-        while (at < table.entries.size() && key_of(table.entries[at]) < key) ++at;
-        std::array<u8, kEntryBytes> entry = table.entries[static_cast<std::size_t>(model)];
-        store_le32(entry.data() + 4u, key);
-        table.entries.insert(table.entries.begin() + static_cast<std::ptrdiff_t>(at), entry);
-        table.texts.insert(table.texts.begin() + static_cast<std::ptrdiff_t>(at), text);
-    }
-    out = serialize(table);
+    const std::ptrdiff_t at = resolve(table, id);
+    if (at < 0) return false;
+    text = table.texts[static_cast<std::size_t>(at)];
     return true;
-}
-
-bool text_by_id(const std::vector<u8>& table_bytes, u32 id, std::u16string& text) {
-    Table table;
-    std::string error;
-    if (!parse(table_bytes, table, error)) return false;
-    for (std::size_t i = 0; i < table.entries.size(); ++i) {
-        if (load_le32(table.entries[i].data() + 4u) == id * 1000u + 100u) {
-            text = table.texts[i];
-            return true;
-        }
-    }
-    return false;
 }
 
 }  // namespace gekko::save_text

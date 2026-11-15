@@ -156,6 +156,11 @@ bool Renderer::calibrate_unorm_resolve(DXGI_FORMAT output_format, std::string* w
         const float clear_colour[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         list->ClearRenderTargetView(rtv, clear_colour, 0, nullptr);
         list->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
+        // The target comes from a pool created NOT_ZEROED (gpu_device.cpp) and the draw below covers every pixel, so its
+        // old contents are never read: say so. Without this the first use is a draw into an uninitialised render
+        // target, which D3D12 leaves undefined (the debug layer reports it on every renderer start) and which can
+        // disturb the thresholds read back from it on adapters that keep compression metadata for render targets.
+        list->DiscardResource(target.resource.Get(), nullptr);
         const D3D12_VIEWPORT viewport{0.0f, 0.0f, static_cast<float>(info.width), static_cast<float>(info.height),
                                       0.0f, 1.0f};
         const D3D12_RECT scissor{0, 0, static_cast<LONG>(info.width), static_cast<LONG>(info.height)};

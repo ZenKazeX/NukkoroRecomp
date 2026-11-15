@@ -120,7 +120,7 @@ u32 RwDriver::movie_frame(Cpu& c, u32 type, u32 vertices, u32 count) {
             if (last != h) {
                 last = h;
                 render::TextureHandle handle;
-                if (build_texture(c, parent, ext, &handle, false))
+                if (build_texture(c, parent, ext, &handle, false, 0u, false))
                     ++stats_.movie_pictures;
             }
         }

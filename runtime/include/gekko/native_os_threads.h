@@ -122,7 +122,16 @@ bool yield_is_noop(Cpu& cpu);
 // `idle_pass` (may be empty): the scheduler's idle work between events - CRI's Idle pass; it returns true when it ran something
 // (the wait then looks for pending events again) and is given the wait's wake flag as "a game thread became ready".
 using IdlePass = std::function<bool(Cpu&, const bool* game_thread_ready)>;
-bool serve_sleep_thread(Cpu& cpu, NativeInterrupts& interrupts, MainWait& wait, const IdlePass& idle_pass, u32 entry);
+// A stop that ends the wait before the queue is woken (the host service inside idle_wait asked for a savestate boundary, a
+// host thread posted one) hands back at `entry` with r3 the queue again: a run that continues enters the wait again.
+// `bound_ticks`: the game time one sleep may last without its queue being woken (0: no bound). The game's clock always has
+// an event scheduled (the host-service grid), so a sleep whose waker never comes would otherwise run forever in game time
+// with nothing to see; past the bound it is an ExecutionFault naming the queue and the time waited. The default is far
+// beyond any wait the game makes (its sleeps end at the next retrace or at a device completion); install_waits reads
+// GEKKO_NATIVE_WAIT_BOUND_S (seconds of game time, 0 = no bound) for a run that needs another.
+constexpr u64 kDefaultSleepBoundTicks = 600ull * 40500000ull;  // 10 minutes of game time (kGameTicksPerSecond)
+bool serve_sleep_thread(Cpu& cpu, NativeInterrupts& interrupts, MainWait& wait, const IdlePass& idle_pass, u32 entry,
+                        u64 bound_ticks = kDefaultSleepBoundTicks);
 bool serve_wakeup_thread(Cpu& cpu, MainWait& wait, u32 entry);
 
 void install(Cpu& cpu);

@@ -108,8 +108,6 @@ public:
     // The source the next delivery takes - the pending, unmasked source the
     // OS's priority table ranks first - or Source::Count when none is pending.
     Source next_source() const { return static_cast<Source>(best_pending()); }
-    // A source other than `except` is pending and deliverable (a HostWork handler yields to it).
-    bool other_pending(Source except) const;
     // The delivery being handled ran work that, on the console, ran as threads of a higher priority than the one it
     // interrupted (native_cri.h): their preemption put the interrupted thread at the TAIL of its priority's run queue,
     // so an equal-priority ready thread ran next. The delivery's end then reschedules with yield semantics
@@ -187,16 +185,22 @@ public:
     // caller's r1 at the place deliver() would have put it. MSR[EE] is clear while the work runs (the handlers and the
     // callbacks they call were written for interrupt context, where it always is) and is restored exactly afterwards; the
     // caller's registers other than the volatile ones are untouched.
-    // Returns false when no source is pending. A source this cannot drive - HostWork (the CRI bridge's upcalls) - or a
-    // handler that asks for an upcall is an ExecutionFault naming it, never skipped; the call then returns true with the
-    // machine stopped.
+    // Returns false when no source is pending. Every source is driven through its handler, HostWork included (System
+    // installs NativeCri's host-work handler, and CRI's deferred tick raises the source on purpose from inside a wait).
+    // A latched source with NO handler, or a handler that asks for a thread-context upcall, is an ExecutionFault naming
+    // the source, never skipped; the call then returns true with the machine stopped.
     bool run_pending_event(Cpu& c);
     // The same, for a thread-context upcall (request_upcall's work) run right now: the upcall handler of `kind` is driven as
     // its step machine on the stack ending at `stack_top` (0: below the caller), each upcall_call made with guest_call.
-    // Used by the native wait for CRI's Idle pass, which the scheduler's idle loop gave the Idle thread. Returns true when
-    // the machine stopped (nothing else is reported); MSR[EE] is clear while it runs and restored after.
+    // Used by the native wait for CRI's Idle pass, which the scheduler's idle loop gave the Idle thread. Always returns
+    // true (the pass ran, or the machine stopped saying why: the caller tests Cpu::stopped()); MSR[EE] is clear while it
+    // runs and restored after.
     bool run_upcall(Cpu& c, u32 kind, u32 stack_top);
     bool sync_event_active() const noexcept { return sync_; }
+    // A native event's callback was cut short by a stop (an ExecutionFault inside it, a host thread's stop): the handler's
+    // remaining steps never ran and the callee's registers were not unwound, so the machine is not a state a run can
+    // continue from. Cleared by reset() and by load_state(). Savestates are refused while it is set.
+    bool event_abandoned() const noexcept { return event_abandoned_; }
     // A native wait (os.threads OSSleepThread) is in progress. The game clock then treats a latched, unmasked source as
     // deliverable whatever MSR[EE] says (System::advance_game_time stops at the first event that raises one, as it does for
     // the scheduler's idle context, where EE was set): events are processed one at a time in clock order, not as a batch ranked
@@ -272,6 +276,7 @@ private:
         u32 frame = 0, function = 0, r3 = 0, r4 = 0;
     };
     bool sync_ = false;
+    bool event_abandoned_ = false;
     bool wait_active_ = false;
     SyncCall sync_call_;
     u32 upcall_kind_ = 0;  // requested by the delivery being handled
