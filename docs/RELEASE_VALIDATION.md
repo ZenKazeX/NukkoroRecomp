@@ -1,3 +1,177 @@
+# Mod loader update (branch `release-modloader`, 2026-11-15)
+
+Not released yet. The game source is the development tree's `release/integrate` at 1c9ac0be (510 commits after the
+17dd6e8 this repository was first made from), merged with this repository's own work. Checked on the same PC and
+toolchain as the section below (MSVC 19.50.35730, Windows SDK 10.0.26100, CMake 4.2.3), the PAL disc as the player's
+disc. Two packages were made with `dev/Package-Release.ps1`: `ml3` at commit `6cc83a0` (the full comparison, the
+regression suites and the install times below) and `ml4` at `cac2a8f`, the last source commit (the scan, the prebuilt
+list, and a fast install with its replay and mod check). Between them: a test's disc path, one comment in
+`gamepad_binding.h`, and the data files that quoted the game's texts (below).
+
+## What changed for the player
+
+- The mod loader (`runtime/mods`, library `shadow_mods`) is in the game, and `ShadowModManager.exe` with its maps of
+  the game (`mods-data/`) is installed beside it, with a *Mod Manager* Start menu shortcut.
+- The Options menu is the game's own again; the window, the picture and the volumes are in `display.cfg` and
+  `options.cfg` (docs/PC_SETTINGS_FILES.md). The Resolution row this repository added is gone, as is the Hungarian
+  language.
+- Keyboard and mouse controls, set in `controls.cfg`.
+- The uninstaller removes the manager and `mods-data/`, and keeps `mods/` and `controls.cfg` with the saves and
+  settings.
+
+## Prebuilt parts
+
+One set, `prebuilt/msvc-19.50.35730.0-sdk10.0.26100.0/` (`ml4`); package 53.4 MB with it:
+
+| File | Bytes | SHA-256 (first 16) |
+|---|---|---|
+| `shadow_native_execution.lib` | 357,036 | `10710c1cd2c878f3` |
+| `shadow_native_memory.lib` | 907,796 | `db24a651f91afa3c` |
+| `shadow_native_gameplay.lib` | 717,240 | `f8b894e273d135fa` |
+| `shadow_lift.lib` | 1,575,798 | `cb2058cdbc6dbde2` |
+| `shadow_assets.lib` | 2,443,482 | `34f485a9be4e29f4` |
+| `shadow_mods.lib` (new) | 10,791,800 | `7aec5d2cba154d5f` |
+| `shadow_motion.lib` | 765,434 | `ac7567ef6a5ec36e` |
+| `shadow_d3d12ma.lib` | 621,268 | `43502516cc3dc12a` |
+| `shadow_render.lib` | 11,354,938 | `bb90d32cd41caa6c` |
+| `shadow_rwim.lib` | 286,634 | `f2eaed74853bd647` |
+| `shadow_render_lifted.lib` | 10,503,360 | `62bc5599f042c3bc` |
+| `shadow_runtime.lib` | 64,118,996 | `38ca4e926fccac3a` |
+| `ppcrecomp.exe` | 757,248 | `02c86a09a20989f6` |
+| `ShadowPadConfig.exe` | 1,259,008 | `c933357b22830369` |
+| `ShadowModManager.exe` (new) | 996,352 | `cc03e577531c862d` |
+
+`runtime/mods/afs.cpp` joined the local sources: the first scan found a 70-byte run of the disc's file table in
+`shadow_mods.lib` (the memory-card banner and icon file names it checks, which the compiler pools in the disc's
+order). The release step now builds the local sources in its tree like a full build and removes their objects from
+the copied archives (`lib.exe /REMOVE`), so the prebuilt manager, which links `shadow_mods`, is the program a full build
+makes.
+
+## Scan
+
+`dev/scan_game_code.py` (`ml4`) over the 16 prebuilt files and the three `mods-data` files (19 files, 108,481,598
+bytes) against all of `sys/` and `files/` (3,485 files): **passed**. Longest real shared run 52 bytes; no file with 256
+real shared bytes; no defined `fn_8xxxxxxx`; no personal path.
+
+| Shared run | Bytes | What it is |
+|---|---|---|
+| `ppcrecomp.exe`: ASCII case/identity tables | 384, 258, 256 | toolchain (as before) |
+| `shadow_runtime.lib`: the SDK's machine-check and DVDOpen message texts | 52, 43 | as before |
+| `shadow_runtime.lib` (`native_message_system.cpp`): three rows of the subtitle window's layout constants, 12 floats | 48 | game data, under the limits |
+| `ShadowModManager.exe`: memory-card icon file names (`afs.cpp`) | 48 | file names, under the limits |
+| `file_contexts.json`: one file-name format string of the executable | 40 | under the limits |
+| `ShadowPadConfig.exe`: UTF-16 "Shadow the Hedgehog ..." | 41, 39, 39, 35 | as before |
+
+**The data files the source package carries.** The byte scan compares UTF-8 JSON and Markdown as they are, while the
+game keeps its texts in UTF-16. So every data file new in this update (`test_data/mods`, `tools/mods/*.json`,
+`tools/save_text`, `docs/mods`) was scanned again with its strings re-encoded as UTF-16LE, Shift-JIS and Latin-1. That
+found the game's own texts, which are no longer in the repository:
+
+| File | Found | Now |
+|---|---|---|
+| `test_data/mods/region_diff.json` (installed as `mods-data`) | the save and memory-card messages of every language and the disc banner's texts, quoted where the two regions differ (runs up to 165 bytes) | keeps only the per-path fields the manager reads: MD5 sums, kind, risk, summary, advice, stage title. The manager's region notes work from these |
+| `tools/save_text`: `save_originals.json`, `pc_save_<lang>.json`, `review_2026-11-05.py` | the save messages (runs up to 601 bytes) | not kept; the generated `runtime/src/gekko/pc_save_texts.inc` stays. These tables were in the earlier releases under `tools/options_menu_sim/save_text` |
+| `docs/mods/map/VOICE_LINES.md` | two quoted voice lines | replaced by a description |
+
+What remains: file names (lists of disc file names in `file_contexts.json` and `reloaded_features.json`, which match
+the executable's string table only when re-joined with NULs) and phrases under 50 bytes such as the game's title.
+Unused research records of the mod work (`voice_lines.json`, `format_*.json`, `region_ingame_proof.json`,
+`codemods/site_classes.json`) are not kept.
+
+## Builds and the game
+
+| Check | Result |
+|---|---|
+| Fast install of `ml3` and of `ml4` (prebuilt parts used: "Prebuilt game-code-free parts: ...msvc-19.50.35730.0-sdk10.0.26100.0") | exit 0 |
+| Full install of `ml3` without `prebuilt/` | exit 0 |
+| `ShadowTheHedgehog.exe`, `ShadowModManager.exe`, `ShadowPadConfig.exe`: fast vs full (same folder) | 4 bytes differ in each: the PE and debug-directory timestamps |
+| `mods-data/` fast vs full | identical |
+
+Headless Westopolis replay (the gates' invocation with `--audio-dump`, the installed exe with its own game files),
+12,798,000,000 ticks, 9,477 VI frames, 18,920 frames:
+
+| Executable | State | PCM |
+|---|---|---|
+| `ml3` fast install | `f1e9e48ae923` | `c64ee7883f980f73` |
+| `ml3` full install | `f1e9e48ae923` | `c64ee7883f980f73` |
+| `ml4` fast install | `f1e9e48ae923` | `c64ee7883f980f73` |
+| The development tree at 1c9ac0be, built with this repository's `release` preset (Shipping, lifted, plume off) | `f1e9e48ae923` | `c64ee7883f980f73` |
+
+The development tree's own gate gives state `5c27c8fa6c7d` with the same PCM: that is its `watch` build (not Shipping,
+`SHADOW_WATCH_SYMBOLS`, reference runner on). Built in the same Shipping configuration, the development tree's source
+gives exactly this repository's state, so the merge changed nothing the replay sees; the state report differs between
+the two configurations, not between the two trees.
+
+## Mod loader and manager, installed
+
+| Check | Result |
+|---|---|
+| `ShadowModManager.exe help`, `list` (installed folder) | exit 0; "mods on, folder <install>\mods, 0 installed" |
+| The window (`--snapshot`) | opens; list, details, Install..., Load mods, Play |
+| `install cream.rar` (a GameBanana download: a loose `shadow.one`) | "1 file ... shadow.one placed at character/shadow.one"; installed switched off |
+| `enable cream`, `plan` | `character/shadow.one` from `mods/cream/files/` |
+| The game on the Westopolis tape, capture at tick 1.2e9 | "Mods: 1 active from <install>\mods (1 files, ...)"; `--mods-report` applies the same file the plan lists; Cream is the player in the capture |
+| State and capture, with the mod / with `--no-mods` | state `1333820e1e25` / `3542c3ba0f50`, capture `f0c6259b61f4` / `5ff3bdaae89d` |
+
+Done with `ml3` and again with `ml4` (its reduced `region_diff.json`): the same hashes. `tools/mods/modtest.py` needs `--asset-trace`, which the Shipping executable refuses, so its scenarios were not run
+against the installed game; the check above is the same cream-model scenario without the read proof.
+
+## Uninstall
+
+| Check | Result |
+|---|---|
+| `Uninstall.ps1 -Yes` (fast install, one mod installed) | removed 3,486 items: the three programs, `mods-data/` (3 files), the game files; `mods/` kept and reported |
+| `Uninstall.ps1 -Yes -RemoveSaves` (full install, one mod installed) | the folder is gone |
+| `installer/tests/Test-Uninstall.ps1` | all checks pass |
+
+## Regression tests
+
+| Preset | Passed | Not passed |
+|---|---|---|
+| `tests` | 274 of 275 | `lift_purity`, then fixed (below) and passing |
+| `shipping-tests` | 265 of 272 | 7, all known: they cannot apply to Shipping |
+
+`lift_purity` refused this repository's own comment in `gamepad_binding.h` ("GameCube"): the development tree's check
+now covers that folder. The comment was reworded and the test passes; the suite was not run again for that comment.
+`adx_decode_contract_tests`, new from the development tree, looked for the disc at `../game/files`; it now uses the disc
+beside the configured main.dol and passes. `difftest_f1b`, the development tree's one known failure, passes here
+(this repository's regenerated fingerprints).
+
+Not passed in `shipping-tests`, each for the reason the earlier release recorded: `native_matrix_call_tests`,
+`gekko_core_tests`, `native_failure_publication_tests`, `lift_sites_reference_tests` (code Shipping does not compile:
+not built), `native_expand_jobs_tests` ("the native expand jobs did not install"), `guest_watch_tests` (non-shipping
+only), `compiler_body_tests` ("the SelectThread idle loop head has no generated entry"). The earlier list's four
+control-row tests (`platform_gc_removal_plan`, `platform_runtime_coupling`, `platform_retired_readers_*`) are no
+longer registered in a Shipping tree.
+
+## Install time
+
+`dev/time_install.py`, one run each, 12 jobs, 60% CPU cap, unpacked into `%PUBLIC%\NukkoroRecomp\ml3`:
+
+| Phase (seconds) | Fast | Full |
+|---|---|---|
+| Unpack and checks | 1.6 | 1.6 |
+| Configure | 10.3 | 3.9 |
+| Libraries, `ppcrecomp`, shaders | 7.7 | 41.3 |
+| Shard translation | 12.7 | 13.2 |
+| Waiting for `shadow_render_lifted` | 0.3 | 24.6 |
+| Shard compile | 230.0 | 229.6 |
+| Link | 13.1 | 13.0 |
+| Post-link checks | 72.5 | 72.3 |
+| `ShadowPadConfig` + `ShadowModManager` | (copies) | 8.1 |
+| Copy and finish | 2.5 | 2.5 |
+| **Total** | **351.6** | **410.1** |
+
+The `ml4` fast install took 504.1 s with every phase 1.3 to 1.8 times longer (shard compile 300.1 s, post-link
+checks 128.9 s): the machine was busier then; it is not a comparison of the two packages.
+
+## Not tested
+
+- The setup window with this package; another PC or compiler; a clean Windows install.
+- The manager's window driven by hand (`tools/mods/gui_test.ps1` was not run); installing more than one mod, texture
+  packs and AFS mods against the installed game.
+- Final Haunt with the installed executable; gameplay beyond the Westopolis replay.
+
 # Release validation: v0.0.1
 
 Recorded 2026-11-09. The release's commit is the one tagged `v0.0.1`; each install records it in `install-info.json`.
