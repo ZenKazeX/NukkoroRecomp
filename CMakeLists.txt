@@ -240,17 +240,17 @@ endif()
 # ---- prebuilt game-code-free parts (docs/BUILDING.md "Prebuilt parts") ---------------------------------------------
 # The release package may carry the parts of the build that contain no game code, compiled once by the release step
 # (dev/Package-Release.ps1) in a tree configured WITHOUT a main.dol (SHADOW_PREBUILT_EXPORT): the runtime libraries,
-# the recompiler and the controller configurator. A player's tree uses them only when everything that shapes their
+# the recompiler, the controller configurator and the mod manager. A player's tree uses them only when everything that shapes their
 # compiled bytes matches exactly (shadow_prebuilt_key: compiler version, Windows SDK, generator, flags, options, a hash
 # of every source file); otherwise it builds them, as before. The recompiled game code, everything generated from the
 # player's main.dol and the executable that embeds it are always built on the player's PC. The two lists below are the
 # only place the prebuilt parts are named: the release step exports exactly these targets.
 # (shadow_msl is not one: fdlibm's constant tables, the digits of 2/pi among them, are byte for byte the game's.)
 set(SHADOW_PREBUILT_LIBRARIES shadow_native_execution shadow_native_memory shadow_native_gameplay shadow_lift
-    shadow_assets shadow_motion shadow_d3d12ma shadow_render shadow_rwim shadow_render_lifted shadow_runtime)
+    shadow_assets shadow_mods shadow_motion shadow_d3d12ma shadow_render shadow_rwim shadow_render_lifted shadow_runtime)
 # OBJECT libraries whose objects the static libraries above already hold (shadow_runtime holds shadow_runtime_common's).
 set(SHADOW_PREBUILT_FOLDED_OBJECT_LIBRARIES shadow_runtime_common)
-set(SHADOW_PREBUILT_PROGRAMS ppcrecomp ShadowPadConfig)
+set(SHADOW_PREBUILT_PROGRAMS ppcrecomp ShadowPadConfig ShadowModManager)
 # Sources of those libraries that are never prebuilt: they hold data taken from the game (dev/scan_game_code.py found
 # their objects sharing bytes with the disc), so they are compiled on the player's PC from this package's source, as
 # before. The prebuilt archives lack their objects; the player's tree compiles them into the same targets.
@@ -573,8 +573,26 @@ if(NOT SHADOW_BUILD_TESTS)
 endif()
 
 # ShadowModManager.exe: the mod manager (window + command line), beside the game executable. Windows only.
-if(WIN32)
+# The manager and the game both use the mods/ folder beside their own executable, so they share bin/<config>.
+set(SHADOW_MOD_MANAGER_DATA region_diff.json reloaded_features.json file_contexts.json)
+if(WIN32 AND SHADOW_PREBUILT_USED)
+    # The prebuilt manager, put where the build would have written it, with its maps of the game.
+    set(_shadow_mod_data_copy "")
+    foreach(_data IN LISTS SHADOW_MOD_MANAGER_DATA)
+        list(APPEND _shadow_mod_data_copy COMMAND ${CMAKE_COMMAND} -E copy_if_different
+             "${CMAKE_CURRENT_SOURCE_DIR}/test_data/mods/${_data}" "${CMAKE_BINARY_DIR}/bin/$<CONFIG>/mods-data/${_data}")
+    endforeach()
+    add_custom_target(ShadowModManager ALL
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/bin/$<CONFIG>/mods-data"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SHADOW_PREBUILT_USED}/ShadowModManager.exe"
+                "${CMAKE_BINARY_DIR}/bin/$<CONFIG>/ShadowModManager.exe"
+        ${_shadow_mod_data_copy}
+        DEPENDS "${SHADOW_PREBUILT_USED}/ShadowModManager.exe"
+        COMMENT "Using the prebuilt ShadowModManager.exe"
+        VERBATIM)
+elseif(WIN32)
     add_executable(ShadowModManager WIN32 tools/mod_manager/mod_manager.cpp)
+    set_target_properties(ShadowModManager PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     target_link_libraries(ShadowModManager PRIVATE shadow_mods comctl32 shell32 ole32 windowscodecs dwmapi uxtheme
                           msimg32 comdlg32 advapi32)
     target_compile_definitions(ShadowModManager PRIVATE UNICODE _UNICODE)

@@ -21,8 +21,8 @@ from pathlib import Path
 
 GAME_FREE_TARGETS = {
     'shadow_host_isa_gate', 'shadow_native_execution', 'shadow_native_memory', 'shadow_native_gameplay', 'shadow_msl',
-    'shadow_lift', 'shadow_assets', 'shadow_motion', 'shadow_d3d12ma', 'shadow_render', 'shadow_rwim',
-    'shadow_render_lifted', 'shadow_runtime_common', 'shadow_runtime', 'ShadowPadConfig', 'shadow_render_shaders',
+    'shadow_lift', 'shadow_assets', 'shadow_mods', 'shadow_motion', 'shadow_d3d12ma', 'shadow_render', 'shadow_rwim',
+    'shadow_render_lifted', 'shadow_runtime_common', 'shadow_runtime', 'ShadowPadConfig', 'ShadowModManager', 'shadow_render_shaders',
     'shadow_prebuilt_stub',
 }
 
@@ -102,8 +102,9 @@ def analyse(stamped, t0, build: Path, t0_wall=None):
     shards_done = done.get('shadow_recomp')
     exe_done = done.get('ShadowTheHedgehog')
     checks_done = last(r'^\s*(PASS |Pinned |\{"errors")')
-    pad_done = done.get('ShadowPadConfig')
-    free_libs = [done[n] for n in GAME_FREE_TARGETS if n in done and n != 'ShadowPadConfig']
+    programs = [done[n] for n in ('ShadowPadConfig', 'ShadowModManager') if n in done]
+    pad_done = max(programs) if programs else None
+    free_libs = [done[n] for n in GAME_FREE_TARGETS if n in done and n not in ('ShadowPadConfig', 'ShadowModManager')]
     def span(a, b):
         return None if a is None or b is None else [a, b]
     phases = {
@@ -115,7 +116,7 @@ def analyse(stamped, t0, build: Path, t0_wall=None):
         'shard_compile': span(first_shard, shards_done),
         'link (launcher + exe)': span(shards_done, exe_done),
         'post_link_checks': span(exe_done, checks_done) if checks_done and exe_done and checks_done > exe_done else None,
-        'ShadowPadConfig': span(checks_done if checks_done and exe_done and checks_done > exe_done else exe_done, pad_done),
+        'ShadowPadConfig + ShadowModManager': span(checks_done if checks_done and exe_done and checks_done > exe_done else exe_done, pad_done),
         'copy_and_finish': span(marks.get('Copy game'), end),
     }
     info = {

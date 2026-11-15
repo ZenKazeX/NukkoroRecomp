@@ -8,12 +8,13 @@ $script:RepoRoot = Split-Path -Parent $PSScriptRoot
 $script:Shards = 48
 $script:GameExe = 'ShadowTheHedgehog.exe'
 $script:ConfigExe = 'ShadowPadConfig.exe'
+$script:ModManagerExe = 'ShadowModManager.exe'
 # Everything the build puts in the install folder, in one place: the programs the build writes beside the game
 # (.build\release\bin\Release). The copy step, the install record and the uninstaller all follow this list.
-$script:InstalledPrograms = @($script:GameExe, $script:ConfigExe)
-# Folders of this package copied as they are into the install folder (source folder relative to the package root =
-# destination relative to the install folder). None yet.
-$script:InstalledFolders = [ordered]@{}
+$script:InstalledPrograms = @($script:GameExe, $script:ConfigExe, $script:ModManagerExe)
+# Folders copied as they are into the install folder (source folder relative to the package root = destination
+# relative to the install folder). mods-data: the mod manager's maps of the game, which the build puts beside it.
+$script:InstalledFolders = [ordered]@{ '.build\release\bin\Release\mods-data' = 'mods-data' }
 
 function Get-RepoRoot { $script:RepoRoot }
 
@@ -398,6 +399,13 @@ function New-GameShortcuts([string]$target, [bool]$desktop, [bool]$startMenu,
         $link.WorkingDirectory = $target
         $link.IconLocation = (Join-Path $target $script:ConfigExe) + ',0'
         $link.Description = 'Choose which controller buttons do what in the game.'
+        $link.Save()
+        $made += $link.FullName
+        $link = $shell.CreateShortcut((Join-Path $startMenuDir 'Mod Manager.lnk'))
+        $link.TargetPath = Join-Path $target $script:ModManagerExe
+        $link.WorkingDirectory = $target
+        $link.IconLocation = (Join-Path $target $script:ModManagerExe) + ',0'
+        $link.Description = 'Add, remove and order mods for the game.'
         $link.Save()
         $made += $link.FullName
         $link = $shell.CreateShortcut((Join-Path $startMenuDir 'Uninstall Shadow the Hedgehog Recompiled.lnk'))

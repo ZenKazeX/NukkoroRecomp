@@ -112,7 +112,8 @@
       "configuration": "Release",
       "targets": [
         "ShadowTheHedgehog",
-      "ShadowPadConfig"
+        "ShadowPadConfig",
+        "ShadowModManager"
       ],
       "jobs": 2
     },

@@ -10,7 +10,8 @@
        exists in that tree. The targets CMakeLists.txt lists in SHADOW_PREBUILT_LIBRARIES and SHADOW_PREBUILT_PROGRAMS
        are built and copied to prebuilt/<set>/ with prebuilt.json: the key a player's tree must match exactly to use
        them (compiler, Windows SDK, generator, flags, options, source hash), every file's SHA-256, and the toolchain.
-    3. dev/scan_game_code.py checks every prebuilt file against the -ScanDisc disc (main.dol, sys/, all of files/):
+    3. dev/scan_game_code.py checks every prebuilt file, and the mod manager's mods-data/ that the install copies,
+       against the -ScanDisc disc (main.dol, sys/, all of files/):
        no shared byte run of 64 bytes or more, no defined translated function (fn_8xxxxxxx), no personal path.
        A failure stops the release.
     4. prebuilt/ is added to the zip.
@@ -133,7 +134,11 @@ $references = @((Join-Path $kits "Lib\$sdk\ucrt\x64\libucrt.lib")) +
 $scanArgs = @((Join-Path $PSScriptRoot 'scan_game_code.py'), '--disc', $ScanDisc, '--dumpbin', (Join-Path $tools 'dumpbin.exe'),
     '--json', $scanReport)
 foreach ($reference in $references) { $scanArgs += @('--toolchain-reference', $reference) }
-Invoke-Native 'Scan the prebuilt parts against the disc' 'python' ($scanArgs + @((Join-Path $pkgRoot 'prebuilt')))
+# The mod manager's maps of the game (mods-data/, copied from test_data/mods by the build) are installed as they are:
+# they are scanned with the prebuilt parts.
+$modsData = Join-Path $tree 'bin\Release\mods-data'
+if (-not (Test-Path -LiteralPath $modsData -PathType Container)) { throw "$modsData is missing: the mod manager's build did not copy it" }
+Invoke-Native 'Scan the prebuilt parts and mods-data against the disc' 'python' ($scanArgs + @((Join-Path $pkgRoot 'prebuilt'), $modsData))
 
 # ---- the package -----------------------------------------------------------------------------------------------------
 Copy-Item -LiteralPath $base -Destination $zip -Force
