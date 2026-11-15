@@ -53,7 +53,7 @@ struct GamepadState {
 
 struct GamepadBinding {
     // The gamepad buttons (a mask; 0 = unbound) that raise each control.
-    // The default suits today's controllers by position. The GameCube pad has its B to the left of A and its X to the
+    // The default suits today's controllers by position. The original pad has its B to the left of A and its X to the
     // right, so its B is the west button (X on an Xbox pad) and its X the east button (B): the two letters are swapped.
     std::uint16_t a = kGamepadSouth;
     std::uint16_t b = kGamepadWest;
