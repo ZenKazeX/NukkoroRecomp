@@ -96,13 +96,32 @@ $pkgRoot = Join-Path $stage 'package'
 $setDir = Join-Path $pkgRoot "prebuilt\$setName"
 New-Item -ItemType Directory -Force -Path $setDir | Out-Null
 $files = @()
+# The objects of SHADOW_PREBUILT_LOCAL_SOURCES (data taken from the game) are built in this tree, as in a full build, so
+# the prebuilt programs that link them are a full build's; they are removed from the exported archives here.
+$libExe = Join-Path (Split-Path -Parent $cache['CMAKE_LINKER']) 'lib.exe'
+$localObjects = @([IO.File]::ReadAllLines((Join-Path $tree 'prebuilt-export\local-objects.txt')) | Where-Object { $_ })
+$removed = @()
 foreach ($target in $targets.Keys) {
     $built = $targets[$target]
     $name = $target + [IO.Path]::GetExtension($built)
-    Copy-Item -LiteralPath $built -Destination (Join-Path $setDir $name)
+    $members = @()
+    if ($name -like '*.lib') {
+        $members = @(& $libExe /NOLOGO /LIST $built | Where-Object { $localObjects -contains (Split-Path -Leaf $_) })
+        if ($LASTEXITCODE -ne 0) { throw "lib /LIST $built failed" }
+    }
+    if ($members.Count -gt 0) {
+        Invoke-Native "Remove $($members.Count) local objects from $name" $libExe (@('/NOLOGO', "/OUT:$(Join-Path $setDir $name)") +
+            @($members | ForEach-Object { "/REMOVE:$_" }) + @($built))
+        $removed += @($members | ForEach-Object { Split-Path -Leaf $_ })
+    } else {
+        Copy-Item -LiteralPath $built -Destination (Join-Path $setDir $name)
+    }
     $item = Get-Item -LiteralPath (Join-Path $setDir $name)
     $files += [ordered]@{ target = $target; path = $name; size = $item.Length
                           sha256 = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant() }
+}
+if ((@($removed | Sort-Object) -join ',') -ne (@($localObjects | Sort-Object) -join ',')) {
+    throw "local objects removed ($($removed -join ', ')) differ from the list ($($localObjects -join ', '))"
 }
 $tools = Split-Path -Parent $cache['CMAKE_LINKER']
 $manifest = [ordered]@{

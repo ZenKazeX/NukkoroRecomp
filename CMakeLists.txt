@@ -4470,14 +4470,22 @@ if(SHADOW_PREBUILT_USED)
     endforeach()
     set_property(SOURCE "${SHADOW_PREBUILT_STUB}" PROPERTY OBJECT_DEPENDS "${_shadow_prebuilt_archives}")
 elseif(SHADOW_PREBUILT_EXPORT)
-    # The sources that are never prebuilt are left out of the exported archives.
+    # The sources that are never prebuilt are built here as in a full build (a prebuilt program may link them:
+    # ShadowModManager links shadow_mods, afs.cpp included, so it is the program a full build makes), and the release
+    # step removes their objects from the exported archives (lib.exe /REMOVE). It reads their object names here.
+    set(_shadow_local_objects "")
     foreach(_target IN LISTS SHADOW_PREBUILT_LIBRARIES SHADOW_PREBUILT_FOLDED_OBJECT_LIBRARIES)
         if(TARGET ${_target})
             get_target_property(_sources ${_target} SOURCES)
-            list(REMOVE_ITEM _sources ${SHADOW_PREBUILT_LOCAL_SOURCES})
-            set_property(TARGET ${_target} PROPERTY SOURCES ${_sources})
+            foreach(_source IN LISTS _sources)
+                if("${_source}" IN_LIST SHADOW_PREBUILT_LOCAL_SOURCES)
+                    get_filename_component(_stem "${_source}" NAME_WE)
+                    string(APPEND _shadow_local_objects "${_stem}.obj\n")
+                endif()
+            endforeach()
         endif()
     endforeach()
+    file(WRITE "${CMAKE_BINARY_DIR}/prebuilt-export/local-objects.txt" "${_shadow_local_objects}")
     # The release step reads this list: target name and built file, one per line.
     set(_shadow_export "")
     foreach(_target IN LISTS SHADOW_PREBUILT_LIBRARIES SHADOW_PREBUILT_PROGRAMS)
