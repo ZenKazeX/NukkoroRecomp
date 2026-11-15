@@ -1,5 +1,9 @@
 # Region differences that matter when an NTSC-U-made mod is installed on PAL
 
+> In this repository `test_data/mods/region_diff.json` keeps only the per-path fields the manager reads; the full map
+> quotes the discs' texts and is made with `tools/mods/map_region_diff.py` from both discs. `region_ingame_proof.json`
+> is not kept.
+
 Field `region`, 2026-11-14. Branch `mods/map-region`. Data: `test_data/mods/region_diff.json`, `test_data/mods/set_types.json`,
 `test_data/mods/region_ingame_proof.json`. Generators: `tools/mods/map_region_diff.py`, `tools/mods/map_region_ingame.py`.
 Marks: **M** measured from the files, **G** run in game, **I** inferred (not proven).

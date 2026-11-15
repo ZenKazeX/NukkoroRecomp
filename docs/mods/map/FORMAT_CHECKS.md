@@ -1,5 +1,8 @@
 # Structural checks for the loose disc files (mods map, field `formats`, 2026-11-14)
 
+> In this repository the run records (`format_results.json`, `format_mutations_*.json`) are not kept;
+> `tools/mods/check_formats.py` makes them again.
+
 Scope: every loose file kind of `files/` that a mod replaces and the game parses without checking it: `.dat` (object
 layouts, camera), `.inf`, `.fnt`, `.met`, `.gncp`, `.mlt`, `.bin`, `.scr`, `.fog`, `.bnr`, `.sfd`, `.tp`, `.srd`, `.conf`
 (and the `.flo` movies the Reloaded pack ships). The loader already checked `.one .txd .dff .afs .adx` in

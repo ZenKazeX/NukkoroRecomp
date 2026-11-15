@@ -141,6 +141,10 @@ Not included:
   the game, so the `tests` preset is removed and `SHADOW_BUILD_TESTS=ON` stops configuration with an explanation.
 - **Disassembly, strings and symbol dumps from the DOL**. The build does not use them.
 - **Research material and session notes.**
+- **Tables that quote the game's texts**: the save messages behind `tools/save_text` (`save_originals.json`,
+  `pc_save_<lang>.json`; the generated `runtime/src/gekko/pc_save_texts.inc` is here), the mod manager's full region map
+  (`test_data/mods/region_diff.json` keeps only the fields the manager reads; `tools/mods/map_region_diff.py` makes the
+  rest from both discs), and the voice-line map (`tools/mods/map_voice_lines.py`).
 
 ## Regression tests
 

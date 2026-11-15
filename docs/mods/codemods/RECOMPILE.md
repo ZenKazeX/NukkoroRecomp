@@ -1,5 +1,8 @@
 # Code mods by recompiling a patched PAL DOL (feasibility, 2026-11-14)
 
+> In this repository `test_data/mods/codemods/site_classes.json` is not kept: `tools/mods/codemods/classify_sites.py`
+> makes it.
+
 Question: can GekkoForge recompile a patched PAL `main.dol` into a working variant executable, and which patches would
 do nothing? Everything below was run on the lifted tree (`SHADOW_RENDER_LIFTED=ON`, the shipped configuration) from this
 worktree, with `-m:3`, one build at a time, headless `--no-audio` Westopolis captures (`cap.sh`, 1280x720, stg0100 tape).

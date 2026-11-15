@@ -1,53 +1,12 @@
 {
  "schema": 1,
+ "note": "The part of tools/mods/map_region_diff.py's map that ShadowModManager reads (insight.cpp RegionData::load). The full map quotes the discs' own texts, so it is made on a PC that has both discs and is not kept here.",
  "generator": "tools/mods/map_region_diff.py",
- "trees": {
-  "pal_files": 3480,
-  "usa_files": 3479,
-  "shared": 3479,
-  "byte_identical": 3188,
-  "differing": 291,
-  "differing_non_font": 18,
-  "differing_font": 273,
-  "only_in_pal": [
-   "fonts/stg0905/stg0905_JP02.met"
-  ],
-  "only_in_usa": []
- },
  "paths": {
   "csdFiles/SelectMode_GE.txd": {
    "pal_md5": "931d38529fc60dc4101094f213dd6ce5",
    "usa_md5": "819f85dda1f32e25d2f2880874143aca",
-   "pal_bytes": 1150200,
-   "usa_bytes": 1150200,
    "kind": "texture-dictionary",
-   "textures": [
-    {
-     "texture": "gamemenu",
-     "bytes": 66192,
-     "differing_bytes": 0
-    },
-    {
-     "texture": "selectmode",
-     "bytes": 262800,
-     "differing_bytes": 15229
-    },
-    {
-     "texture": "?",
-     "bytes": 262800,
-     "differing_bytes": 0
-    },
-    {
-     "texture": "routedisplay",
-     "bytes": 33424,
-     "differing_bytes": 0
-    },
-    {
-     "texture": "missionpics",
-     "bytes": 524944,
-     "differing_bytes": 0
-    }
-   ],
    "summary": "Same file size; texture(s) with changed pixels: selectmode (15229 of 262800 bytes). The other textures are byte-identical.",
    "risk": "cosmetic",
    "advice": "A mod that ships this file replaces one language screen texture with the NTSC-U artwork; other languages are not affected."
@@ -55,36 +14,7 @@
   "csdFiles/SelectMode_IT.txd": {
    "pal_md5": "3539f22aa4d7838d798c4f86f442e0df",
    "usa_md5": "1a1272a498302ecb83742aa6772891c9",
-   "pal_bytes": 1150200,
-   "usa_bytes": 1150200,
    "kind": "texture-dictionary",
-   "textures": [
-    {
-     "texture": "gamemenu",
-     "bytes": 66192,
-     "differing_bytes": 0
-    },
-    {
-     "texture": "selectmode",
-     "bytes": 262800,
-     "differing_bytes": 4173
-    },
-    {
-     "texture": "?",
-     "bytes": 262800,
-     "differing_bytes": 0
-    },
-    {
-     "texture": "routedisplay",
-     "bytes": 33424,
-     "differing_bytes": 0
-    },
-    {
-     "texture": "missionpics",
-     "bytes": 524944,
-     "differing_bytes": 0
-    }
-   ],
    "summary": "Same file size; texture(s) with changed pixels: selectmode (4173 of 262800 bytes). The other textures are byte-identical.",
    "risk": "cosmetic",
    "advice": "A mod that ships this file replaces one language screen texture with the NTSC-U artwork; other languages are not affected."
@@ -92,21 +22,7 @@
   "nukkoro.inf": {
    "pal_md5": "11c28fdd81916fc6c5f346746921e36a",
    "usa_md5": "d778f9b1201605eec71eb6ae72a2b7a6",
-   "pal_bytes": 4144,
-   "usa_bytes": 4143,
    "kind": "config",
-   "lines_differing": [
-    {
-     "line": 65,
-     "pal": "REGION : PAL50",
-     "usa": "REGION : NTSC"
-    },
-    {
-     "line": 66,
-     "pal": "AREA : EU",
-     "usa": "AREA : US"
-    }
-   ],
    "summary": "Only the REGION and AREA lines differ (PAL: PAL50 / EU, NTSC-U: NTSC / US); the other 70 lines are identical. The game parses them into its InfDatabase (peeked in game: region 2 -> 0, area 2 -> 1).",
    "risk": "none",
    "advice": "No visible effect found: a 10 s headless Westopolis boot with the NTSC-U file gave the same frame (sha256) and log as stock. Treat as informational: tell the user the file would claim an NTSC-U disc."
@@ -114,74 +30,7 @@
   "opening.bnr": {
    "pal_md5": "049068a6ac8fc40b63e27ba85c38ff65",
    "usa_md5": "4523348003fd7940625fbb02392be9b4",
-   "pal_bytes": 8096,
-   "usa_bytes": 6496,
    "kind": "banner",
-   "pal": {
-    "size": 8096,
-    "magic": "BNR2",
-    "image_md5": "85889f50a6dbdffafd7c39243096ed3b",
-    "text_blocks": 6,
-    "text": [
-     [
-      "SHADOW THE HEDGEHOG",
-      "SEGA",
-      "SHADOW THE HEDGEHOG",
-      "SEGA",
-      "(C) SEGA Corporation, 2005\nRenegade or Hero? Uncover Shadow's truth!"
-     ],
-     [
-      "SHADOW THE HEDGEHOG",
-      "SEGA",
-      "SHADOW THE HEDGEHOG",
-      "SEGA",
-      "(C) SEGA Corporation, 2005\nRenegade or Hero? Uncover Shadow's truth!"
-     ],
-     [
-      "SHADOW THE HEDGEHOG",
-      "SEGA",
-      "SHADOW THE HEDGEHOG",
-      "SEGA",
-      "(C) SEGA Corporation, 2005\nRenegade or Hero? Uncover Shadow's truth!"
-     ],
-     [
-      "SHADOW THE HEDGEHOG",
-      "SEGA",
-      "SHADOW THE HEDGEHOG",
-      "SEGA",
-      "(C) SEGA Corporation, 2005\nRenegade or Hero? Uncover Shadow's truth!"
-     ],
-     [
-      "SHADOW THE HEDGEHOG",
-      "SEGA",
-      "SHADOW THE HEDGEHOG",
-      "SEGA",
-      "(C) SEGA Corporation, 2005\nRenegade or Hero? Uncover Shadow's truth!"
-     ],
-     [
-      "SHADOW THE HEDGEHOG",
-      "SEGA",
-      "SHADOW THE HEDGEHOG",
-      "SEGA",
-      "(C) SEGA Corporation, 2005\nRenegade or Hero? Uncover Shadow's truth!"
-     ]
-    ]
-   },
-   "usa": {
-    "size": 6496,
-    "magic": "BNR1",
-    "image_md5": "85889f50a6dbdffafd7c39243096ed3b",
-    "text_blocks": 1,
-    "text": [
-     [
-      "SHADOW THE HEDGEHOG",
-      "SEGA",
-      "SHADOW THE HEDGEHOG",
-      "SEGA",
-      "(C) SEGA Corporation, 2005\nRenegade or Hero? Uncover Shadow's truth!"
-     ]
-    ]
-   },
    "summary": "GameCube IPL banner. PAL is BNR2 (6 language text blocks), NTSC-U is BNR1 (one block); the 96x32 image and the title / description texts are identical. The IPL reads it, the game does not.",
    "risk": "none",
    "advice": "Never used by the PC build. Silently accept."
@@ -189,21 +38,7 @@
   "palsel/PalSelIt.txd": {
    "pal_md5": "99c564b0ac5aad03abdcb8c702ebbc17",
    "usa_md5": "8fc8f2d6ce06d305bf267353144a7a7a",
-   "pal_bytes": 394568,
-   "usa_bytes": 394568,
    "kind": "texture-dictionary",
-   "textures": [
-    {
-     "texture": "test",
-     "bytes": 131728,
-     "differing_bytes": 0
-    },
-    {
-     "texture": "screentest",
-     "bytes": 262800,
-     "differing_bytes": 244729
-    }
-   ],
    "summary": "Same file size; texture(s) with changed pixels: screentest (244729 of 262800 bytes). The other textures are byte-identical.",
    "risk": "cosmetic",
    "advice": "A mod that ships this file replaces one language screen texture with the NTSC-U artwork; other languages are not affected."
@@ -211,175 +46,8 @@
   "stg0201/stg0201_cmn.dat": {
    "pal_md5": "0a97198031a4a67ab4cc660f31e4b350",
    "usa_md5": "445731fe6d6623d4e34f0ac8deb156f5",
-   "pal_bytes": 24880,
-   "usa_bytes": 24448,
    "kind": "stage-layout",
-   "stage": "stg0201",
    "stage_title": "Glyphic Canyon",
-   "layer": "cmn",
-   "layer_meaning": "common layer, always loaded",
-   "entries_pal": 334,
-   "entries_usa": 328,
-   "pal_only": [
-    {
-     "type_id": 80,
-     "class": "SETCOLLISION",
-     "pos": [
-      8968.5,
-      26.4,
-      -15194.9
-     ],
-     "rot_deg": [
-      0.0,
-      10.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x1001",
-     "params": {
-      "kind": 4,
-      "form": 1,
-      "X": 370.0,
-      "Y": 140.0,
-      "Z": 190.0,
-      "Id": 0,
-      "appear": 0
-     }
-    },
-    {
-     "type_id": 80,
-     "class": "SETCOLLISION",
-     "pos": [
-      8675.7,
-      -273.4,
-      -13249.0
-     ],
-     "rot_deg": [
-      0.0,
-      -50.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x1001",
-     "params": {
-      "kind": 4,
-      "form": 1,
-      "X": 280.0,
-      "Y": 50.0,
-      "Z": 190.0,
-      "Id": 0,
-      "appear": 0
-     }
-    },
-    {
-     "type_id": 80,
-     "class": "SETCOLLISION",
-     "pos": [
-      8623.2,
-      264.9,
-      -15676.4
-     ],
-     "rot_deg": [
-      0.0,
-      20.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x1001",
-     "params": {
-      "kind": 4,
-      "form": 1,
-      "X": 370.0,
-      "Y": 140.0,
-      "Z": 190.0,
-      "Id": 0,
-      "appear": 0
-     }
-    },
-    {
-     "type_id": 80,
-     "class": "SETCOLLISION",
-     "pos": [
-      8288.2,
-      434.0,
-      -16115.3
-     ],
-     "rot_deg": [
-      0.0,
-      20.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x1001",
-     "params": {
-      "kind": 4,
-      "form": 1,
-      "X": 450.0,
-      "Y": 140.0,
-      "Z": 130.0,
-      "Id": 0,
-      "appear": 0
-     }
-    },
-    {
-     "type_id": 80,
-     "class": "SETCOLLISION",
-     "pos": [
-      7780.5,
-      483.9,
-      -16408.4
-     ],
-     "rot_deg": [
-      0.0,
-      30.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x1001",
-     "params": {
-      "kind": 4,
-      "form": 1,
-      "X": 450.0,
-      "Y": 140.0,
-      "Z": 130.0,
-      "Id": 0,
-      "appear": 0
-     }
-    },
-    {
-     "type_id": 80,
-     "class": "SETCOLLISION",
-     "pos": [
-      7254.5,
-      419.0,
-      -16781.1
-     ],
-     "rot_deg": [
-      -30.0,
-      30.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x1001",
-     "params": {
-      "kind": 4,
-      "form": 1,
-      "X": 380.0,
-      "Y": 140.0,
-      "Z": 150.0,
-      "Id": 0,
-      "appear": 0
-     }
-    }
-   ],
-   "usa_only": [],
-   "changed": [],
    "summary": "PAL adds 6 placement(s): 6 x SETCOLLISION",
    "risk": "gameplay",
    "advice": "A mod file built from NTSC-U replaces the PAL layout and drops the PAL changes listed in this entry. Warn before enabling; keep the PAL file unless the mod is a gameplay mod that edits this layout on purpose."
@@ -387,45 +55,8 @@
   "stg0300/stg0300_hrd.dat": {
    "pal_md5": "4547471a175e420624bacb93849a6d2b",
    "usa_md5": "ad9e026021600d3188dc32282093abc0",
-   "pal_bytes": 7012,
-   "usa_bytes": 6940,
    "kind": "stage-layout",
-   "stage": "stg0300",
    "stage_title": "Cryptic Castle",
-   "layer": "hrd",
-   "layer_meaning": "hard-mode layer",
-   "entries_pal": 90,
-   "entries_usa": 89,
-   "pal_only": [
-    {
-     "type_id": 80,
-     "class": "SETCOLLISION",
-     "pos": [
-      -3419.6,
-      -1721.1,
-      -20199.9
-     ],
-     "rot_deg": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "link": 50,
-     "range_x100": 4,
-     "saved_flags": "0x4001",
-     "params": {
-      "kind": 7,
-      "form": 1,
-      "X": 130.0,
-      "Y": 140.0,
-      "Z": 130.0,
-      "Id": 50,
-      "appear": 0
-     }
-    }
-   ],
-   "usa_only": [],
-   "changed": [],
    "summary": "PAL adds 1 placement(s): 1 x SETCOLLISION",
    "risk": "gameplay",
    "advice": "A mod file built from NTSC-U replaces the PAL layout and drops the PAL changes listed in this entry. Warn before enabling; keep the PAL file unless the mod is a gameplay mod that edits this layout on purpose."
@@ -433,117 +64,8 @@
   "stg0401/stg0401_cmn.dat": {
    "pal_md5": "d3ae964f0f574b9a545e530aa232e0fe",
    "usa_md5": "4d85f6eec0430a3399603a271808a268",
-   "pal_bytes": 27660,
-   "usa_bytes": 27660,
    "kind": "stage-layout",
-   "stage": "stg0401",
    "stage_title": "The Doom",
-   "layer": "cmn",
-   "layer_meaning": "common layer, always loaded",
-   "entries_pal": 375,
-   "entries_usa": 375,
-   "pal_only": [],
-   "usa_only": [],
-   "changed": [
-    {
-     "pal": {
-      "type_id": 104,
-      "class": "GUN_ROBOT",
-      "pos": [
-       2248.4,
-       5.0,
-       414.6
-      ],
-      "rot_deg": [
-       0.0,
-       60.0,
-       0.0
-      ],
-      "link": 170,
-      "range_x100": 5,
-      "saved_flags": "0x1001",
-      "params": {
-       "MoveRange": 0.0,
-       "SearchRange": 0.0,
-       "SearchAngle": 0.0,
-       "SearchWidth": 240.0,
-       "SearchHeight": 100.0,
-       "SearchHeightOffset": 0.0,
-       "MoveSpeedRatio": 1.0,
-       "AppearType": 0,
-       "WeaponType": 1,
-       "BodyType": 1,
-       "OffsetPos_X": 0.0,
-       "OffsetPos_Y": 0.0,
-       "OffsetPos_Z": 0.0,
-       "WaitActMoveType": 0,
-       "Pos0_ActionTime": 3.0,
-       "Pos0_ActionType": 0,
-       "Pos0_MoveSpeedRatio": 1.0,
-       "Pos1_X": 0.0,
-       "Pos1_Z": 0.0,
-       "Pos1_ActionTime": 3.0,
-       "Pos1_ActionType": 0,
-       "Pos1_MoveSpeedRatio": 1.0,
-       "Pos2_X": 0.0,
-       "Pos2_Z": 0.0,
-       "Pos2_ActionTime": 3.0,
-       "Pos2_ActionType": 0,
-       "Pos2_MoveSpeedRatio": 1.0
-      }
-     },
-     "usa": {
-      "type_id": 104,
-      "class": "GUN_ROBOT",
-      "pos": [
-       2248.4,
-       5.0,
-       414.6
-      ],
-      "rot_deg": [
-       0.0,
-       60.0,
-       0.0
-      ],
-      "link": 170,
-      "range_x100": 7,
-      "saved_flags": "0x1001",
-      "params": {
-       "MoveRange": 0.0,
-       "SearchRange": 0.0,
-       "SearchAngle": 0.0,
-       "SearchWidth": 240.0,
-       "SearchHeight": 100.0,
-       "SearchHeightOffset": 0.0,
-       "MoveSpeedRatio": 1.0,
-       "AppearType": 0,
-       "WeaponType": 1,
-       "BodyType": 1,
-       "OffsetPos_X": 0.0,
-       "OffsetPos_Y": 0.0,
-       "OffsetPos_Z": 0.0,
-       "WaitActMoveType": 0,
-       "Pos0_ActionTime": 3.0,
-       "Pos0_ActionType": 0,
-       "Pos0_MoveSpeedRatio": 1.0,
-       "Pos1_X": 0.0,
-       "Pos1_Z": 0.0,
-       "Pos1_ActionTime": 3.0,
-       "Pos1_ActionType": 0,
-       "Pos1_MoveSpeedRatio": 1.0,
-       "Pos2_X": 0.0,
-       "Pos2_Z": 0.0,
-       "Pos2_ActionTime": 3.0,
-       "Pos2_ActionType": 0,
-       "Pos2_MoveSpeedRatio": 1.0
-      }
-     },
-     "fields": [
-      "range"
-     ],
-     "moved_units": 0.0
-    }
-   ],
    "summary": "GUN_ROBOT activation range 7 -> 5 (x100 units, NTSC-U -> PAL)",
    "risk": "gameplay",
    "advice": "A mod file built from NTSC-U replaces the PAL layout and drops the PAL changes listed in this entry. Warn before enabling; keep the PAL file unless the mod is a gameplay mod that edits this layout on purpose."
@@ -551,68 +73,8 @@
   "stg0403/stg0403_nrm.dat": {
    "pal_md5": "5cc07da9fd05261dbf8d80f0df3634fc",
    "usa_md5": "44a2467539a632dedce95200c177fa86",
-   "pal_bytes": 11176,
-   "usa_bytes": 11176,
    "kind": "stage-layout",
-   "stage": "stg0403",
    "stage_title": "Mad Matrix",
-   "layer": "nrm",
-   "layer_meaning": "normal-mode layer",
-   "entries_pal": 165,
-   "entries_usa": 165,
-   "pal_only": [],
-   "usa_only": [],
-   "changed": [
-    {
-     "pal": {
-      "type_id": 400,
-      "class": "SET_CHARACTOR",
-      "pos": [
-       0.2,
-       -1080.0,
-       14574.3
-      ],
-      "rot_deg": [
-       0.0,
-       0.0,
-       0.0
-      ],
-      "link": 0,
-      "range_x100": 3,
-      "saved_flags": "0x2001",
-      "params": {
-       "Characotr": 8,
-       "ContactRange(m)": 7.0
-      }
-     },
-     "usa": {
-      "type_id": 400,
-      "class": "SET_CHARACTOR",
-      "pos": [
-       0.2,
-       -1080.0,
-       14604.3
-      ],
-      "rot_deg": [
-       0.0,
-       0.0,
-       0.0
-      ],
-      "link": 0,
-      "range_x100": 3,
-      "saved_flags": "0x2001",
-      "params": {
-       "Characotr": 8,
-       "ContactRange(m)": 5.0
-      }
-     },
-     "fields": [
-      "pos",
-      "misc"
-     ],
-     "moved_units": 30.0
-    }
-   ],
    "summary": "SET_CHARACTOR moved 30.0 units, misc differs",
    "risk": "gameplay",
    "advice": "A mod file built from NTSC-U replaces the PAL layout and drops the PAL changes listed in this entry. Warn before enabling; keep the PAL file unless the mod is a gameplay mod that edits this layout on purpose."
@@ -620,73 +82,8 @@
   "stg0501/stg0501_cmn.dat": {
    "pal_md5": "2865a7dd4de8e1948fc8a22a3e9b1b80",
    "usa_md5": "f120cac802bb6ffb867f2968df704c18",
-   "pal_bytes": 30776,
-   "usa_bytes": 30776,
    "kind": "stage-layout",
-   "stage": "stg0501",
    "stage_title": "Air Fleet",
-   "layer": "cmn",
-   "layer_meaning": "common layer, always loaded",
-   "entries_pal": 420,
-   "entries_usa": 420,
-   "pal_only": [],
-   "usa_only": [],
-   "changed": [
-    {
-     "pal": {
-      "type_id": 16,
-      "class": "RING",
-      "pos": [
-       2812.9,
-       -607.0,
-       -32362.6
-      ],
-      "rot_deg": [
-       0.0,
-       -180.0,
-       0.0
-      ],
-      "link": 0,
-      "range_x100": 10,
-      "saved_flags": "0x1001",
-      "params": {
-       "type": 1,
-       "num": 10,
-       "param0": 200.0,
-       "param1": 0.0,
-       "ghost": 1
-      }
-     },
-     "usa": {
-      "type_id": 16,
-      "class": "RING",
-      "pos": [
-       2812.9,
-       -610.0,
-       -32362.6
-      ],
-      "rot_deg": [
-       0.0,
-       -180.0,
-       0.0
-      ],
-      "link": 0,
-      "range_x100": 10,
-      "saved_flags": "0x1001",
-      "params": {
-       "type": 1,
-       "num": 10,
-       "param0": 200.0,
-       "param1": 0.0,
-       "ghost": 1
-      }
-     },
-     "fields": [
-      "pos"
-     ],
-     "moved_units": 3.0
-    }
-   ],
    "summary": "RING moved 3.0 units",
    "risk": "gameplay",
    "advice": "A mod file built from NTSC-U replaces the PAL layout and drops the PAL changes listed in this entry. Warn before enabling; keep the PAL file unless the mod is a gameplay mod that edits this layout on purpose."
@@ -694,71 +91,8 @@
   "stg0501/stg0501_hrd.dat": {
    "pal_md5": "28ae1de14bea0010cdef1b9b873416d4",
    "usa_md5": "fcee3bbee9eede4d32f02f8c5ae37b72",
-   "pal_bytes": 1784,
-   "usa_bytes": 1640,
    "kind": "stage-layout",
-   "stage": "stg0501",
    "stage_title": "Air Fleet",
-   "layer": "hrd",
-   "layer_meaning": "hard-mode layer",
-   "entries_pal": 30,
-   "entries_usa": 28,
-   "pal_only": [
-    {
-     "type_id": 80,
-     "class": "SETCOLLISION",
-     "pos": [
-      1987.8,
-      -170.0,
-      -7847.5
-     ],
-     "rot_deg": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x4001",
-     "params": {
-      "kind": 7,
-      "form": 1,
-      "X": 110.0,
-      "Y": 110.0,
-      "Z": 110.0,
-      "Id": 0,
-      "appear": 0
-     }
-    },
-    {
-     "type_id": 80,
-     "class": "SETCOLLISION",
-     "pos": [
-      2409.9,
-      -449.2,
-      -21009.3
-     ],
-     "rot_deg": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x4001",
-     "params": {
-      "kind": 7,
-      "form": 1,
-      "X": 110.0,
-      "Y": 110.0,
-      "Z": 110.0,
-      "Id": 0,
-      "appear": 0
-     }
-    }
-   ],
-   "usa_only": [],
-   "changed": [],
    "summary": "PAL adds 2 placement(s): 2 x SETCOLLISION",
    "risk": "gameplay",
    "advice": "A mod file built from NTSC-U replaces the PAL layout and drops the PAL changes listed in this entry. Warn before enabling; keep the PAL file unless the mod is a gameplay mod that edits this layout on purpose."
@@ -766,100 +100,8 @@
   "stg0502/stg0502_hrd.dat": {
    "pal_md5": "0d0c7c4d07b9bd2645cd90dea7bd2159",
    "usa_md5": "e424965d667d384f302681215dc7c25a",
-   "pal_bytes": 896,
-   "usa_bytes": 824,
    "kind": "stage-layout",
-   "stage": "stg0502",
    "stage_title": "Iron Jungle",
-   "layer": "hrd",
-   "layer_meaning": "hard-mode layer",
-   "entries_pal": 12,
-   "entries_usa": 11,
-   "pal_only": [
-    {
-     "type_id": 80,
-     "class": "SETCOLLISION",
-     "pos": [
-      -6176.3,
-      0.5,
-      -10670.5
-     ],
-     "rot_deg": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x4001",
-     "params": {
-      "kind": 7,
-      "form": 1,
-      "X": 210.0,
-      "Y": 210.0,
-      "Z": 110.0,
-      "Id": 0,
-      "appear": 0
-     }
-    }
-   ],
-   "usa_only": [],
-   "changed": [
-    {
-     "pal": {
-      "type_id": 16,
-      "class": "RING",
-      "pos": [
-       -11018.1,
-       -1154.0,
-       -10660.4
-      ],
-      "rot_deg": [
-       38.0,
-       90.0,
-       0.0
-      ],
-      "link": 0,
-      "range_x100": 15,
-      "saved_flags": "0x4001",
-      "params": {
-       "type": 1,
-       "num": 40,
-       "param0": 1200.0,
-       "param1": 0.0,
-       "ghost": 1
-      }
-     },
-     "usa": {
-      "type_id": 16,
-      "class": "RING",
-      "pos": [
-       -11018.1,
-       -1154.0,
-       -10660.4
-      ],
-      "rot_deg": [
-       38.0,
-       90.0,
-       0.0
-      ],
-      "link": 0,
-      "range_x100": 15,
-      "saved_flags": "0x4001",
-      "params": {
-       "type": 1,
-       "num": 30,
-       "param0": 1200.0,
-       "param1": 0.0,
-       "ghost": 1
-      }
-     },
-     "fields": [
-      "misc"
-     ],
-     "moved_units": 0.0
-    }
-   ],
    "summary": "PAL adds 1 placement(s): 1 x SETCOLLISION; RING misc differs",
    "risk": "gameplay",
    "advice": "A mod file built from NTSC-U replaces the PAL layout and drops the PAL changes listed in this entry. Warn before enabling; keep the PAL file unless the mod is a gameplay mod that edits this layout on purpose."
@@ -867,508 +109,8 @@
   "stg0504/stg0504_cmn.dat": {
    "pal_md5": "384470a5da0d8b39a92426c7804978ef",
    "usa_md5": "6fc8c4795680ba0d77d040bee5d4ee36",
-   "pal_bytes": 26340,
-   "usa_bytes": 25584,
    "kind": "stage-layout",
-   "stage": "stg0504",
    "stage_title": "Lost Impact",
-   "layer": "cmn",
-   "layer_meaning": "common layer, always loaded",
-   "entries_pal": 348,
-   "entries_usa": 339,
-   "pal_only": [
-    {
-     "type_id": 100,
-     "class": "GUN_SOLDIER",
-     "pos": [
-      26.7,
-      -490.0,
-      5817.9
-     ],
-     "rot_deg": [
-      0.0,
-      140.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 7,
-     "saved_flags": "0x1001",
-     "params": {
-      "MoveRange": 200.0,
-      "SearchRange": 0.0,
-      "SearchAngle": 0.0,
-      "SearchWidth": 0.0,
-      "SearchHeight": 0.0,
-      "SearchHeightOffset": 0.0,
-      "MoveSpeedRatio": 1.0,
-      "HaveShield": 1,
-      "WeaponType": 5,
-      "AppearType": 0,
-      "Pos0_WaitType": 1,
-      "Pos0_WaitSec": 1.0,
-      "Pos0_MoveSpeedRatio": 1.0,
-      "Pos1_X": 0.0,
-      "Pos1_Z": 0.0,
-      "Pos1_WaitType": 0,
-      "Pos1_WaitSec": 1.0,
-      "Pos1_MoveSpeedRatio": 1.0,
-      "Pos2_X": 0.0,
-      "Pos2_Z": 0.0,
-      "Pos2_WaitType": 0,
-      "Pos2_WaitSec": 1.0,
-      "Pos2_MoveSpeedRatio": 1.0
-     }
-    },
-    {
-     "type_id": 101,
-     "class": "GUN_BEETLE",
-     "pos": [
-      -168.2,
-      -469.8,
-      5954.4
-     ],
-     "rot_deg": [
-      0.0,
-      -50.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 7,
-     "saved_flags": "0x1001",
-     "params": {
-      "MoveRange": 200.0,
-      "SearchRange": 0.0,
-      "SearchAngle": 0.0,
-      "SearchWidth": 0.0,
-      "SearchHeight": 0.0,
-      "SearchHeightOffset": 0.0,
-      "MoveSpeedRatio": 1.0,
-      "AppearType": 0,
-      "ActionType": 1,
-      "": 0,
-      "FloatWidth": 50.0,
-      "AttackStart": 0.4,
-      "AttackEnd": 0.6,
-      "PathMirror": 0,
-      "BodyType": 0,
-      "WeaponType": 0,
-      "SparkDischarge": 2.0,
-      "SparkWait": 2.0
-     }
-    },
-    {
-     "type_id": 80,
-     "class": "SETCOLLISION",
-     "pos": [
-      3.8,
-      240.2,
-      -535.3
-     ],
-     "rot_deg": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 20,
-     "saved_flags": "0x1001",
-     "params": {
-      "kind": 0,
-      "form": 1,
-      "X": 90.0,
-      "Y": 10.0,
-      "Z": 400.0,
-      "Id": 0,
-      "appear": 0
-     }
-    },
-    {
-     "type_id": 80,
-     "class": "SETCOLLISION",
-     "pos": [
-      4.9,
-      170.2,
-      -923.8
-     ],
-     "rot_deg": [
-      0.0,
-      90.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x1001",
-     "params": {
-      "kind": 0,
-      "form": 2,
-      "X": 90.0,
-      "Y": 10.0,
-      "Z": 90.0,
-      "Id": 0,
-      "appear": 0
-     }
-    },
-    {
-     "type_id": 80,
-     "class": "SETCOLLISION",
-     "pos": [
-      4.9,
-      170.2,
-      -153.8
-     ],
-     "rot_deg": [
-      0.0,
-      90.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x1001",
-     "params": {
-      "kind": 0,
-      "form": 2,
-      "X": 90.0,
-      "Y": 10.0,
-      "Z": 90.0,
-      "Id": 0,
-      "appear": 0
-     }
-    },
-    {
-     "type_id": 80,
-     "class": "SETCOLLISION",
-     "pos": [
-      89.7,
-      215.3,
-      -843.0
-     ],
-     "rot_deg": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x1001",
-     "params": {
-      "kind": 0,
-      "form": 1,
-      "X": 10.0,
-      "Y": 30.0,
-      "Z": 30.0,
-      "Id": 0,
-      "appear": 0
-     }
-    },
-    {
-     "type_id": 80,
-     "class": "SETCOLLISION",
-     "pos": [
-      89.7,
-      215.3,
-      -233.0
-     ],
-     "rot_deg": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x1001",
-     "params": {
-      "kind": 0,
-      "form": 1,
-      "X": 10.0,
-      "Y": 30.0,
-      "Z": 30.0,
-      "Id": 0,
-      "appear": 0
-     }
-    },
-    {
-     "type_id": 80,
-     "class": "SETCOLLISION",
-     "pos": [
-      -89.3,
-      215.3,
-      -843.0
-     ],
-     "rot_deg": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x1001",
-     "params": {
-      "kind": 0,
-      "form": 1,
-      "X": 10.0,
-      "Y": 30.0,
-      "Z": 30.0,
-      "Id": 0,
-      "appear": 0
-     }
-    },
-    {
-     "type_id": 80,
-     "class": "SETCOLLISION",
-     "pos": [
-      -89.3,
-      215.3,
-      -212.0
-     ],
-     "rot_deg": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x1001",
-     "params": {
-      "kind": 0,
-      "form": 1,
-      "X": 10.0,
-      "Y": 30.0,
-      "Z": 30.0,
-      "Id": 0,
-      "appear": 0
-     }
-    }
-   ],
-   "usa_only": [],
-   "changed": [
-    {
-     "pal": {
-      "type_id": 79,
-      "class": "SET_VEHICLE",
-      "pos": [
-       -71.9,
-       -564.4,
-       4345.3
-      ],
-      "rot_deg": [
-       0.0,
-       0.0,
-       0.0
-      ],
-      "link": 0,
-      "range_x100": 10,
-      "saved_flags": "0x1001",
-      "params": {
-       "Vehicle": 12
-      }
-     },
-     "usa": {
-      "type_id": 79,
-      "class": "SET_VEHICLE",
-      "pos": [
-       -69.8,
-       -565.0,
-       4349.3
-      ],
-      "rot_deg": [
-       0.0,
-       0.0,
-       0.0
-      ],
-      "link": 0,
-      "range_x100": 5,
-      "saved_flags": "0x1001",
-      "params": {
-       "Vehicle": 12
-      }
-     },
-     "fields": [
-      "pos",
-      "range"
-     ],
-     "moved_units": 4.5
-    },
-    {
-     "pal": {
-      "type_id": 4403,
-      "class": "DOOR",
-      "pos": [
-       52.0,
-       -490.0,
-       5750.0
-      ],
-      "rot_deg": [
-       0.0,
-       0.0,
-       0.0
-      ],
-      "link": 0,
-      "range_x100": 7,
-      "saved_flags": "0x1001",
-      "params": {
-       "type": 0,
-       "model": 0,
-       "width": 100.0,
-       "height": 100.0,
-       "depth": 100.0,
-       "X": 0.0,
-       "Y": 0.0,
-       "Z": 0.0
-      }
-     },
-     "usa": {
-      "type_id": 4403,
-      "class": "DOOR",
-      "pos": [
-       52.0,
-       -490.0,
-       5750.0
-      ],
-      "rot_deg": [
-       0.0,
-       0.0,
-       0.0
-      ],
-      "link": 0,
-      "range_x100": 7,
-      "saved_flags": "0x1001",
-      "params": {
-       "type": 0,
-       "model": 0,
-       "width": 30.0,
-       "height": 30.0,
-       "depth": 20.0,
-       "X": 0.0,
-       "Y": 0.0,
-       "Z": 0.0
-      }
-     },
-     "fields": [
-      "misc"
-     ],
-     "moved_units": 0.0
-    },
-    {
-     "pal": {
-      "type_id": 4403,
-      "class": "DOOR",
-      "pos": [
-       -388.0,
-       -490.0,
-       5672.0
-      ],
-      "rot_deg": [
-       0.0,
-       180.0,
-       0.0
-      ],
-      "link": 0,
-      "range_x100": 3,
-      "saved_flags": "0x1001",
-      "params": {
-       "type": 0,
-       "model": 0,
-       "width": 100.0,
-       "height": 100.0,
-       "depth": 100.0,
-       "X": 0.0,
-       "Y": 0.0,
-       "Z": 0.0
-      }
-     },
-     "usa": {
-      "type_id": 4403,
-      "class": "DOOR",
-      "pos": [
-       -388.0,
-       -490.0,
-       5672.0
-      ],
-      "rot_deg": [
-       0.0,
-       180.0,
-       0.0
-      ],
-      "link": 0,
-      "range_x100": 3,
-      "saved_flags": "0x1001",
-      "params": {
-       "type": 0,
-       "model": 0,
-       "width": 30.0,
-       "height": 30.0,
-       "depth": 30.0,
-       "X": 0.0,
-       "Y": 0.0,
-       "Z": 0.0
-      }
-     },
-     "fields": [
-      "misc"
-     ],
-     "moved_units": 0.0
-    },
-    {
-     "pal": {
-      "type_id": 4403,
-      "class": "DOOR",
-      "pos": [
-       -388.0,
-       -490.0,
-       5750.0
-      ],
-      "rot_deg": [
-       0.0,
-       0.0,
-       0.0
-      ],
-      "link": 0,
-      "range_x100": 7,
-      "saved_flags": "0x1001",
-      "params": {
-       "type": 0,
-       "model": 0,
-       "width": 100.0,
-       "height": 100.0,
-       "depth": 100.0,
-       "X": 0.0,
-       "Y": 0.0,
-       "Z": 0.0
-      }
-     },
-     "usa": {
-      "type_id": 4403,
-      "class": "DOOR",
-      "pos": [
-       -388.0,
-       -490.0,
-       5750.0
-      ],
-      "rot_deg": [
-       0.0,
-       0.0,
-       0.0
-      ],
-      "link": 0,
-      "range_x100": 7,
-      "saved_flags": "0x1001",
-      "params": {
-       "type": 0,
-       "model": 0,
-       "width": 20.0,
-       "height": 30.0,
-       "depth": 20.0,
-       "X": 0.0,
-       "Y": 0.0,
-       "Z": 0.0
-      }
-     },
-     "fields": [
-      "misc"
-     ],
-     "moved_units": 0.0
-    }
-   ],
    "summary": "PAL adds 9 placement(s): 1 x GUN_SOLDIER, 1 x GUN_BEETLE, 7 x SETCOLLISION; SET_VEHICLE moved 4.5 units, activation range 5 -> 10 (x100 units, NTSC-U -> PAL); DOOR misc differs; DOOR misc differs; DOOR misc differs",
    "risk": "gameplay",
    "advice": "A mod file built from NTSC-U replaces the PAL layout and drops the PAL changes listed in this entry. Warn before enabling; keep the PAL file unless the mod is a gameplay mod that edits this layout on purpose."
@@ -1376,93 +118,8 @@
   "stg0600/stg0600_cmn.dat": {
    "pal_md5": "561fa54a7fce04397e5e0220e5030ab4",
    "usa_md5": "f8a5f853e1a8e8c25cb8b16bb1d2abb4",
-   "pal_bytes": 32524,
-   "usa_bytes": 32524,
    "kind": "stage-layout",
-   "stage": "stg0600",
    "stage_title": "GUN Fortress",
-   "layer": "cmn",
-   "layer_meaning": "common layer, always loaded",
-   "entries_pal": 416,
-   "entries_usa": 416,
-   "pal_only": [],
-   "usa_only": [],
-   "changed": [
-    {
-     "pal": {
-      "type_id": 6000,
-      "class": "WATCH CAMERA",
-      "pos": [
-       -11360.1,
-       -405.8,
-       -5482.2
-      ],
-      "rot_deg": [
-       0.0,
-       90.0,
-       0.0
-      ],
-      "link": 0,
-      "range_x100": 6,
-      "saved_flags": "0x1001",
-      "params": {
-       "posX": 167.0,
-       "posY": -20.0,
-       "posZ": 20.0,
-       "angX": 0.0,
-       "angY": 0.0,
-       "angZ": 0.0,
-       "width": 100.0,
-       "height": 60.0,
-       "depth": 90.0,
-       "lookPosX": 210.0,
-       "lookPosY": -50.0,
-       "lookPosZ": 0.0,
-       "lookAngX": 0.0,
-       "lookAngY": 0.0,
-       "lookAngZ": 0.0
-      }
-     },
-     "usa": {
-      "type_id": 6000,
-      "class": "WATCH CAMERA",
-      "pos": [
-       -11360.1,
-       -405.8,
-       -5482.2
-      ],
-      "rot_deg": [
-       0.0,
-       90.0,
-       0.0
-      ],
-      "link": 0,
-      "range_x100": 10,
-      "saved_flags": "0x1001",
-      "params": {
-       "posX": 167.0,
-       "posY": -20.0,
-       "posZ": 20.0,
-       "angX": 0.0,
-       "angY": 0.0,
-       "angZ": 0.0,
-       "width": 100.0,
-       "height": 60.0,
-       "depth": 90.0,
-       "lookPosX": 210.0,
-       "lookPosY": -50.0,
-       "lookPosZ": 0.0,
-       "lookAngX": 0.0,
-       "lookAngY": 0.0,
-       "lookAngZ": 0.0
-      }
-     },
-     "fields": [
-      "range"
-     ],
-     "moved_units": 0.0
-    }
-   ],
    "summary": "WATCH CAMERA activation range 10 -> 6 (x100 units, NTSC-U -> PAL)",
    "risk": "gameplay",
    "advice": "A mod file built from NTSC-U replaces the PAL layout and drops the PAL changes listed in this entry. Warn before enabling; keep the PAL file unless the mod is a gameplay mod that edits this layout on purpose."
@@ -1470,71 +127,8 @@
   "stg0600/stg0600_hrd.dat": {
    "pal_md5": "db4ba4f6b93bd10c70ffa1145b07477c",
    "usa_md5": "5fad7420662b5322356187225a8c4bea",
-   "pal_bytes": 1672,
-   "usa_bytes": 1528,
    "kind": "stage-layout",
-   "stage": "stg0600",
    "stage_title": "GUN Fortress",
-   "layer": "hrd",
-   "layer_meaning": "hard-mode layer",
-   "entries_pal": 19,
-   "entries_usa": 17,
-   "pal_only": [
-    {
-     "type_id": 80,
-     "class": "SETCOLLISION",
-     "pos": [
-      -18339.6,
-      -1499.9,
-      -6944.6
-     ],
-     "rot_deg": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x4001",
-     "params": {
-      "kind": 7,
-      "form": 1,
-      "X": 110.0,
-      "Y": 30.0,
-      "Z": 110.0,
-      "Id": 0,
-      "appear": 0
-     }
-    },
-    {
-     "type_id": 80,
-     "class": "SETCOLLISION",
-     "pos": [
-      -29313.2,
-      -2878.3,
-      -8019.5
-     ],
-     "rot_deg": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x4001",
-     "params": {
-      "kind": 7,
-      "form": 1,
-      "X": 110.0,
-      "Y": 30.0,
-      "Z": 110.0,
-      "Id": 0,
-      "appear": 0
-     }
-    }
-   ],
-   "usa_only": [],
-   "changed": [],
    "summary": "PAL adds 2 placement(s): 2 x SETCOLLISION",
    "risk": "gameplay",
    "advice": "A mod file built from NTSC-U replaces the PAL layout and drops the PAL changes listed in this entry. Warn before enabling; keep the PAL file unless the mod is a gameplay mod that edits this layout on purpose."
@@ -1542,45 +136,8 @@
   "stg0602/stg0602_hrd.dat": {
    "pal_md5": "f14bd55c7489f8be36e1805e833c2e29",
    "usa_md5": "2352f44b2c58bd873fbe980a5fb08939",
-   "pal_bytes": 804,
-   "usa_bytes": 732,
    "kind": "stage-layout",
-   "stage": "stg0602",
    "stage_title": "Lava Shelter",
-   "layer": "hrd",
-   "layer_meaning": "hard-mode layer",
-   "entries_pal": 7,
-   "entries_usa": 6,
-   "pal_only": [
-    {
-     "type_id": 80,
-     "class": "SETCOLLISION",
-     "pos": [
-      -2378.0,
-      -1329.0,
-      -23938.7
-     ],
-     "rot_deg": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x4001",
-     "params": {
-      "kind": 7,
-      "form": 1,
-      "X": 210.0,
-      "Y": 210.0,
-      "Z": 310.0,
-      "Id": 0,
-      "appear": 0
-     }
-    }
-   ],
-   "usa_only": [],
-   "changed": [],
    "summary": "PAL adds 1 placement(s): 1 x SETCOLLISION",
    "risk": "gameplay",
    "advice": "A mod file built from NTSC-U replaces the PAL layout and drops the PAL changes listed in this entry. Warn before enabling; keep the PAL file unless the mod is a gameplay mod that edits this layout on purpose."
@@ -1588,65 +145,8 @@
   "stg0604/stg0604_ds1.dat": {
    "pal_md5": "80cfe6412ef032bac5d07198262f1008",
    "usa_md5": "956dc652d75484111faaec0e496a50a2",
-   "pal_bytes": 37684,
-   "usa_bytes": 37684,
    "kind": "stage-layout",
-   "stage": "stg0604",
    "stage_title": "Final Haunt",
-   "layer": "ds1",
-   "layer_meaning": "always-on scenery / ambience layer",
-   "entries_pal": 775,
-   "entries_usa": 775,
-   "pal_only": [],
-   "usa_only": [],
-   "changed": [
-    {
-     "pal": {
-      "type_id": 9609,
-      "class": "ART GADGET",
-      "pos": [
-       1578.4,
-       -2123.6,
-       -21438.6
-      ],
-      "rot_deg": [
-       0.0,
-       101.0,
-       0.0
-      ],
-      "link": 0,
-      "range_x100": 10,
-      "saved_flags": "0x408001",
-      "params": {
-       "model": 8
-      }
-     },
-     "usa": {
-      "type_id": 9609,
-      "class": "ART GADGET",
-      "pos": [
-       1587.4,
-       -2123.6,
-       -21438.6
-      ],
-      "rot_deg": [
-       0.0,
-       101.0,
-       0.0
-      ],
-      "link": 0,
-      "range_x100": 10,
-      "saved_flags": "0x408001",
-      "params": {
-       "model": 8
-      }
-     },
-     "fields": [
-      "pos"
-     ],
-     "moved_units": 9.0
-    }
-   ],
    "summary": "ART GADGET moved 9.0 units",
    "risk": "cosmetic",
    "advice": "A mod file built from NTSC-U replaces the PAL layout and drops the PAL changes listed in this entry. Warn before enabling; keep the PAL file unless the mod is a gameplay mod that edits this layout on purpose."
@@ -1654,275 +154,8 @@
   "stg0604/stg0604_hrd.dat": {
    "pal_md5": "01c93dd792e53e05d9ddace3a110eca3",
    "usa_md5": "d1d312a00f3c283ea3fabe27bcb62ead",
-   "pal_bytes": 1104,
-   "usa_bytes": 368,
    "kind": "stage-layout",
-   "stage": "stg0604",
    "stage_title": "Final Haunt",
-   "layer": "hrd",
-   "layer_meaning": "hard-mode layer",
-   "entries_pal": 14,
-   "entries_usa": 5,
-   "pal_only": [
-    {
-     "type_id": 140,
-     "class": "BK_GIANT",
-     "pos": [
-      1816.5,
-      -2203.4,
-      -21703.0
-     ],
-     "rot_deg": [
-      0.0,
-      180.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x5001",
-     "params": {
-      "MoveRange": 800.0,
-      "SearchRange": 0.0,
-      "SearchAngle": 0.0,
-      "SearchWidth": 800.0,
-      "SearchHeight": 50.0,
-      "SearchHeightOffset": 20.0,
-      "MoveSpeedRatio": 20.0,
-      "AppearType": 1,
-      "WeaponType": 0,
-      "OffsetPos_Y": 100.0,
-      "Gurad : ON": 0
-     }
-    },
-    {
-     "type_id": 140,
-     "class": "BK_GIANT",
-     "pos": [
-      1790.1,
-      -2203.4,
-      -21308.4
-     ],
-     "rot_deg": [
-      0.0,
-      180.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x5001",
-     "params": {
-      "MoveRange": 800.0,
-      "SearchRange": 0.0,
-      "SearchAngle": 0.0,
-      "SearchWidth": 800.0,
-      "SearchHeight": 50.0,
-      "SearchHeightOffset": 20.0,
-      "MoveSpeedRatio": 20.0,
-      "AppearType": 1,
-      "WeaponType": 0,
-      "OffsetPos_Y": 100.0,
-      "Gurad : ON": 0
-     }
-    },
-    {
-     "type_id": 15,
-     "class": "MOVE_FOOTING",
-     "pos": [
-      844.4,
-      -1374.0,
-      -13737.8
-     ],
-     "rot_deg": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 8,
-     "saved_flags": "0x5001",
-     "params": {
-      "model": 0,
-      "type": 4,
-      "spd": 20.0,
-      "acc": 0.0,
-      "pause": 0.0,
-      "pos": 0.0,
-      "param0": 60.0,
-      "param1": 0.0,
-      "param2": 0.0,
-      "pause damage": 0.0
-     }
-    },
-    {
-     "type_id": 140,
-     "class": "BK_GIANT",
-     "pos": [
-      1816.5,
-      -2203.4,
-      -21703.0
-     ],
-     "rot_deg": [
-      0.0,
-      180.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x4001",
-     "params": {
-      "MoveRange": 800.0,
-      "SearchRange": 0.0,
-      "SearchAngle": 0.0,
-      "SearchWidth": 800.0,
-      "SearchHeight": 50.0,
-      "SearchHeightOffset": 20.0,
-      "MoveSpeedRatio": 20.0,
-      "AppearType": 1,
-      "WeaponType": 0,
-      "OffsetPos_Y": 100.0,
-      "Gurad : ON": 0
-     }
-    },
-    {
-     "type_id": 140,
-     "class": "BK_GIANT",
-     "pos": [
-      1790.1,
-      -2203.4,
-      -21308.4
-     ],
-     "rot_deg": [
-      0.0,
-      180.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x4001",
-     "params": {
-      "MoveRange": 800.0,
-      "SearchRange": 0.0,
-      "SearchAngle": 0.0,
-      "SearchWidth": 800.0,
-      "SearchHeight": 50.0,
-      "SearchHeightOffset": 20.0,
-      "MoveSpeedRatio": 20.0,
-      "AppearType": 1,
-      "WeaponType": 0,
-      "OffsetPos_Y": 100.0,
-      "Gurad : ON": 0
-     }
-    },
-    {
-     "type_id": 15,
-     "class": "MOVE_FOOTING",
-     "pos": [
-      844.4,
-      -1374.0,
-      -13737.8
-     ],
-     "rot_deg": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 8,
-     "saved_flags": "0x4001",
-     "params": {
-      "model": 0,
-      "type": 4,
-      "spd": 20.0,
-      "acc": 0.0,
-      "pause": 0.0,
-      "pos": 0.0,
-      "param0": 60.0,
-      "param1": 0.0,
-      "param2": 0.0,
-      "pause damage": 0.0
-     }
-    },
-    {
-     "type_id": 80,
-     "class": "SETCOLLISION",
-     "pos": [
-      630.1,
-      -1275.3,
-      -13379.3
-     ],
-     "rot_deg": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x4001",
-     "params": {
-      "kind": 7,
-      "form": 1,
-      "X": 210.0,
-      "Y": 110.0,
-      "Z": 110.0,
-      "Id": 0,
-      "appear": 0
-     }
-    },
-    {
-     "type_id": 80,
-     "class": "SETCOLLISION",
-     "pos": [
-      1567.0,
-      -3946.3,
-      -28060.6
-     ],
-     "rot_deg": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x4001",
-     "params": {
-      "kind": 7,
-      "form": 1,
-      "X": 110.0,
-      "Y": 110.0,
-      "Z": 210.0,
-      "Id": 0,
-      "appear": 0
-     }
-    },
-    {
-     "type_id": 80,
-     "class": "SETCOLLISION",
-     "pos": [
-      8574.0,
-      -5565.1,
-      -36280.6
-     ],
-     "rot_deg": [
-      0.0,
-      0.0,
-      0.0
-     ],
-     "link": 0,
-     "range_x100": 10,
-     "saved_flags": "0x4001",
-     "params": {
-      "kind": 7,
-      "form": 1,
-      "X": 210.0,
-      "Y": 210.0,
-      "Z": 110.0,
-      "Id": 0,
-      "appear": 0
-     }
-    }
-   ],
-   "usa_only": [],
-   "changed": [],
    "summary": "PAL adds 9 placement(s): 4 x BK_GIANT, 2 x MOVE_FOOTING, 3 x SETCOLLISION",
    "risk": "gameplay",
    "advice": "A mod file built from NTSC-U replaces the PAL layout and drops the PAL changes listed in this entry. Warn before enabling; keep the PAL file unless the mod is a gameplay mod that edits this layout on purpose."
@@ -1930,27 +163,14 @@
   "fonts/Advertise/Advertise_EN.fnt": {
    "pal_md5": "b5be19e0bcf6cb73e1f1302f2be8d02c",
    "usa_md5": "6521d4d4ca47917b99c92d8c931e26d1",
-   "pal_bytes": 114802,
-   "usa_bytes": 114458,
-   "bank": "Advertise",
-   "lang": "EN",
    "kind": "font-messages",
    "summary": "key set differs (PAL-only [5489100], NTSC-U-only -); 1 record text(s) differ.",
    "risk": "cosmetic",
-   "index_shift": {
-    "pal_records": 958,
-    "usa_records": 957,
-    "indexes_80_126_naming_another_message": 0
-   },
    "advice": "The NTSC-U table lacks key 5489100, so every message index before it is one lower than in PAL. The PC save-text rewrite (Save tables, by message index) would then put its words on the wrong messages; the Advertise rewrite matches by text and only misses the PS2 memory-card wording. Ship the PAL table."
   },
   "fonts/Advertise/Advertise_EN.txd": {
    "pal_md5": "8e2e3ee0fbd552c451a6a7adb130d637",
    "usa_md5": "80d0cbafd38773c27c585c08784efeb6",
-   "pal_bytes": 32984,
-   "usa_bytes": 32984,
-   "bank": "Advertise",
-   "lang": "EN",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -1959,10 +179,6 @@
   "fonts/Advertise/Advertise_EN00.met": {
    "pal_md5": "2a5de27919283af2a338415f2c6bd692",
    "usa_md5": "a59c404a206ad3ddeddf3f59de486541",
-   "pal_bytes": 2115,
-   "usa_bytes": 2115,
-   "bank": "Advertise",
-   "lang": "EN",
    "kind": "font-glyph-metrics",
    "summary": "87 glyphs in PAL, 87 in NTSC-U; code set same; glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -1971,27 +187,14 @@
   "fonts/Advertise/Advertise_FR.fnt": {
    "pal_md5": "952f48cc4a4800d30df2922e14267558",
    "usa_md5": "c2be9846020ae0303bec4455fbb14148",
-   "pal_bytes": 118198,
-   "usa_bytes": 117878,
-   "bank": "Advertise",
-   "lang": "FR",
    "kind": "font-messages",
    "summary": "key set differs (PAL-only [5489100], NTSC-U-only -); 6 record text(s) differ.",
    "risk": "cosmetic",
-   "index_shift": {
-    "pal_records": 958,
-    "usa_records": 957,
-    "indexes_80_126_naming_another_message": 0
-   },
    "advice": "The NTSC-U table lacks key 5489100, so every message index before it is one lower than in PAL. The PC save-text rewrite (Save tables, by message index) would then put its words on the wrong messages; the Advertise rewrite matches by text and only misses the PS2 memory-card wording. Ship the PAL table."
   },
   "fonts/Advertise/Advertise_FR.txd": {
    "pal_md5": "91c3868189e7ebf5a477496a395b135d",
    "usa_md5": "cea57177b35e30258c9312d8c1c8519d",
-   "pal_bytes": 32984,
-   "usa_bytes": 32984,
-   "bank": "Advertise",
-   "lang": "FR",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -2000,10 +203,6 @@
   "fonts/Advertise/Advertise_FR00.met": {
    "pal_md5": "2537ad4dc73b7a6de7e1ef714dd4841c",
    "usa_md5": "114b9f2dbd7039cc15148f1fc129c9b3",
-   "pal_bytes": 2403,
-   "usa_bytes": 2403,
-   "bank": "Advertise",
-   "lang": "FR",
    "kind": "font-glyph-metrics",
    "summary": "99 glyphs in PAL, 99 in NTSC-U; code set same; glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -2012,27 +211,14 @@
   "fonts/Advertise/Advertise_GE.fnt": {
    "pal_md5": "329e63ce97809025bc152a91946f322a",
    "usa_md5": "c1c3f0d028aa694f1279a6c8fab607ed",
-   "pal_bytes": 121910,
-   "usa_bytes": 121574,
-   "bank": "Advertise",
-   "lang": "GE",
    "kind": "font-messages",
    "summary": "key set differs (PAL-only [5489100], NTSC-U-only -); 2 record text(s) differ.",
    "risk": "cosmetic",
-   "index_shift": {
-    "pal_records": 958,
-    "usa_records": 957,
-    "indexes_80_126_naming_another_message": 0
-   },
    "advice": "The NTSC-U table lacks key 5489100, so every message index before it is one lower than in PAL. The PC save-text rewrite (Save tables, by message index) would then put its words on the wrong messages; the Advertise rewrite matches by text and only misses the PS2 memory-card wording. Ship the PAL table."
   },
   "fonts/Advertise/Advertise_GE.txd": {
    "pal_md5": "6862f835a61a0410dd52e38d2f9744b2",
    "usa_md5": "ec1e65a5661be32ef5e6792d7b11e585",
-   "pal_bytes": 32984,
-   "usa_bytes": 32984,
-   "bank": "Advertise",
-   "lang": "GE",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -2041,10 +227,6 @@
   "fonts/Advertise/Advertise_GE00.met": {
    "pal_md5": "025be74fc84e4b62b3135d231a2e2388",
    "usa_md5": "1ccccaf37403228f3462332252067f4d",
-   "pal_bytes": 2211,
-   "usa_bytes": 2211,
-   "bank": "Advertise",
-   "lang": "GE",
    "kind": "font-glyph-metrics",
    "summary": "91 glyphs in PAL, 91 in NTSC-U; code set same; glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -2053,27 +235,14 @@
   "fonts/Advertise/Advertise_IT.fnt": {
    "pal_md5": "f8b0bc11d3cbbc47ff8615e11f9abd0a",
    "usa_md5": "370050acbffebabb76ec344eab36e2a5",
-   "pal_bytes": 117526,
-   "usa_bytes": 117236,
-   "bank": "Advertise",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "key set differs (PAL-only [5489100], NTSC-U-only -); 2 record text(s) differ.",
    "risk": "cosmetic",
-   "index_shift": {
-    "pal_records": 958,
-    "usa_records": 957,
-    "indexes_80_126_naming_another_message": 0
-   },
    "advice": "The NTSC-U table lacks key 5489100, so every message index before it is one lower than in PAL. The PC save-text rewrite (Save tables, by message index) would then put its words on the wrong messages; the Advertise rewrite matches by text and only misses the PS2 memory-card wording. Ship the PAL table."
   },
   "fonts/Advertise/Advertise_IT.txd": {
    "pal_md5": "9bf9ec1ab6504d430250a2b3403efe03",
    "usa_md5": "801f4198c2a5a617738d7cbfc18e748c",
-   "pal_bytes": 32984,
-   "usa_bytes": 32984,
-   "bank": "Advertise",
-   "lang": "IT",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -2082,10 +251,6 @@
   "fonts/Advertise/Advertise_IT00.met": {
    "pal_md5": "d9a20f782bffccdb6bf276e08fb22f22",
    "usa_md5": "c4c3875d69ee9965ac494bc6972ae03e",
-   "pal_bytes": 2259,
-   "usa_bytes": 2259,
-   "bank": "Advertise",
-   "lang": "IT",
    "kind": "font-glyph-metrics",
    "summary": "93 glyphs in PAL, 93 in NTSC-U; code set same; glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -2094,27 +259,14 @@
   "fonts/Advertise/Advertise_JP.fnt": {
    "pal_md5": "380c7fe7e7180d06c8eb46f29607ad6f",
    "usa_md5": "d279ad9b8b41eb0620eb6b0ce429c0bc",
-   "pal_bytes": 72414,
-   "usa_bytes": 72198,
-   "bank": "Advertise",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "key set differs (PAL-only [5489100], NTSC-U-only -); 3 record text(s) differ.",
    "risk": "cosmetic",
-   "index_shift": {
-    "pal_records": 958,
-    "usa_records": 957,
-    "indexes_80_126_naming_another_message": 0
-   },
    "advice": "The NTSC-U table lacks key 5489100, so every message index before it is one lower than in PAL. The PC save-text rewrite (Save tables, by message index) would then put its words on the wrong messages; the Advertise rewrite matches by text and only misses the PS2 memory-card wording. Ship the PAL table."
   },
   "fonts/Advertise/Advertise_JP.txd": {
    "pal_md5": "fc328307da54a0bb7348b24bf381da21",
    "usa_md5": "8141b3dc92c242bb5e137bdb90d7635c",
-   "pal_bytes": 296536,
-   "usa_bytes": 296536,
-   "bank": "Advertise",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -2123,10 +275,6 @@
   "fonts/Advertise/Advertise_JP05.met": {
    "pal_md5": "f6db51e1fbb5133bfbddf40a0a52b683",
    "usa_md5": "11d614b6bf2ffb1516ec2a2302522a30",
-   "pal_bytes": 2787,
-   "usa_bytes": 2763,
-   "bank": "Advertise",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "115 glyphs in PAL, 114 in NTSC-U; code set differs (PAL-only [34, 121, 24656, 25613], NTSC-U-only [20316, 20803, 25104]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -2135,10 +283,6 @@
   "fonts/Advertise/Advertise_JP06.met": {
    "pal_md5": "b22bc310f3fe88086d08097c5380b65d",
    "usa_md5": "c06a094ca5e5879d45de83cdf2136c62",
-   "pal_bytes": 2715,
-   "usa_bytes": 2739,
-   "bank": "Advertise",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "112 glyphs in PAL, 113 in NTSC-U; code set differs (PAL-only [20316, 20803, 25104, 27841, 29366], NTSC-U-only [24656, 25613, 29255, 29401, 35504, 36948]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -2147,10 +291,6 @@
   "fonts/Advertise/Advertise_JP07.met": {
    "pal_md5": "ff8ad8fa11743b8ee865332b7be1868c",
    "usa_md5": "a09230fb60160bdb59357c61b4c1bb28",
-   "pal_bytes": 2427,
-   "usa_bytes": 2427,
-   "bank": "Advertise",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "100 glyphs in PAL, 100 in NTSC-U; code set differs (PAL-only [29255, 29401, 35504, 36948], NTSC-U-only [22684, 36617, 37117, 38627]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -2159,10 +299,6 @@
   "fonts/Advertise/Advertise_JP08.met": {
    "pal_md5": "40e562ed55fcdff83dcc17722583304a",
    "usa_md5": "ee2c8202bad143a47fb7f037c5e0508a",
-   "pal_bytes": 2379,
-   "usa_bytes": 2283,
-   "bank": "Advertise",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "98 glyphs in PAL, 94 in NTSC-U; code set differs (PAL-only [22684, 36617, 37117, 38627], NTSC-U-only -); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -2171,27 +307,14 @@
   "fonts/Advertise/Advertise_SP.fnt": {
    "pal_md5": "308775cab72a6148a05a79b215482179",
    "usa_md5": "60aec39b5f99b8d06d78f831c0c9d76b",
-   "pal_bytes": 113700,
-   "usa_bytes": 113500,
-   "bank": "Advertise",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "key set differs (PAL-only [5489100], NTSC-U-only -); 2 record text(s) differ.",
    "risk": "cosmetic",
-   "index_shift": {
-    "pal_records": 958,
-    "usa_records": 957,
-    "indexes_80_126_naming_another_message": 0
-   },
    "advice": "The NTSC-U table lacks key 5489100, so every message index before it is one lower than in PAL. The PC save-text rewrite (Save tables, by message index) would then put its words on the wrong messages; the Advertise rewrite matches by text and only misses the PS2 memory-card wording. Ship the PAL table."
   },
   "fonts/Movie/Movie_GE.fnt": {
    "pal_md5": "1148b8f3afbbb492201bfc5ac260d93f",
    "usa_md5": "39f3fa23f825114c838bfbd89790e5b2",
-   "pal_bytes": 4854,
-   "usa_bytes": 4854,
-   "bank": "Movie",
-   "lang": "GE",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -2200,10 +323,6 @@
   "fonts/Movie/Movie_IT.fnt": {
    "pal_md5": "5c342455bbfb71c2102774c3a52cb738",
    "usa_md5": "a993fad5aa9a29a5809dd7ea9204d1cd",
-   "pal_bytes": 4500,
-   "usa_bytes": 4500,
-   "bank": "Movie",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -2212,10 +331,6 @@
   "fonts/Movie/Movie_JP.fnt": {
    "pal_md5": "1c8d8cd6b4fdcb273f489e871f5d648e",
    "usa_md5": "5894ab83f8002f69cb476317509f61ab",
-   "pal_bytes": 2832,
-   "usa_bytes": 2832,
-   "bank": "Movie",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -2224,10 +339,6 @@
   "fonts/Movie/Movie_SP.fnt": {
    "pal_md5": "376a9057e9038f827c6c6e52365e5458",
    "usa_md5": "33216b7c2667f095468bbdc78a7ef5b0",
-   "pal_bytes": 4640,
-   "usa_bytes": 4640,
-   "bank": "Movie",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -2236,27 +347,14 @@
   "fonts/Save/Save_EN.fnt": {
    "pal_md5": "d7c773d7964212c05a77111d34cb51cd",
    "usa_md5": "3e81aa46987a4af3fa3c65c2c1e1ad1b",
-   "pal_bytes": 32544,
-   "usa_bytes": 32200,
-   "bank": "Save",
-   "lang": "EN",
    "kind": "font-messages",
    "summary": "key set differs (PAL-only [5489100], NTSC-U-only -); 1 record text(s) differ.",
    "risk": "cosmetic",
-   "index_shift": {
-    "pal_records": 163,
-    "usa_records": 162,
-    "indexes_80_126_naming_another_message": 47
-   },
    "advice": "The NTSC-U table lacks key 5489100, so every message index before it is one lower than in PAL. The PC save-text rewrite (Save tables, by message index) would then put its words on the wrong messages; the Advertise rewrite matches by text and only misses the PS2 memory-card wording. Ship the PAL table."
   },
   "fonts/Save/Save_EN.txd": {
    "pal_md5": "a6cc6d88f15bd4f351524bd36bc1d1e0",
    "usa_md5": "abc2839176c4575308cd4b79fdfac379",
-   "pal_bytes": 32984,
-   "usa_bytes": 32984,
-   "bank": "Save",
-   "lang": "EN",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -2265,10 +363,6 @@
   "fonts/Save/Save_EN00.met": {
    "pal_md5": "759508aeb2fe0811ff08e851fec75a30",
    "usa_md5": "b8448a407f0316be9ab6f8501ae25fea",
-   "pal_bytes": 1822,
-   "usa_bytes": 1822,
-   "bank": "Save",
-   "lang": "EN",
    "kind": "font-glyph-metrics",
    "summary": "75 glyphs in PAL, 75 in NTSC-U; code set same; glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -2277,27 +371,14 @@
   "fonts/Save/Save_FR.fnt": {
    "pal_md5": "7ff784b639d06ca795774fff3a69916a",
    "usa_md5": "21b633f0ca1c4037603ad942db01e65f",
-   "pal_bytes": 35278,
-   "usa_bytes": 34958,
-   "bank": "Save",
-   "lang": "FR",
    "kind": "font-messages",
    "summary": "key set differs (PAL-only [5489100], NTSC-U-only -); 4 record text(s) differ.",
    "risk": "cosmetic",
-   "index_shift": {
-    "pal_records": 163,
-    "usa_records": 162,
-    "indexes_80_126_naming_another_message": 47
-   },
    "advice": "The NTSC-U table lacks key 5489100, so every message index before it is one lower than in PAL. The PC save-text rewrite (Save tables, by message index) would then put its words on the wrong messages; the Advertise rewrite matches by text and only misses the PS2 memory-card wording. Ship the PAL table."
   },
   "fonts/Save/Save_FR.txd": {
    "pal_md5": "b8fa1dc9564e397b336ad3741c010963",
    "usa_md5": "bfba56aaa772c859bba68e68df3137ec",
-   "pal_bytes": 32984,
-   "usa_bytes": 32984,
-   "bank": "Save",
-   "lang": "FR",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -2306,10 +387,6 @@
   "fonts/Save/Save_FR00.met": {
    "pal_md5": "f40c76e73e9ce9dfd5bb2bf56dea40df",
    "usa_md5": "f3f2bb2ff18ae838985d41034891e9dc",
-   "pal_bytes": 1966,
-   "usa_bytes": 1966,
-   "bank": "Save",
-   "lang": "FR",
    "kind": "font-glyph-metrics",
    "summary": "81 glyphs in PAL, 81 in NTSC-U; code set same; glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -2318,27 +395,14 @@
   "fonts/Save/Save_GE.fnt": {
    "pal_md5": "d93641726547740b4927742b3527427a",
    "usa_md5": "72af0da82ae389fd6af82cadcc6b6d18",
-   "pal_bytes": 36188,
-   "usa_bytes": 35852,
-   "bank": "Save",
-   "lang": "GE",
    "kind": "font-messages",
    "summary": "key set differs (PAL-only [5489100], NTSC-U-only -); 2 record text(s) differ.",
    "risk": "cosmetic",
-   "index_shift": {
-    "pal_records": 163,
-    "usa_records": 162,
-    "indexes_80_126_naming_another_message": 47
-   },
    "advice": "The NTSC-U table lacks key 5489100, so every message index before it is one lower than in PAL. The PC save-text rewrite (Save tables, by message index) would then put its words on the wrong messages; the Advertise rewrite matches by text and only misses the PS2 memory-card wording. Ship the PAL table."
   },
   "fonts/Save/Save_GE.txd": {
    "pal_md5": "459cd3db52b8385fc60e836cc8571788",
    "usa_md5": "114dd2f88a3cced6e5790bf1a47b3b95",
-   "pal_bytes": 32984,
-   "usa_bytes": 32984,
-   "bank": "Save",
-   "lang": "GE",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -2347,10 +411,6 @@
   "fonts/Save/Save_GE00.met": {
    "pal_md5": "23e0b144f59bf6617cf22979b39662da",
    "usa_md5": "76f186a67724ce26fba763d9e8a6de59",
-   "pal_bytes": 1870,
-   "usa_bytes": 1870,
-   "bank": "Save",
-   "lang": "GE",
    "kind": "font-glyph-metrics",
    "summary": "77 glyphs in PAL, 77 in NTSC-U; code set same; glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -2359,27 +419,14 @@
   "fonts/Save/Save_IT.fnt": {
    "pal_md5": "45b62b19aad540e57144c8c6f0be7633",
    "usa_md5": "a881fabae51a0bfa4423fffe0d9a8648",
-   "pal_bytes": 34002,
-   "usa_bytes": 33712,
-   "bank": "Save",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "key set differs (PAL-only [5489100], NTSC-U-only -); 2 record text(s) differ.",
    "risk": "cosmetic",
-   "index_shift": {
-    "pal_records": 163,
-    "usa_records": 162,
-    "indexes_80_126_naming_another_message": 47
-   },
    "advice": "The NTSC-U table lacks key 5489100, so every message index before it is one lower than in PAL. The PC save-text rewrite (Save tables, by message index) would then put its words on the wrong messages; the Advertise rewrite matches by text and only misses the PS2 memory-card wording. Ship the PAL table."
   },
   "fonts/Save/Save_IT.txd": {
    "pal_md5": "ae49578b5a614a8700dc70f1c3b293cb",
    "usa_md5": "f72e0ada5db5a3c7f9f341c1254bee14",
-   "pal_bytes": 32984,
-   "usa_bytes": 32984,
-   "bank": "Save",
-   "lang": "IT",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -2388,10 +435,6 @@
   "fonts/Save/Save_IT00.met": {
    "pal_md5": "28bfef80ecb72de8c25fb5a63e704069",
    "usa_md5": "b58aa3edd02d037f86f3f8842c4daae6",
-   "pal_bytes": 1918,
-   "usa_bytes": 1918,
-   "bank": "Save",
-   "lang": "IT",
    "kind": "font-glyph-metrics",
    "summary": "79 glyphs in PAL, 79 in NTSC-U; code set same; glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -2400,27 +443,14 @@
   "fonts/Save/Save_JP.fnt": {
    "pal_md5": "df29beb1b2c785858c5e76fa4e4fb6ad",
    "usa_md5": "de24465f441417620a0de32cc25cb7e3",
-   "pal_bytes": 19906,
-   "usa_bytes": 19692,
-   "bank": "Save",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "key set differs (PAL-only [5489100], NTSC-U-only -); 2 record text(s) differ.",
    "risk": "cosmetic",
-   "index_shift": {
-    "pal_records": 163,
-    "usa_records": 162,
-    "indexes_80_126_naming_another_message": 47
-   },
    "advice": "The NTSC-U table lacks key 5489100, so every message index before it is one lower than in PAL. The PC save-text rewrite (Save tables, by message index) would then put its words on the wrong messages; the Advertise rewrite matches by text and only misses the PS2 memory-card wording. Ship the PAL table."
   },
   "fonts/Save/Save_JP.txd": {
    "pal_md5": "f5984bd98772ab4d190ac997f22aa09a",
    "usa_md5": "4eefd2dbb5d6a4a5b62b5c406cd365fc",
-   "pal_bytes": 98872,
-   "usa_bytes": 98872,
-   "bank": "Save",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -2429,10 +459,6 @@
   "fonts/Save/Save_JP00.met": {
    "pal_md5": "c3012dd89e42324e410ba7cf190ed339",
    "usa_md5": "f4b477ce03066010e4db1b036dd34172",
-   "pal_bytes": 2614,
-   "usa_bytes": 2542,
-   "bank": "Save",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "108 glyphs in PAL, 105 in NTSC-U; code set differs (PAL-only [32, 34, 97, 105, 108, 110], NTSC-U-only [65, 82, 84, 12431, 12452, 12467]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -2441,10 +467,6 @@
   "fonts/Save/Save_JP01.met": {
    "pal_md5": "5a73773bd71b2effdb24cd8dbfe1b5d9",
    "usa_md5": "45808b78b0c47c6e21c4137cb83e12f7",
-   "pal_bytes": 2614,
-   "usa_bytes": 2590,
-   "bank": "Save",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "108 glyphs in PAL, 107 in NTSC-U; code set differs (PAL-only [65, 82, 84, 12431, 12452, 12467], NTSC-U-only [32, 12300, 12301, 12354, 12387, 12392]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -2453,10 +475,6 @@
   "fonts/Save/Save_JP02.met": {
    "pal_md5": "127b2c45b264fe9acce8e80787975788",
    "usa_md5": "6f70226b6244ad0c71d553c42c63b09c",
-   "pal_bytes": 1654,
-   "usa_bytes": 1510,
-   "bank": "Save",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "68 glyphs in PAL, 62 in NTSC-U; code set differs (PAL-only [12300, 12301, 12469, 12505, 12523, 25505], NTSC-U-only [111, 20307, 26412]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -2465,27 +483,14 @@
   "fonts/Save/Save_SP.fnt": {
    "pal_md5": "d64f61bef84bedc0752eecadd878e886",
    "usa_md5": "347bf23cb1c82365033f9b10ed7ab810",
-   "pal_bytes": 32780,
-   "usa_bytes": 32580,
-   "bank": "Save",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "key set differs (PAL-only [5489100], NTSC-U-only -); 2 record text(s) differ.",
    "risk": "cosmetic",
-   "index_shift": {
-    "pal_records": 163,
-    "usa_records": 162,
-    "indexes_80_126_naming_another_message": 47
-   },
    "advice": "The NTSC-U table lacks key 5489100, so every message index before it is one lower than in PAL. The PC save-text rewrite (Save tables, by message index) would then put its words on the wrong messages; the Advertise rewrite matches by text and only misses the PS2 memory-card wording. Ship the PAL table."
   },
   "fonts/Save/Save_SP.txd": {
    "pal_md5": "f9d206c7f3f6a059135d85fa3dcf5716",
    "usa_md5": "f1b14312cb6f123f523103e142b06a51",
-   "pal_bytes": 32984,
-   "usa_bytes": 32984,
-   "bank": "Save",
-   "lang": "SP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -2494,10 +499,6 @@
   "fonts/Save/Save_SP00.met": {
    "pal_md5": "bb1a05bb147f4c6fa29417965a935af8",
    "usa_md5": "79ada89ba5db2fdd790539df6ee6c5f4",
-   "pal_bytes": 1894,
-   "usa_bytes": 1894,
-   "bank": "Save",
-   "lang": "SP",
    "kind": "font-glyph-metrics",
    "summary": "78 glyphs in PAL, 78 in NTSC-U; code set same; glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -2506,10 +507,6 @@
   "fonts/stg0100/stg0100_JP.fnt": {
    "pal_md5": "5559deb2455f2a2a6e4cd317c90e9e93",
    "usa_md5": "950b011b82ae5fae9f5f4d767ee86cf6",
-   "pal_bytes": 31830,
-   "usa_bytes": 31834,
-   "bank": "stg0100",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -2518,10 +515,6 @@
   "fonts/stg0100/stg0100_JP.txd": {
    "pal_md5": "bf1865e29751aeffe8979e8a764491d9",
    "usa_md5": "59d2f8830964e1501a92d782894aa50b",
-   "pal_bytes": 230648,
-   "usa_bytes": 230648,
-   "bank": "stg0100",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -2530,10 +523,6 @@
   "fonts/stg0100/stg0100_JP06.met": {
    "pal_md5": "c0df96e5c94ff16a7d4413ae9e20ca54",
    "usa_md5": "8086a6b11e7080d229e006e0ebfb6db9",
-   "pal_bytes": 1153,
-   "usa_bytes": 1177,
-   "bank": "stg0100",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "47 glyphs in PAL, 48 in NTSC-U; code set differs (PAL-only -, NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -2542,10 +531,6 @@
   "fonts/stg0200/stg0200_JP.fnt": {
    "pal_md5": "f8070e7b45ea7562adcdb6684eb9dbb2",
    "usa_md5": "57273f93c79f670fbeea82a13504b0db",
-   "pal_bytes": 22896,
-   "usa_bytes": 22900,
-   "bank": "stg0200",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -2554,10 +539,6 @@
   "fonts/stg0200/stg0200_JP.txd": {
    "pal_md5": "72125337957a9e138ad9e9aaed626598",
    "usa_md5": "9f18f5d52e9be876bdd82c68da3443ce",
-   "pal_bytes": 197704,
-   "usa_bytes": 197704,
-   "bank": "stg0200",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -2566,10 +547,6 @@
   "fonts/stg0200/stg0200_JP05.met": {
    "pal_md5": "61d8295ff096a7b2242c73e2118f3ba1",
    "usa_md5": "99ad1d7a68c9c54f6debf9c52c343089",
-   "pal_bytes": 2209,
-   "usa_bytes": 2233,
-   "bank": "stg0200",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "91 glyphs in PAL, 92 in NTSC-U; code set differs (PAL-only -, NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -2578,10 +555,6 @@
   "fonts/stg0201/stg0201_JP.fnt": {
    "pal_md5": "ab0645fc15fcacb5fbf7c1799a4be66c",
    "usa_md5": "9ccb14ba77a38c9e9a99ccb612439365",
-   "pal_bytes": 32866,
-   "usa_bytes": 32870,
-   "bank": "stg0201",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -2590,10 +563,6 @@
   "fonts/stg0202/stg0202_JP.fnt": {
    "pal_md5": "d17c9f028787da157e8f84eedea23997",
    "usa_md5": "7b902a0925f2e8a5cfb7a2a3a66ea0e9",
-   "pal_bytes": 30404,
-   "usa_bytes": 30408,
-   "bank": "stg0202",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -2602,10 +571,6 @@
   "fonts/stg0202/stg0202_JP.txd": {
    "pal_md5": "53af659129abff11a32ad96d1a3b3032",
    "usa_md5": "17531b51153820ec3a1467b827a466b9",
-   "pal_bytes": 197704,
-   "usa_bytes": 197704,
-   "bank": "stg0202",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -2614,10 +579,6 @@
   "fonts/stg0202/stg0202_JP05.met": {
    "pal_md5": "0a4a8ecca868b2a8f057a9ab083ee2cd",
    "usa_md5": "247eb0ab60c09a284d99dd6e66aa35ef",
-   "pal_bytes": 2089,
-   "usa_bytes": 2113,
-   "bank": "stg0202",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "86 glyphs in PAL, 87 in NTSC-U; code set differs (PAL-only -, NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -2626,10 +587,6 @@
   "fonts/stg0210/stg0210_EN.fnt": {
    "pal_md5": "643aa030cdc1a406dca471ea2bd5da95",
    "usa_md5": "241634490aaaa2c3567669b592efefbc",
-   "pal_bytes": 11576,
-   "usa_bytes": 11576,
-   "bank": "stg0210",
-   "lang": "EN",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -2638,10 +595,6 @@
   "fonts/stg0210/stg0210_FR.fnt": {
    "pal_md5": "5b0330090e3af7b92961ec743812b77c",
    "usa_md5": "9e3ccc7f0f6b5d82bae4f85c710dcc8e",
-   "pal_bytes": 12048,
-   "usa_bytes": 12048,
-   "bank": "stg0210",
-   "lang": "FR",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -2650,10 +603,6 @@
   "fonts/stg0210/stg0210_GE.fnt": {
    "pal_md5": "24bfcfbfc2162455aded89583e8b482f",
    "usa_md5": "1c04986e1e6ef1764e856afde5f5fc0f",
-   "pal_bytes": 12572,
-   "usa_bytes": 12572,
-   "bank": "stg0210",
-   "lang": "GE",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -2662,10 +611,6 @@
   "fonts/stg0210/stg0210_JP.fnt": {
    "pal_md5": "87af3003a78a952ac156987ef009704a",
    "usa_md5": "cf5c875b2ea728f785d92580ef064640",
-   "pal_bytes": 6912,
-   "usa_bytes": 6916,
-   "bank": "stg0210",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -2674,10 +619,6 @@
   "fonts/stg0210/stg0210_SP.fnt": {
    "pal_md5": "89f602b518b9f211117006aef3b68081",
    "usa_md5": "d706d7093e0d66a15c81e1fb7f001d05",
-   "pal_bytes": 11682,
-   "usa_bytes": 11682,
-   "bank": "stg0210",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -2686,10 +627,6 @@
   "fonts/stg0300/stg0300_JP.fnt": {
    "pal_md5": "de4598fa91f2467ea616caec34ae81dc",
    "usa_md5": "6083d5379142f80dbf2392ee84ee436a",
-   "pal_bytes": 28654,
-   "usa_bytes": 28658,
-   "bank": "stg0300",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -2698,10 +635,6 @@
   "fonts/stg0301/stg0301_JP.fnt": {
    "pal_md5": "646f943597cb22ad8c7ef1486f3efc2e",
    "usa_md5": "440f747a8a4053896c995457a0a5c963",
-   "pal_bytes": 31910,
-   "usa_bytes": 31914,
-   "bank": "stg0301",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -2710,10 +643,6 @@
   "fonts/stg0302/stg0302_JP.fnt": {
    "pal_md5": "23437491fab516d931d214634ba95cf1",
    "usa_md5": "59996ed5a3e969f7d65375c2632db15a",
-   "pal_bytes": 29660,
-   "usa_bytes": 29664,
-   "bank": "stg0302",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -2722,10 +651,6 @@
   "fonts/stg0310/stg0310_GE.fnt": {
    "pal_md5": "3d1b3afa0437c5535bf4ab1bb390cbb8",
    "usa_md5": "273144f9c46d9c1f1af7e1e809a6cffd",
-   "pal_bytes": 10236,
-   "usa_bytes": 10236,
-   "bank": "stg0310",
-   "lang": "GE",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -2734,10 +659,6 @@
   "fonts/stg0310/stg0310_IT.fnt": {
    "pal_md5": "4889e7e1d2733a1742c9b064260aa94d",
    "usa_md5": "aff409e004f68c0d4b7caa492ad87062",
-   "pal_bytes": 9622,
-   "usa_bytes": 9622,
-   "bank": "stg0310",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -2746,10 +667,6 @@
   "fonts/stg0310/stg0310_JP.fnt": {
    "pal_md5": "2ab12c52a0221c1040ad99e995f10455",
    "usa_md5": "771e2952f0b85aad7531d72e5e8a0e2a",
-   "pal_bytes": 5900,
-   "usa_bytes": 5904,
-   "bank": "stg0310",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -2758,10 +675,6 @@
   "fonts/stg0310/stg0310_JP.txd": {
    "pal_md5": "00a3f5561790cfee9f7c29fa7221ab12",
    "usa_md5": "d40324bf423e1ceb0e82964e6418e361",
-   "pal_bytes": 98872,
-   "usa_bytes": 98872,
-   "bank": "stg0310",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -2770,10 +683,6 @@
   "fonts/stg0310/stg0310_JP02.met": {
    "pal_md5": "f1d853aeec1843981adeacbc9a4a13b2",
    "usa_md5": "df09fad4aad1f9da3b77f5af5d4a0dc7",
-   "pal_bytes": 2113,
-   "usa_bytes": 2137,
-   "bank": "stg0310",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "87 glyphs in PAL, 88 in NTSC-U; code set differs (PAL-only -, NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -2782,10 +691,6 @@
   "fonts/stg0400/stg0400_JP.fnt": {
    "pal_md5": "997939d5f8ed781ef8019b2e9cf12520",
    "usa_md5": "9a207f424bcb07bdd2f52deb01a8c414",
-   "pal_bytes": 31570,
-   "usa_bytes": 31574,
-   "bank": "stg0400",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -2794,10 +699,6 @@
   "fonts/stg0401/stg0401_JP.fnt": {
    "pal_md5": "a78e6ad61644fd914df8acb066bdb170",
    "usa_md5": "a09bcdec05a8914646123fe7458164a8",
-   "pal_bytes": 29376,
-   "usa_bytes": 29380,
-   "bank": "stg0401",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -2806,10 +707,6 @@
   "fonts/stg0401/stg0401_JP.txd": {
    "pal_md5": "811484abe2a10fdc0607d2c680916f97",
    "usa_md5": "5115ac1d8ee18eb8c63431d2b84400a7",
-   "pal_bytes": 230648,
-   "usa_bytes": 230648,
-   "bank": "stg0401",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -2818,10 +715,6 @@
   "fonts/stg0401/stg0401_JP05.met": {
    "pal_md5": "a178ceec1b2833a96390bdcf614daaf9",
    "usa_md5": "aae8e67fc8d2bdd9aa99c6dd72c7e157",
-   "pal_bytes": 2545,
-   "usa_bytes": 2545,
-   "bank": "stg0401",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "105 glyphs in PAL, 105 in NTSC-U; code set differs (PAL-only [27841], NTSC-U-only [65299]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -2830,10 +723,6 @@
   "fonts/stg0401/stg0401_JP06.met": {
    "pal_md5": "852d90498161b289e67411117155be93",
    "usa_md5": "05e017c9ba1148c41d2a14bd0a20a0e5",
-   "pal_bytes": 145,
-   "usa_bytes": 121,
-   "bank": "stg0401",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "5 glyphs in PAL, 4 in NTSC-U; code set differs (PAL-only [65299], NTSC-U-only -); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -2842,10 +731,6 @@
   "fonts/stg0402/stg0402_JP.fnt": {
    "pal_md5": "9f7fbc557b6326de195681328a49f519",
    "usa_md5": "6dc1bf139024fb1bd56a0726b9bafa3d",
-   "pal_bytes": 27772,
-   "usa_bytes": 27776,
-   "bank": "stg0402",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -2854,10 +739,6 @@
   "fonts/stg0403/stg0403_JP.fnt": {
    "pal_md5": "dcc0545190759ea92f36c884f03950af",
    "usa_md5": "4661106ececc788183089a61e58af5e3",
-   "pal_bytes": 24738,
-   "usa_bytes": 24742,
-   "bank": "stg0403",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -2866,10 +747,6 @@
   "fonts/stg0404/stg0404_JP.fnt": {
    "pal_md5": "3562a1e04e116f78c05f2e6d7d5cf7e7",
    "usa_md5": "c8dc448c6eeea032ac7d292a95c15ed2",
-   "pal_bytes": 31474,
-   "usa_bytes": 31478,
-   "bank": "stg0404",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -2878,10 +755,6 @@
   "fonts/stg0410/stg0410_FR.fnt": {
    "pal_md5": "8249ce669bffac2c6097b90a280e90a2",
    "usa_md5": "8f5b502add376ca801551f460d1f63e9",
-   "pal_bytes": 10694,
-   "usa_bytes": 10694,
-   "bank": "stg0410",
-   "lang": "FR",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -2890,10 +763,6 @@
   "fonts/stg0410/stg0410_GE.fnt": {
    "pal_md5": "7b3280d6d7f0bc47f9aa93bb00208b18",
    "usa_md5": "a89fc587083460853866d25c42764d24",
-   "pal_bytes": 11150,
-   "usa_bytes": 11150,
-   "bank": "stg0410",
-   "lang": "GE",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -2902,10 +771,6 @@
   "fonts/stg0410/stg0410_IT.fnt": {
    "pal_md5": "a891e529c5bd6e03ec7eaed23e35986d",
    "usa_md5": "82282077172f212585a2d77be8880fb8",
-   "pal_bytes": 10358,
-   "usa_bytes": 10358,
-   "bank": "stg0410",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -2914,10 +779,6 @@
   "fonts/stg0410/stg0410_JP.fnt": {
    "pal_md5": "6bade0254f47058a267501c6f9c868be",
    "usa_md5": "394109ccdc7de7ade8b4fd92bbea428e",
-   "pal_bytes": 6022,
-   "usa_bytes": 6026,
-   "bank": "stg0410",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -2926,10 +787,6 @@
   "fonts/stg0410/stg0410_JP.txd": {
    "pal_md5": "d69537d1383750b68470d6927247f57e",
    "usa_md5": "64da59684e5103e7164e2ed9872a1860",
-   "pal_bytes": 131816,
-   "usa_bytes": 131816,
-   "bank": "stg0410",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -2938,10 +795,6 @@
   "fonts/stg0410/stg0410_JP03.met": {
    "pal_md5": "36b70338c1c01899e9912919dbbd27e3",
    "usa_md5": "96271289a535ffaf7f984861a7932a8a",
-   "pal_bytes": 985,
-   "usa_bytes": 1009,
-   "bank": "stg0410",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "40 glyphs in PAL, 41 in NTSC-U; code set differs (PAL-only -, NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -2950,10 +803,6 @@
   "fonts/stg0410/stg0410_SP.fnt": {
    "pal_md5": "bdf73c3dbb5bc1d95bf51850bffd969f",
    "usa_md5": "8ac005cecfb8093360b7108168c0b25c",
-   "pal_bytes": 10400,
-   "usa_bytes": 10400,
-   "bank": "stg0410",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -2962,10 +811,6 @@
   "fonts/stg0411/stg0411_EN.fnt": {
    "pal_md5": "521544a8a839863d82b525a7cdaf376e",
    "usa_md5": "04f39340c7fa8d60543361de0d79cb0a",
-   "pal_bytes": 9648,
-   "usa_bytes": 9648,
-   "bank": "stg0411",
-   "lang": "EN",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -2974,10 +819,6 @@
   "fonts/stg0411/stg0411_FR.fnt": {
    "pal_md5": "079c0ce84397a556fc642b9da7e8b093",
    "usa_md5": "27ede71a65a1ef4bae5a3d0a841dd6d7",
-   "pal_bytes": 10042,
-   "usa_bytes": 10042,
-   "bank": "stg0411",
-   "lang": "FR",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -2986,10 +827,6 @@
   "fonts/stg0411/stg0411_GE.fnt": {
    "pal_md5": "16290b6bf348ccc6d70fa065fdd7ec7d",
    "usa_md5": "91283d202ee6a25a46b2b34eb4013939",
-   "pal_bytes": 10316,
-   "usa_bytes": 10316,
-   "bank": "stg0411",
-   "lang": "GE",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -2998,10 +835,6 @@
   "fonts/stg0411/stg0411_IT.fnt": {
    "pal_md5": "6a00eff920aa6dbe265de5fd90006ecb",
    "usa_md5": "a445db9029aa773fe7e8459e49ddc833",
-   "pal_bytes": 9654,
-   "usa_bytes": 9654,
-   "bank": "stg0411",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3010,10 +843,6 @@
   "fonts/stg0411/stg0411_JP.fnt": {
    "pal_md5": "fe66b04196769834b57faa648dcc8df8",
    "usa_md5": "79dc801fc072a5c71c9093a24ab5e0a3",
-   "pal_bytes": 5628,
-   "usa_bytes": 5632,
-   "bank": "stg0411",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -3022,10 +851,6 @@
   "fonts/stg0411/stg0411_JP.txd": {
    "pal_md5": "c5e3096a0651c693218ade6e47882ba7",
    "usa_md5": "fb98d09c0a9366c5649f67dcaf68a93f",
-   "pal_bytes": 131816,
-   "usa_bytes": 131816,
-   "bank": "stg0411",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -3034,10 +859,6 @@
   "fonts/stg0411/stg0411_JP03.met": {
    "pal_md5": "bf2e76f421f6e3d934c03c0c4d425b52",
    "usa_md5": "52d04539b010688cfc7b099d0500fda0",
-   "pal_bytes": 673,
-   "usa_bytes": 697,
-   "bank": "stg0411",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "27 glyphs in PAL, 28 in NTSC-U; code set differs (PAL-only -, NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -3046,10 +867,6 @@
   "fonts/stg0411/stg0411_SP.fnt": {
    "pal_md5": "d51be22a86737cb255e3617187a80d3f",
    "usa_md5": "19ea551d3799ba0348a8eb5c1ccd7d82",
-   "pal_bytes": 9810,
-   "usa_bytes": 9810,
-   "bank": "stg0411",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3058,10 +875,6 @@
   "fonts/stg0412/stg0412_FR.fnt": {
    "pal_md5": "1638ef7bfae305af20a3d8a8622ff41a",
    "usa_md5": "d50bb47675b792e53c5213cfe97f041f",
-   "pal_bytes": 14026,
-   "usa_bytes": 14026,
-   "bank": "stg0412",
-   "lang": "FR",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3070,10 +883,6 @@
   "fonts/stg0412/stg0412_GE.fnt": {
    "pal_md5": "71f779f145bb062e5d4d78d3e243cb08",
    "usa_md5": "bd4b7034e3f447880944cd9d678a7ca4",
-   "pal_bytes": 14264,
-   "usa_bytes": 14264,
-   "bank": "stg0412",
-   "lang": "GE",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3082,10 +891,6 @@
   "fonts/stg0412/stg0412_IT.fnt": {
    "pal_md5": "0dcc62d3e2cdfb0bb0db3fd8b47c44f9",
    "usa_md5": "fb06ee5e7561cdc5273a57a6c403b98f",
-   "pal_bytes": 13388,
-   "usa_bytes": 13388,
-   "bank": "stg0412",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3094,10 +899,6 @@
   "fonts/stg0412/stg0412_JP.fnt": {
    "pal_md5": "47889d7474b64018f4bd7e390aa6748f",
    "usa_md5": "58ad1c193a7f4a6106eb3f84b3f92530",
-   "pal_bytes": 7932,
-   "usa_bytes": 7936,
-   "bank": "stg0412",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -3106,10 +907,6 @@
   "fonts/stg0412/stg0412_JP.txd": {
    "pal_md5": "395370f804b923183ece66b7b60c233c",
    "usa_md5": "1442c559ae25a95a043efe7ec6e23f2d",
-   "pal_bytes": 131816,
-   "usa_bytes": 131816,
-   "bank": "stg0412",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -3118,10 +915,6 @@
   "fonts/stg0412/stg0412_JP03.met": {
    "pal_md5": "f332ec38e25e689fe6058501262295db",
    "usa_md5": "51a07ee967ff3e72b9fc872fb0f06fbe",
-   "pal_bytes": 1273,
-   "usa_bytes": 1297,
-   "bank": "stg0412",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "52 glyphs in PAL, 53 in NTSC-U; code set differs (PAL-only -, NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -3130,10 +923,6 @@
   "fonts/stg0412/stg0412_SP.fnt": {
    "pal_md5": "11aeacea5cb608c7a687b73480e072d3",
    "usa_md5": "2a0db109b4a4a03c8647f29db7dbb9d0",
-   "pal_bytes": 13658,
-   "usa_bytes": 13658,
-   "bank": "stg0412",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3142,10 +931,6 @@
   "fonts/stg0500/stg0500_JP.fnt": {
    "pal_md5": "670b8d2b55be83d356a9148333bdc4b3",
    "usa_md5": "c61a6138b8a804ca7fcf7dd584e6e7a7",
-   "pal_bytes": 15208,
-   "usa_bytes": 15212,
-   "bank": "stg0500",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -3154,10 +939,6 @@
   "fonts/stg0500/stg0500_JP.txd": {
    "pal_md5": "1eb2f9a5a07d2938c74ee5e0aead0ef5",
    "usa_md5": "dd9e31e0fe1faed431cfd7562aa4c214",
-   "pal_bytes": 197704,
-   "usa_bytes": 197704,
-   "bank": "stg0500",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -3166,10 +947,6 @@
   "fonts/stg0500/stg0500_JP04.met": {
    "pal_md5": "01335ade28481c194aeb91979940e30f",
    "usa_md5": "f55076514aaa0614144df48436465b47",
-   "pal_bytes": 2521,
-   "usa_bytes": 2521,
-   "bank": "stg0500",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "104 glyphs in PAL, 104 in NTSC-U; code set differs (PAL-only [20877], NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -3178,10 +955,6 @@
   "fonts/stg0500/stg0500_JP05.met": {
    "pal_md5": "56e3b243a6a42d76af25d9e5f0eae662",
    "usa_md5": "5f91fcb6bda31c7fe2e4ee9b6a65dc55",
-   "pal_bytes": 49,
-   "usa_bytes": 73,
-   "bank": "stg0500",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "1 glyphs in PAL, 2 in NTSC-U; code set differs (PAL-only -, NTSC-U-only [20877]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -3190,10 +963,6 @@
   "fonts/stg0501/stg0501_JP.fnt": {
    "pal_md5": "886d908bc5db9972f24c6ce7d7fba9b0",
    "usa_md5": "b65f3239317fa108f6fa3beeadaf1096",
-   "pal_bytes": 36068,
-   "usa_bytes": 36072,
-   "bank": "stg0501",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -3202,10 +971,6 @@
   "fonts/stg0502/stg0502_JP.fnt": {
    "pal_md5": "b9e559387847fac0475d2461495ab5da",
    "usa_md5": "a7b1b546ecaa370b391a305cdc4d5b00",
-   "pal_bytes": 27598,
-   "usa_bytes": 27602,
-   "bank": "stg0502",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -3214,10 +979,6 @@
   "fonts/stg0503/stg0503_JP.fnt": {
    "pal_md5": "f695de6348a9999a05472621f1c480ee",
    "usa_md5": "ff85c0a8dd43f836f90e282f492aaf5c",
-   "pal_bytes": 29056,
-   "usa_bytes": 29064,
-   "bank": "stg0503",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "2 record text(s) differ.",
    "risk": "cosmetic",
@@ -3226,10 +987,6 @@
   "fonts/stg0503/stg0503_JP.txd": {
    "pal_md5": "406029fd4d1d2fdf557b65510e893aaa",
    "usa_md5": "42c7e2f2674d5de1274cd94be9bc744d",
-   "pal_bytes": 197704,
-   "usa_bytes": 197704,
-   "bank": "stg0503",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -3238,10 +995,6 @@
   "fonts/stg0503/stg0503_JP05.met": {
    "pal_md5": "b570eff6d2a14eb7d7e2517ce9766dae",
    "usa_md5": "0e15fad4eb90a0be9174778b961a3b46",
-   "pal_bytes": 2209,
-   "usa_bytes": 2233,
-   "bank": "stg0503",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "91 glyphs in PAL, 92 in NTSC-U; code set differs (PAL-only -, NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -3250,10 +1003,6 @@
   "fonts/stg0504/stg0504_JP.fnt": {
    "pal_md5": "ed0a335dd5eff5d52e5568cff652b6ff",
    "usa_md5": "e38e30acdc1f2f79db90681ea4f60bfd",
-   "pal_bytes": 26880,
-   "usa_bytes": 26888,
-   "bank": "stg0504",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "2 record text(s) differ.",
    "risk": "cosmetic",
@@ -3262,10 +1011,6 @@
   "fonts/stg0510/stg0510_EN.fnt": {
    "pal_md5": "b159f6ddbe8e5dbc4f51c953fbb5bad1",
    "usa_md5": "ada5cb4871ad1a7adc280d51bbada5df",
-   "pal_bytes": 13508,
-   "usa_bytes": 13508,
-   "bank": "stg0510",
-   "lang": "EN",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3274,10 +1019,6 @@
   "fonts/stg0510/stg0510_FR.fnt": {
    "pal_md5": "cc8111aa570b7ed07510263cc1b75568",
    "usa_md5": "4a4657cde2fe6c9e55f1eee2ae603431",
-   "pal_bytes": 14352,
-   "usa_bytes": 14352,
-   "bank": "stg0510",
-   "lang": "FR",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3286,10 +1027,6 @@
   "fonts/stg0510/stg0510_GE.fnt": {
    "pal_md5": "c239002882eeb5cc5a63573be9ebb31e",
    "usa_md5": "345231fc20388d3443a3cf82eed2aed6",
-   "pal_bytes": 14790,
-   "usa_bytes": 14790,
-   "bank": "stg0510",
-   "lang": "GE",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3298,10 +1035,6 @@
   "fonts/stg0510/stg0510_IT.fnt": {
    "pal_md5": "4d96e388fc73cecdeaeb8f8c7cf1e221",
    "usa_md5": "dfdb1dde85f7c61614bc02e5a1dc560a",
-   "pal_bytes": 13754,
-   "usa_bytes": 13754,
-   "bank": "stg0510",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3310,10 +1043,6 @@
   "fonts/stg0510/stg0510_JP.fnt": {
    "pal_md5": "56676c2c548a2563c136fdb8a9770282",
    "usa_md5": "ca22eddffba3404a8bf15914c26ef9f4",
-   "pal_bytes": 8164,
-   "usa_bytes": 8168,
-   "bank": "stg0510",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -3322,10 +1051,6 @@
   "fonts/stg0510/stg0510_JP.txd": {
    "pal_md5": "009176573bb24621d29322bdffdaa1ae",
    "usa_md5": "82ebcdae1ce1989be70f9a50df3489f6",
-   "pal_bytes": 131816,
-   "usa_bytes": 131816,
-   "bank": "stg0510",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -3334,10 +1059,6 @@
   "fonts/stg0510/stg0510_JP03.met": {
    "pal_md5": "9c886f60c9c253d62456265c27652176",
    "usa_md5": "9a5369cddb007cc51f2189609bb4b106",
-   "pal_bytes": 2161,
-   "usa_bytes": 2185,
-   "bank": "stg0510",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "89 glyphs in PAL, 90 in NTSC-U; code set differs (PAL-only -, NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -3346,10 +1067,6 @@
   "fonts/stg0510/stg0510_SP.fnt": {
    "pal_md5": "1a2a61718dd8306698755359862bc291",
    "usa_md5": "05dfe4ad3e2bb0e2217ea1b9304f1db4",
-   "pal_bytes": 13740,
-   "usa_bytes": 13740,
-   "bank": "stg0510",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3358,10 +1075,6 @@
   "fonts/stg0511/stg0511_FR.fnt": {
    "pal_md5": "680ee181dbd59e4e731c0e01bcdf11e4",
    "usa_md5": "fcd14da69143f6cc4c2c6641961b5e27",
-   "pal_bytes": 13778,
-   "usa_bytes": 13778,
-   "bank": "stg0511",
-   "lang": "FR",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3370,10 +1083,6 @@
   "fonts/stg0511/stg0511_GE.fnt": {
    "pal_md5": "a5ad16cfc1d1f798cc510dfd52e1c05b",
    "usa_md5": "7452b247a238221a3bed929999172b7d",
-   "pal_bytes": 14094,
-   "usa_bytes": 14094,
-   "bank": "stg0511",
-   "lang": "GE",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3382,10 +1091,6 @@
   "fonts/stg0511/stg0511_IT.fnt": {
    "pal_md5": "92b412af1b268214ed04b283ebf91663",
    "usa_md5": "0e6d07d22a0d6a102d30984dab4591b2",
-   "pal_bytes": 13342,
-   "usa_bytes": 13342,
-   "bank": "stg0511",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3394,10 +1099,6 @@
   "fonts/stg0511/stg0511_JP.fnt": {
    "pal_md5": "34c70ee2c27467b4b4b0bbf07495f87f",
    "usa_md5": "784a0905911f5d0968f65bab46c88dca",
-   "pal_bytes": 7880,
-   "usa_bytes": 7884,
-   "bank": "stg0511",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -3406,10 +1107,6 @@
   "fonts/stg0511/stg0511_JP.txd": {
    "pal_md5": "12038e5843114f8722a0266dcc645ace",
    "usa_md5": "b4a473f982a389d55512ed10b156156b",
-   "pal_bytes": 131816,
-   "usa_bytes": 131816,
-   "bank": "stg0511",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -3418,10 +1115,6 @@
   "fonts/stg0511/stg0511_JP03.met": {
    "pal_md5": "79b7ccc970459b0212f8b5beebf5ea1f",
    "usa_md5": "dab54efe7629e688e0e1a00969d52744",
-   "pal_bytes": 1777,
-   "usa_bytes": 1753,
-   "bank": "stg0511",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "73 glyphs in PAL, 72 in NTSC-U; code set differs (PAL-only [36914], NTSC-U-only -); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -3430,10 +1123,6 @@
   "fonts/stg0511/stg0511_SP.fnt": {
    "pal_md5": "c7052418d8f2b205503190f6f8b63a36",
    "usa_md5": "d3a9a14787fde8c37b859ef033f62471",
-   "pal_bytes": 13510,
-   "usa_bytes": 13510,
-   "bank": "stg0511",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3442,10 +1131,6 @@
   "fonts/stg0600/stg0600_JP.fnt": {
    "pal_md5": "4751f3c08b1456ee31e26c220ab064f2",
    "usa_md5": "649bd06e784be5d0bc8d14738c5aa261",
-   "pal_bytes": 29054,
-   "usa_bytes": 29058,
-   "bank": "stg0600",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -3454,10 +1139,6 @@
   "fonts/stg0601/stg0601_JP.fnt": {
    "pal_md5": "eaf0884e519ffe1ae93ab0944d2e359b",
    "usa_md5": "a7f14d8d496fcc4e16cdd17b898f5d4e",
-   "pal_bytes": 28084,
-   "usa_bytes": 28084,
-   "bank": "stg0601",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "3 record text(s) differ.",
    "risk": "cosmetic",
@@ -3466,10 +1147,6 @@
   "fonts/stg0601/stg0601_JP.txd": {
    "pal_md5": "1fdae61bc4f8be7a3c4546c251dc347b",
    "usa_md5": "e3a9daf22b958a2fb0c6ebb595258ec7",
-   "pal_bytes": 230648,
-   "usa_bytes": 230648,
-   "bank": "stg0601",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -3478,10 +1155,6 @@
   "fonts/stg0601/stg0601_JP06.met": {
    "pal_md5": "88ce3a42a732ba132a3fefc8f20ef9aa",
    "usa_md5": "2b0b37b1c4e9be7185dd8f119e9173a2",
-   "pal_bytes": 1345,
-   "usa_bytes": 1321,
-   "bank": "stg0601",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "55 glyphs in PAL, 54 in NTSC-U; code set differs (PAL-only [27841], NTSC-U-only -); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -3490,10 +1163,6 @@
   "fonts/stg0602/stg0602_JP.fnt": {
    "pal_md5": "b3b734e2c95d2c1291acda7c1a06af1b",
    "usa_md5": "d7d5b3def2fb0fcdf3fad0e6ccfedcb7",
-   "pal_bytes": 21532,
-   "usa_bytes": 21536,
-   "bank": "stg0602",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -3502,10 +1171,6 @@
   "fonts/stg0603/stg0603_JP.fnt": {
    "pal_md5": "9db33f3b946605d6d73391a92df47bdb",
    "usa_md5": "df3b654d1cb609bd4864e885336f6d43",
-   "pal_bytes": 29486,
-   "usa_bytes": 29490,
-   "bank": "stg0603",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -3514,10 +1179,6 @@
   "fonts/stg0604/stg0604_JP.fnt": {
    "pal_md5": "b1cfad2a067ac63f1164eaebf7c51db0",
    "usa_md5": "0a7d27227271d731e3bdd9db9f2f3013",
-   "pal_bytes": 27574,
-   "usa_bytes": 27578,
-   "bank": "stg0604",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -3526,10 +1187,6 @@
   "fonts/stg0604/stg0604_JP.txd": {
    "pal_md5": "952313216e1e70cc66725109da34e9b2",
    "usa_md5": "da7143af8d46d9aa83aec69b240a0e63",
-   "pal_bytes": 230648,
-   "usa_bytes": 230648,
-   "bank": "stg0604",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -3538,10 +1195,6 @@
   "fonts/stg0604/stg0604_JP06.met": {
    "pal_md5": "f7532287fa8d0cde427732d274de403c",
    "usa_md5": "385dae25734656ef0868575ec08468ad",
-   "pal_bytes": 841,
-   "usa_bytes": 817,
-   "bank": "stg0604",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "34 glyphs in PAL, 33 in NTSC-U; code set differs (PAL-only [27841], NTSC-U-only -); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -3550,10 +1203,6 @@
   "fonts/stg0610/stg0610_EN.fnt": {
    "pal_md5": "4942a151a5c3049a843009cd2e42e47b",
    "usa_md5": "cdb989fad0d3336e22ec75fad6a0fa46",
-   "pal_bytes": 12624,
-   "usa_bytes": 12624,
-   "bank": "stg0610",
-   "lang": "EN",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3562,10 +1211,6 @@
   "fonts/stg0610/stg0610_GE.fnt": {
    "pal_md5": "3a125774847e80c562a8426ff165d151",
    "usa_md5": "94709dda1b87ab10af1c930515b92e50",
-   "pal_bytes": 13752,
-   "usa_bytes": 13752,
-   "bank": "stg0610",
-   "lang": "GE",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3574,10 +1219,6 @@
   "fonts/stg0610/stg0610_IT.fnt": {
    "pal_md5": "02b7034ce90595d2538bc5c00238c650",
    "usa_md5": "100afd7daa62ee8896213ebe6bbec9ed",
-   "pal_bytes": 12298,
-   "usa_bytes": 12298,
-   "bank": "stg0610",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3586,10 +1227,6 @@
   "fonts/stg0610/stg0610_JP.fnt": {
    "pal_md5": "836eceb28b12141e9e9b9f3dd074ef44",
    "usa_md5": "63d9c1fbece0f8a414a25a2959a49418",
-   "pal_bytes": 7344,
-   "usa_bytes": 7348,
-   "bank": "stg0610",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -3598,10 +1235,6 @@
   "fonts/stg0610/stg0610_JP.txd": {
    "pal_md5": "8957605f9568ce6dbbd04427209bdc8f",
    "usa_md5": "4a9b4e3f25fe565735b6dd639422773d",
-   "pal_bytes": 131816,
-   "usa_bytes": 131816,
-   "bank": "stg0610",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -3610,10 +1243,6 @@
   "fonts/stg0610/stg0610_JP03.met": {
    "pal_md5": "086f3cc49e843744e9fc248076ab8f23",
    "usa_md5": "e64da68fae6de76985290ad543fb910b",
-   "pal_bytes": 1297,
-   "usa_bytes": 1297,
-   "bank": "stg0610",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "53 glyphs in PAL, 53 in NTSC-U; code set differs (PAL-only [36914], NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -3622,10 +1251,6 @@
   "fonts/stg0610/stg0610_SP.fnt": {
    "pal_md5": "17b0a74bb5957b70f2111a4905242a71",
    "usa_md5": "0c552449d9edc7d46a8877c156f551f2",
-   "pal_bytes": 12582,
-   "usa_bytes": 12582,
-   "bank": "stg0610",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3634,10 +1259,6 @@
   "fonts/stg0611/stg0611_IT.fnt": {
    "pal_md5": "f23d4f62378bf967391aeb9467164434",
    "usa_md5": "6b273a428fce97985aca30c58c80175b",
-   "pal_bytes": 12466,
-   "usa_bytes": 12466,
-   "bank": "stg0611",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3646,10 +1267,6 @@
   "fonts/stg0611/stg0611_JP.fnt": {
    "pal_md5": "e2093adef699fe4a277c195be9d66e1b",
    "usa_md5": "2dc4dd7eb6babb589dd729cf3515f079",
-   "pal_bytes": 7304,
-   "usa_bytes": 7308,
-   "bank": "stg0611",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -3658,10 +1275,6 @@
   "fonts/stg0611/stg0611_JP.txd": {
    "pal_md5": "5bd2729d4a5fc9ce21dd279a49597053",
    "usa_md5": "f3ef6c7e468566ae0bfb3bd4b5195a8b",
-   "pal_bytes": 131816,
-   "usa_bytes": 131816,
-   "bank": "stg0611",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -3670,10 +1283,6 @@
   "fonts/stg0611/stg0611_JP03.met": {
    "pal_md5": "4b2e07d4742b3b063ef4fea90f449dad",
    "usa_md5": "1064d9881e2a3052758b4a69466ed567",
-   "pal_bytes": 1993,
-   "usa_bytes": 1993,
-   "bank": "stg0611",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "82 glyphs in PAL, 82 in NTSC-U; code set same; glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -3682,10 +1291,6 @@
   "fonts/stg0611/stg0611_SP.fnt": {
    "pal_md5": "4172781dce653f700a6a5ba820e9ba1d",
    "usa_md5": "32dc99d793d22ea475f7184ccb7c471f",
-   "pal_bytes": 12528,
-   "usa_bytes": 12528,
-   "bank": "stg0611",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3694,10 +1299,6 @@
   "fonts/stg0612/stg0612_EN.fnt": {
    "pal_md5": "b88773d39c4b4095b5d05d03bddf8591",
    "usa_md5": "555b62b2a68d0704c72e01bf9131a267",
-   "pal_bytes": 11666,
-   "usa_bytes": 11666,
-   "bank": "stg0612",
-   "lang": "EN",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3706,10 +1307,6 @@
   "fonts/stg0612/stg0612_FR.fnt": {
    "pal_md5": "873558781d6005cedfb35886a2c23d93",
    "usa_md5": "132aabf4ce4ad8ad78f549c3ba460a9e",
-   "pal_bytes": 12150,
-   "usa_bytes": 12150,
-   "bank": "stg0612",
-   "lang": "FR",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3718,10 +1315,6 @@
   "fonts/stg0612/stg0612_GE.fnt": {
    "pal_md5": "47c5e10be6f2e25efeaf6d39fade4fbc",
    "usa_md5": "608c7c8da11221442c24502cd8c8913b",
-   "pal_bytes": 12824,
-   "usa_bytes": 12824,
-   "bank": "stg0612",
-   "lang": "GE",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3730,10 +1323,6 @@
   "fonts/stg0612/stg0612_IT.fnt": {
    "pal_md5": "d3b0fc20af4ddcea4f5b66b02b9dcae6",
    "usa_md5": "0be2fcd150ec35cb88951b8dd2533405",
-   "pal_bytes": 11592,
-   "usa_bytes": 11592,
-   "bank": "stg0612",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3742,10 +1331,6 @@
   "fonts/stg0612/stg0612_JP.fnt": {
    "pal_md5": "f3e2210cc2ef5a9548160f01b15de510",
    "usa_md5": "ddd13a6d6450d04bee12cca85561af04",
-   "pal_bytes": 7264,
-   "usa_bytes": 7268,
-   "bank": "stg0612",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -3754,10 +1339,6 @@
   "fonts/stg0612/stg0612_JP.txd": {
    "pal_md5": "f67cd7e4c20e55fc8259b5e676323ebe",
    "usa_md5": "c158501f34ed6cdfd1a998973ee121eb",
-   "pal_bytes": 131816,
-   "usa_bytes": 131816,
-   "bank": "stg0612",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -3766,10 +1347,6 @@
   "fonts/stg0612/stg0612_JP02.met": {
    "pal_md5": "b8227de282e6b7d6b200b549d8c5c9e2",
    "usa_md5": "25549606bd468b2c9fc1ef87a373c1d2",
-   "pal_bytes": 2425,
-   "usa_bytes": 2425,
-   "bank": "stg0612",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "100 glyphs in PAL, 100 in NTSC-U; code set differs (PAL-only [34892], NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -3778,10 +1355,6 @@
   "fonts/stg0612/stg0612_JP03.met": {
    "pal_md5": "4602cd8dd34c06e501bcecbef37d23f1",
    "usa_md5": "868a356403dff86779aa22afb8b08178",
-   "pal_bytes": 481,
-   "usa_bytes": 505,
-   "bank": "stg0612",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "19 glyphs in PAL, 20 in NTSC-U; code set differs (PAL-only -, NTSC-U-only [34892]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -3790,10 +1363,6 @@
   "fonts/stg0612/stg0612_SP.fnt": {
    "pal_md5": "a174854e4515a50e3bfee8f90eaac786",
    "usa_md5": "0d8296a38edff50481a3623c1b875f83",
-   "pal_bytes": 11710,
-   "usa_bytes": 11710,
-   "bank": "stg0612",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3802,10 +1371,6 @@
   "fonts/stg0613/stg0613_EN.fnt": {
    "pal_md5": "90216e3356c2a2fc4ae6cf02bae78ebc",
    "usa_md5": "40853b213157173c33d898cf75f9162c",
-   "pal_bytes": 13742,
-   "usa_bytes": 13742,
-   "bank": "stg0613",
-   "lang": "EN",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3814,10 +1379,6 @@
   "fonts/stg0613/stg0613_GE.fnt": {
    "pal_md5": "fd424ab569f46ed54ed65270fa5f2212",
    "usa_md5": "c8832faa4d5e07a8906061fa47d5fc7f",
-   "pal_bytes": 14948,
-   "usa_bytes": 14948,
-   "bank": "stg0613",
-   "lang": "GE",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3826,10 +1387,6 @@
   "fonts/stg0613/stg0613_IT.fnt": {
    "pal_md5": "9d447f156fef4850fbaf8784f8d00bf6",
    "usa_md5": "b2e84e3d00a3c25c25e9fb49010450ba",
-   "pal_bytes": 14044,
-   "usa_bytes": 14044,
-   "bank": "stg0613",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3838,10 +1395,6 @@
   "fonts/stg0613/stg0613_JP.fnt": {
    "pal_md5": "aaa7d1fafdb1a8e7beaaff814342f319",
    "usa_md5": "13eed28d76bed52b3d1505f3eb96df56",
-   "pal_bytes": 8148,
-   "usa_bytes": 8152,
-   "bank": "stg0613",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -3850,10 +1403,6 @@
   "fonts/stg0613/stg0613_JP.txd": {
    "pal_md5": "242973c11f45b136fdfe068c4e7fe3f5",
    "usa_md5": "005d3c07a2ce9ca1cfc20811990df379",
-   "pal_bytes": 164760,
-   "usa_bytes": 164760,
-   "bank": "stg0613",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -3862,10 +1411,6 @@
   "fonts/stg0613/stg0613_JP03.met": {
    "pal_md5": "648223b9edaea7c84c60c1eead2e4094",
    "usa_md5": "47bfa422eb65b46f8793e3cabda932ce",
-   "pal_bytes": 2569,
-   "usa_bytes": 2569,
-   "bank": "stg0613",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "106 glyphs in PAL, 106 in NTSC-U; code set differs (PAL-only [34892], NTSC-U-only [30011]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -3874,10 +1419,6 @@
   "fonts/stg0613/stg0613_JP04.met": {
    "pal_md5": "ee3eaa33fa7ec400282fca3d62677dcc",
    "usa_md5": "da98523b9aaf2d7b101da62e22c8fc31",
-   "pal_bytes": 241,
-   "usa_bytes": 241,
-   "bank": "stg0613",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "9 glyphs in PAL, 9 in NTSC-U; code set differs (PAL-only [30011], NTSC-U-only [34892]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -3886,10 +1427,6 @@
   "fonts/stg0613/stg0613_SP.fnt": {
    "pal_md5": "127c713ea6652da869f4c485403089d1",
    "usa_md5": "449a19211edf345c7a9b49adadd88067",
-   "pal_bytes": 13896,
-   "usa_bytes": 13896,
-   "bank": "stg0613",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3898,10 +1435,6 @@
   "fonts/stg0614/stg0614_JP.fnt": {
    "pal_md5": "8f14a1ef80dae6fd00d2324c2f31cac9",
    "usa_md5": "76e275714f9e6dfde111e94241a36671",
-   "pal_bytes": 9992,
-   "usa_bytes": 9996,
-   "bank": "stg0614",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -3910,10 +1443,6 @@
   "fonts/stg0614/stg0614_JP.txd": {
    "pal_md5": "cea6167a4df5e169fad3a58bf1a19cf8",
    "usa_md5": "6fe3c46d300695170a3b9d78ad219041",
-   "pal_bytes": 164760,
-   "usa_bytes": 164760,
-   "bank": "stg0614",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -3922,10 +1451,6 @@
   "fonts/stg0614/stg0614_JP04.met": {
    "pal_md5": "48e894ee952c87126db6da6f2e9c5868",
    "usa_md5": "db5b39dcef76b29295d48b768d2a6b65",
-   "pal_bytes": 529,
-   "usa_bytes": 529,
-   "bank": "stg0614",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "21 glyphs in PAL, 21 in NTSC-U; code set same; glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -3934,10 +1459,6 @@
   "fonts/stg0615/stg0615_JP.fnt": {
    "pal_md5": "2a14ad4ace83f9dba1e448dcf84788b3",
    "usa_md5": "2166de29a06a3dac9186a2efa4b02844",
-   "pal_bytes": 9704,
-   "usa_bytes": 9708,
-   "bank": "stg0615",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -3946,10 +1467,6 @@
   "fonts/stg0615/stg0615_JP.txd": {
    "pal_md5": "f41ed1aa3835d9f6bff20090c072311c",
    "usa_md5": "926834966fcfa3f7f559a9c745e111f6",
-   "pal_bytes": 131816,
-   "usa_bytes": 131816,
-   "bank": "stg0615",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -3958,10 +1475,6 @@
   "fonts/stg0615/stg0615_JP03.met": {
    "pal_md5": "7d4a9200c02f552abeb426e7084ad240",
    "usa_md5": "183a680fc837149ce751854b0dde1b73",
-   "pal_bytes": 2401,
-   "usa_bytes": 2425,
-   "bank": "stg0615",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "99 glyphs in PAL, 100 in NTSC-U; code set differs (PAL-only -, NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -3970,10 +1483,6 @@
   "fonts/stg0616/stg0616_EN.fnt": {
    "pal_md5": "89021a2b996264a929a128443e48d572",
    "usa_md5": "50d595a83c1d0190dcd8e25e2f215288",
-   "pal_bytes": 12288,
-   "usa_bytes": 12288,
-   "bank": "stg0616",
-   "lang": "EN",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3982,10 +1491,6 @@
   "fonts/stg0616/stg0616_GE.fnt": {
    "pal_md5": "e8c5dac2363643e643d713e9e9ad1da6",
    "usa_md5": "9fd6ff441428b72fe59871e97e8c4e22",
-   "pal_bytes": 13296,
-   "usa_bytes": 13296,
-   "bank": "stg0616",
-   "lang": "GE",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -3994,10 +1499,6 @@
   "fonts/stg0616/stg0616_IT.fnt": {
    "pal_md5": "90b503ae0b9d621bb30fa07e531592a7",
    "usa_md5": "0b514517ebfa10d1ba675d784a58e1a4",
-   "pal_bytes": 12238,
-   "usa_bytes": 12238,
-   "bank": "stg0616",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4006,10 +1507,6 @@
   "fonts/stg0616/stg0616_JP.fnt": {
    "pal_md5": "b7e55f19900b9db3f47757d34ee986db",
    "usa_md5": "bda89776f3c6256b8ec29d3b4d677cef",
-   "pal_bytes": 7438,
-   "usa_bytes": 7442,
-   "bank": "stg0616",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -4018,10 +1515,6 @@
   "fonts/stg0616/stg0616_JP.txd": {
    "pal_md5": "144dfa6a803c48b07e14e33e69cfceb6",
    "usa_md5": "bffa765cb84edf29dd6acf27804c8672",
-   "pal_bytes": 131816,
-   "usa_bytes": 131816,
-   "bank": "stg0616",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -4030,10 +1523,6 @@
   "fonts/stg0616/stg0616_JP03.met": {
    "pal_md5": "f136e69d06c455adc496ea10f6aa6cc7",
    "usa_md5": "923785df099b3a69f45bf7d235013680",
-   "pal_bytes": 1777,
-   "usa_bytes": 1801,
-   "bank": "stg0616",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "73 glyphs in PAL, 74 in NTSC-U; code set differs (PAL-only -, NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -4042,10 +1531,6 @@
   "fonts/stg0616/stg0616_SP.fnt": {
    "pal_md5": "f2babc8005db4b5be9a16b1237a3dab8",
    "usa_md5": "c03ef5997c58dfa3983d71953e22bae0",
-   "pal_bytes": 12402,
-   "usa_bytes": 12402,
-   "bank": "stg0616",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4054,10 +1539,6 @@
   "fonts/stg0617/stg0617_IT.fnt": {
    "pal_md5": "8c918b54f009e2d99bf62c7a2967e8fe",
    "usa_md5": "cc10ac47152814f86491c1d276921032",
-   "pal_bytes": 12894,
-   "usa_bytes": 12894,
-   "bank": "stg0617",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4066,10 +1547,6 @@
   "fonts/stg0617/stg0617_JP.fnt": {
    "pal_md5": "c1d2b2eb1c9ae26a6bdb482b76967c81",
    "usa_md5": "b62f78ff0d3b15d00cd55c4dd7bb190c",
-   "pal_bytes": 7894,
-   "usa_bytes": 7898,
-   "bank": "stg0617",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -4078,10 +1555,6 @@
   "fonts/stg0617/stg0617_JP.txd": {
    "pal_md5": "630207354866c9b4369ba70a2ff68bd0",
    "usa_md5": "b46b20e910ccac13c8662e8248f2ba5b",
-   "pal_bytes": 131816,
-   "usa_bytes": 131816,
-   "bank": "stg0617",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -4090,10 +1563,6 @@
   "fonts/stg0617/stg0617_JP03.met": {
    "pal_md5": "2a352a31b0fa033d4dda0f3be379e046",
    "usa_md5": "1d839219e94cfc8f0e2aba249c66a353",
-   "pal_bytes": 1129,
-   "usa_bytes": 1153,
-   "bank": "stg0617",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "46 glyphs in PAL, 47 in NTSC-U; code set differs (PAL-only -, NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -4102,10 +1571,6 @@
   "fonts/stg0617/stg0617_SP.fnt": {
    "pal_md5": "4f8b04bdb43fa9101456c2c3e0b1f6db",
    "usa_md5": "0345e67ff375552273f69ba5b45bf7a6",
-   "pal_bytes": 12930,
-   "usa_bytes": 12930,
-   "bank": "stg0617",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4114,10 +1579,6 @@
   "fonts/stg0618/stg0618_EN.fnt": {
    "pal_md5": "1c28f926a8854a01ab88bd23eca4e009",
    "usa_md5": "6da25c31e806e9f54951d71e4da59185",
-   "pal_bytes": 12834,
-   "usa_bytes": 12834,
-   "bank": "stg0618",
-   "lang": "EN",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4126,10 +1587,6 @@
   "fonts/stg0618/stg0618_JP.fnt": {
    "pal_md5": "2f4a1e67cc5599eb3946d37b5502fcda",
    "usa_md5": "4f08f7c4880011c2d1636dd63acfca05",
-   "pal_bytes": 7778,
-   "usa_bytes": 7782,
-   "bank": "stg0618",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -4138,10 +1595,6 @@
   "fonts/stg0700/stg0700_EN.fnt": {
    "pal_md5": "cdbf86bc6e16caa5bb936f621f8ebd2c",
    "usa_md5": "ee2f0560b6b998d6dc543f37a76b72ce",
-   "pal_bytes": 15434,
-   "usa_bytes": 15458,
-   "bank": "stg0700",
-   "lang": "EN",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -4150,10 +1603,6 @@
   "fonts/stg0700/stg0700_EN.txd": {
    "pal_md5": "1523cb4d79d692cc2c3cde493964f7c4",
    "usa_md5": "d6be5cff46b06581ed84267fb741015b",
-   "pal_bytes": 32984,
-   "usa_bytes": 32984,
-   "bank": "stg0700",
-   "lang": "EN",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -4162,10 +1611,6 @@
   "fonts/stg0700/stg0700_EN00.met": {
    "pal_md5": "b033f2e23640606c5bff58204fad352a",
    "usa_md5": "99ed70a8ffbc29ca2a364046a7567a5c",
-   "pal_bytes": 1465,
-   "usa_bytes": 1489,
-   "bank": "stg0700",
-   "lang": "EN",
    "kind": "font-glyph-metrics",
    "summary": "60 glyphs in PAL, 61 in NTSC-U; code set differs (PAL-only -, NTSC-U-only [53]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -4174,10 +1619,6 @@
   "fonts/stg0700/stg0700_FR.fnt": {
    "pal_md5": "b63e33d338cf2b1f65dde230c01d763c",
    "usa_md5": "6a747c0fb0ca832731173b8e5b870055",
-   "pal_bytes": 16094,
-   "usa_bytes": 16118,
-   "bank": "stg0700",
-   "lang": "FR",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -4186,10 +1627,6 @@
   "fonts/stg0700/stg0700_FR.txd": {
    "pal_md5": "7cc8cd1e582c5edd6a8c98c5fcbe4363",
    "usa_md5": "a74d87ceade2ace07bfbbab5f8515b13",
-   "pal_bytes": 32984,
-   "usa_bytes": 32984,
-   "bank": "stg0700",
-   "lang": "FR",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -4198,10 +1635,6 @@
   "fonts/stg0700/stg0700_FR00.met": {
    "pal_md5": "edf16f6ae21902063af69d36d209dec3",
    "usa_md5": "17811b5a6105e8fe30847e9e6abb00c2",
-   "pal_bytes": 1753,
-   "usa_bytes": 1777,
-   "bank": "stg0700",
-   "lang": "FR",
    "kind": "font-glyph-metrics",
    "summary": "72 glyphs in PAL, 73 in NTSC-U; code set differs (PAL-only -, NTSC-U-only [53]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -4210,10 +1643,6 @@
   "fonts/stg0700/stg0700_GE.fnt": {
    "pal_md5": "753dd9561d63b28a76923e0acc8e204b",
    "usa_md5": "ff0fefd52e2a79d7825013f61e1b2049",
-   "pal_bytes": 16746,
-   "usa_bytes": 16770,
-   "bank": "stg0700",
-   "lang": "GE",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -4222,10 +1651,6 @@
   "fonts/stg0700/stg0700_GE.txd": {
    "pal_md5": "a4b9cda3783ef5406b04b92148792b34",
    "usa_md5": "e6ad74f8a8871f69d855867443a844a4",
-   "pal_bytes": 32984,
-   "usa_bytes": 32984,
-   "bank": "stg0700",
-   "lang": "GE",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -4234,10 +1659,6 @@
   "fonts/stg0700/stg0700_GE00.met": {
    "pal_md5": "5a2ed3ce21ed8a3de40df684816f9828",
    "usa_md5": "83ddede6957467ea3b6eb98afde86ab1",
-   "pal_bytes": 1657,
-   "usa_bytes": 1657,
-   "bank": "stg0700",
-   "lang": "GE",
    "kind": "font-glyph-metrics",
    "summary": "68 glyphs in PAL, 68 in NTSC-U; code set same; glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -4246,10 +1667,6 @@
   "fonts/stg0700/stg0700_IT.fnt": {
    "pal_md5": "1ddda8eb9427681172eb34b8ce085340",
    "usa_md5": "e81e1ad1d74cb4fb73a98d913210b165",
-   "pal_bytes": 15382,
-   "usa_bytes": 15406,
-   "bank": "stg0700",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -4258,10 +1675,6 @@
   "fonts/stg0700/stg0700_IT.txd": {
    "pal_md5": "1287cfda6d8dceb9b6990e7cff80c4fa",
    "usa_md5": "5edce599c91979ca93726010803fb3db",
-   "pal_bytes": 32984,
-   "usa_bytes": 32984,
-   "bank": "stg0700",
-   "lang": "IT",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -4270,10 +1683,6 @@
   "fonts/stg0700/stg0700_IT00.met": {
    "pal_md5": "35d555eb54063732af088ba02575ffa7",
    "usa_md5": "5bc327f5ad03ef560b96cf52c5cbc581",
-   "pal_bytes": 1513,
-   "usa_bytes": 1537,
-   "bank": "stg0700",
-   "lang": "IT",
    "kind": "font-glyph-metrics",
    "summary": "62 glyphs in PAL, 63 in NTSC-U; code set differs (PAL-only -, NTSC-U-only [53]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -4282,10 +1691,6 @@
   "fonts/stg0700/stg0700_JP.fnt": {
    "pal_md5": "1fac68b554ca8c3cf88c231b76239b57",
    "usa_md5": "0b13628aa982d4eb6684f6f376ad3233",
-   "pal_bytes": 9254,
-   "usa_bytes": 9258,
-   "bank": "stg0700",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -4294,10 +1699,6 @@
   "fonts/stg0700/stg0700_JP.txd": {
    "pal_md5": "81d824356db258fbe502631d6ceaeec7",
    "usa_md5": "98b29977c64d6dd3b68ec84e0148a3b6",
-   "pal_bytes": 131816,
-   "usa_bytes": 131816,
-   "bank": "stg0700",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -4306,10 +1707,6 @@
   "fonts/stg0700/stg0700_JP03.met": {
    "pal_md5": "05176b5e049eb05f985364c8e357638d",
    "usa_md5": "f2cebae2f5dac3253a5a5bffeb40dd4e",
-   "pal_bytes": 1705,
-   "usa_bytes": 1657,
-   "bank": "stg0700",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "70 glyphs in PAL, 68 in NTSC-U; code set differs (PAL-only [27841, 29366], NTSC-U-only -); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -4318,10 +1715,6 @@
   "fonts/stg0700/stg0700_SP.fnt": {
    "pal_md5": "864154d8ebb6f0d980079cb0e764b9ef",
    "usa_md5": "0c1ef3c02c5751651d4e27f5a6e2675d",
-   "pal_bytes": 15458,
-   "usa_bytes": 15482,
-   "bank": "stg0700",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -4330,10 +1723,6 @@
   "fonts/stg0700/stg0700_SP.txd": {
    "pal_md5": "7dc4e4e76164cb250b73cce2f380d23d",
    "usa_md5": "c70037050c451cf6381289ded410c60e",
-   "pal_bytes": 32984,
-   "usa_bytes": 32984,
-   "bank": "stg0700",
-   "lang": "SP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -4342,10 +1731,6 @@
   "fonts/stg0700/stg0700_SP00.met": {
    "pal_md5": "4cb4dda4820547dbd8f4a6456f5968b8",
    "usa_md5": "1c2e09e3a13801d03cb5d2f929c1bc24",
-   "pal_bytes": 1633,
-   "usa_bytes": 1657,
-   "bank": "stg0700",
-   "lang": "SP",
    "kind": "font-glyph-metrics",
    "summary": "67 glyphs in PAL, 68 in NTSC-U; code set differs (PAL-only -, NTSC-U-only [53]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -4354,10 +1739,6 @@
   "fonts/stg0710/stg0710_EN.fnt": {
    "pal_md5": "0b310c4a405e604232b093922cd24d41",
    "usa_md5": "6dd7c3d9a921f9f3f18130784d591d33",
-   "pal_bytes": 10564,
-   "usa_bytes": 10564,
-   "bank": "stg0710",
-   "lang": "EN",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4366,10 +1747,6 @@
   "fonts/stg0710/stg0710_GE.fnt": {
    "pal_md5": "6cbf4ddc8fab96d09f8cb40933821283",
    "usa_md5": "149f4f191907a46ac494a2627cf14007",
-   "pal_bytes": 11116,
-   "usa_bytes": 11116,
-   "bank": "stg0710",
-   "lang": "GE",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4378,10 +1755,6 @@
   "fonts/stg0710/stg0710_IT.fnt": {
    "pal_md5": "f848fd51763f9cef059872baf34bdefb",
    "usa_md5": "73c78ee8ed779262b7a9b19ad31c224a",
-   "pal_bytes": 10358,
-   "usa_bytes": 10358,
-   "bank": "stg0710",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4390,10 +1763,6 @@
   "fonts/stg0710/stg0710_JP.fnt": {
    "pal_md5": "65dfe82843ab011a2cdaf718035a0fb7",
    "usa_md5": "3bd3b15ecdad8b45aa0573895ee7d163",
-   "pal_bytes": 6402,
-   "usa_bytes": 6406,
-   "bank": "stg0710",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -4402,10 +1771,6 @@
   "fonts/stg0710/stg0710_JP.txd": {
    "pal_md5": "6c0017a511fe59792e18e4b60c9d451d",
    "usa_md5": "221b1c7d882850c02dcbed1d39732e4a",
-   "pal_bytes": 131816,
-   "usa_bytes": 131816,
-   "bank": "stg0710",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -4414,10 +1779,6 @@
   "fonts/stg0710/stg0710_JP03.met": {
    "pal_md5": "9d7995821ef98c4d1d1dc8a944b17984",
    "usa_md5": "01f7700d0f1ed1c8bd5f178418c57e68",
-   "pal_bytes": 769,
-   "usa_bytes": 721,
-   "bank": "stg0710",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "31 glyphs in PAL, 29 in NTSC-U; code set differs (PAL-only [27841, 29366, 36914], NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -4426,10 +1787,6 @@
   "fonts/stg0710/stg0710_SP.fnt": {
    "pal_md5": "86a68e28e685bc2b11bdf930aca98c3d",
    "usa_md5": "599def872e309dc1a398a070fa6204df",
-   "pal_bytes": 10420,
-   "usa_bytes": 10420,
-   "bank": "stg0710",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4438,10 +1795,6 @@
   "fonts/stg0800/stg0800_EN.fnt": {
    "pal_md5": "feaff2ef9c3499b2e081b6e0372b069f",
    "usa_md5": "21891c4efae7d691c27dd5b12312d680",
-   "pal_bytes": 1936,
-   "usa_bytes": 1936,
-   "bank": "stg0800",
-   "lang": "EN",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4450,10 +1803,6 @@
   "fonts/stg0800/stg0800_IT.fnt": {
    "pal_md5": "7896ddc9889b651de6906d3acb69f474",
    "usa_md5": "da0d5895b8d9b19e7ee88c7e83d37f8d",
-   "pal_bytes": 1918,
-   "usa_bytes": 1918,
-   "bank": "stg0800",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4462,10 +1811,6 @@
   "fonts/stg0800/stg0800_JP.fnt": {
    "pal_md5": "8e71391e93ebf149aee6c475be316385",
    "usa_md5": "9e0acac09f7bbf30537637484266fb9c",
-   "pal_bytes": 1242,
-   "usa_bytes": 1246,
-   "bank": "stg0800",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -4474,10 +1819,6 @@
   "fonts/stg0800/stg0800_JP.txd": {
    "pal_md5": "0fa43995dfea657279f0adc63fa5fe82",
    "usa_md5": "4627a5e4288cc509c0afa3f744296994",
-   "pal_bytes": 32984,
-   "usa_bytes": 32984,
-   "bank": "stg0800",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -4486,10 +1827,6 @@
   "fonts/stg0800/stg0800_JP00.met": {
    "pal_md5": "4c1f224b6e68fba5114bb5bede592e3a",
    "usa_md5": "80c5efe129655c3bf5dc6315cc1cc5bb",
-   "pal_bytes": 2161,
-   "usa_bytes": 2089,
-   "bank": "stg0800",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "89 glyphs in PAL, 86 in NTSC-U; code set differs (PAL-only [27841, 29366, 34892, 36914], NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -4498,10 +1835,6 @@
   "fonts/stg0800/stg0800_SP.fnt": {
    "pal_md5": "f89252283ee1b7c99beea39bf5ba018d",
    "usa_md5": "93718d2053dd27f1e45de629687cae00",
-   "pal_bytes": 1970,
-   "usa_bytes": 1970,
-   "bank": "stg0800",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4510,10 +1843,6 @@
   "fonts/stg0801/stg0801_EN.fnt": {
    "pal_md5": "21891c4efae7d691c27dd5b12312d680",
    "usa_md5": "be6aa06251faaa2345217d3219e6933c",
-   "pal_bytes": 1936,
-   "usa_bytes": 1936,
-   "bank": "stg0801",
-   "lang": "EN",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4522,10 +1851,6 @@
   "fonts/stg0801/stg0801_FR.fnt": {
    "pal_md5": "d3923700971e20c8011969368e51e8f3",
    "usa_md5": "523d52e6bd5950e680d1084a8b319696",
-   "pal_bytes": 1850,
-   "usa_bytes": 1850,
-   "bank": "stg0801",
-   "lang": "FR",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4534,10 +1859,6 @@
   "fonts/stg0801/stg0801_GE.fnt": {
    "pal_md5": "24f2dc559784e3bd1537092414e3e620",
    "usa_md5": "20b1407829d2bc39120c68a1e1856da1",
-   "pal_bytes": 2124,
-   "usa_bytes": 2124,
-   "bank": "stg0801",
-   "lang": "GE",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4546,10 +1867,6 @@
   "fonts/stg0801/stg0801_IT.fnt": {
    "pal_md5": "da0d5895b8d9b19e7ee88c7e83d37f8d",
    "usa_md5": "ec146d67947166a792592a8a49299e3a",
-   "pal_bytes": 1918,
-   "usa_bytes": 1918,
-   "bank": "stg0801",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4558,10 +1875,6 @@
   "fonts/stg0801/stg0801_JP.fnt": {
    "pal_md5": "9012c2ea82ecae5136c0b453d5c03dfe",
    "usa_md5": "b7be96d2f7b5ea98104cb97329a4d88c",
-   "pal_bytes": 1242,
-   "usa_bytes": 1246,
-   "bank": "stg0801",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -4570,10 +1883,6 @@
   "fonts/stg0801/stg0801_JP.txd": {
    "pal_md5": "1d4638c5297f9ffed0d4460f0ca45924",
    "usa_md5": "a4d3428a2cf8db6a3bc269a2d0abd250",
-   "pal_bytes": 32984,
-   "usa_bytes": 32984,
-   "bank": "stg0801",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -4582,10 +1891,6 @@
   "fonts/stg0801/stg0801_JP00.met": {
    "pal_md5": "90bbbe557c693e50ea92bb702c2f0880",
    "usa_md5": "5a5cc935965b40605a41c06a2bceaf2b",
-   "pal_bytes": 2161,
-   "usa_bytes": 2089,
-   "bank": "stg0801",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "89 glyphs in PAL, 86 in NTSC-U; code set differs (PAL-only [27841, 29366, 34892, 36914], NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -4594,10 +1899,6 @@
   "fonts/stg0801/stg0801_SP.fnt": {
    "pal_md5": "6a985a9555a711de5c8b7b52d5b7dd41",
    "usa_md5": "89a4a3faa0318d583e10e137648b9fe7",
-   "pal_bytes": 1970,
-   "usa_bytes": 1970,
-   "bank": "stg0801",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4606,10 +1907,6 @@
   "fonts/stg0802/stg0802_FR.fnt": {
    "pal_md5": "d3923700971e20c8011969368e51e8f3",
    "usa_md5": "98e882203f26826c32c9607917ed6953",
-   "pal_bytes": 1850,
-   "usa_bytes": 1850,
-   "bank": "stg0802",
-   "lang": "FR",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4618,10 +1915,6 @@
   "fonts/stg0802/stg0802_JP.fnt": {
    "pal_md5": "9012c2ea82ecae5136c0b453d5c03dfe",
    "usa_md5": "9e0acac09f7bbf30537637484266fb9c",
-   "pal_bytes": 1242,
-   "usa_bytes": 1246,
-   "bank": "stg0802",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -4630,10 +1923,6 @@
   "fonts/stg0802/stg0802_JP.txd": {
    "pal_md5": "d0cd9c04a400b4fbcbb7b162d2b28aed",
    "usa_md5": "1f2388204c64497f29770a074a07b1e6",
-   "pal_bytes": 32984,
-   "usa_bytes": 32984,
-   "bank": "stg0802",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -4642,10 +1931,6 @@
   "fonts/stg0802/stg0802_JP00.met": {
    "pal_md5": "566d5d92b012d943fbbb824f403834ad",
    "usa_md5": "aa4ef95726faa18e0dababacd88458b3",
-   "pal_bytes": 2161,
-   "usa_bytes": 2089,
-   "bank": "stg0802",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "89 glyphs in PAL, 86 in NTSC-U; code set differs (PAL-only [27841, 29366, 34892, 36914], NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -4654,10 +1939,6 @@
   "fonts/stg0802/stg0802_SP.fnt": {
    "pal_md5": "5f0e58f94bf708d6de190d31274b4429",
    "usa_md5": "c3e2694ed5382bdf5a156ba79b482dc3",
-   "pal_bytes": 1970,
-   "usa_bytes": 1970,
-   "bank": "stg0802",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4666,10 +1947,6 @@
   "fonts/stg0901/stg0901_FR.fnt": {
    "pal_md5": "fdb523b7f75cb70b0abd2a1949cfd29c",
    "usa_md5": "afda73c2d5441704602d96ebc3909c3d",
-   "pal_bytes": 4796,
-   "usa_bytes": 4796,
-   "bank": "stg0901",
-   "lang": "FR",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4678,10 +1955,6 @@
   "fonts/stg0901/stg0901_IT.fnt": {
    "pal_md5": "13c0ecae183f77e1b7f8503c09ecf60d",
    "usa_md5": "8bdf375bfa4f006c15f1755d656f2d2e",
-   "pal_bytes": 4696,
-   "usa_bytes": 4696,
-   "bank": "stg0901",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4690,10 +1963,6 @@
   "fonts/stg0901/stg0901_JP.fnt": {
    "pal_md5": "8cc234771e967ca2c4e6e012990c81f8",
    "usa_md5": "6fd30b8b99f8ccb040fdcfc782c2b83a",
-   "pal_bytes": 2954,
-   "usa_bytes": 2958,
-   "bank": "stg0901",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -4702,10 +1971,6 @@
   "fonts/stg0901/stg0901_JP.txd": {
    "pal_md5": "156dac57da7cf2b7b04706fc1eef4f67",
    "usa_md5": "9b2fe697a6b9bd6495d25ab27c0d784f",
-   "pal_bytes": 65928,
-   "usa_bytes": 65928,
-   "bank": "stg0901",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -4714,10 +1979,6 @@
   "fonts/stg0901/stg0901_JP01.met": {
    "pal_md5": "bd2efd1d8279c523ebd7ea56d9fbbd0f",
    "usa_md5": "1c644da9327e2a12722a4d6df9882576",
-   "pal_bytes": 1825,
-   "usa_bytes": 1777,
-   "bank": "stg0901",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "75 glyphs in PAL, 73 in NTSC-U; code set differs (PAL-only [27841, 29366, 36914], NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -4726,10 +1987,6 @@
   "fonts/stg0901/stg0901_SP.fnt": {
    "pal_md5": "4b6cb1acdb33a08cbe065e294bd7c294",
    "usa_md5": "338e41846d53bb77072c990c965e7000",
-   "pal_bytes": 4788,
-   "usa_bytes": 4788,
-   "bank": "stg0901",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4738,10 +1995,6 @@
   "fonts/stg0902/stg0902_GE.fnt": {
    "pal_md5": "e6e60368f239dc31756d2d63e8525d11",
    "usa_md5": "92147cea478814d5e6754d0446d12f5c",
-   "pal_bytes": 5624,
-   "usa_bytes": 5624,
-   "bank": "stg0902",
-   "lang": "GE",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4750,10 +2003,6 @@
   "fonts/stg0902/stg0902_IT.fnt": {
    "pal_md5": "4cec1e15384bc26f14a2b21244a3c3b4",
    "usa_md5": "01ef55ef69b1a9e0bceb6a4ae12cb84f",
-   "pal_bytes": 5140,
-   "usa_bytes": 5140,
-   "bank": "stg0902",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4762,10 +2011,6 @@
   "fonts/stg0902/stg0902_JP.fnt": {
    "pal_md5": "ec75f94bd88ca5b4246e6d0d5c194e55",
    "usa_md5": "24ec00e7cc713c1d906908ac53739bab",
-   "pal_bytes": 2962,
-   "usa_bytes": 2966,
-   "bank": "stg0902",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -4774,10 +2019,6 @@
   "fonts/stg0902/stg0902_JP.txd": {
    "pal_md5": "b581a53c6438a7309285b95e9b67c645",
    "usa_md5": "a205c4ffc4a64e26a98b6ae36b8425b8",
-   "pal_bytes": 98872,
-   "usa_bytes": 98872,
-   "bank": "stg0902",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -4786,10 +2027,6 @@
   "fonts/stg0902/stg0902_JP01.met": {
    "pal_md5": "e6401042b8c498f25fdc4b4fdf5b9ddf",
    "usa_md5": "37ee610b037572f9b91b76155c759ac0",
-   "pal_bytes": 2449,
-   "usa_bytes": 2449,
-   "bank": "stg0902",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "101 glyphs in PAL, 101 in NTSC-U; code set differs (PAL-only [36914], NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -4798,10 +2035,6 @@
   "fonts/stg0902/stg0902_SP.fnt": {
    "pal_md5": "b8b7ebb3d5ba2a20793ca6c115ac6f51",
    "usa_md5": "04da66e89e72062dcbe456ef7bda5f88",
-   "pal_bytes": 5376,
-   "usa_bytes": 5376,
-   "bank": "stg0902",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4810,10 +2043,6 @@
   "fonts/stg0903/stg0903_EN.fnt": {
    "pal_md5": "886fb2c2322298fb3eea23bf11455032",
    "usa_md5": "a2636f5c150c8134109674ce8442f875",
-   "pal_bytes": 2868,
-   "usa_bytes": 2868,
-   "bank": "stg0903",
-   "lang": "EN",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4822,10 +2051,6 @@
   "fonts/stg0903/stg0903_IT.fnt": {
    "pal_md5": "b3b64da10be40906c1a22c6b2114763d",
    "usa_md5": "affa375a6257d81b31f3f8b90e561cd2",
-   "pal_bytes": 2920,
-   "usa_bytes": 2920,
-   "bank": "stg0903",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4834,10 +2059,6 @@
   "fonts/stg0903/stg0903_JP.fnt": {
    "pal_md5": "f1891d84143a8bfd5942f8c4456ebe7b",
    "usa_md5": "7a55465f0ded44cd2eceba92c5bbc9a7",
-   "pal_bytes": 1752,
-   "usa_bytes": 1756,
-   "bank": "stg0903",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -4846,10 +2067,6 @@
   "fonts/stg0903/stg0903_JP.txd": {
    "pal_md5": "ed7f5b06a39b949b1b51105da9a521f8",
    "usa_md5": "f15be3f6919c22ee00d9f55f2838de2a",
-   "pal_bytes": 65928,
-   "usa_bytes": 65928,
-   "bank": "stg0903",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -4858,10 +2075,6 @@
   "fonts/stg0903/stg0903_JP01.met": {
    "pal_md5": "2e677e3ca6cbe0ebdbcc35adf0580ab7",
    "usa_md5": "93e1981382e853e12e5e8ef42cabe57c",
-   "pal_bytes": 1177,
-   "usa_bytes": 1129,
-   "bank": "stg0903",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "48 glyphs in PAL, 46 in NTSC-U; code set differs (PAL-only [27841, 29366, 36914], NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -4870,10 +2083,6 @@
   "fonts/stg0904/stg0904_IT.fnt": {
    "pal_md5": "6ea89b8a37a6211de2b562a1e6117a56",
    "usa_md5": "e4b0a13d71983911fb11eb78ab0e6529",
-   "pal_bytes": 9030,
-   "usa_bytes": 9030,
-   "bank": "stg0904",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4882,10 +2091,6 @@
   "fonts/stg0904/stg0904_JP.fnt": {
    "pal_md5": "e5e2f0cc377de500c88bb0423cae4446",
    "usa_md5": "a95c2a2dffc37bddcb64504596c771a1",
-   "pal_bytes": 5286,
-   "usa_bytes": 5290,
-   "bank": "stg0904",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -4894,10 +2099,6 @@
   "fonts/stg0904/stg0904_JP.txd": {
    "pal_md5": "3dfcf28c7280619253ccc0d010e9c522",
    "usa_md5": "1683ce0b125fa1b0c43ef64557986dd7",
-   "pal_bytes": 131816,
-   "usa_bytes": 131816,
-   "bank": "stg0904",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -4906,10 +2107,6 @@
   "fonts/stg0904/stg0904_JP03.met": {
    "pal_md5": "8be3bcd3f523d0a0d5f299257b88aa15",
    "usa_md5": "918d083b42b39c8f56ea8194d4f08fce",
-   "pal_bytes": 1033,
-   "usa_bytes": 985,
-   "bank": "stg0904",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "42 glyphs in PAL, 40 in NTSC-U; code set differs (PAL-only [27841, 36914], NTSC-U-only -); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -4918,10 +2115,6 @@
   "fonts/stg0904/stg0904_SP.fnt": {
    "pal_md5": "4a8da20426030813054c6d56258c2185",
    "usa_md5": "0d49a1cbba6dd7d6c4cabb53a7130bc7",
-   "pal_bytes": 9234,
-   "usa_bytes": 9234,
-   "bank": "stg0904",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4930,10 +2123,6 @@
   "fonts/stg0905/stg0905_IT.fnt": {
    "pal_md5": "957be95bd4c3340002686463488ea570",
    "usa_md5": "861359184ad13976b1b2ff500fa8c7a8",
-   "pal_bytes": 5050,
-   "usa_bytes": 5050,
-   "bank": "stg0905",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4942,10 +2131,6 @@
   "fonts/stg0905/stg0905_JP.fnt": {
    "pal_md5": "9406c5297b7839521832dfa685c14530",
    "usa_md5": "6fec00c0c6f462c357c37b5ab11b86b1",
-   "pal_bytes": 3176,
-   "usa_bytes": 3180,
-   "bank": "stg0905",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -4954,10 +2139,6 @@
   "fonts/stg0905/stg0905_JP.txd": {
    "pal_md5": "db49e77215a9e21c78a633b079bb1eca",
    "usa_md5": "736b6a0097d04c9a7ac8432e7091431d",
-   "pal_bytes": 98872,
-   "usa_bytes": 65928,
-   "bank": "stg0905",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -4966,10 +2147,6 @@
   "fonts/stg0905/stg0905_JP01.met": {
    "pal_md5": "1baa5925bafaf94dc102c3d3335fc7d8",
    "usa_md5": "b71bea4ca876ce0d1b76b04ebd1d1ca5",
-   "pal_bytes": 2497,
-   "usa_bytes": 2473,
-   "bank": "stg0905",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "103 glyphs in PAL, 102 in NTSC-U; code set differs (PAL-only [27841, 29366, 36914], NTSC-U-only [9834, 20877]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -4978,10 +2155,6 @@
   "fonts/stg0906/stg0906_IT.fnt": {
    "pal_md5": "a12b0046f5a63230eb02fff206d64aae",
    "usa_md5": "aefbf1da5740b78ea860f7c6dedb00d4",
-   "pal_bytes": 4440,
-   "usa_bytes": 4440,
-   "bank": "stg0906",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -4990,10 +2163,6 @@
   "fonts/stg0906/stg0906_JP.fnt": {
    "pal_md5": "68ffb21e562b66b582e9435cde2ff302",
    "usa_md5": "d1dbaac8f3ae95d693c8338452038f66",
-   "pal_bytes": 2542,
-   "usa_bytes": 2546,
-   "bank": "stg0906",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -5002,10 +2171,6 @@
   "fonts/stg0906/stg0906_JP.txd": {
    "pal_md5": "3956e108f189724527ca24435c6f7bc2",
    "usa_md5": "c228f069b33169ffefab94e29c93e39a",
-   "pal_bytes": 65928,
-   "usa_bytes": 65928,
-   "bank": "stg0906",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -5014,10 +2179,6 @@
   "fonts/stg0906/stg0906_JP01.met": {
    "pal_md5": "f450b0f84a8787aab6653f805cea8a47",
    "usa_md5": "ea7b5b24149c1048306055ca50d7915b",
-   "pal_bytes": 1969,
-   "usa_bytes": 1921,
-   "bank": "stg0906",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "81 glyphs in PAL, 79 in NTSC-U; code set differs (PAL-only [27841, 29366, 36914], NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -5026,10 +2187,6 @@
   "fonts/stg0907/stg0907_JP.fnt": {
    "pal_md5": "57f7bfb90aee164fedec78007e99555b",
    "usa_md5": "a270c51bd36e237e9b5c4f4ba7e79d01",
-   "pal_bytes": 1762,
-   "usa_bytes": 1766,
-   "bank": "stg0907",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -5038,10 +2195,6 @@
   "fonts/stg0907/stg0907_JP.txd": {
    "pal_md5": "0a24857a509a5dd944f0f20cec7bb672",
    "usa_md5": "2e2beee6b7c27d63f0a0b86689d7d8f7",
-   "pal_bytes": 65928,
-   "usa_bytes": 65928,
-   "bank": "stg0907",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -5050,10 +2203,6 @@
   "fonts/stg0907/stg0907_JP01.met": {
    "pal_md5": "75db59cb0b3cb1379a03a9b628848dea",
    "usa_md5": "54e28979cec8f6a24d071f690fbbbff9",
-   "pal_bytes": 1465,
-   "usa_bytes": 1417,
-   "bank": "stg0907",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "60 glyphs in PAL, 58 in NTSC-U; code set differs (PAL-only [27841, 29366, 36914], NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -5062,10 +2211,6 @@
   "fonts/stg0907/stg0907_SP.fnt": {
    "pal_md5": "2b2993beb0d4a774795d0849868b7bef",
    "usa_md5": "7086a4be57d8ad3805cafdd5f0045ec5",
-   "pal_bytes": 3056,
-   "usa_bytes": 3056,
-   "bank": "stg0907",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -5074,10 +2219,6 @@
   "fonts/stg0908/stg0908_JP.fnt": {
    "pal_md5": "75c69409c3b022dde99c50cd518a5530",
    "usa_md5": "34fc927705a395c173267aee4c0fe93e",
-   "pal_bytes": 82,
-   "usa_bytes": 82,
-   "bank": "stg0908",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -5086,10 +2227,6 @@
   "fonts/stg0909/stg0909_EN.fnt": {
    "pal_md5": "55f8f24697e2e3babf9e2c192f1a3f87",
    "usa_md5": "1cedf4f153a57be949d2e3e69e35b08b",
-   "pal_bytes": 8946,
-   "usa_bytes": 8946,
-   "bank": "stg0909",
-   "lang": "EN",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -5098,10 +2235,6 @@
   "fonts/stg0909/stg0909_JP.fnt": {
    "pal_md5": "0617e74d0ce4a6501e0ebf1b46512b8b",
    "usa_md5": "3edeff7e5a556ac04a321a62bb90c686",
-   "pal_bytes": 5682,
-   "usa_bytes": 5682,
-   "bank": "stg0909",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "3 record text(s) differ.",
    "risk": "cosmetic",
@@ -5110,10 +2243,6 @@
   "fonts/stg0909/stg0909_JP.txd": {
    "pal_md5": "5cf5f0eb46b7c6c306c443ca988db1aa",
    "usa_md5": "790186948f907b67f64060028e821e78",
-   "pal_bytes": 131816,
-   "usa_bytes": 131816,
-   "bank": "stg0909",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -5122,10 +2251,6 @@
   "fonts/stg0909/stg0909_JP00.met": {
    "pal_md5": "98f9e8837ccf6b865e9cea150552c61e",
    "usa_md5": "cb28a3a37e0f2dfd80b11928b98aa4a5",
-   "pal_bytes": 2449,
-   "usa_bytes": 2449,
-   "bank": "stg0909",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "101 glyphs in PAL, 101 in NTSC-U; code set same; glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -5134,10 +2259,6 @@
   "fonts/stg0909/stg0909_JP02.met": {
    "pal_md5": "03f053db707024cbb4feec9bd3020f47",
    "usa_md5": "d6bd5a76916ddf0acace5efd98f3b572",
-   "pal_bytes": 2521,
-   "usa_bytes": 2569,
-   "bank": "stg0909",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "104 glyphs in PAL, 106 in NTSC-U; code set differs (PAL-only [27841, 29366, 36914], NTSC-U-only [32, 75, 79, 12487, 65300]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -5146,10 +2267,6 @@
   "fonts/stg0909/stg0909_JP03.met": {
    "pal_md5": "c10baf8391bb20c93c283b5bff8d22af",
    "usa_md5": "79cc4080e731fdd640edd0d168ff4aea",
-   "pal_bytes": 145,
-   "usa_bytes": 49,
-   "bank": "stg0909",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "5 glyphs in PAL, 1 in NTSC-U; code set differs (PAL-only [32, 75, 79, 65300], NTSC-U-only -); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -5158,10 +2275,6 @@
   "fonts/stg0909/stg0909_SP.fnt": {
    "pal_md5": "dcdb6c1db682f83b6aefad81d8a204e4",
    "usa_md5": "34ae28ba1461400d7440be539839a440",
-   "pal_bytes": 9352,
-   "usa_bytes": 9352,
-   "bank": "stg0909",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -5170,10 +2283,6 @@
   "fonts/stg0910/stg0910_GE.fnt": {
    "pal_md5": "9905e5de0a8e237ea0ed5cb5d61209f0",
    "usa_md5": "edb61b0a92800c7688f9fe0a7d0512ac",
-   "pal_bytes": 6920,
-   "usa_bytes": 6920,
-   "bank": "stg0910",
-   "lang": "GE",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -5182,10 +2291,6 @@
   "fonts/stg0910/stg0910_IT.fnt": {
    "pal_md5": "1971ef5612522f37074ab53a5e4ee5b5",
    "usa_md5": "3a1e73bafab20dcca773ffe4ca60028b",
-   "pal_bytes": 6412,
-   "usa_bytes": 6412,
-   "bank": "stg0910",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -5194,10 +2299,6 @@
   "fonts/stg0910/stg0910_JP.fnt": {
    "pal_md5": "c81abb341cbacd11cfb60468f4fb76f7",
    "usa_md5": "74ed6b038bf92fb07c7bffddfbf806b1",
-   "pal_bytes": 3782,
-   "usa_bytes": 3786,
-   "bank": "stg0910",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "1 record text(s) differ.",
    "risk": "cosmetic",
@@ -5206,10 +2307,6 @@
   "fonts/stg0910/stg0910_JP.txd": {
    "pal_md5": "4fc2aede41a69a781bafeee265ddfe00",
    "usa_md5": "a09e0180a48223a2459f1c45564c2446",
-   "pal_bytes": 98872,
-   "usa_bytes": 98872,
-   "bank": "stg0910",
-   "lang": "JP",
    "kind": "font-glyph-sheet",
    "summary": "Glyph sheet (256x256 C4 texture) differs from the PAL sheet.",
    "risk": "cosmetic",
@@ -5218,10 +2315,6 @@
   "fonts/stg0910/stg0910_JP02.met": {
    "pal_md5": "0207518435e059ae6b8fd684264dc0c8",
    "usa_md5": "982b78a741298847d12a2bc2ddb0b79e",
-   "pal_bytes": 1081,
-   "usa_bytes": 1033,
-   "bank": "stg0910",
-   "lang": "JP",
    "kind": "font-glyph-metrics",
    "summary": "44 glyphs in PAL, 42 in NTSC-U; code set differs (PAL-only [27841, 29366, 36914], NTSC-U-only [12487]); glyph rectangles differ (the sheet was re-packed).",
    "risk": "cosmetic",
@@ -5230,10 +2323,6 @@
   "fonts/stg0910/stg0910_SP.fnt": {
    "pal_md5": "24ad3f4fe9c49c34ecbe11cf60a67527",
    "usa_md5": "6c2bc1e3d388dd95c597c779a27ef12f",
-   "pal_bytes": 6388,
-   "usa_bytes": 6388,
-   "bank": "stg0910",
-   "lang": "SP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -5242,10 +2331,6 @@
   "fonts/stg0911/stg0911_IT.fnt": {
    "pal_md5": "da8d9f2de0b27377c17b1c824514480e",
    "usa_md5": "ab1c85411a21a94b5799fce2548923f3",
-   "pal_bytes": 788,
-   "usa_bytes": 788,
-   "bank": "stg0911",
-   "lang": "IT",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
@@ -5254,1006 +2339,10 @@
   "fonts/stg0911/stg0911_JP.fnt": {
    "pal_md5": "c9e46cbe6db0b626d815af329cfacff6",
    "usa_md5": "45a8fc3e35d6e5c9fdc55c81d0262b21",
-   "pal_bytes": 582,
-   "usa_bytes": 582,
-   "bank": "stg0911",
-   "lang": "JP",
    "kind": "font-messages",
    "summary": "Same keys, texts, priorities, windows and voice ids; only the unread 4*count byte tail differs.",
    "risk": "none",
    "advice": "Harmless: nothing the game reads differs."
-  }
- },
- "fonts": {
-  "layout": "fonts/<bank>/<bank>_<LANG>.fnt (message bank), <bank>_<LANG>NN.met (glyph metrics), <bank>_<LANG>.txd (glyph sheet); 58 banks x 6 languages in BOTH discs; the game picks <LANG> from its text language.",
-  "languages_in_both_discs": [
-   "EN",
-   "FR",
-   "GE",
-   "IT",
-   "SP",
-   "JP"
-  ],
-  "per_language": {
-   "EN": {
-    "groups": 58,
-    "fnt_differ": 16,
-    "fnt_keyset_differs": 2,
-    "records_text_changed": 3,
-    "records_timing_changed": 0,
-    "txd_differ": 3,
-    "met_pal_only": 0,
-    "met_differ": 3,
-    "met_rect_differs": 3,
-    "fnt_identical": 42,
-    "fnt_bytes_only": 13,
-    "met_codeset_differs": 1
-   },
-   "FR": {
-    "groups": 58,
-    "fnt_differ": 13,
-    "fnt_keyset_differs": 2,
-    "records_text_changed": 11,
-    "records_timing_changed": 0,
-    "txd_differ": 3,
-    "met_pal_only": 0,
-    "met_differ": 3,
-    "met_rect_differs": 3,
-    "fnt_identical": 45,
-    "fnt_bytes_only": 10,
-    "met_codeset_differs": 1
-   },
-   "GE": {
-    "groups": 58,
-    "fnt_differ": 19,
-    "fnt_keyset_differs": 2,
-    "records_text_changed": 5,
-    "records_timing_changed": 0,
-    "txd_differ": 3,
-    "met_pal_only": 0,
-    "met_differ": 3,
-    "met_rect_differs": 3,
-    "fnt_bytes_only": 16,
-    "fnt_identical": 39
-   },
-   "IT": {
-    "groups": 58,
-    "fnt_differ": 27,
-    "fnt_keyset_differs": 2,
-    "records_text_changed": 5,
-    "records_timing_changed": 0,
-    "txd_differ": 3,
-    "met_pal_only": 0,
-    "met_differ": 3,
-    "met_rect_differs": 3,
-    "fnt_bytes_only": 24,
-    "fnt_identical": 31,
-    "met_codeset_differs": 1
-   },
-   "SP": {
-    "groups": 58,
-    "fnt_differ": 26,
-    "fnt_keyset_differs": 2,
-    "records_text_changed": 5,
-    "records_timing_changed": 0,
-    "met_pal_only": 0,
-    "fnt_bytes_only": 23,
-    "txd_differ": 2,
-    "met_differ": 2,
-    "met_rect_differs": 2,
-    "fnt_identical": 32,
-    "met_codeset_differs": 1
-   },
-   "JP": {
-    "groups": 58,
-    "fnt_differ": 57,
-    "fnt_keyset_differs": 2,
-    "records_text_changed": 63,
-    "records_timing_changed": 0,
-    "txd_differ": 38,
-    "met_pal_only": 1,
-    "met_differ": 49,
-    "met_codeset_differs": 46,
-    "met_rect_differs": 49,
-    "fnt_bytes_only": 3,
-    "fnt_identical": 1
-   }
-  },
-  "banks_by_difference": {
-   "EN": {
-    "keyset": [
-     "Advertise",
-     "Save"
-    ],
-    "semantic": [
-     "Advertise",
-     "Save",
-     "stg0700"
-    ],
-    "txd": [
-     "Advertise",
-     "Save",
-     "stg0700"
-    ],
-    "met": [
-     "Advertise_EN00.met",
-     "Save_EN00.met",
-     "stg0700_EN00.met"
-    ]
-   },
-   "FR": {
-    "keyset": [
-     "Advertise",
-     "Save"
-    ],
-    "semantic": [
-     "Advertise",
-     "Save",
-     "stg0700"
-    ],
-    "txd": [
-     "Advertise",
-     "Save",
-     "stg0700"
-    ],
-    "met": [
-     "Advertise_FR00.met",
-     "Save_FR00.met",
-     "stg0700_FR00.met"
-    ]
-   },
-   "GE": {
-    "keyset": [
-     "Advertise",
-     "Save"
-    ],
-    "semantic": [
-     "Advertise",
-     "Save",
-     "stg0700"
-    ],
-    "txd": [
-     "Advertise",
-     "Save",
-     "stg0700"
-    ],
-    "met": [
-     "Advertise_GE00.met",
-     "Save_GE00.met",
-     "stg0700_GE00.met"
-    ]
-   },
-   "IT": {
-    "keyset": [
-     "Advertise",
-     "Save"
-    ],
-    "semantic": [
-     "Advertise",
-     "Save",
-     "stg0700"
-    ],
-    "txd": [
-     "Advertise",
-     "Save",
-     "stg0700"
-    ],
-    "met": [
-     "Advertise_IT00.met",
-     "Save_IT00.met",
-     "stg0700_IT00.met"
-    ]
-   },
-   "SP": {
-    "keyset": [
-     "Advertise",
-     "Save"
-    ],
-    "semantic": [
-     "Advertise",
-     "Save",
-     "stg0700"
-    ],
-    "txd": [
-     "Save",
-     "stg0700"
-    ],
-    "met": [
-     "Save_SP00.met",
-     "stg0700_SP00.met"
-    ]
-   },
-   "JP": {
-    "keyset": [
-     "Advertise",
-     "Save"
-    ],
-    "semantic": [
-     "Advertise",
-     "Save",
-     "stg0100",
-     "stg0200",
-     "stg0201",
-     "stg0202",
-     "stg0210",
-     "stg0300",
-     "stg0301",
-     "stg0302",
-     "stg0310",
-     "stg0400",
-     "stg0401",
-     "stg0402",
-     "stg0403",
-     "stg0404",
-     "stg0410",
-     "stg0411",
-     "stg0412",
-     "stg0500",
-     "stg0501",
-     "stg0502",
-     "stg0503",
-     "stg0504",
-     "stg0510",
-     "stg0511",
-     "stg0600",
-     "stg0601",
-     "stg0602",
-     "stg0603",
-     "stg0604",
-     "stg0610",
-     "stg0611",
-     "stg0612",
-     "stg0613",
-     "stg0614",
-     "stg0615",
-     "stg0616",
-     "stg0617",
-     "stg0618",
-     "stg0700",
-     "stg0710",
-     "stg0800",
-     "stg0801",
-     "stg0802",
-     "stg0901",
-     "stg0902",
-     "stg0903",
-     "stg0904",
-     "stg0905",
-     "stg0906",
-     "stg0907",
-     "stg0909",
-     "stg0910"
-    ],
-    "txd": [
-     "Advertise",
-     "Save",
-     "stg0100",
-     "stg0200",
-     "stg0202",
-     "stg0310",
-     "stg0401",
-     "stg0410",
-     "stg0411",
-     "stg0412",
-     "stg0500",
-     "stg0503",
-     "stg0510",
-     "stg0511",
-     "stg0601",
-     "stg0604",
-     "stg0610",
-     "stg0611",
-     "stg0612",
-     "stg0613",
-     "stg0614",
-     "stg0615",
-     "stg0616",
-     "stg0617",
-     "stg0700",
-     "stg0710",
-     "stg0800",
-     "stg0801",
-     "stg0802",
-     "stg0901",
-     "stg0902",
-     "stg0903",
-     "stg0904",
-     "stg0905",
-     "stg0906",
-     "stg0907",
-     "stg0909",
-     "stg0910"
-    ],
-    "met": [
-     "Advertise_JP05.met",
-     "Advertise_JP06.met",
-     "Advertise_JP07.met",
-     "Advertise_JP08.met",
-     "Save_JP00.met",
-     "Save_JP01.met",
-     "Save_JP02.met",
-     "stg0100_JP06.met",
-     "stg0200_JP05.met",
-     "stg0202_JP05.met",
-     "stg0310_JP02.met",
-     "stg0401_JP05.met",
-     "stg0401_JP06.met",
-     "stg0410_JP03.met",
-     "stg0411_JP03.met",
-     "stg0412_JP03.met",
-     "stg0500_JP04.met",
-     "stg0500_JP05.met",
-     "stg0503_JP05.met",
-     "stg0510_JP03.met",
-     "stg0511_JP03.met",
-     "stg0601_JP06.met",
-     "stg0604_JP06.met",
-     "stg0610_JP03.met",
-     "stg0611_JP03.met",
-     "stg0612_JP02.met",
-     "stg0612_JP03.met",
-     "stg0613_JP03.met",
-     "stg0613_JP04.met",
-     "stg0614_JP04.met",
-     "stg0615_JP03.met",
-     "stg0616_JP03.met",
-     "stg0617_JP03.met",
-     "stg0700_JP03.met",
-     "stg0710_JP03.met",
-     "stg0800_JP00.met",
-     "stg0801_JP00.met",
-     "stg0802_JP00.met",
-     "stg0901_JP01.met",
-     "stg0902_JP01.met",
-     "stg0903_JP01.met",
-     "stg0904_JP03.met",
-     "stg0905_JP01.met",
-     "stg0906_JP01.met",
-     "stg0907_JP01.met",
-     "stg0909_JP00.met",
-     "stg0909_JP02.met",
-     "stg0909_JP03.met",
-     "stg0910_JP02.met"
-    ]
-   }
-  },
-  "text_changes_ex_jp": [
-   {
-    "lang": "EN",
-    "bank": "Advertise",
-    "key": 5522100,
-    "pal": "The Game Data on \nthe memory card (8MB)(for PlayStation\u00ae2)\nin MEMORY CARD slot 1",
-    "usa": "The Game Data on the memory card (8MB)\n(for PlayStation\u00ae2) in MEMORY CARD slot 1"
-   },
-   {
-    "lang": "EN",
-    "bank": "Advertise",
-    "key": 5489100,
-    "pal": "The Game Data on \nthe memory card (8MB)(for PlayStation\u00ae2)\nin MEMORY CARD slot 1",
-    "usa": null
-   },
-   {
-    "lang": "FR",
-    "bank": "Advertise",
-    "key": 5106100,
-    "pal": "100: Cr\u00e9ature supr\u00eame",
-    "usa": "099: Cr\u00e9ature supr\u00eame"
-   },
-   {
-    "lang": "FR",
-    "bank": "Advertise",
-    "key": 5107100,
-    "pal": "101: Av\u00e8nement du guerrier du mal",
-    "usa": "100: Av\u00e8nement du guerrier du mal"
-   },
-   {
-    "lang": "FR",
-    "bank": "Advertise",
-    "key": 5522100,
-    "pal": "Les donn\u00e9es de jeu sur la\nmemory card (PS2) dans la fente \npour MEMORY CARD N\u00b0 1",
-    "usa": "Les donn\u00e9es de jeu sur la \nmemory card (PS2) dans la fente \npour MEMORY CARD N\u00ba1"
-   },
-   {
-    "lang": "FR",
-    "bank": "Advertise",
-    "key": 6020100,
-    "pal": "Espace libre insuffisant pour\nsauvegarder les nouvelles donn\u00e9es de\njeu sur la Me",
-    "usa": "Espace libre insuffisant pour\nsauvegarder les nouvelles donn\u00e9es de\njeu sur la Me"
-   },
-   {
-    "lang": "FR",
-    "bank": "Advertise",
-    "key": 6023100,
-    "pal": "Espace libre insuffisant pour\nsauvegarder les nouvelles donn\u00e9es de\njeu sur la Me",
-    "usa": "Espace libre insuffisant pour\nsauvegarder les nouvelles donn\u00e9es de\njeu sur la Me"
-   },
-   {
-    "lang": "FR",
-    "bank": "Advertise",
-    "key": 6058100,
-    "pal": "La Memory Card ins\u00e9r\u00e9e dans le \nSlot A n'est pas la Memory Card \nd'origine. Voul",
-    "usa": "Les donn\u00e9es de jeu sur la memory\ncard dans la fente pour\nA ont chang\u00e9.\n\u00c9craser l"
-   },
-   {
-    "lang": "FR",
-    "bank": "Advertise",
-    "key": 5489100,
-    "pal": "Les donn\u00e9es de jeu sur la\nmemory card (PS2) dans la fente \npour MEMORY CARD N\u00b0 1",
-    "usa": null
-   },
-   {
-    "lang": "GE",
-    "bank": "Advertise",
-    "key": 5522100,
-    "pal": "Die Spieldaten auf der Memory \nCard (PS2) in MEORY CARD-\nSteckplatz 1 sind fehle",
-    "usa": "Die Spieldaten auf der Memory\nCard (PS2) in MEMORY CARD-\nSteckplatz 1 sind fehle"
-   },
-   {
-    "lang": "GE",
-    "bank": "Advertise",
-    "key": 6058100,
-    "pal": "Die Memory Card in Steckplatz A ist \nnicht die Original-Memory Card. \nSollen die",
-    "usa": "Spieldaten auf der Memory Card\n in MEMORY CARD-\nSteckplatz A wurden ver\u00e4ndert.\nM"
-   },
-   {
-    "lang": "GE",
-    "bank": "Advertise",
-    "key": 5489100,
-    "pal": "Die Spieldaten auf der Memory\nCard (PS2) in MEMORY CARD-\nSteckplatz 1 sind fehle",
-    "usa": null
-   },
-   {
-    "lang": "IT",
-    "bank": "Advertise",
-    "key": 5522100,
-    "pal": "I dati di gioco sulla memory\ncard (PS2) inserita nell'ingresso\nMEMORY CARD 1 son",
-    "usa": "I dati di gioco sulla memory \ncard (PS2) inserita nell'ingresso \nMEMORY CARD 1 s"
-   },
-   {
-    "lang": "IT",
-    "bank": "Advertise",
-    "key": 6058100,
-    "pal": "La Memory Card nello Slot A non \u00e8 la \nMemory Card originale.\nVuoi sovrascrivere ",
-    "usa": "I dati di gioco nella memory card\n inserita nell'ingresso\nA sono cambiati.\nVuoi "
-   },
-   {
-    "lang": "IT",
-    "bank": "Advertise",
-    "key": 5489100,
-    "pal": "I dati di gioco sulla memory\ncard (PS2) inserita nell'ingresso\nMEMORY CARD 1 son",
-    "usa": null
-   },
-   {
-    "lang": "SP",
-    "bank": "Advertise",
-    "key": 5522100,
-    "pal": "Los datos de juego de la \nmemory card (PS2) de la ranura \npara MEMORY CARD 1\nest",
-    "usa": "Los datos de juego de la \nmemory card (PS2) de la ranura \npara MEMORY CARD 1 con"
-   },
-   {
-    "lang": "SP",
-    "bank": "Advertise",
-    "key": 6058100,
-    "pal": "La Memory Card en la Ranura A\nno es la original.\n\u00bfQuieres sobrescribir los datos",
-    "usa": "Los datos de partida de la memory\ncard de la ranura para A han cambiado.\n\u00bfQuiere"
-   },
-   {
-    "lang": "SP",
-    "bank": "Advertise",
-    "key": 5489100,
-    "pal": "Los datos de juego de la \nmemory card (PS2) de la ranura \npara MEMORY CARD 1\nest",
-    "usa": null
-   },
-   {
-    "lang": "EN",
-    "bank": "Save",
-    "key": 5522100,
-    "pal": "The Game Data on \nthe memory card (8MB)(for PlayStation\u00ae2)\nin MEMORY CARD slot 1",
-    "usa": "The Game Data on the memory card (8MB)\n(for PlayStation\u00ae2) in MEMORY CARD slot 1"
-   },
-   {
-    "lang": "EN",
-    "bank": "Save",
-    "key": 5489100,
-    "pal": "The Game Data on \nthe memory card (8MB)(for PlayStation\u00ae2)\nin MEMORY CARD slot 1",
-    "usa": null
-   },
-   {
-    "lang": "FR",
-    "bank": "Save",
-    "key": 5522100,
-    "pal": "Les donn\u00e9es de jeu sur la\nmemory card (PS2) dans la fente \npour MEMORY CARD N\u00b0 1",
-    "usa": "Les donn\u00e9es de jeu sur la \nmemory card (PS2) dans la fente \npour MEMORY CARD N\u00ba1"
-   },
-   {
-    "lang": "FR",
-    "bank": "Save",
-    "key": 6020100,
-    "pal": "Espace libre insuffisant pour\nsauvegarder les nouvelles donn\u00e9es de\njeu sur la Me",
-    "usa": "Espace libre insuffisant pour\nsauvegarder les nouvelles donn\u00e9es de\njeu sur la Me"
-   },
-   {
-    "lang": "FR",
-    "bank": "Save",
-    "key": 6023100,
-    "pal": "Espace libre insuffisant pour\nsauvegarder les nouvelles donn\u00e9es de\njeu sur la Me",
-    "usa": "Espace libre insuffisant pour\nsauvegarder les nouvelles donn\u00e9es de\njeu sur la Me"
-   },
-   {
-    "lang": "FR",
-    "bank": "Save",
-    "key": 6058100,
-    "pal": "La Memory Card ins\u00e9r\u00e9e dans le \nSlot A n'est pas la Memory Card \nd'origine. Voul",
-    "usa": "Les donn\u00e9es de jeu sur la memory\ncard dans la fente pour\nA ont chang\u00e9.\n\u00c9craser l"
-   },
-   {
-    "lang": "FR",
-    "bank": "Save",
-    "key": 5489100,
-    "pal": "Les donn\u00e9es de jeu sur la\nmemory card (PS2) dans la fente \npour MEMORY CARD N\u00b0 1",
-    "usa": null
-   },
-   {
-    "lang": "GE",
-    "bank": "Save",
-    "key": 5522100,
-    "pal": "Die Spieldaten auf der Memory \nCard (PS2) in MEORY CARD-\nSteckplatz 1 sind fehle",
-    "usa": "Die Spieldaten auf der Memory\nCard (PS2) in MEMORY CARD-\nSteckplatz 1 sind fehle"
-   },
-   {
-    "lang": "GE",
-    "bank": "Save",
-    "key": 6058100,
-    "pal": "Die Memory Card in Steckplatz A ist \nnicht die Original-Memory Card. \nSollen die",
-    "usa": "Spieldaten auf der Memory Card\n in MEMORY CARD-\nSteckplatz A wurden ver\u00e4ndert.\nM"
-   },
-   {
-    "lang": "GE",
-    "bank": "Save",
-    "key": 5489100,
-    "pal": "Die Spieldaten auf der Memory\nCard (PS2) in MEMORY CARD-\nSteckplatz 1 sind fehle",
-    "usa": null
-   },
-   {
-    "lang": "IT",
-    "bank": "Save",
-    "key": 5522100,
-    "pal": "I dati di gioco sulla memory\ncard (PS2) inserita nell'ingresso\nMEMORY CARD 1 son",
-    "usa": "I dati di gioco sulla memory \ncard (PS2) inserita nell'ingresso \nMEMORY CARD 1 s"
-   },
-   {
-    "lang": "IT",
-    "bank": "Save",
-    "key": 6058100,
-    "pal": "La Memory Card nello Slot A non \u00e8 la \nMemory Card originale.\nVuoi sovrascrivere ",
-    "usa": "I dati di gioco nella memory card\n inserita nell'ingresso\nA sono cambiati.\nVuoi "
-   },
-   {
-    "lang": "IT",
-    "bank": "Save",
-    "key": 5489100,
-    "pal": "I dati di gioco sulla memory\ncard (PS2) inserita nell'ingresso\nMEMORY CARD 1 son",
-    "usa": null
-   },
-   {
-    "lang": "SP",
-    "bank": "Save",
-    "key": 5522100,
-    "pal": "Los datos de juego de la \nmemory card (PS2) de la ranura \npara MEMORY CARD 1\nest",
-    "usa": "Los datos de juego de la \nmemory card (PS2) de la ranura \npara MEMORY CARD 1 con"
-   },
-   {
-    "lang": "SP",
-    "bank": "Save",
-    "key": 6058100,
-    "pal": "La Memory Card en la Ranura A\nno es la original.\n\u00bfQuieres sobrescribir los datos",
-    "usa": "Los datos de partida de la memory\ncard de la ranura para A han cambiado.\n\u00bfQuiere"
-   },
-   {
-    "lang": "SP",
-    "bank": "Save",
-    "key": 5489100,
-    "pal": "Los datos de juego de la \nmemory card (PS2) de la ranura \npara MEMORY CARD 1\nest",
-    "usa": null
-   },
-   {
-    "lang": "EN",
-    "bank": "stg0700",
-    "key": 1373001,
-    "pal": "",
-    "usa": "35 X 3 lines"
-   },
-   {
-    "lang": "FR",
-    "bank": "stg0700",
-    "key": 1373001,
-    "pal": "",
-    "usa": "35 X 3 lines"
-   },
-   {
-    "lang": "GE",
-    "bank": "stg0700",
-    "key": 1373001,
-    "pal": "",
-    "usa": "35 X 3 lines"
-   },
-   {
-    "lang": "IT",
-    "bank": "stg0700",
-    "key": 1373001,
-    "pal": "",
-    "usa": "35 X 3 lines"
-   },
-   {
-    "lang": "SP",
-    "bank": "stg0700",
-    "key": 1373001,
-    "pal": "",
-    "usa": "35 X 3 lines"
-   }
-  ],
-  "text_changes_jp_count": 65,
-  "save_advertise_key_shift": {
-   "Save_EN": {
-    "pal_records": 163,
-    "usa_records": 162,
-    "pal_only_keys": [
-     5489100
-    ],
-    "usa_only_keys": [],
-    "indexes_80_126_naming_another_message": 47,
-    "example": {
-     "index": 80,
-     "pal_key": 6012100,
-     "usa_key": 6013100
-    }
-   },
-   "Save_FR": {
-    "pal_records": 163,
-    "usa_records": 162,
-    "pal_only_keys": [
-     5489100
-    ],
-    "usa_only_keys": [],
-    "indexes_80_126_naming_another_message": 47,
-    "example": {
-     "index": 80,
-     "pal_key": 6012100,
-     "usa_key": 6013100
-    }
-   },
-   "Save_GE": {
-    "pal_records": 163,
-    "usa_records": 162,
-    "pal_only_keys": [
-     5489100
-    ],
-    "usa_only_keys": [],
-    "indexes_80_126_naming_another_message": 47,
-    "example": {
-     "index": 80,
-     "pal_key": 6012100,
-     "usa_key": 6013100
-    }
-   },
-   "Save_IT": {
-    "pal_records": 163,
-    "usa_records": 162,
-    "pal_only_keys": [
-     5489100
-    ],
-    "usa_only_keys": [],
-    "indexes_80_126_naming_another_message": 47,
-    "example": {
-     "index": 80,
-     "pal_key": 6012100,
-     "usa_key": 6013100
-    }
-   },
-   "Save_SP": {
-    "pal_records": 163,
-    "usa_records": 162,
-    "pal_only_keys": [
-     5489100
-    ],
-    "usa_only_keys": [],
-    "indexes_80_126_naming_another_message": 47,
-    "example": {
-     "index": 80,
-     "pal_key": 6012100,
-     "usa_key": 6013100
-    }
-   },
-   "Save_JP": {
-    "pal_records": 163,
-    "usa_records": 162,
-    "pal_only_keys": [
-     5489100
-    ],
-    "usa_only_keys": [],
-    "indexes_80_126_naming_another_message": 47,
-    "example": {
-     "index": 80,
-     "pal_key": 6012100,
-     "usa_key": 6013100
-    }
-   },
-   "Advertise_EN": {
-    "pal_records": 958,
-    "usa_records": 957,
-    "pal_only_keys": [
-     5489100
-    ],
-    "usa_only_keys": [],
-    "indexes_80_126_naming_another_message": 0,
-    "example": null
-   },
-   "Advertise_FR": {
-    "pal_records": 958,
-    "usa_records": 957,
-    "pal_only_keys": [
-     5489100
-    ],
-    "usa_only_keys": [],
-    "indexes_80_126_naming_another_message": 0,
-    "example": null
-   },
-   "Advertise_GE": {
-    "pal_records": 958,
-    "usa_records": 957,
-    "pal_only_keys": [
-     5489100
-    ],
-    "usa_only_keys": [],
-    "indexes_80_126_naming_another_message": 0,
-    "example": null
-   },
-   "Advertise_IT": {
-    "pal_records": 958,
-    "usa_records": 957,
-    "pal_only_keys": [
-     5489100
-    ],
-    "usa_only_keys": [],
-    "indexes_80_126_naming_another_message": 0,
-    "example": null
-   },
-   "Advertise_SP": {
-    "pal_records": 958,
-    "usa_records": 957,
-    "pal_only_keys": [
-     5489100
-    ],
-    "usa_only_keys": [],
-    "indexes_80_126_naming_another_message": 0,
-    "example": null
-   },
-   "Advertise_JP": {
-    "pal_records": 958,
-    "usa_records": 957,
-    "pal_only_keys": [
-     5489100
-    ],
-    "usa_only_keys": [],
-    "indexes_80_126_naming_another_message": 0,
-    "example": null
-   }
-  },
-  "ntsc_u_glyph_coverage_of_pal_text": {
-   "EN": {
-    "banks_missing_with_own_ntsc_u_met": 0,
-    "banks_missing_with_ntsc_u_en_met": 0,
-    "chars_the_en_set_lacks": ""
-   },
-   "FR": {
-    "banks_missing_with_own_ntsc_u_met": 0,
-    "banks_missing_with_ntsc_u_en_met": 57,
-    "chars_the_en_set_lacks": "\"'()*+-6:BCDEFJLPQUVjqvxz\u00b0\u00ba\u00c7\u00c9\u00d7\u00e0\u00e2\u00e7\u00e8\u00e9\u00ea\u00ee\u00ef\u00f4\u00f9\u00fb\u0153\u2026\u2161"
-   },
-   "GE": {
-    "banks_missing_with_own_ntsc_u_met": 0,
-    "banks_missing_with_ntsc_u_en_met": 57,
-    "chars_the_en_set_lacks": "%*5:BCDEFGHIJKLPQUVZjkvz\u00c4\u00d6\u00dc\u00df\u00e4\u00f6\u00fc\u2018\u2019\u2026\u2161\u25cb"
-   },
-   "IT": {
-    "banks_missing_with_own_ntsc_u_met": 0,
-    "banks_missing_with_ntsc_u_en_met": 57,
-    "chars_the_en_set_lacks": "'*+:BDEFGILQUVZqvz\u00b0\u00c0\u00c8\u00cc\u00e0\u00e8\u00e9\u00ec\u00f2\u00f9\u2026\u2161"
-   },
-   "SP": {
-    "banks_missing_with_own_ntsc_u_met": 0,
-    "banks_missing_with_ntsc_u_en_met": 57,
-    "chars_the_en_set_lacks": "\"+6:;ABDEFGHJLQUVjqvz\u00a1\u00b4\u00ba\u00bf\u00c1\u00c9\u00cd\u00d3\u00da\u00e1\u00e9\u00ed\u00f1\u00f3\u00fa\u2026\u2161\u3000"
-   }
-  },
-  "facts": [
-   "The .fnt files that differ only in bytes (same keys, texts, priorities, windows and voice ids) differ in the unread 4*count tail.",
-   "Priorities, windows and voice ids are identical between PAL and NTSC-U in every record both have: a NTSC-U .fnt does not change subtitle timing.",
-   "The glyph rectangles of every differing .met differ: PAL re-packed the sheets. A .met must travel with the .txd of the same region.",
-   "A mod that replaces only *_EN files changes only the English text; with FR/GE/IT/SP/JP (or the Hungarian slot, which serves English files under its own text) selected, the game reads the other languages' own files."
-  ]
- },
- "setcollision": {
-  "note": "SetCollision ctor 0x8011D4EC: kind 0/3/4 give the volume a plain collision flag word (0x102 / 0x104 / 0x120); kinds 1,2 and 5..10 use flag word 0x40100, and kinds 5..10 also set the collision attribute 0x6F..0x74 on it; the volume is invisible (no model). The in-game meaning of each kind is inferred from the code shape only.",
-  "kind_census_pal_all_layouts": {
-   "kind 0": 156,
-   "kind 10": 23,
-   "kind 11": 1,
-   "kind 2": 85,
-   "kind 3": 3,
-   "kind 4": 23,
-   "kind 5": 264,
-   "kind 6": 415,
-   "kind 7": 47,
-   "kind 9": 3
-  }
- },
- "font_paths_differing": 273,
- "real_mods": {
-  "shdth-reloaded": {
-   "ships_differing_paths": 99,
-   "identical_to_pal": 0,
-   "identical_to_usa": 1,
-   "modified": 98,
-   "layouts": {
-    "stg0201/stg0201_cmn.dat": {
-     "entries": 347,
-     "pal_only_placements_present": 0,
-     "pal_only_placements": 6,
-     "usa_only_placements_present": 0,
-     "usa_only_placements": 0
-    },
-    "stg0300/stg0300_hrd.dat": {
-     "entries": 91,
-     "pal_only_placements_present": 0,
-     "pal_only_placements": 1,
-     "usa_only_placements_present": 0,
-     "usa_only_placements": 0
-    },
-    "stg0401/stg0401_cmn.dat": {
-     "entries": 407,
-     "pal_only_placements_present": 0,
-     "pal_only_placements": 0,
-     "usa_only_placements_present": 0,
-     "usa_only_placements": 0
-    },
-    "stg0403/stg0403_nrm.dat": {
-     "entries": 218,
-     "pal_only_placements_present": 0,
-     "pal_only_placements": 0,
-     "usa_only_placements_present": 0,
-     "usa_only_placements": 0
-    },
-    "stg0501/stg0501_cmn.dat": {
-     "entries": 492,
-     "pal_only_placements_present": 0,
-     "pal_only_placements": 0,
-     "usa_only_placements_present": 0,
-     "usa_only_placements": 0
-    },
-    "stg0501/stg0501_hrd.dat": {
-     "entries": 31,
-     "pal_only_placements_present": 0,
-     "pal_only_placements": 2,
-     "usa_only_placements_present": 0,
-     "usa_only_placements": 0
-    },
-    "stg0502/stg0502_hrd.dat": {
-     "entries": 103,
-     "pal_only_placements_present": 0,
-     "pal_only_placements": 1,
-     "usa_only_placements_present": 0,
-     "usa_only_placements": 0
-    },
-    "stg0504/stg0504_cmn.dat": {
-     "entries": 338,
-     "pal_only_placements_present": 0,
-     "pal_only_placements": 9,
-     "usa_only_placements_present": 0,
-     "usa_only_placements": 0
-    },
-    "stg0600/stg0600_cmn.dat": {
-     "entries": 493,
-     "pal_only_placements_present": 0,
-     "pal_only_placements": 0,
-     "usa_only_placements_present": 0,
-     "usa_only_placements": 0
-    },
-    "stg0600/stg0600_hrd.dat": {
-     "entries": 32,
-     "pal_only_placements_present": 0,
-     "pal_only_placements": 2,
-     "usa_only_placements_present": 0,
-     "usa_only_placements": 0
-    },
-    "stg0602/stg0602_hrd.dat": {
-     "entries": 14,
-     "pal_only_placements_present": 0,
-     "pal_only_placements": 1,
-     "usa_only_placements_present": 0,
-     "usa_only_placements": 0
-    },
-    "stg0604/stg0604_ds1.dat": {
-     "entries": 783,
-     "pal_only_placements_present": 0,
-     "pal_only_placements": 0,
-     "usa_only_placements_present": 0,
-     "usa_only_placements": 0
-    },
-    "stg0604/stg0604_hrd.dat": {
-     "entries": 21,
-     "pal_only_placements_present": 2,
-     "pal_only_placements": 9,
-     "usa_only_placements_present": 0,
-     "usa_only_placements": 0
-    }
-   },
-   "save_tables": {
-    "fonts/Save/Save_EN.fnt": {
-     "records": 163,
-     "indexes_80_126_naming_another_message_than_pal": 34
-    },
-    "fonts/Save/Save_FR.fnt": {
-     "records": 163,
-     "indexes_80_126_naming_another_message_than_pal": 34
-    },
-    "fonts/Save/Save_GE.fnt": {
-     "records": 163,
-     "indexes_80_126_naming_another_message_than_pal": 34
-    },
-    "fonts/Save/Save_IT.fnt": {
-     "records": 163,
-     "indexes_80_126_naming_another_message_than_pal": 34
-    },
-    "fonts/Save/Save_JP.fnt": {
-     "records": 163,
-     "indexes_80_126_naming_another_message_than_pal": 34
-    },
-    "fonts/Save/Save_SP.fnt": {
-     "records": 163,
-     "indexes_80_126_naming_another_message_than_pal": 34
-    }
-   }
-  },
-  "text-fixes": {
-   "ships_differing_paths": 1,
-   "identical_to_pal": 0,
-   "identical_to_usa": 0,
-   "modified": 1,
-   "layouts": {}
-  },
-  "xbox-buttons-files": {
-   "ships_differing_paths": 158,
-   "identical_to_pal": 14,
-   "identical_to_usa": 9,
-   "modified": 135,
-   "layouts": {},
-   "save_tables": {
-    "fonts/Save/Save_EN.fnt": {
-     "records": 163,
-     "indexes_80_126_naming_another_message_than_pal": 0
-    },
-    "fonts/Save/Save_FR.fnt": {
-     "records": 163,
-     "indexes_80_126_naming_another_message_than_pal": 0
-    },
-    "fonts/Save/Save_GE.fnt": {
-     "records": 163,
-     "indexes_80_126_naming_another_message_than_pal": 0
-    },
-    "fonts/Save/Save_IT.fnt": {
-     "records": 163,
-     "indexes_80_126_naming_another_message_than_pal": 0
-    },
-    "fonts/Save/Save_JP.fnt": {
-     "records": 163,
-     "indexes_80_126_naming_another_message_than_pal": 0
-    },
-    "fonts/Save/Save_SP.fnt": {
-     "records": 163,
-     "indexes_80_126_naming_another_message_than_pal": 0
-    }
-   }
   }
  }
 }

@@ -1,5 +1,8 @@
 # Voice lines: which AFS entry is which line, and proof that a replaced entry is heard
 
+> In this repository `test_data/mods/voice_lines.json` is not kept: `tools/mods/map_voice_lines.py` makes it from your
+> own disc.
+
 Branch `mods/map-voice`. Data: `test_data/mods/voice_lines.json`. Script: `tools/mods/map_voice_lines.py`
 (stdlib Python, `python -I tools/mods/map_voice_lines.py <game>/files out.json`). All numbers below were measured on the
 PAL tree (`game/files`) with `final-47133fd7.exe`.
@@ -79,7 +82,7 @@ Source: `testmods/shdth-reloaded/afs/PRS_VOICE_E/` (37 files, all names are exis
 |---|---|---|---|---|
 | act04_g149..g157 `_sl` | 9 | stg0501 | 2010000-2010002, 2011000-2011005 | stock lengths in the JSON |
 | all01_n04_rg | 1 | stg0404 | 715200 | 5.9 s |
-| all04_e06_bd | 1 | 16 stages (stg0100, 0200/1/2, 0301, 0400/2/3/4, 0500/1/3, 0600/1/3/4) | 139000 | "Those are our Black Arms soldiers..." (Black Doom, type 150) |
+| all04_e06_bd | 1 | 16 stages (stg0100, 0200/1/2, 0301, 0400/2/3/4, 0500/1/3, 0600/1/3/4) | 139000 | Black Doom on his soldiers (type 150) |
 | bas03_* `_eg` (e00-e07, h01-h06, m00-m05, n00-n03, w00-w01) | 25 | stg0602 | 1307000-1326000, 480000, 481000, 672000-675000 | 0.9 to 9.6 s stock length each |
 | can01_m06_bd | 1 | stg0201 | 852000 | 4.5 s |
 
@@ -116,7 +119,7 @@ of wall time; one process at a time. Comparison script: first differing stereo f
 - `cty01_e04_sd` (index 3585, 6.378 s, stg0100 key 755100, entryType 150, window 395 frames): replaced by the donor ADX.
   PCM differs from stock **from 5.4977 s (frame 175925)**; the differing span is **5.498 to 11.873 s = 6.375 s**, which
   is the original line's length; a second span at 87.598 to 93.973 s (6.375 s) is the same line playing again. Nothing
-  else differs. Its subtitle is the two-line "Hmm... the promised time huh? ..." string of key 755100.
+  else differs. Its subtitle is the two-line string of key 755100.
 - `act04_g34_sl` (index 285, 1.48 s, stg0100 key 1880003, entryType 100 background voice, no text; the line is shared by
   9 stages): replaced by the donor. Differs only in **32.930 to 34.865 s**. Nothing else differs.
 - Reading: the loader's rebuilt AFS makes the game play the replacement bytes at exactly the original trigger, the
