@@ -258,7 +258,11 @@ set(SHADOW_PREBUILT_PROGRAMS ppcrecomp ShadowPadConfig ShadowModManager)
 #   button_glyphs.cpp (button_glyph_data.inc): palettes and texel blocks that match the game's button sheets.
 #   native_boot.cpp, os_exception_entry.cpp: the SDK's exception vector, 38 PowerPC words (gekko/os_exception_vector.h)
 #   the boot writes into guest memory and the exception entry checks; native_boot.cpp also has a table of the OS's.
+#   runtime/mods/afs.cpp: the names of the memory-card banner and icon files it checks, which the compiler pools next
+#   to each other in the disc's own order (a 70-byte run of the disc's file table). ShadowModManager.exe keeps a
+#   48-byte part of it, under the scan's limits.
 set(SHADOW_PREBUILT_LOCAL_SOURCES
+    runtime/mods/afs.cpp
     runtime/src/native_audio_mixer.cpp
     runtime/src/gekko/button_glyphs.cpp
     runtime/src/gekko/native_boot.cpp
