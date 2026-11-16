@@ -465,6 +465,7 @@ if(WIN32)
         runtime/lift/render/gpu_memory.cpp
         runtime/lift/render/gpu_timer.cpp
         runtime/lift/render/jit_pacer.cpp
+        runtime/lift/render/pipeline_cache.cpp
         runtime/lift/render/pipelines.cpp
         runtime/lift/render/renderer.cpp
         runtime/lift/render/unorm_calibration.cpp
@@ -3182,6 +3183,17 @@ if(SHADOW_BUILD_TESTS)
         set_tests_properties(swapchain_lifecycle_tests PROPERTIES
                              SKIP_RETURN_CODE 77 TIMEOUT 60 LABELS "gpu;integration")
     endif()
+
+    # The renderer's pipeline cache file (render/pipeline_cache.h): plain values, so it is tested on every host.
+    add_executable(pipeline_cache_tests runtime/tests/pipeline_cache_tests.cpp runtime/lift/render/pipeline_cache.cpp)
+    target_include_directories(pipeline_cache_tests PRIVATE runtime/lift)
+    target_compile_features(pipeline_cache_tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(pipeline_cache_tests PRIVATE /W4 /permissive-)
+        set_property(TARGET pipeline_cache_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+    add_test(NAME pipeline_cache_tests COMMAND pipeline_cache_tests)
+    set_tests_properties(pipeline_cache_tests PROPERTIES TIMEOUT 30 LABELS "lift;render")
 
     add_executable(host_timing_tests runtime/tests/host_timing_tests.cpp)
     target_link_libraries(host_timing_tests PRIVATE shadow_runtime)

@@ -2703,6 +2703,8 @@ int run(Options options) {
         // Image quality (display.cfg msaa / anisotropy, --msaa / --anisotropy); changed live by the Options page.
         lifted_options.msaa_samples = static_cast<std::uint32_t>(gekko::display_settings().current().msaa);
         lifted_options.anisotropy = static_cast<std::uint32_t>(gekko::display_settings().current().anisotropy);
+        // The pipelines this install has made, beside display.cfg (docs/PIPELINE_CACHE.md).
+        lifted_options.pipeline_cache = display_cfg_path(options).parent_path() / "pipeline.cache";
         std::string lifted_error;
         if (!lifted_render.start(lifted_options, &lifted_error)) {
             std::cerr << "ERROR: native renderer: " << lifted_error << std::endl;

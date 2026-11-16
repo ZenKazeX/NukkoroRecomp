@@ -280,6 +280,38 @@ void dump_particle_draw(std::uint64_t tick, bool glare_sources, std::uint32_t d,
 // Diagnostics (SHADOW_R2_IDENTITY_BLEND_OFF=1, non-shipping): a One/Zero recipe is drawn with the blend unit
 // disabled (a plain write) instead of an enabled identity blend (GPU_FILL.md section 18: on 4x MSAA edge pixels the
 // enabled blend unit is not exact and depends on the draw's scheduling).
+// The shader set's identity for the pipeline cache (render/pipeline_cache.h): a file written by a build with other
+// shaders names pipelines this build would make differently, so it is not loaded.
+std::uint64_t shader_build_hash() {
+    struct Blob {
+        const void* data;
+        std::size_t size;
+    };
+    const Blob blobs[] = {
+        {kRenderVSMesh, sizeof(kRenderVSMesh)}, {kRenderVSParticle, sizeof(kRenderVSParticle)},
+        {kRenderVSImmediate, sizeof(kRenderVSImmediate)}, {kRenderVSFullscreen, sizeof(kRenderVSFullscreen)},
+        {kRenderVSGlareTiles, sizeof(kRenderVSGlareTiles)}, {kRenderPSBase, sizeof(kRenderPSBase)},
+        {kRenderPSBaseTiles, sizeof(kRenderPSBaseTiles)}, {kRenderPSEnvironment, sizeof(kRenderPSEnvironment)},
+        {kRenderPSEnvironmentTiles, sizeof(kRenderPSEnvironmentTiles)}, {kRenderPSDual, sizeof(kRenderPSDual)},
+        {kRenderPSDualTiles, sizeof(kRenderPSDualTiles)}, {kRenderPSParticle, sizeof(kRenderPSParticle)},
+        {kRenderPSParticleTiles, sizeof(kRenderPSParticleTiles)}, {kRenderPSImmediate, sizeof(kRenderPSImmediate)},
+        {kRenderPSImmediateTiles, sizeof(kRenderPSImmediateTiles)}, {kRenderPSGlareCapture, sizeof(kRenderPSGlareCapture)},
+        {kRenderPSGlareBlur, sizeof(kRenderPSGlareBlur)}, {kRenderPSGlareBox, sizeof(kRenderPSGlareBox)},
+        {kRenderPSGlareMerge, sizeof(kRenderPSGlareMerge)}, {kRenderPSGlareComposite, sizeof(kRenderPSGlareComposite)},
+        {kRenderPSResolve, sizeof(kRenderPSResolve)}, {kRenderPSResolveGlare, sizeof(kRenderPSResolveGlare)},
+        {kRenderPSDepthBits, sizeof(kRenderPSDepthBits)}, {kRenderPSTexture, sizeof(kRenderPSTexture)},
+        {kRenderPSScale, sizeof(kRenderPSScale)}, {kRenderCSGlareRows, sizeof(kRenderCSGlareRows)},
+        {kRenderCSGlareColumns, sizeof(kRenderCSGlareColumns)}, {kRenderCSGlareTilesClear, sizeof(kRenderCSGlareTilesClear)},
+    };
+    std::uint64_t hash = pipeline_cache_hash(nullptr, 0);
+    for (const Blob& blob : blobs) {
+        const std::uint64_t size = blob.size;
+        hash = pipeline_cache_hash(&size, sizeof(size), hash);
+        hash = pipeline_cache_hash(blob.data, blob.size, hash);
+    }
+    return hash;
+}
+
 bool identity_blend_off() {
 #if defined(GEKKO_SHIPPING)
     return false;
@@ -510,6 +542,15 @@ bool Renderer::create(const RendererOptions& options, std::string* error) {
 #if !defined(GEKKO_SHIPPING)
     recorder_ = PacketRecorder::from_environment();
 #endif
+    // The pipelines earlier runs made, made now rather than at their first draw (docs/PIPELINE_CACHE.md).
+    pipeline_cache_ = PipelineCache(shader_build_hash());
+    pipeline_cache_path_ = options.pipeline_cache;
+    pipelines_warmed_ = 0;
+    if (!pipeline_cache_path_.empty()) {
+        std::string why;
+        if (pipeline_cache_.load(pipeline_cache_path_, &why))
+            warm_pipelines();
+    }
     worker_.start();
     created_ = true;
     return true;
@@ -574,6 +615,8 @@ void Renderer::destroy() {
     pipelines_.clear();
     screen_pipelines_.clear();
     compute_pipelines_.clear();
+    pipeline_cache_ = PipelineCache();
+    pipeline_cache_path_.clear();
     skin_cache_.destroy();
     pool_.destroy();
     frames_.destroy();
@@ -1102,9 +1145,30 @@ void Renderer::release_scope(Scope scope) {
 
 // ---- pipelines -----------------------------------------------------------------------------------------------------
 
-ID3D12PipelineState* Renderer::mesh_pipeline(Program program, const Recipe& recipe, DXGI_FORMAT colour,
+ID3D12PipelineState* Renderer::mesh_pipeline(Program program, const Recipe& asked, DXGI_FORMAT colour,
                                              std::uint32_t samples, std::string* error, bool lines, bool tiles,
                                              bool plain, bool no_depth) {
+    // Fields that cannot change the pipeline are cleared, so equivalent keys share one (canonical_mesh).
+    PipelineRecord record;
+    record.kind = PipelineRecord::Kind::Mesh;
+    record.program = static_cast<std::uint8_t>(program);
+    record.src = static_cast<std::uint8_t>(asked.src);
+    record.dst = static_cast<std::uint8_t>(asked.dst);
+    record.cull = static_cast<std::uint8_t>(asked.cull);
+    record.flags = static_cast<std::uint8_t>(
+        (asked.depth_test ? PipelineRecord::kDepthTest : 0u) | (asked.depth_write ? PipelineRecord::kDepthWrite : 0u) |
+        (lines ? PipelineRecord::kLines : 0u) | (tiles ? PipelineRecord::kTiles : 0u) |
+        (plain ? PipelineRecord::kPlain : 0u) | (no_depth ? PipelineRecord::kNoDepth : 0u));
+    record.format = static_cast<std::uint32_t>(colour);
+    record.samples = samples;
+    record = canonical_mesh(record, static_cast<std::uint8_t>(Blend::One), static_cast<std::uint8_t>(Blend::Zero),
+                            static_cast<std::uint8_t>(Program::Immediate));
+    Recipe recipe = asked;
+    recipe.src = static_cast<Blend>(record.src);
+    recipe.dst = static_cast<Blend>(record.dst);
+    recipe.depth_test = (record.flags & PipelineRecord::kDepthTest) != 0u;
+    recipe.depth_write = (record.flags & PipelineRecord::kDepthWrite) != 0u;
+    lines = (record.flags & PipelineRecord::kLines) != 0u;
     const PipelineKey key{static_cast<std::uint8_t>(program), static_cast<std::uint8_t>(recipe.src),
                           static_cast<std::uint8_t>(recipe.dst), static_cast<std::uint8_t>(recipe.cull),
                           recipe.depth_test, recipe.depth_write, colour, samples, lines, tiles, plain, no_depth};
@@ -1213,6 +1277,7 @@ ID3D12PipelineState* Renderer::mesh_pipeline(Program program, const Recipe& reci
     ID3D12PipelineState* raw = pipeline.Get();
     pipelines_.emplace(key, std::move(pipeline));
     render_stats_.pipelines = pipelines_.size();
+    note_pipeline(record);
     return raw;
 }
 
@@ -1259,6 +1324,12 @@ ID3D12PipelineState* Renderer::screen_pipeline(Screen screen, DXGI_FORMAT colour
         return nullptr;
     ID3D12PipelineState* raw = pipeline.Get();
     screen_pipelines_.emplace(key, std::move(pipeline));
+    PipelineRecord record;
+    record.kind = PipelineRecord::Kind::Screen;
+    record.program = static_cast<std::uint8_t>(screen);
+    record.format = static_cast<std::uint32_t>(colour);
+    record.samples = samples;
+    note_pipeline(record);
     return raw;
 }
 
@@ -1282,7 +1353,77 @@ ID3D12PipelineState* Renderer::compute_pipeline(Compute compute, std::string* er
     pipeline->SetName(L"shadow.glare.compute");
     ID3D12PipelineState* raw = pipeline.Get();
     compute_pipelines_.emplace(compute, std::move(pipeline));
+    PipelineRecord record;
+    record.kind = PipelineRecord::Kind::Compute;
+    record.program = static_cast<std::uint8_t>(compute);
+    note_pipeline(record);
     return raw;
+}
+
+// A pipeline just made: a new one is added to the cache file at once, so a later crash keeps it. Pipelines are made
+// on the rendering thread (or at create), one at a time; the write is a few hundred bytes, next to a compile.
+void Renderer::note_pipeline(const PipelineRecord& record) {
+    if (warming_pipelines_ || pipeline_cache_path_.empty() || !pipeline_cache_.note(record))
+        return;
+    std::string error;
+    if (!pipeline_cache_.save(pipeline_cache_path_, &error)) {
+        static bool reported = false;
+        if (!reported) {
+            reported = true;
+            std::fprintf(stderr, "[render] pipeline cache not saved: %s\n", error.c_str());
+        }
+    }
+}
+
+// Makes every cached pipeline. A record this build or GPU cannot make (an MSAA count it lacks, a value out of range
+// from a damaged file the checks let through) is skipped: it is made, or not, at its first draw as without a cache.
+void Renderer::warm_pipelines() {
+    const auto started = std::chrono::steady_clock::now();
+    warming_pipelines_ = true;
+    std::size_t made = 0;
+    for (const PipelineRecord& r : pipeline_cache_.records()) {
+        if (r.kind != PipelineRecord::Kind::Compute && (r.samples == 0u || r.samples > 32u ||
+                                                         (r.samples > 1u && !msaa_supported(r.samples))))
+            continue;
+        const DXGI_FORMAT format = static_cast<DXGI_FORMAT>(r.format);
+        ID3D12PipelineState* pipeline = nullptr;
+        switch (r.kind) {
+        case PipelineRecord::Kind::Mesh: {
+            if (r.program > static_cast<std::uint8_t>(Program::Immediate) ||
+                r.src > static_cast<std::uint8_t>(Blend::InvDestColor) ||
+                r.dst > static_cast<std::uint8_t>(Blend::InvDestColor) || r.cull > static_cast<std::uint8_t>(Cull::Front))
+                continue;
+            Recipe recipe;
+            recipe.src = static_cast<Blend>(r.src);
+            recipe.dst = static_cast<Blend>(r.dst);
+            recipe.cull = static_cast<Cull>(r.cull);
+            recipe.depth_test = (r.flags & PipelineRecord::kDepthTest) != 0u;
+            recipe.depth_write = (r.flags & PipelineRecord::kDepthWrite) != 0u;
+            pipeline = mesh_pipeline(static_cast<Program>(r.program), recipe, format, r.samples, nullptr,
+                                     (r.flags & PipelineRecord::kLines) != 0u, (r.flags & PipelineRecord::kTiles) != 0u,
+                                     (r.flags & PipelineRecord::kPlain) != 0u, (r.flags & PipelineRecord::kNoDepth) != 0u);
+            break;
+        }
+        case PipelineRecord::Kind::Screen:
+            if (r.program > static_cast<std::uint8_t>(Screen::ResolveTiles))
+                continue;
+            pipeline = screen_pipeline(static_cast<Screen>(r.program), format, r.samples, nullptr);
+            break;
+        case PipelineRecord::Kind::Compute:
+            if (r.program > static_cast<std::uint8_t>(Compute::GlareTilesClear))
+                continue;
+            pipeline = compute_pipeline(static_cast<Compute>(r.program), nullptr);
+            break;
+        }
+        if (pipeline != nullptr)
+            ++made;
+    }
+    warming_pipelines_ = false;
+    pipelines_warmed_ = made;
+    render_stats_.pipelines_warmed = made;
+    const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+    std::fprintf(stderr, "[render] pipeline cache: %zu of %zu pipelines made in %.1f ms\n", made,
+                 pipeline_cache_.records().size(), ms);
 }
 
 // ---- frames ----------------------------------------------------------------------------------------------------------
@@ -3529,6 +3670,7 @@ void Renderer::publish_render_stats() {
     stats_.views_folded = r.views_folded;
     stats_.skin_overflows = r.skin_overflows;
     stats_.pipelines = r.pipelines;
+    stats_.pipelines_warmed = r.pipelines_warmed;
     stats_.resolve_waits = r.resolve_waits;
 }
 

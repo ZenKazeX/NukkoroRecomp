@@ -388,6 +388,8 @@ bool LiftedRender::start(const LiftedRenderOptions& options, std::string* error)
     // Diagnostics: SHADOW_R2_MSAA=<samples> (1: no multisampling) for bisecting the GPU path.
     if (const char* msaa = std::getenv("SHADOW_R2_MSAA"))
         renderer_options.msaa_samples = static_cast<std::uint32_t>(std::max(1ul, std::strtoul(msaa, nullptr, 10)));
+    if (const char* cache = std::getenv("SHADOW_R2_PIPELINE_CACHE"); cache == nullptr || cache[0] != '0')
+        renderer_options.pipeline_cache = chosen.pipeline_cache;
     if (!impl_->renderer.create(renderer_options, error))
         return false;
     // G10's proof hook: SHADOW_R2_CAPTURE_AT_RENDER_SIZE=1 renders captures at the render size and scales them into

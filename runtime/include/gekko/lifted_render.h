@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -43,6 +44,9 @@ struct LiftedRenderOptions {
     // sample count (1 = single-sample) and the anisotropic level of the game's filtered textures (1 = Off).
     std::uint32_t msaa_samples = 4;
     std::uint32_t anisotropy = 16;
+    // The renderer's pipeline cache file (docs/PIPELINE_CACHE.md); empty: none. SHADOW_R2_PIPELINE_CACHE=0 turns it
+    // off for a run.
+    std::filesystem::path pipeline_cache;
 };
 
 // Frames written to PNG files: the first frame the game finished at or after `first_frame`, then every `stride`

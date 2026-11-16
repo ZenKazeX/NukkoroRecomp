@@ -29,6 +29,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -48,6 +49,7 @@
 #include "render/gpu_timer.h"
 #include "render/jit_pacer.h"
 #include "render/packet_stream.h"
+#include "render/pipeline_cache.h"
 #include "render/resource_worker.h"
 #include "render/resources.h"
 #include "render/skin_cache.h"
@@ -69,6 +71,9 @@ struct RendererOptions {
     std::uint32_t debug_glare_parts = 0;
     // Diagnostics: the glare sources bind the scene's depth through its writable view (no draw writes it).
     bool debug_writable_source_depth = false;
+    // The pipeline cache file (render/pipeline_cache.h, docs/PIPELINE_CACHE.md): the pipelines made in earlier runs
+    // are made again at create(), before the first frame, and every new one is added. Empty: no cache.
+    std::filesystem::path pipeline_cache;
 };
 
 class Renderer {
@@ -237,6 +242,7 @@ public:
         std::uint64_t views_folded = 0;      // all frames: of those, the view under resolved straight into them
         std::uint64_t skin_overflows = 0;  // all frames: skinned draws the cache had no room for
         std::size_t pipelines = 0;
+        std::size_t pipelines_warmed = 0;  // made at create() from the pipeline cache
         std::size_t textures = 0;
         std::size_t meshes = 0;
         std::size_t skinned_meshes = 0;
@@ -414,6 +420,9 @@ private:
                                        bool no_depth = false);
     ID3D12PipelineState* screen_pipeline(Screen screen, DXGI_FORMAT colour, std::uint32_t samples, std::string* error);
     ID3D12PipelineState* compute_pipeline(Compute compute, std::string* error);
+    // The pipeline cache: notes a pipeline just made (saving the file when it is new), and makes every cached one.
+    void note_pipeline(const PipelineRecord& record);
+    void warm_pipelines();
     // Records the frame into `output` in frame slot `slot`; the caller submits. `capture` receives the readback copy
     // when not null.
     // `commit_history` false: the views' kept histories are read but never written (render_to_image).
@@ -450,6 +459,10 @@ private:
     std::map<PipelineKey, Com<ID3D12PipelineState>> pipelines_;
     std::map<std::tuple<Screen, DXGI_FORMAT, std::uint32_t>, Com<ID3D12PipelineState>> screen_pipelines_;
     std::map<Compute, Com<ID3D12PipelineState>> compute_pipelines_;
+    PipelineCache pipeline_cache_;
+    std::filesystem::path pipeline_cache_path_;
+    bool warming_pipelines_ = false;  // warm_pipelines is making cached pipelines: nothing new to note
+    std::size_t pipelines_warmed_ = 0;
     std::vector<History> histories_;  // by view index
     CpuDescriptorPool history_rtvs_;   // the histories' render-target views
     // Releases waiting for the packets that may name their handle (release / finish_packets).
