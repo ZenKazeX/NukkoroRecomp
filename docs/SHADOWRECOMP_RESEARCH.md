@@ -52,6 +52,14 @@ verify once a machine with the disc is available.
 | File I/O | — | theirs is plain `fstream`, no cache: ours is ahead |
 | High frame rate: ~100 per-object fixes (`fps_patches.cpp`) | — | **foundation done**; the fixes are a checklist (docs/HIGH_FRAME_RATE.md), each described in docs/HIGH_FRAME_RATE_FIXES.md |
 
+## 2b. More from the same read
+
+- **docs/SHADOWRECOMP_GAME_FIXES.md:** the game bugs they fix, sorted by whether they are in the game's own logic
+  (likely in ours too) or specific to the Xbox port.
+- **docs/SHADOWRECOMP_HUD_DATA.md:** their 274-entry widescreen HUD table, as a test set for our automatic layout.
+- **docs/SHADOWRECOMP_PC_FEATURES.md:** their PC-port features and options, against ours.
+- **docs/HIGH_FRAME_RATE_FIXES.md:** how each of their high frame rate fixes works.
+
 ## 3. Where our time goes (docs/PERF_60FPS_2026-11-04.md)
 
 - **Game thread:** about 2.7 ms per frame at p90. Translated game code 2.11 ms, other runtime 0.52, audio mix 0.44,
