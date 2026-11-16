@@ -75,6 +75,8 @@ Run with `--frame-rate 120` first, then 240. Watch for:
 
 ## Per-object fixes: the checklist
 
+How each fix works (formulas, timers, edge cases, how to find it): docs/HIGH_FRAME_RATE_FIXES.md.
+
 ShadowRecomp fixed about 100 sites where the game counts frames instead of time. The game logic is the same on the
 GameCube, so the same sites will misbehave here. Each needs finding in the PAL DOL, usually by class name. Run
 `python tools/guest_classes.py <main.dol>` to list the RTTI classes and their virtual methods, then confirm each fix

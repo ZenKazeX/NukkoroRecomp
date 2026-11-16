@@ -50,7 +50,7 @@ verify once a machine with the disc is available.
 | Quick boot to the title, `--l` / `--e` to boot into a stage or event (`start_patches.cpp`) | `--boot-stage` | have most of it |
 | Executable preload with `VirtualLock` (`preload_executable.cpp`) | — | startup page faults only; low value |
 | File I/O | — | theirs is plain `fstream`, no cache: ours is ahead |
-| High frame rate: ~100 per-object fixes (`fps_patches.cpp`) | — | **foundation done**; the fixes are a checklist (docs/HIGH_FRAME_RATE.md) |
+| High frame rate: ~100 per-object fixes (`fps_patches.cpp`) | — | **foundation done**; the fixes are a checklist (docs/HIGH_FRAME_RATE.md), each described in docs/HIGH_FRAME_RATE_FIXES.md |
 
 ## 3. Where our time goes (docs/PERF_60FPS_2026-11-04.md)
 
