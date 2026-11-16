@@ -341,11 +341,19 @@ public:
                   "a pacing tick divides every frame period");
     void set_host_pacing(HostService pacing) { host_pacing_ = std::move(pacing); }
     // The next GameEvent::Frame after `now`: the next host-service or pacing tick, both on their absolute grids.
-    static constexpr u64 next_frame_event(u64 now) noexcept {
+    // `pacing_ticks`: the pacing quantum, kPacingTicks at the console's frame rates (pacing_ticks()).
+    static constexpr u64 next_frame_event(u64 now, u64 pacing_ticks = kPacingTicks) noexcept {
         const u64 service = (now / kHostServiceTicks + 1u) * kHostServiceTicks;
-        const u64 pacing = (now / kPacingTicks + 1u) * kPacingTicks;
+        const u64 pacing = (now / pacing_ticks + 1u) * pacing_ticks;
         return service < pacing ? service : pacing;
     }
+    // The frame rate the game runs at when it runs at 60 Hz (gekko/frame_rate.h, docs/HIGH_FRAME_RATE.md): the frame
+    // limiter's rate, and the pacing grid that holds its frame boundaries (frame_rate::pacing_hz: 300 Hz at 60, as
+    // before). Set before the run starts; unsupported rates are ignored.
+    void set_frame_rate(u32 hz);
+    u32 frame_rate() const noexcept;
+    u32 pacing_hz() const noexcept { return pacing_hz_; }
+    u64 pacing_ticks() const noexcept { return kGameTicksPerSecond / pacing_hz_; }
 
     // Wall-clock watchdog on the wait points (diagnostic; off unless set).
     // When the guest has executed for `wall_ms` of wall time without reaching
@@ -843,6 +851,7 @@ private:
     std::unique_ptr<NativeVideo> video_;
     std::unique_ptr<NativeAudio> audio_;
     std::unique_ptr<NativeFrameLimiter> frame_limiter_;
+    u32 pacing_hz_ = kPacingHz;
     std::unique_ptr<NativeObjectRange> object_range_;
     std::unique_ptr<NativeMotionStore> motion_store_;
     std::unique_ptr<NativeSoundBanks> sound_banks_;

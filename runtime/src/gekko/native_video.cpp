@@ -9,6 +9,7 @@
 #include <string>
 
 #include "gekko/cpu.h"
+#include "gekko/frame_rate.h"
 #include "gekko/game_clock.h"
 #include "gekko/native_interrupts.h"
 #include "gekko/guest_memory.h"
@@ -233,10 +234,30 @@ void NativeVideo::set_timing(Cpu& c, u32 timing, u32 tv_mode) {
     }
 }
 
-// A field exactly one frame long (1/60 s or 1/50 s): it begins where the frame limiter begins a frame.
+namespace {
+// A field one frame long at a rate of the 60 Hz family (60 or a high frame rate): its rate, else 0.
+u32 sixty_family_rate(u64 field) noexcept {
+    for (const u32 hz : frame_rate::kSupported)
+        if (field == kGameTicksPerSecond / hz) return hz;
+    return 0u;
+}
+}  // namespace
+
+// A field exactly one frame long (1/50 s, 1/60 s or one frame of a high frame rate): it begins where the frame limiter
+// begins a frame.
 bool NativeVideo::frame_locked() const noexcept {
     const u64 field = field_ticks();
-    return field_ticks_exact() && (field == kFrameField60 || field == kFrameField50);
+    return field_ticks_exact() && (field == kFrameField50 || sixty_family_rate(field) != 0u);
+}
+
+void NativeVideo::set_frame_rate(u32 hz) noexcept {
+    if (!frame_rate::sixty_family(hz) || !field_ticks_exact()) return;
+    const u32 current = sixty_family_rate(field_ticks());
+    if (current == 0u || current == hz) return;
+    // The half-lines stay; each becomes 1/nhlines of the new frame, as set_timing spreads them over 1/60 s.
+    half_line_num_ = static_cast<u32>(kGameTicksPerSecond / hz);
+    half_line_den_ = nhlines_;
+    ++stats_.frame_rate_changes;
 }
 
 // The start of the frame-locked field containing game tick `now`: the last whole multiple of the field in the

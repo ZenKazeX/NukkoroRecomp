@@ -116,7 +116,7 @@ const VoiceArchivePaths& voice_archive_paths() noexcept { return g_archives; }
 
 namespace {
 
-using u64 = unsigned long long;
+using u64 = std::uint64_t;
 constexpr u64 kAlign = 2048u;  // both discs' archives align every entry to 2048
 u64 align_up(u64 v) { return (v + kAlign - 1u) / kAlign * kAlign; }
 std::uint32_t le32(const unsigned char* p) { return p[0] | p[1] << 8 | p[2] << 16 | static_cast<std::uint32_t>(p[3]) << 24; }

@@ -200,6 +200,13 @@ could not be read (IDXGISwapChainMedia::GetFrameStatisticsMedia unavailable; Pre
 was not verified. Placing the flip inside the vertical blank (~0.67 ms at 1080p60) is not reliable with GPU-end jitter
 of several ms, so no phase target was added.
 
+## High frame rate (2026-11-16)
+
+`--frame-rate 120|180|240` (opt-in; 60 is unchanged) publishes that rate in the frame object, so the limiter waits one
+period of it. The 60 Hz video field becomes one frame of it, and the pacing ticks come five per frame (600 / 900 /
+1200 Hz instead of 300), so every frame boundary is still a pacing tick. The host service stays at 5 ms. Design, tests
+and the per-object checklist: docs/HIGH_FRAME_RATE.md.
+
 ## Timing that remains
 
 The existing period calculation, elapsed/raw dt, authored

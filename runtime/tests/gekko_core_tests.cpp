@@ -33,6 +33,7 @@
 #include "gekko/native_immediate.h"
 #include "gekko/ppc_instruction_traits.h"
 #include "gekko/ppc_ops.h"
+#include "gekko/frame_rate.h"
 #include "gekko/savestate.h"
 #include "gekko/appear_fade.h"
 #include "gekko/system.h"
@@ -3327,6 +3328,248 @@ void test_appear_fade_only_for_models_appearing_in_view() {
     require(fade.stats().fades == 2u, "two appearances faded");
 }
 
+// High frame rate (gekko/frame_rate.h, docs/HIGH_FRAME_RATE.md): the arithmetic every grid relies on.
+void test_frame_rate_grids() {
+    using namespace gekko::frame_rate;
+    require(supported(60u) && supported(120u) && supported(180u) && supported(240u) && !supported(144u) &&
+                !supported(50u) && !supported(0u),
+            "60 and its supported multiples only");
+    require(pacing_hz(50u) == 300u && pacing_hz(60u) == 300u && pacing_hz(120u) == 600u && pacing_hz(240u) == 1200u,
+            "the console rates keep 300 Hz pacing; five ticks per frame above");
+    require(game_rate(60u) == 60u && game_rate(120u) == 60u && game_rate(240u) == 60u && game_rate(50u) == 50u &&
+                game_rate(0u) == 0u,
+            "a published high rate reads as the game's 60; 50 and anything else are the game's own");
+    require(scaled_cap(3u, 60u, 60u) == 3u && scaled_cap(3u, 60u, 120u) == 6u && scaled_cap(3u, 60u, 240u) == 12u &&
+                scaled_cap(3u, 50u, 50u) == 3u,
+            "the cap grows with the rate: the slowdown point stays 50 ms");
+}
+
+// One limiter frame entered and published, with an optional hitch: returns the published dt bits.
+namespace high_rate {
+constexpr u32 kObject = 0x8057E760u, kSda = 0x805EC500u, kStack = 0x81200000u, kCaller = 0x80004000u;
+
+void prepare(Cpu& c, u32 hz, u32 interval) {
+    c.gpr[13] = kSda;
+    c.gpr[1] = kStack;
+    c.set_msr(c.msr() | kMsrFP);
+    c.mem_write32(0x800000F8u, 162000000u);
+    c.mem_write32(kObject + 0x50u, hz);
+    c.mem_write32(kObject + 0x34u, 3u);
+    c.mem_write32(kObject + 0x10u, interval);
+}
+
+// Runs one frame to the frame-step setter and through its continuation; returns the setter's step count.
+u32 run_frame(Cpu& c) {
+    c.lr = kCaller;
+    c.set_entry(0x801E1F2Cu);
+    require(c.try_hle(c.pc), "limiter entry installed");
+    require(!c.stopped() && c.pc == 0x80203D20u, "frame reaches the frame-step setter");
+    const u32 steps = c.gpr[4];
+    c.set_entry(0x801E21D8u);
+    require(c.try_hle(c.pc) && c.pc == 0x80337DD4u, "setter continuation installed");
+    return steps;
+}
+}  // namespace high_rate
+
+// A 60 Hz game at 120 Hz: the word, the waits, dt and the setter all follow one 1/120 s period; the video hears the
+// rate every frame.
+void test_native_frame_limiter_high_frame_rate() {
+    using namespace high_rate;
+    for (const u32 rate : {120u, 180u, 240u}) {
+        Fixture f;
+        Cpu& c = f.cpu;
+        prepare(c, 60u, 1u);
+        u64 expected_target = 0u;
+        std::vector<u32> heard;
+        NativeFrameLimiter limiter(c, [&](u64 target) {
+            require(target == expected_target, "each wait ends on the high rate's frame grid");
+            c.game_clock().set_now(target);
+            return true;
+        }, []() -> bool { throw std::runtime_error("a paced frame used the no-wait event path"); });
+        limiter.install();
+        limiter.set_frame_rate(rate);
+        limiter.set_rate_listener([&](u32 hz) { heard.push_back(hz); });
+        const u32 period_us = static_cast<u32>(1.0e6f * (1.0f / static_cast<float>(rate)));
+        const u32 dt = float_to_bits(1.0e-6f * static_cast<float>(period_us));
+        for (u64 frame = 0; frame < 600u; ++frame) {
+            expected_target = (frame + 1u) * (40500000u / rate);
+            run_frame(c);
+            require(c.game_clock().now() == expected_target, "one period of the high rate per frame");
+            require(c.mem_read32(kObject + 0x50u) == rate, "the frame object carries the high rate");
+            require(c.mem_read32(kSda + 0x4558u) == dt, "dt is one period of the high rate");
+        }
+        require(limiter.stats().frames == 600u && limiter.stats().high_rate_frames == 600u &&
+                    limiter.stats().console_rate_frames == 0u,
+                "every frame ran at the high rate");
+        require(heard.size() == 600u && heard.front() == rate && heard.back() == rate, "the video hears the rate");
+    }
+}
+
+// What keeps the game's own rate: in-engine events, movies, a 50 Hz game, the default; and a savestate's high rate
+// read back by a session at 60.
+void test_native_frame_limiter_high_frame_rate_fallbacks() {
+    using namespace high_rate;
+    const auto make = [](Fixture& f, std::vector<u32>& heard) {
+        auto limiter = std::make_unique<NativeFrameLimiter>(f.cpu, [&f](u64 target) {
+            f.cpu.game_clock().set_now(target);
+            return true;
+        }, [&f]() { f.cpu.game_clock().set_now(f.cpu.game_clock().now() + 202500u); return true; });
+        limiter->install();
+        limiter->set_rate_listener([&heard](u32 hz) { heard.push_back(hz); });
+        return limiter;
+    };
+    {  // An in-engine event (interval 2) keeps 60 Hz, then the high rate returns when it ends.
+        Fixture f;
+        std::vector<u32> heard;
+        prepare(f.cpu, 60u, 2u);
+        auto limiter = make(f, heard);
+        limiter->set_frame_rate(120u);
+        run_frame(f.cpu);
+        require(f.cpu.mem_read32(kObject + 0x50u) == 60u && f.cpu.game_clock().now() == 675000u &&
+                    heard.back() == 60u && limiter->stats().console_rate_frames == 1u,
+                "an event frame runs at the game's 60 Hz");
+        f.cpu.mem_write32(kObject + 0x10u, 1u);
+        f.cpu.gpr[1] = kStack;
+        run_frame(f.cpu);
+        require(f.cpu.mem_read32(kObject + 0x50u) == 120u && f.cpu.game_clock().now() == 675000u + 337500u &&
+                    heard.back() == 120u,
+                "after the event the next frame runs at 120 Hz on the shared grid");
+    }
+    {  // A movie keeps 60 Hz (its refresh wait comes first).
+        Fixture f;
+        std::vector<u32> heard;
+        prepare(f.cpu, 60u, 1u);
+        f.cpu.mem_write32(kSda + 0x2C50u, 1u);
+        auto limiter = make(f, heard);
+        limiter->set_frame_rate(240u);
+        f.cpu.lr = kCaller;
+        f.cpu.set_entry(0x801E1F2Cu);
+        require(f.cpu.try_hle(f.cpu.pc) && f.cpu.pc == 0x804040ACu, "a movie frame waits for its refresh");
+        require(f.cpu.mem_read32(kObject + 0x50u) == 60u && heard.back() == 60u, "a movie frame runs at 60 Hz");
+    }
+    {  // A 50 Hz game is left alone.
+        Fixture f;
+        std::vector<u32> heard;
+        prepare(f.cpu, 50u, 1u);
+        auto limiter = make(f, heard);
+        limiter->set_frame_rate(120u);
+        run_frame(f.cpu);
+        require(f.cpu.mem_read32(kObject + 0x50u) == 50u && f.cpu.game_clock().now() == 810000u &&
+                    heard.back() == 50u && limiter->stats().high_rate_frames == 0u,
+                "a 50 Hz game keeps 50 Hz");
+    }
+    {  // The default writes nothing.
+        Fixture f;
+        std::vector<u32> heard;
+        prepare(f.cpu, 60u, 1u);
+        auto limiter = make(f, heard);
+        limiter->set_frame_rate(144u);  // unsupported: ignored
+        require(limiter->frame_rate() == 60u, "an unsupported rate is ignored");
+        run_frame(f.cpu);
+        require(f.cpu.mem_read32(kObject + 0x50u) == 60u && f.cpu.game_clock().now() == 675000u &&
+                    limiter->stats().high_rate_frames == 0u && limiter->stats().console_rate_frames == 0u,
+                "at 60 the frame is the console's");
+    }
+    {  // A high rate left in memory by a savestate is the game's 60 to a session at 60.
+        Fixture f;
+        std::vector<u32> heard;
+        prepare(f.cpu, 240u, 1u);
+        auto limiter = make(f, heard);
+        run_frame(f.cpu);
+        require(f.cpu.mem_read32(kObject + 0x50u) == 60u && f.cpu.game_clock().now() == 675000u && heard.back() == 60u,
+                "the word returns to 60");
+    }
+}
+
+// The slowdown point stays 50 ms: a long frame at 120 Hz is capped at six of its periods, not three.
+void test_native_frame_limiter_high_frame_rate_keeps_the_slowdown_point() {
+    using namespace high_rate;
+    Fixture f;
+    Cpu& c = f.cpu;
+    prepare(c, 60u, 1u);
+    bool hitch = false;
+    NativeFrameLimiter limiter(c, [&](u64 target) {
+        c.game_clock().set_now(hitch ? target + 40500000u / 10u : target);  // a 100 ms hitch
+        return true;
+    }, []() -> bool { throw std::runtime_error("no event wait expected"); });
+    limiter.install();
+    limiter.set_frame_rate(120u);
+    run_frame(c);
+    hitch = true;
+    c.gpr[1] = kStack;
+    const u32 steps = run_frame(c);
+    const float min_dt = 1.0e-6f * static_cast<float>(8333);
+    const float capped = min_dt * 6.0f;
+    require(c.mem_read32(kSda + 0x4558u) == float_to_bits(capped) && capped > 0.0499f && capped < 0.0501f,
+            "a hitch is capped at six 1/120 s periods: 50 ms, as three 1/60 s periods were");
+    require(steps == 13u, "the step count itself is not capped (as on the console): 108.3 ms is 13 periods");
+}
+
+// The video field follows the rate within the 60 Hz family; the 50 Hz field is left alone.
+void test_native_video_follows_the_frame_rate() {
+    System system;
+    system.start();
+    NativeVideo& video = system.video();
+    require(video.field_ticks() == 810000u, "the PAL boot field is 1/50 s");
+    video.set_frame_rate(120u);
+    require(video.field_ticks() == 810000u && video.stats().frame_rate_changes == 0u, "a 50 Hz field is left alone");
+    // The console's 60 Hz timing as set_timing leaves it: 525 half-lines over exactly 1/60 s.
+    std::vector<u8> state;
+    state::put<u8>(state, 1u);
+    state::put<u8>(state, 0u);
+    state::put<u8>(state, 0u);
+    state::put<u64>(state, 0u);
+    state::put<u64>(state, system.game_ticks());
+    state::put<u32>(state, 0u);
+    state::put<u32>(state, 675000u);
+    state::put<u32>(state, 525u);
+    state::put<u32>(state, 525u);
+    const u8* cursor = state.data();
+    require(video.load_state(cursor, state.data() + state.size()), "a 60 Hz field loads");
+    require(video.field_ticks() == 675000u && video.frame_locked(), "1/60 s, frame-locked");
+    for (const u32 rate : {120u, 180u, 240u, 60u}) {
+        video.set_frame_rate(rate);
+        require(video.field_ticks() == 40500000u / rate && video.frame_locked() && video.half_lines_per_field() == 525u,
+                "the field is one frame of the rate, still frame-locked, its half-lines kept");
+    }
+    video.set_frame_rate(50u);
+    video.set_frame_rate(144u);
+    require(video.field_ticks() == 675000u && video.stats().frame_rate_changes == 4u,
+            "50 Hz and unsupported rates leave a 60 Hz family field alone");
+    // A retrace after the change starts the next field on the new rate's grid.
+    video.set_frame_rate(120u);
+    const u64 deadline = system.cpu().game_clock().deadline(GameEvent::Retrace);
+    require(system.advance_game_time(deadline), "the pending field ends");
+    const u64 next = system.cpu().game_clock().deadline(GameEvent::Retrace);
+    const u64 offset = system.cpu().time_base() - system.cpu().game_clock().now();
+    require(next > deadline && next - deadline <= 337500u && (next + offset) % 337500u == 0u,
+            "the next field ends on the 1/120 s grid");
+}
+
+// The pacing grid holds the high rate's frame boundaries.
+void test_system_pacing_follows_the_frame_rate() {
+    System system;
+    system.start();
+    require(system.pacing_hz() == 300u && system.pacing_ticks() == System::kPacingTicks && system.frame_rate() == 60u,
+            "the console's pacing by default");
+    system.set_frame_rate(144u);
+    require(system.pacing_hz() == 300u && system.frame_rate() == 60u, "an unsupported rate changes nothing");
+    system.set_frame_rate(120u);
+    const u64 deadline = system.cpu().game_clock().deadline(GameEvent::Frame);
+    require(system.pacing_hz() == 600u && system.frame_rate() == 120u && system.frame_limiter().frame_rate() == 120u,
+            "120 Hz paces at 600 Hz");
+    require(deadline > system.game_ticks() && deadline % 67500u == 0u, "the next Frame event is on the 1/600 s grid");
+    for (u64 now = 0; now < 2u * 40500000u; now += 12345u) {
+        const u64 next = System::next_frame_event(now, system.pacing_ticks());
+        require(next > now && next - now <= 67500u, "no gap longer than a pacing tick");
+    }
+    for (u64 k = 1; k < 1000u; ++k) {
+        const u64 boundary = k * 337500u;
+        require(System::next_frame_event(boundary - 1u, system.pacing_ticks()) == boundary,
+                "every 1/120 s frame boundary is a Frame event");
+    }
+}
+
 // Exercise the installed wait-point owner, not a policy helper: the same
 // deadlines, published dt and setter arguments must reach the game for all
 // positive console interval requests, including after an interrupted wait.
@@ -5624,6 +5867,13 @@ const TestCase kTests[] = {
     {"native GX draw-sync token and draw-done", test_native_gx_draw_sync_token_and_draw_done},
     {"native GX draw-sync callback is refused", test_native_gx_draw_sync_callback_is_refused},
     {"native frame limiter paces events at one period", test_native_frame_limiter_paces_events_at_one_period},
+    {"frame rate grids", test_frame_rate_grids},
+    {"native frame limiter high frame rate", test_native_frame_limiter_high_frame_rate},
+    {"native frame limiter high frame rate fallbacks", test_native_frame_limiter_high_frame_rate_fallbacks},
+    {"native frame limiter high frame rate keeps the slowdown point",
+     test_native_frame_limiter_high_frame_rate_keeps_the_slowdown_point},
+    {"native video follows the frame rate", test_native_video_follows_the_frame_rate},
+    {"system pacing follows the frame rate", test_system_pacing_follows_the_frame_rate},
     {"native object range keeps the original boundary", test_native_object_range_keeps_the_original_boundary},
     {"appear fade only for models appearing in view", test_appear_fade_only_for_models_appearing_in_view},
     {"vertex format strides", test_vertex_format_strides},
@@ -5658,10 +5908,18 @@ const TestCase kTests[] = {
 
 }  // namespace
 
-int main() {
+// Arguments, if any, are substrings of test names: only the tests whose names contain one of them run.
+int main(int argc, char** argv) {
     std::cout << std::unitbuf;  // a crash still leaves the last test's line behind
     int failures = 0;
+    const auto selected = [&](const TestCase& test) {
+        if (argc < 2) return true;
+        for (int i = 1; i < argc; ++i)
+            if (std::string(test.name).find(argv[i]) != std::string::npos) return true;
+        return false;
+    };
     for (const TestCase& test : kTests) {
+        if (!selected(test)) continue;
         try {
             test.run();
             std::cout << "PASS " << test.name << "\n";

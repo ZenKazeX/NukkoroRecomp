@@ -32,6 +32,12 @@
 // 1/60 s (1/50 s) apart: the one time base the video retrace and the audio
 // passes share (NativeVideo, NativeAudio), so the retrace the game waits on is
 // its own frame boundary instead of beating against it every 1,001 frames.
+//
+// High frame rate (gekko/frame_rate.h, docs/HIGH_FRAME_RATE.md): with a rate above 60 set, a game running at 60 Hz has
+// that rate published in its frame object (+0x50) at every frame, so P, dt and everything the game derives from the
+// word follow it. In-engine events (an interval request above one period) and movies keep the game's own rate, as
+// their timing is authored in 60 Hz frames. The dt cap keeps the console's slowdown point (frame_rate::scaled_cap).
+// At 60 nothing is written: the frame is exactly as before.
 
 #include <cstddef>
 #include <functional>
@@ -60,6 +66,14 @@ public:
 
     void install();
 
+    // The frame rate a 60 Hz game runs at (gekko/frame_rate.h; 60, the default, is the console's). Unsupported values
+    // are ignored.
+    void set_frame_rate(u32 hz) noexcept;
+    u32 frame_rate() const noexcept { return target_rate_; }
+    // Called at every frame with the rate that frame runs at (NativeVideo::set_frame_rate).
+    using RateListener = std::function<void(u32 hz)>;
+    void set_rate_listener(RateListener listener) { rate_listener_ = std::move(listener); }
+
     struct Address {
         u32 address;
         const char* name;
@@ -80,6 +94,8 @@ public:
         // Frames that requested an interval above 1 (the in-engine events'
         // 2) and were paced at one period. Diagnostic only; never sets cadence.
         u64 paced_at_one_period = 0;
+        u64 high_rate_frames = 0;  // frames run at the high frame rate
+        u64 console_rate_frames = 0;  // frames a high rate was set for that ran at the game's own (events, movies)
     };
     const Stats& stats() const noexcept { return stats_; }
 
@@ -95,11 +111,15 @@ private:
     static u64 frame_rate(Cpu& c, u32 frame);
     void publish(Cpu& c);
     void after_setter(Cpu& c);
+    // The rate this frame runs at, published in the frame object when it differs.
+    u32 publish_rate(Cpu& c);
 
     Cpu& cpu_;
     Advance advance_;
     AdvanceEvent advance_event_;
     Stats stats_;
+    u32 target_rate_ = 60u;
+    RateListener rate_listener_;
     // Diagnostic (GEKKO_FRAME_WORK=path): host steady-clock nanoseconds and game ticks at every limiter entry. Headless,
     // the game thread never sleeps, so the host time between two entries is that frame's whole game-thread work.
     std::string work_log_path_;

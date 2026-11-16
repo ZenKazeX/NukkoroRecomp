@@ -46,6 +46,7 @@
 #include "gekko/asset_trace.h"
 #include "gekko/measure_probes.h"
 #include "gekko/system.h"
+#include "gekko/frame_rate.h"
 #include "gekko/xinput_pad.h"
 #if defined(SHADOW_RENDER_LIFTED)
 #include "gekko/lifted_render.h"
@@ -858,6 +859,10 @@ struct Options {
     // execute. Zero means unlocked (or physical-refresh paced when vsync is on).
     double render_rate = 60.0;
     bool render_rate_explicit = false;  // given on the command line: display.cfg's render_rate does not apply
+    // The game's frame rate (gekko/frame_rate.h, docs/HIGH_FRAME_RATE.md): 60 is the console's; 120, 180 and 240 run
+    // the game's own frame loop faster. Code that counts frames rather than time still runs faster with them.
+    unsigned frame_rate = 60u;
+    bool frame_rate_explicit = false;  // given on the command line: display.cfg's frame_rate does not apply
     // Ceiling on pacing recovery as a multiple of real time; negative means
     // "leave FixedSimulationClock::Config's default alone". Exposed so the
     // limiter can be swept and so an A/B against the old sprint-at-host-speed
@@ -1340,6 +1345,9 @@ void print_usage() {
                  "                            (default on; off permits tearing when supported)\n"
                  "  --render-rate <hz|unlocked>  Independent presentation rate (default 60).\n"
                  "                            Supports 30/60/120/144/165/240 or any positive Hz\n"
+                 "  --frame-rate <60|120|180|240>  The game's frame rate (default 60, the console's).\n"
+                 "                            Experimental: some objects still count frames and run\n"
+                 "                            faster (docs/HIGH_FRAME_RATE.md). Also display.cfg frame_rate\n"
                  "  --frame-interpolation / --no-frame-interpolation\n"
                  "                            Cross-fade completed XFB snapshots when the source\n"
                  "                            runs below 90% of the render rate (default OFF:\n"
@@ -1695,6 +1703,14 @@ int run(Options options) {
     }
     for (const std::string& warning : display.warnings) std::cerr << "WARNING: " << warning << "\n";
     // display.cfg's presentation keys, under the command line's flags (the command line > display.cfg > the default).
+    if (display.frame_rate && !options.frame_rate_explicit) options.frame_rate = *display.frame_rate;
+    if (options.frame_rate != gekko::frame_rate::kConsole) {
+        system.set_frame_rate(options.frame_rate);
+        // Present every frame the game makes, unless a presentation rate was asked for.
+        if (!options.render_rate_explicit && !display.render_rate) options.render_rate = options.frame_rate;
+        std::cout << "Frame rate: " << options.frame_rate
+                  << " Hz (experimental: docs/HIGH_FRAME_RATE.md lists what still counts frames)\n";
+    }
     if (display.render_rate && !options.render_rate_explicit) options.render_rate = *display.render_rate;
     if (display.vsync && !options.vsync_explicit) options.vsync = *display.vsync;
     if (display.frame_interpolation && !options.frame_interpolation_explicit)
@@ -3499,7 +3515,7 @@ int run(Options options) {
     // quickly, then this host-only clock lets it become idle.
     gekko::FixedSimulationClock::Config simulation_config;
     // One pacing quantum per System::kPacingTicks: every frame boundary of a 50 or 60 Hz game is a pacing boundary.
-    simulation_config.pacing_hz = gekko::System::kPacingHz;
+    simulation_config.pacing_hz = system.pacing_hz();  // 300 Hz; five per frame at a high frame rate
     if (options.catchup_rate >= 0.0) {
         simulation_config.maximum_catchup_rate = options.catchup_rate;
     }
@@ -4132,7 +4148,7 @@ int run(Options options) {
                     const std::int64_t hold = gekko::phase_lock::published_hold_ns().load(std::memory_order_relaxed);
                     const std::int64_t target =
                         gekko::phase_lock::published_target_shift_ns().load(std::memory_order_relaxed);
-                    const auto tick = std::chrono::nanoseconds(1'000'000'000 / gekko::System::kPacingHz);
+                    const auto tick = std::chrono::nanoseconds(1'000'000'000 / system.pacing_hz());
                     // The shared phase controller towards the target shift; SHADOW_PHASE_LOCK_LEGACY=1: the
                     // proportional law on the hold (gekko/phase_lock.h).
                     const auto shift = gekko::phase_lock::legacy()
@@ -9382,6 +9398,17 @@ Options parse_options(int argc, char** argv) {
                     std::exit(1);
                 }
             }
+        } else if (argument == "--frame-rate" && index + 1 < argc) {
+            const std::string rate = argv[++index];
+            char* end = nullptr;
+            const unsigned long value = std::strtoul(rate.c_str(), &end, 10);
+            if (rate.empty() || end == rate.c_str() || *end != '\0' ||
+                !gekko::frame_rate::supported(static_cast<gekko::u32>(value))) {
+                std::cerr << "ERROR: --frame-rate expects 60, 120, 180 or 240\n";
+                std::exit(1);
+            }
+            options.frame_rate = static_cast<unsigned>(value);
+            options.frame_rate_explicit = true;
         } else if (argument == "--frame-interpolation") {
             options.frame_interpolation = true;
             options.frame_interpolation_explicit = true;

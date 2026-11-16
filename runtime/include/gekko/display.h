@@ -73,8 +73,10 @@ struct DisplayConfig {
     float hud_inset = 0.0f;
     // The presentation keys (display.cfg only, the launcher's flags win over them): unset = the flag's default.
     // render_rate 0 = unlocked (--render-rate), vsync (--vsync / --no-vsync), frame_interpolation
-    // (--frame-interpolation), draw_distance 1..8 (--draw-distance), fps_counter (--fps-counter).
+    // (--frame-interpolation), draw_distance 1..8 (--draw-distance), fps_counter (--fps-counter), frame_rate 60 / 120 /
+    // 180 / 240 (--frame-rate, gekko/frame_rate.h).
     std::optional<double> render_rate;
+    std::optional<unsigned> frame_rate;
     std::optional<bool> vsync;
     std::optional<bool> frame_interpolation;
     std::optional<float> draw_distance;

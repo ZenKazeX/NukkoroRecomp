@@ -13,6 +13,7 @@
 // <game root>/../EXTRACTED_DISKS/Japan/files/ (this workspace's Japanese extract). Japanese is offered only when
 // PRS_VOICE_J.afs and all of the sng_*_J.adx files the PAL tree's English ones call for are found.
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -56,20 +57,20 @@ class VoiceArchive {
 public:
     // Opens and indexes both files; false (with the reason) when either is missing or their tables differ in count.
     bool open(const VoiceArchivePaths& paths, std::string* error);
-    unsigned long long size() const noexcept { return size_; }
+    std::uint64_t size() const noexcept { return size_; }
     // `japanese`: serve the Japanese clips. Thread-safe.
-    bool read(unsigned long long offset, unsigned long long length, unsigned char* dest, unsigned long long& got,
+    bool read(std::uint64_t offset, std::uint64_t length, unsigned char* dest, std::uint64_t& got,
               bool japanese);
     ~VoiceArchive();
 
 private:
     struct Entry {
-        unsigned long long slot, slot_size;            // in the composed archive
-        unsigned long long source[2], source_size[2];  // [0] English, [1] Japanese
+        std::uint64_t slot, slot_size;            // in the composed archive
+        std::uint64_t source[2], source_size[2];  // [0] English, [1] Japanese
     };
     std::vector<unsigned char> head_;   // the composed table of contents (offset 0)
     std::vector<unsigned char> names_;  // the English name table, after the last slot
-    unsigned long long names_at_ = 0, size_ = 0;
+    std::uint64_t names_at_ = 0, size_ = 0;
     std::vector<Entry> entries_;
     void* files_[2] = {nullptr, nullptr};  // std::FILE*
     void* lock_ = nullptr;                 // std::mutex

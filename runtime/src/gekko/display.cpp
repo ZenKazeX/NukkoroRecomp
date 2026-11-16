@@ -1,5 +1,7 @@
 #include "gekko/camera.h"
 #include "gekko/display.h"
+
+#include "gekko/frame_rate.h"
 #include "gekko/display_geometry.h"
 
 #include "gekko/host_jobs.h"
@@ -578,6 +580,12 @@ bool parse_display_file(const std::string& text, DisplayConfig& config, std::str
                 return fail("invalid frame_interpolation");
             }
             config.frame_interpolation = on;
+        } else if (key == "frame_rate") {
+            char* end = nullptr;
+            const unsigned long rate = std::strtoul(value.c_str(), &end, 10);
+            if (value.empty() || end == value.c_str() || *end != '\0' || !frame_rate::supported(static_cast<u32>(rate)))
+                return fail("invalid frame_rate (60, 120, 180 or 240)");
+            config.frame_rate = static_cast<unsigned>(rate);
         } else if (key == "draw_distance") {
             float scale = 0.0f;
             if (!parse_float(value, &scale) || !(scale >= 1.0f && scale <= 8.0f)) {

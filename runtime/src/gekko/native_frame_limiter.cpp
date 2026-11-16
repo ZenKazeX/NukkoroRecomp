@@ -9,6 +9,7 @@
 #include <string>
 
 #include "gekko/cpu.h"
+#include "gekko/frame_rate.h"
 #include "gekko/profiling.h"
 #include "gekko/recomp.h"
 
@@ -164,6 +165,32 @@ NativeFrameLimiter::~NativeFrameLimiter() {
     std::fclose(out);
 }
 
+void NativeFrameLimiter::set_frame_rate(u32 hz) noexcept {
+    if (frame_rate::supported(hz)) target_rate_ = hz;
+}
+
+// The game's own word, or the high rate on top of the game's 60 Hz - but not while an in-engine event asks for more
+// than one period per frame (EventManager, 0x80173F84) or a movie plays (r13+0x2C50): their timing is authored in
+// console frames.
+u32 NativeFrameLimiter::publish_rate(Cpu& c) {
+    const u32 word = c.mem_read32(kFrameObject + kObjectHz);
+    const u32 game = frame_rate::game_rate(word);
+    u32 rate = game;
+    if (target_rate_ > frame_rate::kConsole && game == frame_rate::kConsole) {
+        const bool console_timed =
+            c.mem_read32(kFrameObject + kObjectInterval) > 1u || c.mem_read32(c.gpr[13] + kSdaMovie) != 0u;
+        if (console_timed) {
+            ++stats_.console_rate_frames;
+        } else {
+            rate = target_rate_;
+            ++stats_.high_rate_frames;
+        }
+    }
+    if (rate != word) c.mem_write32(kFrameObject + kObjectHz, rate);
+    if (rate_listener_) rate_listener_(rate);
+    return rate;
+}
+
 void NativeFrameLimiter::enter(Cpu& c) {
     GEKKO_PROFILE_ZONE("frame/limiter");
     if (!work_log_path_.empty()) {
@@ -185,8 +212,10 @@ void NativeFrameLimiter::enter(Cpu& c) {
         c.mem_write8(sda + kSdaFirst, 1u);
         c.mem_write8(sda + kSdaArmed, 1u);
     }
-    const s32 hz = static_cast<s32>(c.mem_read32(kFrameObject + kObjectHz));
-    const s32 cap = static_cast<s32>(c.mem_read32(kFrameObject + kObjectCap));
+    const s32 hz = static_cast<s32>(publish_rate(c));
+    // The cap counts periods of the game's own rate: at a high rate the same time is more periods.
+    const s32 cap = static_cast<s32>(frame_rate::scaled_cap(
+        c.mem_read32(kFrameObject + kObjectCap), frame_rate::game_rate(static_cast<u32>(hz)), static_cast<u32>(hz)));
     if (hz <= 0) {
         stop(c, "the frame object's rate is " + std::to_string(hz) + " Hz");
         return;

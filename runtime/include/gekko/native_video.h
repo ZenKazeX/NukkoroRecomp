@@ -90,6 +90,7 @@ public:
         u64 post_callbacks = 0;
         u64 platform_reads = 0;
         u64 fields_at_frame_rate = 0;  // 60 Hz timings given exactly 1/60 s fields (set_timing)
+        u64 frame_rate_changes = 0;    // 60 Hz family fields moved to another frame rate (set_frame_rate)
     };
     const Stats& stats() const noexcept { return stats_; }
 
@@ -119,8 +120,14 @@ public:
     // Field period in time-base ticks (rounded down; the clock keeps the
     // fraction exactly).
     u64 field_ticks() const noexcept;
-    // The field is the game's frame period (60 or 50 Hz) and begins on the frame limiter's grid (set_timing).
+    // The field is the game's frame period (50 Hz, or 60 Hz and its high frame rates) and begins on the frame
+    // limiter's grid (set_timing).
     bool frame_locked() const noexcept;
+    // The game's frame rate this frame (NativeFrameLimiter's rate listener). A field of the 60 Hz family (the
+    // console's 60 Hz timing, already one frame long) becomes one frame of `hz` when `hz` is of that family too
+    // (gekko/frame_rate.h): the retrace the game waits on stays its own frame boundary. Takes effect at the next
+    // retrace. Anything else is left alone; at 60 this changes nothing.
+    void set_frame_rate(u32 hz) noexcept;
     bool field_ticks_exact() const noexcept;
     u64 grid_field_start(u64 now) const noexcept;
 

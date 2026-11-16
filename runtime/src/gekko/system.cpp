@@ -1,4 +1,6 @@
 #include "gekko/system.h"
+
+#include "gekko/frame_rate.h"
 #include "gekko/thread_name.h"  // ES-T1
 
 #include "gekko/camera.h"
@@ -637,6 +639,8 @@ System::System() : cpu_(memory_) {
     frame_limiter_ = std::make_unique<NativeFrameLimiter>(
         cpu_, [this](u64 target) { return advance_game_time(target); },
         [this] { return advance_to_next_event(); });
+    // The video field follows the frame rate the limiter runs each frame at (gekko/frame_rate.h).
+    frame_limiter_->set_rate_listener([this](u32 hz) { video_->set_frame_rate(hz); });
     // The layout objects' range: the game's draw distance (docs/DRAW_DISTANCE.md).
     object_range_ = std::make_unique<NativeObjectRange>(cpu_);
     motion_store_ = std::make_unique<NativeMotionStore>(cpu_, memory_);
@@ -3307,7 +3311,7 @@ void System::start() {
         [this](Cpu& cpu, u32 site, u32 effective, u16 value) { platform_write16(cpu, site, effective, value); });
     cpu_.set_platform_values([this](Cpu& cpu, u32 site) { return platform_value(cpu, site); });
     // The host service runs every kHostServiceTicks of game time from now on, and the pacing at every kPacingTicks.
-    cpu_.game_clock().schedule(GameEvent::Frame, next_frame_event(cpu_.game_clock().now()));
+    cpu_.game_clock().schedule(GameEvent::Frame, next_frame_event(cpu_.game_clock().now(), pacing_ticks()));
 
 #if !defined(SHADOW_RENDER_LIFTED)  // G5
     // Last: the native capture observes in front of every handler above.
@@ -3316,6 +3320,18 @@ void System::start() {
     }
 #endif
 }
+
+void System::set_frame_rate(u32 hz) {
+    if (!frame_rate::supported(hz)) return;
+    frame_limiter_->set_frame_rate(hz);
+    pacing_hz_ = frame_rate::pacing_hz(hz);
+    // A Frame event already scheduled on the old grid moves to the new one.
+    GameClock& clock = cpu_.game_clock();
+    if (clock.deadline(GameEvent::Frame) != kNoDeadline)
+        clock.schedule(GameEvent::Frame, next_frame_event(clock.now(), pacing_ticks()));
+}
+
+u32 System::frame_rate() const noexcept { return frame_limiter_->frame_rate(); }
 
 // The only console constants left in game code are the video field's (NativeVideo).
 u32 System::platform_value(Cpu& cpu, u32 site) { return video_->platform_value(cpu, site); }
@@ -5251,7 +5267,7 @@ void System::deliver_event(GameEvent event) {
     const u64 now = clock.now();
     switch (event) {
         case GameEvent::Frame: {
-            clock.schedule(GameEvent::Frame, next_frame_event(now));
+            clock.schedule(GameEvent::Frame, next_frame_event(now, pacing_ticks()));
             if (now % kHostServiceTicks != 0u) {
                 // A pacing tick between two host services: real-time pacing only.
                 GEKKO_PROFILE_ZONE("cpu/host-pacing");
