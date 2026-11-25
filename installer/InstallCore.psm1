@@ -43,28 +43,47 @@ function Find-Python3 {
     return $null
 }
 
+# Visual Studio 2026 with the C++ tools: its install folder, or $null.
+function Find-VisualStudio {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (-not (Test-Path -LiteralPath $vswhere)) { return $null }
+    return (& $vswhere -version '[18.0,19.0)' -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null | Select-Object -First 1)
+}
+
+# cmake.exe: the one on PATH, else the one Visual Studio installs with its C++ tools ("C++ CMake tools for Windows"),
+# else a default CMake install. Visual Studio's is not on PATH outside its own command prompt, and many PCs have no other.
+function Find-CMake([string]$vsPath) {
+    $onPath = Get-Command cmake -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($onPath) { return $onPath.Source }
+    $candidates = @()
+    if ($vsPath) { $candidates += Join-Path $vsPath 'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe' }
+    foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) { if ($root) { $candidates += Join-Path $root 'CMake\bin\cmake.exe' } }
+    foreach ($candidate in $candidates) { if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate } }
+    return $null
+}
+
 function Test-Prerequisites {
     $results = @()
 
-    $cmake = Get-Command cmake -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-    $cmakeOk = $false; $cmakeDetail = 'not found on PATH'
+    $vsPath = Find-VisualStudio
+    $cmake = Find-CMake $vsPath
+    $cmakeOk = $false; $cmakeDetail = 'not found (on PATH, in Visual Studio, or in Program Files\CMake)'
     if ($cmake) {
-        $line = (& $cmake.Source --version 2>$null | Select-Object -First 1)
+        $line = (& $cmake --version 2>$null | Select-Object -First 1)
         if ($line -match '(\d+)\.(\d+)') {
             $cmakeOk = ([int]$Matches[1] -gt 3) -or ([int]$Matches[1] -eq 3 -and [int]$Matches[2] -ge 25)
-            $cmakeDetail = if ($cmakeOk) { $line } else { "$line (3.25 or newer needed)" }
+            $cmakeDetail = if ($cmakeOk) { "$line ($cmake)" } else { "$line (3.25 or newer needed)" }
         }
+        # The build steps start `cmake` by name: a cmake found off PATH is put on this process's PATH (and its children's).
+        $folder = Split-Path -Parent $cmake
+        if ($cmakeOk -and (($env:PATH -split ';') -notcontains $folder)) { $env:PATH = "$folder;$env:PATH" }
     }
-    $results += [pscustomobject]@{ Name = 'CMake 3.25+'; Ok = $cmakeOk; Detail = $cmakeDetail; Url = 'https://cmake.org/download/'; Value = $(if ($cmake) { $cmake.Source }) }
+    $results += [pscustomobject]@{ Name = 'CMake 3.25+'; Ok = $cmakeOk; Detail = $cmakeDetail; Url = 'https://cmake.org/download/'; Value = $cmake }
 
     $python = Find-Python3
     $results += [pscustomobject]@{ Name = 'Python 3'; Ok = [bool]$python; Detail = $(if ($python) { $python } else { 'not found on PATH' }); Url = 'https://www.python.org/downloads/'; Value = $python }
 
-    $vsPath = $null
-    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-    if (Test-Path -LiteralPath $vswhere) {
-        $vsPath = & $vswhere -version '[18.0,19.0)' -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null | Select-Object -First 1
-    }
+
     $results += [pscustomobject]@{ Name = 'Visual Studio 2026 C++ tools'; Ok = [bool]$vsPath; Detail = $(if ($vsPath) { $vsPath } else { "'Desktop development with C++' workload not found" }); Url = 'https://visualstudio.microsoft.com/downloads/'; Value = $vsPath }
 
     return $results
