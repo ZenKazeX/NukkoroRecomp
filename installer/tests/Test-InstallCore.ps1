@@ -81,6 +81,25 @@ try {
     Check 'target: a network folder that cannot be reached is refused in plain words, without an error' (-not $unc.Ok -and $unc.Message -match 'Cannot reach') $unc.Message
     $share = Test-InstallFolder ('\\localhost\' + $scratch.Substring(0,1) + '$' + $scratch.Substring(2) + '\net target') $disc 1MB
     Check 'target: a network folder that can be reached is accepted (free space not checked)' ($share.Ok -and $share.Message -match 'network folder') $share.Message
+    # --- full speed for the build: every process of a step is taken out of Windows' background throttling -------
+    Add-Type -Namespace NukkoroTest -Name QosRead -MemberDefinition @"
+[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+public struct PT { public uint Version; public uint ControlMask; public uint StateMask; }
+[System.Runtime.InteropServices.DllImport("kernel32.dll")] public static extern System.IntPtr OpenProcess(uint access, bool inherit, int pid);
+[System.Runtime.InteropServices.DllImport("kernel32.dll")] public static extern bool GetProcessInformation(System.IntPtr process, int cls, ref PT info, int size);
+[System.Runtime.InteropServices.DllImport("kernel32.dll")] public static extern bool CloseHandle(System.IntPtr handle);
+public static string State(int pid) { System.IntPtr h = OpenProcess(0x1000, false, pid); if (h == System.IntPtr.Zero) return "no access"; PT p = new PT(); p.Version = 1; bool ok = GetProcessInformation(h, 4, ref p, 12); CloseHandle(h); return ok ? (p.ControlMask + "/" + p.StateMask) : "error"; }
+"@
+    $step = Start-Process -FilePath $env:ComSpec -ArgumentList '/c', 'ping -n 8 127.0.0.1 >nul' -PassThru -WindowStyle Hidden
+    Start-Sleep -Milliseconds 900
+    $grand = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$($step.Id)" | Where-Object Name -eq 'PING.EXE' | Select-Object -First 1)
+    $before = if ($grand) { [NukkoroTest.QosRead]::State($grand[0].ProcessId) } else { 'none' }
+    $marks = @{}
+    $count = Set-BuildFullSpeed $step.Id $marks
+    $after = if ($grand) { [NukkoroTest.QosRead]::State($grand[0].ProcessId) } else { 'none' }
+    Check 'build speed: a step''s process and what it started are marked as not background work' ($count -ge 2 -and $before -eq '0/0' -and $after -eq '1/0' -and [NukkoroTest.QosRead]::State($step.Id) -eq '1/0') "marked $count, grandchild $before -> $after"
+    Check 'build speed: a second pass marks nothing twice' ((Set-BuildFullSpeed $step.Id $marks) -eq 0)
+    try { $step.Kill() } catch {}
     # --- the temporary build files: removed only in a folder the setup exe unpacked ------------------------
     $pkg = Join-Path $scratch 'NukkoroRecomp\9.9.9'
     New-Item -ItemType Directory -Force -Path "$pkg\installer", "$pkg\.build\release\sub", "$pkg\.build\setup" | Out-Null

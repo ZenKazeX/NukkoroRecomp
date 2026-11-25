@@ -617,6 +617,68 @@ function Get-InstallSteps([string]$discRoot, [string]$target) {
     )
 }
 
+# ---- full speed for the build ------------------------------------------------------
+#
+# Windows runs a process that has no window in front at reduced speed (power throttling: on a processor with fast and
+# slow cores it goes to the slow ones). The compilers the setup starts are such processes, and the setup's own window
+# is the one in front, so the build took about twice as long as it needs (measured: the same single-threaded work
+# 20.7 s throttled, 11.2 s not; a whole install 745 s against 360 s). Raising the priority does not change it. Each
+# process has to say for itself that it is not background work, and the setting is not inherited, so the install loop
+# marks every process of the running step: PROCESS_POWER_THROTTLING_EXECUTION_SPEED switched off.
+$script:QosReady = $false
+function Initialize-BuildQos {
+    if ($script:QosReady) { return $true }
+    try {
+        Add-Type -Namespace Nukkoro -Name Qos -MemberDefinition @"
+[System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+public struct PowerThrottling { public uint Version; public uint ControlMask; public uint StateMask; }
+[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+public static extern System.IntPtr OpenProcess(uint access, bool inherit, int pid);
+[System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+public static extern bool SetProcessInformation(System.IntPtr process, int informationClass, ref PowerThrottling information, int size);
+[System.Runtime.InteropServices.DllImport("kernel32.dll")]
+public static extern bool CloseHandle(System.IntPtr handle);
+public static bool FullSpeed(int pid) {
+    System.IntPtr handle = OpenProcess(0x0200, false, pid);            // PROCESS_SET_INFORMATION
+    if (handle == System.IntPtr.Zero) return false;
+    PowerThrottling state = new PowerThrottling();
+    state.Version = 1; state.ControlMask = 1; state.StateMask = 0;     // execution-speed throttling: controlled, off
+    bool ok = SetProcessInformation(handle, 4, ref state, 12);         // ProcessPowerThrottling
+    CloseHandle(handle);
+    return ok;
+}
+"@ -ErrorAction Stop
+        $script:QosReady = $true
+    } catch { $script:QosReady = ($null -ne ('Nukkoro.Qos' -as [type])) }
+    return $script:QosReady
+}
+
+# Marks this process, $rootId and every process below $rootId that is not in $done yet (a hashtable of process ids the
+# caller keeps). Returns how many were newly marked. A Windows without the setting (before Windows 10 1709) or a
+# process that ended in between is simply skipped.
+function Set-BuildFullSpeed([int]$rootId, [hashtable]$done) {
+    if (-not (Initialize-BuildQos)) { return 0 }
+    $marked = 0
+    try {
+        if (-not $done.ContainsKey($PID)) { $done[$PID] = [Nukkoro.Qos]::FullSpeed($PID) }
+        $children = @{}
+        foreach ($p in @(Get-CimInstance Win32_Process -Property ProcessId, ParentProcessId -ErrorAction Stop)) {
+            $parent = [int]$p.ParentProcessId
+            if (-not $children.ContainsKey($parent)) { $children[$parent] = New-Object System.Collections.ArrayList }
+            [void]$children[$parent].Add([int]$p.ProcessId)
+        }
+        $queue = New-Object System.Collections.Queue; $queue.Enqueue($rootId); $seen = @{}
+        while ($queue.Count) {
+            $id = $queue.Dequeue()
+            if ($seen.ContainsKey($id)) { continue }
+            $seen[$id] = $true
+            if (-not $done.ContainsKey($id)) { $done[$id] = [Nukkoro.Qos]::FullSpeed($id); if ($done[$id]) { $marked++ } }
+            if ($children.ContainsKey($id)) { foreach ($child in $children[$id]) { $queue.Enqueue($child) } }
+        }
+    } catch {}
+    return $marked
+}
+
 # Starts a step with its output appended to $log. Returns the Process.
 function Start-Step($step, [string]$log) {
     Add-Content -LiteralPath $log -Value "`r`n==== $($step.Name): $($step.File) $($step.Arguments)" -Encoding UTF8
@@ -941,8 +1003,11 @@ function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$j
         $stepStart = $offset
         $process = Start-Step $step $log
         $ticks = 0
+        if ($i -eq 0) { $fullSpeed = @{} }
         while ($true) {
             $exited = $process.WaitForExit(500)
+            # every second: the processes the step has started since run at full speed (see "full speed for the build")
+            if ($i -le 1 -and $ticks % 2 -eq 0 -and -not $exited) { [void](Set-BuildFullSpeed $process.Id $fullSpeed) }
             $tail = Read-LogTail $log $offset
             $offset = $tail.Offset
             if ($tail.Text) { & $OnEvent @{ type = 'log'; text = $tail.Text } }
@@ -1006,7 +1071,7 @@ function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$j
     return $true
 }
 
-Export-ModuleMember -Function Get-PythonInfo, Wait-VisualStudioInstaller, Remove-BuildFiles, Test-WindowsSdk, Find-Python3, Get-ToolPlan, Install-Tool, Install-MissingTools, Find-AnyVisualStudio, Get-RepoRoot, Get-BuiltExe, Get-DefaultInstallFolder, Format-Size, Test-Prerequisites,
+Export-ModuleMember -Function Initialize-BuildQos, Set-BuildFullSpeed, Get-PythonInfo, Wait-VisualStudioInstaller, Remove-BuildFiles, Test-WindowsSdk, Find-Python3, Get-ToolPlan, Install-Tool, Install-MissingTools, Find-AnyVisualStudio, Get-RepoRoot, Get-BuiltExe, Get-DefaultInstallFolder, Format-Size, Test-Prerequisites,
     Resolve-DiscFolder, Test-DiscFolder, Get-JapaneseVoiceNames, Test-JapaneseDiscFolder, Copy-JapaneseVoices,
     Set-SpokenLanguage, Get-FolderSize, Test-InstallFolder, Get-InstallJobs, Get-PrebuiltFolder,
     Get-BuildSteps, Get-InstallSteps, Start-Step, Test-StepSucceeded, Stop-Step, Read-LogTail, Get-StepFailureCause, New-BuildProgress,
