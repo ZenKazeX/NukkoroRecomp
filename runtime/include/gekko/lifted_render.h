@@ -137,6 +137,10 @@ public:
         // World-space immediate draws with a key (trails, beams), over the pairs.
         std::uint64_t immediates = 0, immediates_followed = 0, immediates_still = 0, immediates_snapped = 0;
         std::uint64_t immediate_vertices = 0;
+        // ... the shown-as-B ones by cause: new key, another draw count, grown, shrunk, restyled, a vertex placed.
+        std::uint64_t immediates_new = 0, immediates_recount = 0, immediates_grown = 0, immediates_shrunk = 0;
+        std::uint64_t immediates_restyled = 0, immediates_placed = 0;
+
         float largest_immediate_step = 0.0f;
     };
     IndependentStats independent_stats() const;

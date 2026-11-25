@@ -1160,6 +1160,13 @@ bool LiftedRender::present_independent(std::chrono::milliseconds wait, std::stri
         t.immediates_followed += delta.immediates_followed;
         t.immediates_still += delta.immediates_still;
         t.immediates_snapped += delta.immediates_snapped;
+        t.immediates_new += delta.immediates_new;
+        t.immediates_recount += delta.immediates_recount;
+        t.immediates_grown += delta.immediates_grown;
+        t.immediates_shrunk += delta.immediates_shrunk;
+        t.immediates_restyled += delta.immediates_restyled;
+        t.immediates_placed += delta.immediates_placed;
+
         t.immediate_vertices += delta.immediate_vertices;
         t.largest_immediate_step = std::max(t.largest_immediate_step, delta.largest_immediate_step);
         t.largest_object_step = std::max(t.largest_object_step, delta.largest_object_step);
@@ -1252,6 +1259,13 @@ bool LiftedRender::present_independent(std::chrono::milliseconds wait, std::stri
         delta.immediates_followed = p.immediates_followed;
         delta.immediates_still = p.immediates_still;
         delta.immediates_snapped = p.immediates_snapped;
+        delta.immediates_new = p.immediates_new;
+        delta.immediates_recount = p.immediates_recount;
+        delta.immediates_grown = p.immediates_grown;
+        delta.immediates_shrunk = p.immediates_shrunk;
+        delta.immediates_restyled = p.immediates_restyled;
+        delta.immediates_placed = p.immediates_placed;
+
         delta.immediate_vertices = p.immediate_vertices;
         delta.largest_immediate_step = p.largest_immediate_step;
         delta.largest_object_step = p.largest_object_step;
@@ -1263,6 +1277,36 @@ bool LiftedRender::present_independent(std::chrono::milliseconds wait, std::stri
                          static_cast<unsigned long long>(f.cur.game_ticks), continuous ? 1 : 0, p.cut ? 1 : 0, p.keyed,
                          p.followed, p.still, p.snapped, p.bones, p.cameras, p.largest_object_step,
                          p.largest_camera_step, p.smallest_camera_turn_cos);
+        // The keyed world immediates whose key is drawn another number of times in the two frames (the interpolator
+        // shows them as B): one row per draw of either frame, to see what they are.
+        if (f.trace != nullptr && continuous && !p.cut) {
+            std::map<std::uint64_t, std::array<std::vector<std::uint32_t>, 2>> by_key;
+            const render::FramePacket* side[2] = {&f.prev, &f.cur};
+            for (int w = 0; w < 2; ++w)
+                for (std::uint32_t d = 0; d < side[w]->draws.size(); ++d) {
+                    const render::DrawRecord& r = side[w]->draws[d];
+                    if (r.key != 0u && r.immediate < side[w]->immediates.size() &&
+                        side[w]->immediates[r.immediate].space == render::Space::World)
+                        by_key[r.key][w].push_back(d);
+                }
+            for (const auto& [key, lists] : by_key) {
+                if (lists[0].size() == lists[1].size() || lists[0].empty())
+                    continue;
+                for (int w = 0; w < 2; ++w)
+                    for (std::size_t n = 0; n < lists[w].size(); ++n) {
+                        const render::DrawRecord& r = side[w]->draws[lists[w][n]];
+                        const render::ImmediateDraw& im = side[w]->immediates[r.immediate];
+                        render::Float3 at{};
+                        if (im.first_vertex < side[w]->immediate_vertices.size())
+                            at = side[w]->immediate_vertices[im.first_vertex].position;
+                        std::fprintf(f.trace, "imm,%llu,%llx,%c,%zu,%zu,%u,%u,%d,%u,%g,%g,%g\n",
+                                     static_cast<unsigned long long>(f.cur.tick),
+                                     static_cast<unsigned long long>(key), w == 0 ? 'A' : 'B', n, lists[w].size(),
+                                     im.vertex_count, im.index_count, static_cast<int>(im.topology),
+                                     static_cast<unsigned>(im.texture.value), at.x, at.y, at.z);
+                    }
+            }
+        }
     }
     if (!f.have_cur) {
         delta.idle = 1u;
@@ -1430,6 +1474,10 @@ std::string LiftedRender::report_text() const {
             << i.particle_batches << "; largest particle step " << i.largest_particle_step << "\n";
         out << "[independent-frame] trails (world immediates with a key): " << i.immediates << " followed "
             << i.immediates_followed << " still " << i.immediates_still << " shown as B " << i.immediates_snapped
+            << " (new " << i.immediates_new << " recount " << i.immediates_recount << " grown " << i.immediates_grown
+            << " shrunk " << i.immediates_shrunk << " restyled " << i.immediates_restyled << " placed "
+            << i.immediates_placed << ")"
+
             << "; vertices followed " << i.immediate_vertices << "; largest vertex step " << i.largest_immediate_step
             << "\n";
         out << std::fixed << std::setprecision(4) << "[independent-frame] per picture: alpha mean "
