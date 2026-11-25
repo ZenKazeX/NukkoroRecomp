@@ -1289,6 +1289,16 @@ else()
         endif()
         list(APPEND SHADOW_RECOMP_OUTPUTS "${SHADOW_RECOMP_DIR}/${_name}")
     endforeach()
+    # The compilers take the shards in this order. Three shards of the PAL image hold one very large function each
+    # (fn_803E1D58, fn_803EA420, fn_803E61F0) and take far longer than the others (measured alone, MSVC 19.52: 196 s,
+    # 56 s, 56 s; a usual shard about 30 s): started last, they finish minutes after everything else and set the
+    # build's length. They go first. The order changes nothing in what is compiled.
+    if(SHADOW_RECOMP_SHARDS EQUAL 48)
+        foreach(_heavy IN ITEMS recomp_016.cpp recomp_007.cpp recomp_025.cpp)
+            list(REMOVE_ITEM SHADOW_RECOMP_OUTPUTS "${SHADOW_RECOMP_DIR}/${_heavy}")
+            list(PREPEND SHADOW_RECOMP_OUTPUTS "${SHADOW_RECOMP_DIR}/${_heavy}")
+        endforeach()
+    endif()
 
     # The exception vector page the game's OS assembles at runtime is never
     # executed: the OS exception entry is native (runtime/src/gekko/

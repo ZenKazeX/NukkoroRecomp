@@ -6,6 +6,7 @@ reachability is the generator's responsibility, checked through its pruning outp
 This proves the stated static boundary, not every possible runtime pointer value.
 """
 import argparse
+import bisect
 import csv
 import hashlib
 import json
@@ -179,11 +180,57 @@ def identical_text_spans(image, start, end):
     return sorted(matches)
 
 
+_RETIRED = re.compile(r"\bfn_([0-9a-fA-F]{8})(?:_|@|\b)")
+_scans = {}
+_texts = {}
+
+
+def _scan_image(image):
+    """One pass over the image for every contract: the direct branches by target and the data words by value, each
+    with its place in the scan (section order, then address), so a contract reads its events in the original order."""
+    key = id(image)
+    if key not in _scans:
+        branches, data = {}, {}
+        sequence = 0
+        for section in image.sections:
+            is_data = section["kind"] == "data"
+            count = max(0, (section["size"] - 3 + 3) // 4)
+            words = struct.unpack_from(f">{count}I", image.raw, section["file_offset"]) if count else ()
+            address = section["address"]
+            for word in words:
+                if is_data:
+                    data.setdefault(word, []).append((sequence, address))
+                else:
+                    primary = word >> 26
+                    if primary == 16 or primary == 18:
+                        mask, sign = (0xfffc, 0x8000) if primary == 16 else (0x3fffffc, 0x2000000)
+                        delta = word & mask
+                        if delta & sign:
+                            delta -= sign * 2
+                        target = (delta if word & 2 else address + delta) & 0xffffffff
+                        branches.setdefault(target, []).append((sequence, address, word))
+                sequence += 1
+                address += 4
+        _scans[key] = (image, branches, sorted(branches), data, sorted(data))
+    return _scans[key][1:]
+
+
+def _entries(path, encoding=None):
+    """A text file read once: its text and the sorted addresses of every fn_<address> name in it."""
+    key = (str(path), encoding)
+    if key not in _texts:
+        text = path.read_text(encoding=encoding) if encoding else path.read_text()
+        _texts[key] = (text, sorted({int(match[1], 16) for match in _RETIRED.finditer(text)}))
+    return _texts[key]
+
+
+def _in_range(sorted_values, start, end):
+    at = bisect.bisect_left(sorted_values, start)
+    return sorted_values[at:bisect.bisect_left(sorted_values, end)]
+
+
 def verify_contract(image, contract, generated=None, linker_map=None):
     start, end = contract["start"], contract["end"]
-    def has_retired_entry(text):
-        return any(start <= int(match[1], 16) < end for match in
-                   re.finditer(r"\bfn_([0-9a-fA-F]{8})(?:_|@|\b)", text))
     offset = image.offset(start)
     if hashlib.sha256(image.raw[offset:offset + end - start]).hexdigest() != contract["hash"]:
         raise ValueError(f"original {contract['name']} implementation changed")
@@ -193,26 +240,22 @@ def verify_contract(image, contract, generated=None, linker_map=None):
             raise ValueError("pinned copy-family bodies are not byte-identical")
     incoming = []
     range_keys = []
-    for section in image.sections:
-        for at in range(0, section["size"] - 3, 4):
-            address = section["address"] + at
-            word, = struct.unpack_from(">I", image.raw, section["file_offset"] + at)
-            if section["kind"] == "data":
-                if start <= word < end:
-                    if address != contract.get("range_key") or word != start:
-                        raise ValueError(f"data reference to retired math code at {address:08X}")
-                    verify_matrix_index(image)
-                    range_keys.append(address)
-                continue
-            primary = word >> 26
-            if primary not in (16, 18):
-                continue
-            mask, sign = (0xfffc, 0x8000) if primary == 16 else (0x3fffffc, 0x2000000)
-            delta = word & mask
-            if delta & sign:
-                delta -= sign * 2
-            target = (delta if word & 2 else address + delta) & 0xffffffff
-            if start <= target < end and not start <= address < end:
+    branches, branch_targets, data, data_words = _scan_image(image)
+    events = []
+    for word in _in_range(data_words, start, end):
+        events += [(sequence, True, address, word) for sequence, address in data[word]]
+    for target in _in_range(branch_targets, start, end):
+        events += [(sequence, False, address, word, target) for sequence, address, word in branches[target]]
+    for event in sorted(events):
+        if event[1]:
+            address, word = event[2], event[3]
+            if address != contract.get("range_key") or word != start:
+                raise ValueError(f"data reference to retired math code at {address:08X}")
+            verify_matrix_index(image)
+            range_keys.append(address)
+        else:
+            address, word, target = event[2], event[3], event[4]
+            if not start <= address < end:
                 incoming.append((address, target, word))
     if "edges" in contract:
         edges_match = incoming == contract["edges"]
@@ -228,20 +271,17 @@ def verify_contract(image, contract, generated=None, linker_map=None):
             removed = {int(row["address"], 16) for row in csv.DictReader(stream)}
         if start not in removed:
             raise ValueError(f"software {contract['name']} was not pruned")
-        decls = (generated / "recomp_decls.h").read_text()
-        table = (generated / "recomp_table.cpp").read_text()
-        if has_retired_entry(decls) or has_retired_entry(table):
+        decls, decl_entries = _entries(generated / "recomp_decls.h")
+        table, table_entries = _entries(generated / "recomp_table.cpp")
+        if _in_range(decl_entries, start, end) or _in_range(table_entries, start, end):
             raise ValueError(f"retired {contract['name']} still has a generated entry")
         if contract["call"] not in table:
             raise ValueError("native value API not called by generated code")
     if linker_map is not None:
-        native = False
-        with linker_map.open(encoding="latin-1") as stream:
-            for line in stream:
-                if has_retired_entry(line):
-                    raise ValueError(f"retired {contract['name']} remains linked")
-                native |= "?" + contract["api"] + "@math@shadow@@" in line
-        if not native:
+        text, map_entries = _entries(linker_map, "latin-1")
+        if _in_range(map_entries, start, end):
+            raise ValueError(f"retired {contract['name']} remains linked")
+        if "?" + contract["api"] + "@math@shadow@@" not in text:
             raise ValueError(f"native {contract['name']} implementation is absent from linker map")
     print(f"PASS {contract['name']}: pinned original body, all direct callers, " +
           ("only the verified exception range key" if range_keys else "no data pointers") +
