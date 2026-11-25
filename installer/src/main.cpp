@@ -412,9 +412,11 @@ public:
         limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
         SetInformationJobObject(installJob, JobObjectExtendedLimitInformation, &limits, sizeof(limits));
         // fields[4]: the Japanese disc folder or "-" (none); fields[5]: the spoken language, "0" Japanese, "1" English, "-" unchanged.
-        const std::wstring voice = fields[5] == L"0" || fields[5] == L"1" ? fields[5] : L"-";
+        // The backend gets "none" for both: powershell.exe -File ends with exit code 2 and no output when an argument is a
+        // lone "-", so the install never started without a Japanese disc.
+        const std::wstring voice = fields[5] == L"0" || fields[5] == L"1" ? fields[5] : L"none";
         const std::wstring line = PowerShellLine(installer, {L"install", fields[0], fields[1], fields[2] == L"1" ? L"1" : L"0", fields[3] == L"1" ? L"1" : L"0",
-                                                             fields[4].empty() ? L"-" : fields[4], voice});
+                                                             fields[4].empty() || fields[4] == L"-" ? L"none" : fields[4], voice});
         PROCESS_INFORMATION process{};
         HANDLE readPipe = nullptr;
         if (!StartPiped(line, installer, installJob, process, readPipe)) { Reply(id, L"\"error\":\"Could not start the installation.\""); return; }

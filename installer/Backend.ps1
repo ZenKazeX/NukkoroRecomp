@@ -4,7 +4,7 @@
 #   check-disc <path>               -> {ok, message, root, gameId, sha1, assetBytes}
 #   check-target <path> <discRoot>  -> {ok, message, path, existing, neededBytes, freeBytes}
 #   check-jpdisc <path> <discRoot>  -> {ok, given, message, root, gameId, files, bytes, banks} (the optional Japanese disc)
-#   install <disc> <target> <desktop 0|1> <startMenu 0|1> <japaneseDisc or -> <voice - | 0 Japanese | 1 English>
+#   install <disc> <target> <desktop 0|1> <startMenu 0|1> <japaneseDisc or none> <voice none | 0 Japanese | 1 English>
 #           [jobs, 0 = chosen from this PC]
 #                                   -> one JSON object per line (see Invoke-GameInstall), last is 'done' or 'error'
 param(
@@ -56,8 +56,9 @@ try {
             $python = (Test-Prerequisites | Where-Object { $_.Name -eq 'Python 3' }).Value
             $disc = Test-DiscFolder $A
             if (-not $disc.Ok) { Out-Json @{ type = 'error'; message = $disc.Message }; exit 1 }
-            # '-' = none (an empty argument does not survive every command line).
-            if ($E -eq '-') { $E = '' }
+            # 'none' = no Japanese disc. An empty argument does not survive every command line, and a lone '-' makes
+            # powershell.exe -File end with exit code 2 before this script runs.
+            if ($E -eq '-' -or $E -eq 'none') { $E = '' }
             $japanese = Test-JapaneseDiscFolder $E $disc.Root
             if (-not $japanese.Ok) { Out-Json @{ type = 'error'; message = $japanese.Message }; exit 1 }
             $voice = -1
