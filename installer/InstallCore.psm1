@@ -70,51 +70,54 @@ function Find-AnyVisualStudio {
 
 # ---- getting a missing tool ------------------------------------------------------
 #
-# The setup can fetch a missing tool for the player: it downloads the vendor's own installer from the vendor's own
-# address, checks that the file is signed by that vendor, and opens it. The vendor's installer shows its own window
-# and licence; nothing is installed silently.
+# The setup installs a missing tool itself, as the first step of the install: it downloads the vendor's own installer
+# from the vendor's own address, checks that the file is signed by that vendor, and runs it unattended (the vendor's
+# progress window shows, nothing is asked; Windows asks once for permission to install Visual Studio). The player
+# is told before the install starts what will be fetched and whose licence terms apply.
 
-$script:CppWorkload = 'Microsoft.VisualStudio.Workload.NativeDesktop'
+# What the build needs of Visual Studio: the C++ workload's core, and by name the compiler, the Windows SDK the
+# prebuilt parts were built with, and CMake. Not the workload's whole recommended set (a much larger download).
+$script:VsParts = '--add Microsoft.VisualStudio.Workload.NativeDesktop --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 ' +
+                  '--add Microsoft.VisualStudio.Component.Windows11SDK.26100 --add Microsoft.VisualStudio.Component.VC.CMake.Project'
 $script:Tools = @{
-    'vs'       = @{ Name = 'Visual Studio 2026 Community'; Url = 'https://aka.ms/vs/18/stable/vs_community.exe'; File = 'vs_community.exe'
-                    Signer = 'Microsoft Corporation'; Arguments = "--add $script:CppWorkload --includeRecommended --wait" }
-    'python'   = @{ Name = 'Python 3.13'; Url = 'https://www.python.org/ftp/python/3.13.9/python-3.13.9-amd64.exe'; File = 'python-3.13.9-amd64.exe'
-                    Signer = 'Python Software Foundation'; Arguments = 'PrependPath=1 Include_launcher=1' }
+    'vs'       = @{ Name = 'Visual Studio 2026 build tools'; Url = 'https://aka.ms/vs/18/stable/vs_community.exe'; File = 'vs_community.exe'
+                    Signer = 'Microsoft Corporation'; Arguments = "$script:VsParts --passive --norestart --wait"; OkCodes = @(0, 3010)
+                    Text = 'Visual Studio 2026 Community with its C++ build tools, from Microsoft (a large download, several GB; 10-40 minutes)' }
+    'python'   = @{ Name = 'Python 3'; Url = 'https://www.python.org/ftp/python/3.13.9/python-3.13.9-amd64.exe'; File = 'python-3.13.9-amd64.exe'
+                    Signer = 'Python Software Foundation'; Arguments = '/passive InstallAllUsers=0 PrependPath=1 Include_launcher=1'; OkCodes = @(0, 3010)
+                    Text = 'Python 3.13, from python.org (27 MB; about a minute)' }
     'webview2' = @{ Name = 'Microsoft Edge WebView2 Runtime'; Url = 'https://go.microsoft.com/fwlink/p/?LinkId=2124703'; File = 'MicrosoftEdgeWebview2Setup.exe'
-                    Signer = 'Microsoft Corporation'; Arguments = '/install' }
+                    Signer = 'Microsoft Corporation'; Arguments = '/silent /install'; OkCodes = @(0)
+                    Text = 'Microsoft Edge WebView2 Runtime, from Microsoft (2 MB download)' }
 }
+$script:SelfTestToolDone = Join-Path $env:TEMP 'NukkoroSetup\selftest-tool.done'
 
-# What "Install it for me" does for a tool, in words the setup window shows before it starts.
+# How a missing tool gets installed: what is run, and Text, the words the setup window shows for it.
 function Get-ToolPlan([string]$key) {
-    if ($key -eq 'cmake') { $key = 'vs' }   # CMake comes with Visual Studio's C++ workload
+    if ($key -eq 'cmake') { $key = 'vs' }   # CMake comes with Visual Studio's C++ tools
     if (-not $script:Tools.ContainsKey($key)) { return $null }
     $tool = $script:Tools[$key]
     $plan = [pscustomobject]@{ Key = $key; Name = $tool.Name; Url = $tool.Url; File = $tool.File; Signer = $tool.Signer
-                               Arguments = $tool.Arguments; Modify = $null; Text = '' }
+                               Arguments = $tool.Arguments; OkCodes = $tool.OkCodes; Modify = $null; Text = $tool.Text; Marker = $null }
     if ($key -eq 'vs') {
         $existing = Find-AnyVisualStudio
         $installer = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\setup.exe'
         if ($existing -and (Test-Path -LiteralPath $installer -PathType Leaf)) {
+            # A Visual Studio 2026 without the C++ tools: its own installer adds them, no new product.
             $plan.Modify = $installer
-            $plan.Arguments = "modify --installPath `"$existing`" --add $script:CppWorkload --includeRecommended"
-            $plan.Text = "Opens the Visual Studio Installer to add 'Desktop development with C++' (it brings CMake) to the Visual Studio 2026 in $existing. Confirm there with Modify."
-            return $plan
+            $plan.Arguments = "modify --installPath `"$existing`" $script:VsParts --passive --norestart"
+            $plan.Text = 'the C++ build tools, added to the Visual Studio 2026 on this PC (a large download; 10-30 minutes)'
         }
-        $plan.Text = "Downloads Microsoft's Visual Studio 2026 Community installer (about 6 MB, from aka.ms) and opens it with 'Desktop development with C++' selected (it brings CMake). The installer then downloads several GB. Microsoft's licence terms apply; confirm there with Install."
     } elseif ($key -eq 'python' -and $env:NUKKORO_TEST_MISSING -and $env:NUKKORO_TEST_TOOL_URL) {
-        # Test hook (the setup window's self-test clicks through a fetch): a stand-in served by the test, still signature-checked.
-        $plan.Url = $env:NUKKORO_TEST_TOOL_URL; $plan.File = 'nukkoro-selftest-tool.exe'; $plan.Signer = 'Microsoft Corporation'; $plan.Arguments = '/?'
-        $plan.Text = 'Self-test stand-in: downloads a harmless signed program from the test and runs it.'
-    } elseif ($key -eq 'python') {
-        $plan.Text = "Downloads Python 3.13 (about 27 MB, from python.org) and opens its installer with 'Add python.exe to PATH' selected. Confirm there with Install Now."
-    } else {
-        $plan.Text = "Downloads Microsoft's WebView2 Runtime installer (about 2 MB) and runs it."
+        # Test hook (the setup window's self-test): a harmless stand-in served by the test, still signature-checked.
+        $plan.Url = $env:NUKKORO_TEST_TOOL_URL; $plan.File = 'nukkoro-selftest-tool.exe'; $plan.Signer = 'Microsoft Corporation'
+        $plan.Arguments = '/?'; $plan.OkCodes = @(0, 1); $plan.Text = 'a self-test stand-in'; $plan.Marker = $script:SelfTestToolDone
     }
     return $plan
 }
 
-# Downloads (unless the tool's own installer is already on this PC), checks the signature, opens the installer and
-# waits for it. Returns Ok / Message; whether the tool is there afterwards is the prerequisite check's job.
+# Downloads (unless the tool's own installer is already on this PC), checks the signature, runs the installer
+# unattended and waits for it. Returns Ok / Message / ExitCode / File. -DownloadOnly stops after the signature check.
 function Install-Tool([string]$key, $plan = $null, [switch]$DownloadOnly) {
     $r = [pscustomobject]@{ Ok = $false; Message = ''; ExitCode = $null; File = $null }
     if (-not $plan) { $plan = Get-ToolPlan $key }   # a test passes its own plan
@@ -128,7 +131,7 @@ function Install-Tool([string]$key, $plan = $null, [switch]$DownloadOnly) {
             [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
             $previous = $ProgressPreference; $ProgressPreference = 'SilentlyContinue'
             try { Invoke-WebRequest -Uri $plan.Url -OutFile $program -UseBasicParsing } finally { $ProgressPreference = $previous }
-        } catch { $r.Message = "The download of $($plan.Name) failed: $($_.Exception.Message) Check the internet connection, or get it from the website."; return $r }
+        } catch { $r.Message = "The download of $($plan.Name) failed: $($_.Exception.Message) Check the internet connection and select Retry."; return $r }
         $signature = Get-AuthenticodeSignature -LiteralPath $program
         $subject = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { '' }
         if ($signature.Status -ne 'Valid' -or $subject -notmatch ('(^|,\s*)O=' + [regex]::Escape($plan.Signer) + '(,|$)')) {
@@ -144,12 +147,43 @@ function Install-Tool([string]$key, $plan = $null, [switch]$DownloadOnly) {
         $process = Start-Process -FilePath $program -ArgumentList $plan.Arguments -PassThru
         $process.WaitForExit()
         $r.ExitCode = $process.ExitCode
-    } catch { $r.Message = "Could not start the installer of $($plan.Name): $($_.Exception.Message)"; return $r }
+    } catch { $r.Message = "Could not start the installer of $($plan.Name): $($_.Exception.Message) (Windows asks for permission; choose Yes.)"; return $r }
+    if (-not $plan.Modify) { Remove-Item -LiteralPath $program -Force -ErrorAction SilentlyContinue }
+    $codes = @($plan.OkCodes)
+    if ($codes.Count -and $codes -notcontains $r.ExitCode) {
+        $r.Message = "The installer of $($plan.Name) ended with code $($r.ExitCode). If you chose No when Windows asked for permission, select Retry and choose Yes."
+        return $r
+    }
+    if ($plan.Marker) { Set-Content -LiteralPath $plan.Marker -Value 'done' -Encoding ASCII }
     $r.Ok = $true
-    $r.Message = "The installer of $($plan.Name) has closed (code $($r.ExitCode))."
+    $r.Message = "$($plan.Name) is installed."
     return $r
 }
 
+# Installs every missing build tool that has a plan and checks again. $OnEvent gets @{type='log'; text}. Returns
+# Ok / Message / Prerequisites (the fresh check).
+function Install-MissingTools([scriptblock]$OnEvent = { param($e) }) {
+    $r = [pscustomobject]@{ Ok = $false; Message = ''; Prerequisites = @() }
+    $missing = @(Test-Prerequisites | Where-Object { -not $_.Ok })
+    $keys = @($missing | ForEach-Object { if ($_.Key -eq 'cmake') { 'vs' } else { $_.Key } } | Select-Object -Unique | Sort-Object { if ($_ -eq 'python') { 0 } else { 1 } })
+    foreach ($key in $keys) {
+        $plan = Get-ToolPlan $key
+        if (-not $plan) { $r.Message = "$key is missing and the setup cannot install it."; return $r }
+        & $OnEvent @{ type = 'log'; text = "Installing $($plan.Text).`n" }
+        if ($key -eq 'vs') { & $OnEvent @{ type = 'log'; text = "Windows asks for permission once: choose Yes. A Microsoft window shows the progress; nothing else needs to be done.`n" } }
+        $result = Install-Tool $key $plan
+        & $OnEvent @{ type = 'log'; text = "$($result.Message)`n" }
+        if (-not $result.Ok) { $r.Message = $result.Message; return $r }
+    }
+    $r.Prerequisites = @(Test-Prerequisites)
+    $still = @($r.Prerequisites | Where-Object { -not $_.Ok })
+    if ($still) {
+        $r.Message = "Still missing after installing: $(($still | ForEach-Object Name) -join ', '). Restart the PC and run this setup again; if it stays missing, see the README's requirements."
+        return $r
+    }
+    $r.Ok = $true
+    return $r
+}
 # Visual Studio 2026 with the C++ tools: its install folder, or $null.
 function Find-VisualStudio {
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
@@ -216,7 +250,7 @@ function Test-Prerequisites {
 
     # Test hook (the setup window's self-test): NUKKORO_TEST_MISSING=python,vs reports those tools as missing.
     if ($env:NUKKORO_TEST_MISSING) {
-        foreach ($entry in $results) { if (($env:NUKKORO_TEST_MISSING -split ',') -contains $entry.Key) { $entry.Ok = $false; $entry.Detail = 'reported missing for a test (NUKKORO_TEST_MISSING)' } }
+        foreach ($entry in $results) { if (($env:NUKKORO_TEST_MISSING -split ',') -contains $entry.Key -and -not ($entry.Key -eq 'python' -and $env:NUKKORO_TEST_TOOL_URL -and (Test-Path -LiteralPath $script:SelfTestToolDone))) { $entry.Ok = $false; $entry.Detail = 'reported missing for a test (NUKKORO_TEST_MISSING)' } }
     }
     return $results
 }
@@ -731,6 +765,7 @@ function New-GameShortcuts([string]$target, [bool]$desktop, [bool]$startMenu,
 
 # ---- the whole install ----------------------------------------------------------
 
+$script:ToolStageName = 'Install the build tools'
 $script:StageNames = @('Configure the build', 'Translate and compile the game', 'Copy the game', 'Copy the game files', 'Finish and create shortcuts')
 
 # Runs every step and reports through $OnEvent with hashtables:
@@ -840,7 +875,7 @@ function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$j
     return $true
 }
 
-Export-ModuleMember -Function Get-ToolPlan, Install-Tool, Find-AnyVisualStudio, Get-RepoRoot, Get-BuiltExe, Get-DefaultInstallFolder, Format-Size, Test-Prerequisites,
+Export-ModuleMember -Function Get-ToolPlan, Install-Tool, Install-MissingTools, Find-AnyVisualStudio, Get-RepoRoot, Get-BuiltExe, Get-DefaultInstallFolder, Format-Size, Test-Prerequisites,
     Resolve-DiscFolder, Test-DiscFolder, Get-JapaneseVoiceNames, Test-JapaneseDiscFolder, Copy-JapaneseVoices,
     Set-SpokenLanguage, Get-FolderSize, Test-InstallFolder, Get-InstallJobs, Get-PrebuiltFolder,
     Get-BuildSteps, Get-InstallSteps, Start-Step, Test-StepSucceeded, Stop-Step, Read-LogTail, Get-StepFailureCause, New-BuildProgress,

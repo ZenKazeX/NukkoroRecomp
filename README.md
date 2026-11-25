@@ -35,7 +35,7 @@ your disc, so please keep it to yourself.
 - [Python 3](https://www.python.org/downloads/)
 - The Microsoft Edge WebView2 Runtime (included in Windows 11; on Windows 10 the setup offers to download and install it)
 
-You do not have to install the tools first: when Visual Studio, CMake or Python is missing, the setup's Components page shows *Install it for me* beside it. That downloads the vendor's own installer from the vendor's address (Microsoft, python.org), checks that the file is signed by that vendor and opens it with the needed parts selected; you confirm in that installer. From the console, `Install.cmd -DiscPath ... -InstallPath ... -GetTools` does the same.
+You do not have to install any of these tools yourself. When Visual Studio's build tools, CMake or Python is missing, the setup installs it as the first step of the install: it downloads the vendor's own installer from the vendor's address (Microsoft, python.org), checks that the file is signed by that vendor and runs it without questions. Windows asks once for permission; choose Yes. The Components page says beforehand what will be installed. From the console, `Install.cmd -DiscPath ... -InstallPath ... -GetTools` does the same.
 
 ## Install
 

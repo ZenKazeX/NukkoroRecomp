@@ -42,7 +42,7 @@ const state = {
   speakJapanese: true,
   target: { path: '', result: null, checking: false },
   launch: true, desktop: true, startMenu: true,
-  prereqs: null, toolBusy: '',
+  prereqs: null,
   phase: 'review',            // review | running | complete | failed | cancelled
   progress: 0, stageIndex: 0, stageName: '', log: '', error: '', logPath: '', cancelling: false,
 };
@@ -268,54 +268,47 @@ function renderLocation() {
   bindChecks();
   if (!state.target.result && !state.target.checking) checkTarget(0);
 }
+// The build tools: present, or installed by the setup as the first step of the install (prereq.fix says what it
+// fetches), or - only when the setup cannot do it - a link to the website.
+const toolsAuto = () => Array.isArray(state.prereqs) ? state.prereqs.filter(p => !p.ok && p.fix) : [];
+const toolsReady = () => Array.isArray(state.prereqs) && state.prereqs.every(p => p.ok || p.fix);
 function renderComponents() {
   const tools = state.prereqs === null
-    ? '<div class="busy">Checking the build tools...</div>'
-    : state.prereqs.map(p => `<div><span class="mark ${p.ok ? 'ok' : 'bad'}">${p.ok ? '✔' : '✖'}</span><span>${escapeText(p.name)}</span>` +
-        (p.ok ? '' : (state.toolBusy === p.key ? ' <span class="busy">its installer is open: finish there...</span>'
-          : (p.fix && !state.toolBusy ? ` <a data-tool="${escapeText(p.key)}">Install it for me</a>` : '') +
-            (p.url ? ` <a data-url="${escapeText(p.url)}">Website</a>` : ''))) + '</div>' +
-        (p.ok || !p.detail ? '' : `<div class="tool-detail">${escapeText(p.detail)}</div>`)).join('');
+    ? '<div class="busy">Checking what your PC has...</div>'
+    : state.prereqs.map(p => p.ok
+        ? `<div><span class="mark ok">✔</span><span>${escapeText(p.name)}</span></div>`
+        : p.fix
+          ? `<div><span class="mark auto">↓</span><span>${escapeText(p.name)}: setup installs it for you</span></div>`
+          : `<div><span class="mark bad">✖</span><span>${escapeText(p.name)}</span>${p.url ? ` <a data-url="${escapeText(p.url)}">Website</a>` : ''}</div>` +
+            (p.detail ? `<div class="tool-detail">${escapeText(p.detail)}</div>` : '')).join('');
+  const auto = toolsAuto();
   const assets = (discOk() ? state.disc.result.assetBytes : 0) + (jpUsed() && state.jp.result ? state.jp.result.bytes || 0 : 0);
+  // Tools the setup installs itself: one plain card instead of the list (nothing for the player to do or decide).
+  const body = auto.length && toolsReady()
+    ? `<div class="card compact auto-tools"><strong>Setup takes care of the rest.</strong> Your PC is missing free tools that building the game needs.
+        When you select Install, setup downloads and installs them first (from Microsoft and python.org; 10-40 minutes the first time).
+        When Windows asks for permission, choose Yes. Licence terms:
+        <a data-url="https://visualstudio.microsoft.com/license-terms/">Microsoft</a>, <a data-url="https://www.python.org/about/legal/">Python</a>.</div>`
+    : `<div class="tools compact"><strong>What the build needs</strong> ${toolsReady() ? '' : '<a id="recheck">Check again</a>'}${tools}</div>` +
+      (prereqsOk() || state.prereqs === null
+        ? `<div class="card compact"><strong>Space:</strong> ${assets ? size(assets + 150 * 1024 ** 2) : '-'} in the install folder, plus about 1.3 GB of build files next to this setup.</div>` : '');
   content.innerHTML = `
     <h1>Components</h1>
     ${check('game', 'Game, built from your disc', '(required)', true)}
     ${check('desktop', 'Desktop shortcut')}
     ${check('startMenu', 'Start menu shortcut')}
-    <div class="tools compact"><strong>Build tools</strong> ${prereqsOk() ? '' : '<a id="recheck">Check again</a>'}${tools}</div>
-    ${prereqsOk() || state.prereqs === null ? `<div class="card compact"><strong>Space:</strong> ${assets ? size(assets + 150 * 1024 ** 2) : '-'} in the install folder, plus about 1.3 GB of build files next to this setup.</div>` : ''}`;
+    ${body}`;
   bindChecks();
   content.querySelectorAll('a[data-url]').forEach(a => a.addEventListener('click', () => native.request('open-url', a.dataset.url).catch(() => {})));
-  content.querySelectorAll('a[data-tool]').forEach(a => a.addEventListener('click', () => getTool(a.dataset.tool)));
   const recheck = $('#recheck');
   if (recheck) recheck.addEventListener('click', checkPrereqs);
-}
-// "Install it for me": says what will be downloaded and opened, then the backend fetches the vendor's installer,
-// checks its signature and opens it; the tools are checked again when that installer closes.
-async function getTool(key) {
-  const tool = (state.prereqs || []).find(p => p.key === key);
-  if (!tool || !tool.fix || state.toolBusy) return;
-  const go = await showDialog(`Install ${tool.name}?`, tool.fix, [{ label: 'Not now', value: false }, { label: 'Download and open', value: true }]);
-  if (!go) return;
-  state.toolBusy = key;
-  if (state.step === 4) render();
-  let failure = '';
-  try {
-    const result = await native.backend('get-tool', key);
-    if (!result.ok) failure = result.message;
-  } catch (e) { failure = e.message; }
-  state.toolBusy = '';
-  await checkPrereqs();
-  if (failure) showDialog(tool.name, failure, [{ label: 'OK' }]);
-  else if (!prereqsOk() && (state.prereqs || []).some(p => p.key === key && !p.ok))
-    showDialog(tool.name, 'The installer has closed, but the tool is still not found. If the installation is still running, wait for it and select Check again.', [{ label: 'OK' }]);
 }
 function renderReview() {
   const options = [state.desktop && 'Desktop shortcut', state.startMenu && 'Start menu shortcut', state.launch && 'Launch after installation'].filter(Boolean);
   const target = state.target.result || {};
   content.innerHTML = `
     <h1>Ready to Install</h1>
-    <p class="description">Review your settings, then select Install. The first build takes about 5-20 minutes.</p>
+    <p class="description">${toolsAuto().length ? 'Select Install. Setup first installs the build tools your PC lacks (Windows asks for permission once), then builds the game.' : 'Review your settings, then select Install. The first build takes about 5-20 minutes.'}</p>
     <dl class="summary">
       <dt>Disc</dt><dd title="${escapeText(state.disc.result.root)}">${escapeText(state.disc.result.root)}</dd>
       <dt>Voices</dt><dd${jpUsed() ? ` title="${escapeText(state.jp.result.root)}"` : ''}>${jpUsed()
@@ -329,7 +322,7 @@ function renderReview() {
 function renderProgress() {
   const titles = { running: state.cancelling ? 'Cancelling...' : 'Installing...', complete: 'Installation Complete', failed: 'Installation Failed', cancelled: 'Installation Cancelled' };
   const descriptions = {
-    running: 'Building the game from your disc and copying it. You can keep using your computer.',
+    running: state.stageIndex < 0 ? 'Installing the build tools your PC lacks. If Windows asks for permission, choose Yes. This can take a while; you can keep using your computer.' : 'Building the game from your disc and copying it. You can keep using your computer.',
     complete: `Shadow the Hedgehog Recompiled is installed in ${escapeText(state.target.result.path)}.`,
     failed: `${escapeText(state.error)} Select Retry to try again.`,
     cancelled: 'The installation was stopped. Select Retry to start again.',
@@ -339,7 +332,7 @@ function renderProgress() {
     <h1>${titles[state.phase]}</h1>
     <p class="description">${descriptions[state.phase]}</p>
     <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><div class="progress-fill" style="width:${percent}%"></div></div>
-    <div class="progress-details"><span id="operation">${escapeText(state.stageName ? `Step ${state.stageIndex + 1} of 5 · ${state.stageName}` : 'Starting...')}</span><span>${percent}%</span></div>
+    <div class="progress-details"><span id="operation">${escapeText(state.stageName ? (state.stageIndex < 0 ? `Before the build · ${state.stageName}` : `Step ${state.stageIndex + 1} of 5 · ${state.stageName}`) : 'Starting...')}</span><span>${percent}%</span></div>
     <div class="log" id="log">${escapeText(state.log.slice(-20000))}${state.logPath && state.phase === 'failed' ? `\nFull log: ${escapeText(state.logPath)}` : ''}</div>`;
   const log = $('#log');
   log.scrollTop = log.scrollHeight;
@@ -378,7 +371,7 @@ function canReach(step) {
   if (step === 3) return true;
   if (!targetOk()) return false;
   if (step === 4) return true;
-  return prereqsOk();
+  return toolsReady();
 }
 function go(step) {
   if (state.phase === 'running' || state.phase === 'complete' || !canReach(step)) return;
@@ -516,34 +509,13 @@ async function selftest() {
     next.click();
     await until(() => state.prereqs !== null); render(); report.prereqsOk = prereqsOk();
     await snap('4-components');
-    // With a tool reported missing (NUKKORO_TEST_MISSING): the "Install it for me" link opens its dialog; with the
-    // test's stand-in tool the fetch itself runs (download, signature check, start, wait, check again).
-    const toolLink = content.querySelector('a[data-tool="python"]');
-    if (toolLink) {
-      const modal = $('#modal');
-      toolLink.click();
-      await until(() => !modal.hidden, 5000);
-      report.toolDialog = modal.querySelector('p').textContent;
-      await snap('4-tool-dialog');
-      const buttons = modal.querySelectorAll('button');
-      if (report.toolDialog.startsWith('Self-test stand-in')) {
-        buttons[buttons.length - 1].click();
-        await until(() => state.toolBusy === 'python', 5000);
-        await snap('4-tool-busy');
-        await until(() => state.toolBusy === '' && state.prereqs !== null && !modal.hidden, 90000);
-        report.toolResult = modal.querySelector('p').textContent;
-        await snap('4-tool-result');
-        modal.querySelector('button').click();
-      } else { buttons[0].click(); }
-      await wait(200);
-      report.toolDialogClosed = modal.hidden;
-    }
+    report.toolsAuto = toolsAuto().map(p => p.key); report.toolsReady = toolsReady();
     state.desktop = false; state.startMenu = false; state.launch = false;
     next.click(); await wait(100);
     await snap('5-ready');
     report.musicLoops = (await musicState()).loops;
     report.passed = report.badDiscRejected && report.discAccepted && report.palAsJapaneseRefused &&
-                    (!config.jpdisc || report.japaneseAccepted) && report.targetAccepted && report.prereqsOk &&
+                    (!config.jpdisc || report.japaneseAccepted) && report.targetAccepted && report.toolsReady &&
                     (!musicExpected || report.musicPlaying);
     if (config.install && report.passed) {
       const exited = new Promise(resolve => { selftestHooks.onExit = resolve; });

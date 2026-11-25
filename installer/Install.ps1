@@ -25,7 +25,7 @@ param(
     [string]$JapaneseDiscPath = '',
     [ValidateSet('', 'Japanese', 'English')][string]$SpokenLanguage = '',
     [switch]$NoShortcuts,
-    [switch]$GetTools,  # fetch and open the vendor's installer for every missing build tool, then check again
+    [switch]$GetTools,  # install every missing build tool first (unattended; Windows asks once for permission)
     [ValidateRange(0, 64)][int]$Jobs = 0,  # 0 = chosen from this PC's processors and free memory
     [string]$DesktopFolder = [Environment]::GetFolderPath('Desktop'),
     [string]$StartMenuFolder = (Join-Path ([Environment]::GetFolderPath('Programs')) 'Shadow the Hedgehog Recompiled')
@@ -42,16 +42,11 @@ function Fail([string]$message) {
 $prereqs = @(Test-Prerequisites)
 $missing = @($prereqs | Where-Object { -not $_.Ok })
 if ($missing -and $GetTools) {
-    foreach ($key in @($missing | ForEach-Object { if ($_.Key -eq 'cmake') { 'vs' } else { $_.Key } } | Select-Object -Unique)) {
-        $plan = Get-ToolPlan $key
-        Write-Host "$($plan.Name): $($plan.Text)" -ForegroundColor Cyan
-        $got = Install-Tool $key
-        Write-Host $got.Message
-    }
-    $prereqs = @(Test-Prerequisites)
+    $tools = Install-MissingTools { param($e) if ($e.type -eq 'log') { Write-Host -NoNewline $e.text } }
+    if (-not $tools.Ok) { Fail $tools.Message }
+    $prereqs = @($tools.Prerequisites)
     $missing = @($prereqs | Where-Object { -not $_.Ok })
 }
-foreach ($m in $missing) { Write-Host "Missing: $($m.Name) - $($m.Detail) ($($m.Url))" -ForegroundColor Red }
 if ($missing) { Fail $(if ($GetTools) { 'Still missing. If an installer is still running, wait for it and run this again.' } else { 'Install the missing tools and run the installer again, or add -GetTools to have this script fetch them.' }) }
 $python = ($prereqs | Where-Object { $_.Name -eq 'Python 3' }).Value
 

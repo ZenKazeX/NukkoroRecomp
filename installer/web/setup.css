@@ -102,6 +102,8 @@ body:not(.has-logo) #text-logo { display: block; }
 .tools { margin-top: 10px; font-size: 15px; line-height: 22px; }
 .tools div { display: flex; gap: 8px; }
 .tools .mark { width: 18px; text-align: center; }
+.card.auto-tools { margin-top: 12px; font-size: 15px; line-height: 21px; }
+.tools .auto { color: var(--accent); } .card a { color: var(--accent); cursor: pointer; }
 .tools .ok { color: var(--ok); } .tools .bad { color: var(--bad); }
 .tools a { color: var(--accent); cursor: pointer; }
 .tools .busy { color: var(--muted); }

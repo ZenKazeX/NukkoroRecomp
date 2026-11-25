@@ -63,7 +63,7 @@ try {
     Check 'backend: prereqs lists three tools' ($b.Exit -eq 0 -and @($parsed).Count -eq 3) "exit $($b.Exit): $($b.Out -join ' ')"
     # --- fetching a missing tool: download, signature check, start, wait (a local server stands in for the vendor) ---
     $plans = @('vs', 'cmake', 'python', 'webview2' | ForEach-Object { Get-ToolPlan $_ })
-    Check 'tools: every tool has a plan with an https address or an installer on this PC' (@($plans | Where-Object { $_ -and $_.Text -and ($_.Modify -or $_.Url -like 'https://*') }).Count -eq 4)
+    Check 'tools: every tool has a plan with an https address or an installer on this PC, and runs unattended' (@($plans | Where-Object { $_ -and $_.Text -and ($_.Modify -or $_.Url -like 'https://*') -and $_.Arguments -match '/passive|--passive|/silent' }).Count -eq 4)
     Check 'tools: an unknown tool has none' ($null -eq (Get-ToolPlan 'other'))
     $signed = Join-Path $env:SystemRoot 'System32\whoami.exe'        # signed by Microsoft, harmless to run
     $unsigned = Join-Path $scratch 'unsigned.exe'; [System.IO.File]::WriteAllBytes($unsigned, [System.IO.File]::ReadAllBytes($signed)[0..4095])
@@ -80,9 +80,26 @@ try {
             } }).AddArgument($listener).AddArgument($signed).AddArgument($unsigned)
         $pending = $server.BeginInvoke()
         try {
-            $plan = [pscustomobject]@{ Key = 't'; Name = 'Test tool'; Url = "http://127.0.0.1:$port/signed.exe"; File = 'nukkoro-test-signed.exe'; Signer = 'Microsoft Corporation'; Arguments = '/?'; Modify = $null; Text = 't' }
+            $plan = [pscustomobject]@{ Key = 't'; Name = 'Test tool'; Url = "http://127.0.0.1:$port/signed.exe"; File = 'nukkoro-test-signed.exe'; Signer = 'Microsoft Corporation'; Arguments = '/?'; OkCodes = @(0, 1); Modify = $null; Text = 't'; Marker = $null }
             $r = Install-Tool 't' $plan
-            Check 'tools: a file signed by the named vendor is started and waited for' ($r.Ok -and $null -ne $r.ExitCode) $r.Message
+            Check 'tools: a file signed by the named vendor is run and waited for' ($r.Ok -and $null -ne $r.ExitCode) $r.Message
+            $plan.OkCodes = @(99)
+            $r = Install-Tool 't' $plan
+            Check 'tools: an installer that ends with a failure code is reported' (-not $r.Ok -and $r.Message -match 'ended with code') $r.Message
+            $plan.OkCodes = @(0, 1)
+            # the whole automatic step, with the stand-in: Python "missing", fetched, checked again
+            $done = Join-Path $env:TEMP 'NukkoroSetup\selftest-tool.done'; Remove-Item $done -Force -ErrorAction SilentlyContinue
+            $env:NUKKORO_TEST_MISSING = 'python'; $env:NUKKORO_TEST_TOOL_URL = "http://127.0.0.1:$port/signed.exe"
+            try {
+                $before = @(Test-Prerequisites | Where-Object { -not $_.Ok } | ForEach-Object Key)
+                $lines = New-Object System.Collections.ArrayList
+                $m = Install-MissingTools { param($e) [void]$lines.Add($e.text) }
+                Check 'tools: the automatic step installs what is missing and checks again' ($before -contains 'python' -and $m.Ok -and @($m.Prerequisites | Where-Object { -not $_.Ok }).Count -eq 0 -and $lines.Count -ge 2) "$($m.Message) | $($lines -join ' ')"
+                Remove-Item $done -Force -ErrorAction SilentlyContinue
+                $env:NUKKORO_TEST_TOOL_URL = "http://127.0.0.1:$port/unsigned.exe"
+                $m = Install-MissingTools
+                Check 'tools: the automatic step stops on a file it must not run' (-not $m.Ok -and $m.Message -match 'not signed') $m.Message
+            } finally { $env:NUKKORO_TEST_MISSING = $null; $env:NUKKORO_TEST_TOOL_URL = $null; Remove-Item $done -Force -ErrorAction SilentlyContinue }
             $plan.Signer = 'Python Software Foundation'
             $r = Install-Tool 't' $plan
             Check 'tools: a file signed by somebody else is refused and deleted' (-not $r.Ok -and $r.Message -match 'not signed by Python Software Foundation' -and -not (Test-Path (Join-Path $env:TEMP 'NukkoroSetup\nukkoro-test-signed.exe'))) $r.Message
