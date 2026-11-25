@@ -516,6 +516,28 @@ async function selftest() {
     next.click();
     await until(() => state.prereqs !== null); render(); report.prereqsOk = prereqsOk();
     await snap('4-components');
+    // With a tool reported missing (NUKKORO_TEST_MISSING): the "Install it for me" link opens its dialog; with the
+    // test's stand-in tool the fetch itself runs (download, signature check, start, wait, check again).
+    const toolLink = content.querySelector('a[data-tool="python"]');
+    if (toolLink) {
+      const modal = $('#modal');
+      toolLink.click();
+      await until(() => !modal.hidden, 5000);
+      report.toolDialog = modal.querySelector('p').textContent;
+      await snap('4-tool-dialog');
+      const buttons = modal.querySelectorAll('button');
+      if (report.toolDialog.startsWith('Self-test stand-in')) {
+        buttons[buttons.length - 1].click();
+        await until(() => state.toolBusy === 'python', 5000);
+        await snap('4-tool-busy');
+        await until(() => state.toolBusy === '' && state.prereqs !== null && !modal.hidden, 90000);
+        report.toolResult = modal.querySelector('p').textContent;
+        await snap('4-tool-result');
+        modal.querySelector('button').click();
+      } else { buttons[0].click(); }
+      await wait(200);
+      report.toolDialogClosed = modal.hidden;
+    }
     state.desktop = false; state.startMenu = false; state.launch = false;
     next.click(); await wait(100);
     await snap('5-ready');

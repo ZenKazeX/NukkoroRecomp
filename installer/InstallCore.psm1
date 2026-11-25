@@ -101,6 +101,10 @@ function Get-ToolPlan([string]$key) {
             return $plan
         }
         $plan.Text = "Downloads Microsoft's Visual Studio 2026 Community installer (about 6 MB, from aka.ms) and opens it with 'Desktop development with C++' selected (it brings CMake). The installer then downloads several GB. Microsoft's licence terms apply; confirm there with Install."
+    } elseif ($key -eq 'python' -and $env:NUKKORO_TEST_MISSING -and $env:NUKKORO_TEST_TOOL_URL) {
+        # Test hook (the setup window's self-test clicks through a fetch): a stand-in served by the test, still signature-checked.
+        $plan.Url = $env:NUKKORO_TEST_TOOL_URL; $plan.File = 'nukkoro-selftest-tool.exe'; $plan.Signer = 'Microsoft Corporation'; $plan.Arguments = '/?'
+        $plan.Text = 'Self-test stand-in: downloads a harmless signed program from the test and runs it.'
     } elseif ($key -eq 'python') {
         $plan.Text = "Downloads Python 3.13 (about 27 MB, from python.org) and opens its installer with 'Add python.exe to PATH' selected. Confirm there with Install Now."
     } else {
@@ -111,8 +115,8 @@ function Get-ToolPlan([string]$key) {
 
 # Downloads (unless the tool's own installer is already on this PC), checks the signature, opens the installer and
 # waits for it. Returns Ok / Message; whether the tool is there afterwards is the prerequisite check's job.
-function Install-Tool([string]$key, $plan = $null) {
-    $r = [pscustomobject]@{ Ok = $false; Message = ''; ExitCode = $null }
+function Install-Tool([string]$key, $plan = $null, [switch]$DownloadOnly) {
+    $r = [pscustomobject]@{ Ok = $false; Message = ''; ExitCode = $null; File = $null }
     if (-not $plan) { $plan = Get-ToolPlan $key }   # a test passes its own plan
     if (-not $plan) { $r.Message = "Unknown tool: $key"; return $r }
     $program = $plan.Modify
@@ -131,6 +135,10 @@ function Install-Tool([string]$key, $plan = $null) {
             Remove-Item -LiteralPath $program -Force -ErrorAction SilentlyContinue
             $r.Message = "The downloaded file is not signed by $($plan.Signer) ($($signature.Status)); it was deleted and not started."; return $r
         }
+    }
+    $r.File = $program
+    if ($DownloadOnly) {   # a check of the address and the signature: nothing is started
+        $r.Ok = $true; $r.Message = "$($plan.Name): $program is there and signed by $($plan.Signer)."; return $r
     }
     try {
         $process = Start-Process -FilePath $program -ArgumentList $plan.Arguments -PassThru
