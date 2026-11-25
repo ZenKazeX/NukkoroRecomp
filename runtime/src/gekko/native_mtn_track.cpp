@@ -2,7 +2,10 @@
 
 #include "gekko/native_mtn_track.h"
 
+#include <atomic>
+
 #include "gekko/cpu.h"
+#include "gekko/fast_single.h"
 #include "gekko/gekko_estimate.h"
 #include "gekko/native_guest_call.h"
 #include "gekko/ppc_ops.h"
@@ -267,6 +270,39 @@ F interpolate(Cpu& c, u32 a, u32 b, F t) {
     return c.fpr[1].bits[0];
 }
 
+// The three window tests of the sampler in plain single precision (gekko/fast_single.h): the sums with the epsilon and the compares
+// on floats, in the original's order. Decides every call that does not have to advance the track; it writes nothing itself, and
+// returns false (the exact body below then runs from its start) when the time or a key time is not an ordinary single, when a sum
+// is not, or when the track has to advance.
+GEKKO_ALWAYS_INLINE bool track_sample_window(Cpu& c, u32 st, u32 flags, F& out) {
+    const u32 a = st + 0x20u, b = st + 0x30u;
+    const float eps = bits_to_float(kEps);
+    fast::Check k;
+    const u32 t_word = c.mem_read32(kCtxTime);
+    const float t = k.in(t_word);
+    const float a_time = k.in(c.mem_read32(a));
+    const float low = k.out(eps + a_time);
+    if (!k.ok()) return false;
+    if (t < low) {
+        out = LM(c, a + 0xCu);
+        return true;
+    }
+    const float b_time = k.in(c.mem_read32(b));
+    const float inner = k.out(b_time - eps);
+    if (!k.ok()) return false;
+    if (t < inner) {
+        out = (flags & 8u) != 0u ? LM(c, st + 0x10u) : interpolate(c, a, b, L(t_word));
+        return true;
+    }
+    const float high = k.out(eps + b_time);
+    if (!k.ok()) return false;
+    if (t < high) {
+        out = LM(c, b + 0xCu);
+        return true;
+    }
+    return false;
+}
+
 // ---- 0x804162AC ----------------------------------------------------------------------------------------------------------------
 F track_sample(Cpu& c, u32 st) {
     const s32 count = static_cast<s16>(c.mem_read16(st + 2u));
@@ -274,6 +310,7 @@ F track_sample(Cpu& c, u32 st) {
     u32 flags = c.mem_read32(st + 4u);
     u32 stream = c.mem_read32(st + 8u);
     if ((flags & 1u) != 0u) return LM(c, st + 0x10u);
+    if (F decided; track_sample_window(c, st, flags, decided)) return decided;
     const u32 a = st + 0x20u, b = st + 0x30u;
     const F eps = L(kEps);
     const F t = LM(c, kCtxTime);
@@ -414,10 +451,192 @@ F sample_through_pointer(Cpu& c, u32 track, u32 link) {
     return c.fpr[1].bits[0];
 }
 
+// ---- the three tracks of a vector, sampled together ---------------------------------------------------------------------------------
+// Most calls of the vector samplers find every track inside its current key pair: the forward sampler then only reads (the track
+// state, the context time, the interpolator pointer) and each lane's value is a pure function of what it read. When that is so for
+// all three lanes, and the three result words are none of the words a lane reads, the lanes can be worked out in any order before the
+// first store: the stores then happen in the original's order with the original's values. The Hermite lanes are evaluated side by
+// side in one vector register: every lane goes through hermite_value_fast's operations in hermite_value_fast's order (packed single
+// operations and the packed fused multiply-add round each lane as their scalar forms do), and the verdict is the same test over the
+// same values. Anything else - a lane that has to advance its track, another sampler or interpolator, an operand the plain route does
+// not take - is left to the lane-by-lane code below, which starts from the beginning: nothing has been written.
+std::atomic<unsigned long long> g_vec3_route[3];  // written by the game thread only: a load and a store, no bus lock
+GEKKO_ALWAYS_INLINE void bump_route(u32 kind) noexcept {
+    g_vec3_route[kind].store(g_vec3_route[kind].load(std::memory_order_relaxed) + 1ull, std::memory_order_relaxed);
+}
+
+enum class Lane : u8 { None, Value, Hermite, Slope, Other };
+struct LaneClass {
+    Lane kind = Lane::None;
+    F value = 0;      // Value
+    u32 a = 0, b = 0; // Hermite / Slope: the key pair
+    u32 time = 0;     // Hermite / Slope: the context time word
+};
+
+// What track_sample(st) comes to when reading alone decides it (the same tests in the same order as track_sample and
+// track_sample_window); Other when it does not.
+GEKKO_ALWAYS_INLINE LaneClass classify_lane(Cpu& c, u32 st) {
+    LaneClass out;
+    const u32 flags = c.mem_read32(st + 4u);
+    if ((flags & 1u) != 0u) {
+        out.kind = Lane::Value;
+        out.value = LM(c, st + 0x10u);
+        return out;
+    }
+    const u32 a = st + 0x20u, b = st + 0x30u;
+    const float eps = bits_to_float(kEps);
+    fast::Check k;
+    const u32 t_word = c.mem_read32(kCtxTime);
+    const float t = k.in(t_word);
+    const float a_time = k.in(c.mem_read32(a));
+    const float low = k.out(eps + a_time);
+    out.kind = Lane::Other;
+    if (!k.ok()) return out;
+    if (t < low) {
+        out.kind = Lane::Value;
+        out.value = LM(c, a + 0xCu);
+        return out;
+    }
+    const float b_time = k.in(c.mem_read32(b));
+    const float inner = k.out(b_time - eps);
+    if (!k.ok()) return out;
+    if (t < inner) {
+        if ((flags & 8u) != 0u) {
+            out.kind = Lane::Value;
+            out.value = LM(c, st + 0x10u);
+            return out;
+        }
+        const u32 target = c.mem_read32(kCtxInterp);
+        if (target != kHermiteValue && target != kHermiteSlope) return out;
+        out.kind = target == kHermiteValue ? Lane::Hermite : Lane::Slope;
+        out.a = a;
+        out.b = b;
+        out.time = t_word;
+        return out;
+    }
+    const float high = k.out(eps + b_time);
+    if (!k.ok()) return out;
+    if (t < high) {
+        out.kind = Lane::Value;
+        out.value = LM(c, b + 0xCu);
+    }
+    return out;
+}
+
+#if GEKKO_FAST_SINGLE
+// hermite_value_fast for `lanes` (2..4) key pairs and one time. False: at least one lane has to take the exact path (then no
+// lane's result is used).
+GEKKO_ALWAYS_INLINE bool hermite_value_fast_lanes(Cpu& c, const u32* a, const u32* b, u32 lanes, float t, float* out) noexcept {
+    alignas(16) u32 w[6][4];
+    for (u32 l = 0; l < 4u; ++l) {
+        if (l < lanes) {
+            w[0][l] = c.mem_read32(a[l]);
+            w[1][l] = c.mem_read32(b[l]);
+            w[2][l] = c.mem_read32(b[l] + 0xCu);
+            w[3][l] = c.mem_read32(a[l] + 0xCu);
+            w[4][l] = c.mem_read32(a[l] + 8u);
+            w[5][l] = c.mem_read32(b[l] + 4u);
+        } else {  // an unused lane repeats the first one: it adds nothing to the verdict
+            for (u32 f = 0; f < 6u; ++f) w[f][l] = w[f][0];
+        }
+    }
+    const auto field = [&](u32 f) { return _mm_castsi128_ps(_mm_load_si128(reinterpret_cast<const __m128i*>(w[f]))); };
+    // tiny_or_nan's first half for every value of every lane: with m the magnitude bits, 0 < m < 0x0D800000 exactly when
+    // 2m - 1 (mod 2^32; a zero wraps to the largest key) is below 0x1AFFFFFE. The smallest key seen per lane is kept.
+    __m128i lowest = _mm_set1_epi32(-1);
+    const auto seen = [&](__m128 v) {
+        const __m128i bits = _mm_castps_si128(v);
+        lowest = _mm_min_epu32(lowest, _mm_add_epi32(_mm_add_epi32(bits, bits), _mm_set1_epi32(-1)));
+        return v;
+    };
+    const __m128 a_time = seen(field(0)), b_time = seen(field(1)), b_val = seen(field(2)), a_val = seen(field(3));
+    const __m128 a_out = seen(field(4)), b_in = seen(field(5));
+    const __m128 tv = seen(_mm_set1_ps(t));
+    const __m128 one = _mm_set1_ps(1.0f), two = _mm_set1_ps(2.0f), three = _mm_set1_ps(3.0f);
+    const __m128 s = seen(_mm_sub_ps(tv, a_time));
+    const __m128 dt = seen(_mm_sub_ps(b_time, a_time));
+    const __m128 s2 = seen(_mm_mul_ps(s, s));
+    const __m128 inv = seen(_mm_div_ps(one, dt));
+    const __m128 inv2 = seen(_mm_mul_ps(inv, inv));
+    __m128 f4 = seen(_mm_mul_ps(s2, s));
+    __m128 f0 = seen(_mm_mul_ps(three, s2));
+    const __m128 f11 = seen(_mm_mul_ps(s2, inv));
+    f4 = seen(_mm_mul_ps(inv2, f4));
+    const __m128 f10 = seen(_mm_mul_ps(f0, inv2));
+    f0 = seen(_mm_mul_ps(two, f4));
+    const __m128 f8 = seen(_mm_sub_ps(f4, f11));
+    __m128 f2 = seen(_mm_mul_ps(f0, inv));
+    f4 = seen(_mm_sub_ps(f8, f11));
+    f0 = _mm_xor_ps(f2, _mm_castsi128_ps(_mm_set1_epi32(static_cast<int>(0x80000000u))));  // fneg
+    f2 = seen(_mm_sub_ps(f2, f10));
+    f4 = seen(_mm_add_ps(s, f4));
+    f0 = seen(_mm_add_ps(f0, f10));
+    f2 = seen(_mm_add_ps(one, f2));
+    f0 = seen(_mm_mul_ps(b_val, f0));
+    f0 = seen(_mm_fmadd_ps(a_val, f2, f0));
+    f0 = seen(_mm_fmadd_ps(a_out, f4, f0));
+    const __m128 r = seen(_mm_fmadd_ps(b_in, f8, f0));
+    // tiny_or_nan's second half: a NaN among the values. Every value above goes into r through operations that hand a NaN on
+    // (difference, sum, product, quotient, fused sum, sign change), and r is one of the values: a NaN anywhere <=> r is a NaN.
+    const __m128i limit = _mm_set1_epi32(0x1AFFFFFE);
+    const int not_tiny = _mm_movemask_ps(_mm_castsi128_ps(_mm_cmpeq_epi32(_mm_max_epu32(lowest, limit), lowest)));
+    const int nan = _mm_movemask_ps(_mm_cmpunord_ps(r, r));
+    _mm_storeu_ps(out, r);
+    return not_tiny == 0xF && nan == 0;
+}
+
+// The vector sampler's three lanes at once; false (nothing written) when it is a case for the lane-by-lane code.
+GEKKO_ALWAYS_INLINE bool sample_vec3_together(Cpu& c, u32 obj, u32 tracks, bool reciprocal) {
+    const u32 sampler_at = c.gpr[13] + 0x5F78u;
+    if (c.mem_read32(sampler_at) != kTrackSample) return false;
+    // The result words obj .. obj + 11 are stored between the lanes in the original. They must be none of the words a lane reads:
+    // the sampler pointer, the context time, the interpolator pointer (the track states start at obj + 0x10 or beyond).
+    const auto apart = [obj](u32 word) { return (word + 3u - obj) > 14u; };
+    if (obj >= 0xFFFFFF00u || !apart(sampler_at) || !apart(kCtxTime) || !apart(kCtxInterp)) return false;
+    LaneClass lane[3];
+    u32 ha[4], hb[4], which[4], hermites = 0;
+    for (u32 i = 0; i < 3u; ++i) {
+        const u32 track = tracks + 0x40u * i;
+        if (c.mem_read32(track + 8u) == 0u) continue;  // Lane::None
+        lane[i] = classify_lane(c, track);
+        if (lane[i].kind == Lane::Other) return false;
+        if (lane[i].kind == Lane::Hermite) {
+            ha[hermites] = lane[i].a;
+            hb[hermites] = lane[i].b;
+            which[hermites] = i;
+            ++hermites;
+        }
+    }
+    bool together = false;
+    if (hermites >= 2u) {
+        float r[4];
+        if (hermite_value_fast_lanes(c, ha, hb, hermites, bits_to_float(lane[which[0]].time), r)) {
+            together = true;
+            for (u32 h = 0; h < hermites; ++h) lane[which[h]].value = single_to_double_bits(float_to_bits(r[h]));
+        }
+    }
+    bump_route(together ? 0u : 1u);
+    for (u32 i = 0; i < 3u; ++i) {
+        if (lane[i].kind == Lane::None) continue;
+        F f1 = lane[i].value;
+        if (lane[i].kind == Lane::Hermite && !together) f1 = hermite_value(c, lane[i].a, lane[i].b, L(lane[i].time));
+        else if (lane[i].kind == Lane::Slope) f1 = hermite_slope(c, lane[i].a, lane[i].b, L(lane[i].time));
+        c.fpr[1].bits[0] = f1;
+        if (reciprocal) f1 = ppc::fps_div(c, L(kOne), f1);
+        SM(c, obj + 4u * i, f1);
+    }
+    return true;
+}
+#endif
+
 // out[i] = sample(track i) for every track whose stream pointer is set; the tracks start at obj + base, 0x40 apart.
 template <u32 Link>
 void sample_vec3(Cpu& c, u32 obj, u32 base, bool reciprocal) {
     const u32 tracks = obj + base;
+#if GEKKO_FAST_SINGLE
+    if (sample_vec3_together(c, obj, tracks, reciprocal)) return;
+#endif
+    bump_route(2u);
     for (u32 i = 0; i < 3; ++i) {
         const u32 track = tracks + 0x40u * i;
         if (c.mem_read32(track + 8u) == 0u) continue;
@@ -435,6 +654,9 @@ constexpr u32 kLinkVec3At20 = 0x804214C0u;        // liveness-roots: value-only
 constexpr u32 kLinkVec3Scaled = 0x8042154Cu;      // liveness-roots: value-only
 }  // namespace
 
+unsigned long long vec3_route(unsigned kind) noexcept {
+    return kind < 3u ? g_vec3_route[kind].load(std::memory_order_relaxed) : 0ull;
+}
 void serve_track_sample(Cpu& cpu) { cpu.fpr[1].bits[0] = track_sample(cpu, cpu.gpr[3]); }
 void serve_hermite_value(Cpu& cpu) noexcept { cpu.fpr[1].bits[0] = hermite_value(cpu, cpu.gpr[3], cpu.gpr[4], cpu.fpr[1].bits[0]); }
 void serve_hermite_slope(Cpu& cpu) noexcept { cpu.fpr[1].bits[0] = hermite_slope(cpu, cpu.gpr[3], cpu.gpr[4], cpu.fpr[1].bits[0]); }

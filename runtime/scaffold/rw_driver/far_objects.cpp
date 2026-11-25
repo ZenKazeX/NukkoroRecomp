@@ -11,6 +11,7 @@
 #include <string>
 
 #include "gekko/cpu.h"
+#include "gekko/native_motion_bank_store.h"
 #include "gekko/native_motion_store.h"
 #include "motion/skeleton_pose.h"
 
@@ -104,12 +105,10 @@ float read_f32(Cpu& c, u32 address) {
     return value;
 }
 
-// A guest address the game's data can live at: its memory, or the native motion store's arena (the clips and their
-// banks, gekko/native_motion_store.h).
+// A guest address the game's data can live at: its memory. (The motion clip pool's addresses are handles of native
+// storage since 2026-11-21, read through NativeMotionStore::pool_bytes, never through the window.)
 bool in_ram(u32 p) {
-    return (p >= 0x80000000u && p < 0x81800000u) ||
-           (p >= gekko::NativeMotionStore::kArenaBase &&
-            p < gekko::NativeMotionStore::kArenaBase + gekko::NativeMotionStore::kArenaReserve);
+    return p >= 0x80000000u && p < 0x81800000u;
 }
 bool pointer(u32 p) { return in_ram(p) && (p & 3u) == 0u; }
 
@@ -1640,11 +1639,11 @@ void FarObjects::find_gaps(Cpu& c, u32 factories, u32 slots, const render::Camer
 // The game's own atomic nearest the proxy's of the same geometry, within kHandoverDistance: its handover, and its
 // class's measured pose error. The nearest, since a class's objects may stand side by side.
 // Enemies (docs/DRAW_DISTANCE.md "Enemies and characters"): the enemy table {archive, DFF, BON, MTP} per kind, the
-// BON banks ([r13+0x5F30], link +0x14, first record +0x10) and the motion banks ([r13+0x5F58], link +0xC).
+// BON banks ([r13+0x5F30], link +0x14, first record +0x10) and the motion banks (the native registry,
+// gekko/native_motion_bank_store.h: the game's list at [r13+0x5F58] is no longer kept in guest memory).
 constexpr u32 kEnemyTable = 0x804CCFDCu;
 constexpr u32 kEnemyKinds = 16u;
 constexpr u32 kSdaBoneBanks = 0x5F30u;
-constexpr u32 kSdaMotionBanks = 0x5F58u;
 constexpr u32 kSdaHAnimFrameOffset = 0x5FE8u;      // the HAnim frame extension's offset {id, hierarchy}
 constexpr u32 kSkinGeometryOffsetHolder = 0x8056E7D0u;  // RpSkin* at geometry + [this]
 constexpr u32 kFrameChild = 0x98u;
@@ -1728,9 +1727,11 @@ void enemy_probe(Cpu& c) {
             }
         }
         u32 clips = 0u, banks = 0u;
-        for (u32 bank = c.mem_read32(c.gpr[13] + kSdaMotionBanks); pointer(bank) && banks < 256u;
-             bank = c.mem_read32(bank + 0xCu), ++banks)
-            clips += c.mem_read16(bank + 2u);
+        if (const gekko::MotionBankStore* store = gekko::MotionBankStore::of(c))
+            for (const gekko::MotionBankStore::Bank& bank : store->banks()) {
+                clips += bank.count;
+                ++banks;
+            }
         std::fprintf(stderr,
                      "[far-enemy] kind %u %s %s %s %s: clump 0x%08X (type %d); skeleton 0x%08X (%u bones); "
                      "%u motion banks, %u clips\n",
@@ -2018,41 +2019,47 @@ FarObjects::Enemy* FarObjects::enemy_for(Cpu& c, std::size_t rule) {
         bytes[i] = c.mem_read8(record + i);
     if (!shadow::motion::parse_skeleton(bytes.data(), bytes.size(), record, &e.skeleton))
         return fail("skeleton parse");
-    // The clip: a bank flagged at +6 keeps its clips in ARAM, one {name, name size, clip, clip size, events, events
-    // size} record of ARAM addresses a clip from +0x1C (the loader 80414370 copies a clip in on demand); any other
-    // holds them in memory, the file's table of {name, clip, events} pointers at +0x10.
+    // The clip: the motion bank registry (native, gekko/native_motion_bank_store.h). A pool bank keeps its clips in the
+    // native pool, one {name, name size, clip, clip size, events, events size} record of pool addresses per clip (the
+    // acquire 0x80414368 copies a clip out on demand); a resident bank holds them in memory, the file's table of
+    // {name, clip, events} pointers.
     bytes.clear();
-    for (u32 bank = c.mem_read32(c.gpr[13] + kSdaMotionBanks), n = 0; pointer(bank) && bytes.empty() && n < 256u;
-         bank = c.mem_read32(bank + 0xCu), ++n) {
-        const u32 count = std::min<u32>(c.mem_read16(bank + 2u), 512u);
-        if (c.mem_read8(bank + 6u) != 0u) {
-            // The records' addresses are the pool's, in the native motion store's arena (a state made before ARAM was
-            // retired keeps them at ARAM addresses, which the store serves from the arena: pool_address).
+    const gekko::MotionBankStore* store = gekko::MotionBankStore::of(c);
+    if (store == nullptr)
+        return fail("no motion bank store");
+    for (const gekko::MotionBankStore::Bank& bank : store->banks()) {
+        if (!bytes.empty())
+            break;
+        const u32 count = std::min<u32>(bank.count, 512u);
+        if (bank.pooled != 0u) {
+            // The records' addresses are handles of the native clip pool (a state made before ARAM was retired keeps
+            // them at ARAM addresses, which the pool serves at the same offset: pool_address). A byte the pool has not
+            // committed is left out, as an unmapped one was.
+            const gekko::NativeMotionStore& pool = store->pool();
             const auto aux = [&](u32 at, u32 size) {
                 std::string out;
                 for (u32 i = 0; i < size; ++i) {
-                    const u32 address = gekko::NativeMotionStore::pool_address(at + i);
-                    if (in_ram(address))
-                        out.push_back(static_cast<char>(c.mem_read8(address)));
+                    if (const gekko::u8* byte = pool.pool_bytes(at + i, 1u))
+                        out.push_back(static_cast<char>(*byte));
                 }
                 return out;
             };
-            for (u32 i = 0; i < count; ++i) {
-                const u32 clip_record = bank + 0x1Cu + 0x18u * i;
-                const u32 name_size = std::min<u32>(c.mem_read32(clip_record + 4u), 64u);
-                const std::string name = aux(c.mem_read32(clip_record), name_size);
+            for (u32 i = 0; i < count && i < bank.records.size(); ++i) {
+                const gekko::MotionBankStore::Record& clip_record = bank.records[i];
+                const u32 name_size = std::min<u32>(clip_record.name_bytes, 64u);
+                const std::string name = aux(clip_record.name, name_size);
                 if (std::string(name.c_str()) != kRules[rule].clip)
                     continue;
-                const u32 size = c.mem_read32(clip_record + 12u);
+                const u32 size = clip_record.data_bytes;
                 if (size == 0u || size > 0x80000u)
                     break;
-                const std::string clip = aux(c.mem_read32(clip_record + 8u), size);
+                const std::string clip = aux(clip_record.data, size);
                 bytes.assign(clip.begin(), clip.end());
                 break;
             }
             continue;
         }
-        const u32 table = c.mem_read32(bank + 0x10u);
+        const u32 table = bank.table;
         for (u32 i = 0; pointer(table) && i < count; ++i)
             if (guest_text(c, c.mem_read32(table + 12u * i)) == kRules[rule].clip) {
                 const u32 clip = c.mem_read32(table + 12u * i + 4u);

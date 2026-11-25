@@ -67,9 +67,10 @@ void table_is_sorted_and_complete(Cpu& cpu) {
     check(cpu.find_lift_site(0x8043F730u) != nullptr, "the sound-bank release site is generated");
     check(cpu.find_lift_site(0x801F2EA0u) != nullptr && cpu.find_lift_site(0x801F2EA4u) != nullptr,
           "the game constructor's ARInit and ARQInit sites are generated");
-    check(recomp::kLiftSiteCount == 1032u,
-          "eleven lift-sites.txt sites, 1004 lift-sites-math.txt and (this unlifted tree) 4 lift-sites-math-unlifted.txt "
-          "sites, 10 lift-sites-native.txt sites and the three empty variadic leaves: 1032");
+    // 1003 math sites: 0x8041AE44 went with the slot bind's body (0x8041ADAC is a native owner, B003).
+    check(recomp::kLiftSiteCount == 1031u,
+          "eleven lift-sites.txt sites, 1003 lift-sites-math.txt and (this unlifted tree) 4 lift-sites-math-unlifted.txt "
+          "sites, 10 lift-sites-native.txt sites and the three empty variadic leaves: 1031");
     unsigned math_sites = 0, copy_sites = 0, retired_copy_sites = 0;
     for (std::size_t i = 0; i < recomp::kLiftSiteCount; ++i) {
         math_sites += recomp::kLiftSiteWords[i] == 0x4BFFFD89u;

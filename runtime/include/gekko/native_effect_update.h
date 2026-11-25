@@ -78,6 +78,19 @@ void serve_unit_step(Cpu& cpu);
 // rotation that would wrap for more than 65536 turns): nothing but idempotent memory was touched and the original body runs.
 bool serve_ptank_fill(Cpu& cpu);
 
+// Which unit filled which record of the last served fill (host-only: nothing of it is guest state, and the game never
+// reads it). The fill writes the system's units into the tank's streams in list order (first unit at system + 0xFC,
+// the next at unit + kUnitNext), so record i of the tank IS unit i. A served fill notes the tank and the list's first
+// unit - two stores; a declined one, and the next fill, forget the note. The renderer's side asks for it when the tank
+// is drawn next and walks the list itself: false unless the note is this tank's. Game thread only.
+constexpr u32 kUnitNext = 0x68u;  // the next unit of the system's list
+constexpr u32 kUnitAge = 0x50u;   // the unit's age (a single), advanced by the unit step
+bool last_fill(u32 tank, u32* first_unit) noexcept;
+// Whether anyone reads the particles' identities (the independent frame, gekko/lifted_render.h): the renderer's side
+// walks the list only then. Any thread.
+void want_particle_identities(bool on) noexcept;
+bool particle_identities_wanted() noexcept;
+
 // Installs the owners on the CPU.
 void install(Cpu& cpu);
 

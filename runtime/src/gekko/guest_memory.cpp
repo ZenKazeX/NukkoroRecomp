@@ -204,6 +204,8 @@ bool GuestMemory::map(u32 base, u32 size, u32 commit_bytes, RegionKind kind, std
         commit_bytes > size || static_cast<u64>(base) + size > 0x100000000ull) {
         return false;
     }
+    // The native arenas' former range stays empty (kRetiredArenaBase): their bytes are native storage.
+    if (static_cast<u64>(base) < kRetiredArenaEnd && static_cast<u64>(base) + size > kRetiredArenaBase) return false;
     // FM step 2: no page table; overlap is checked against the few regions.
     for (const Region& other : regions_) {
         if (static_cast<u64>(base) < static_cast<u64>(other.base) + other.size &&
@@ -350,20 +352,25 @@ bool get_pod(const u8*& cursor, const u8* end, T& value) {
 
 }  // namespace
 
-void GuestMemory::save_state(std::vector<u8>& out) const {
-    put_pod<u32>(out, static_cast<u32>(regions_.size()));
-    for (const Region& region : regions_) {
-        put_pod<u32>(out, region.base);
-        put_pod<u32>(out, region.size);
-        put_pod<u32>(out, region.committed);
-        put_pod<u8>(out, static_cast<u8>(region.kind));
-        put_pod<u32>(out, static_cast<u32>(region.name.size()));
-        out.insert(out.end(), region.name.begin(), region.name.end());
-        out.insert(out.end(), region.host, region.host + region.committed);
-    }
+void GuestMemory::save_state(std::vector<u8>& out, const std::vector<Record>& others) const {
+    const auto put_record = [&out](u32 base, u32 size, u32 committed, RegionKind kind, const std::string& name,
+                                   const u8* bytes) {
+        put_pod<u32>(out, base);
+        put_pod<u32>(out, size);
+        put_pod<u32>(out, committed);
+        put_pod<u8>(out, static_cast<u8>(kind));
+        put_pod<u32>(out, static_cast<u32>(name.size()));
+        out.insert(out.end(), name.begin(), name.end());
+        if (committed != 0u) out.insert(out.end(), bytes, bytes + committed);
+    };
+    put_pod<u32>(out, static_cast<u32>(regions_.size() + others.size()));
+    for (const Region& region : regions_)
+        put_record(region.base, region.size, region.committed, region.kind, region.name, region.host);
+    for (const Record& record : others)
+        put_record(record.base, record.size, record.committed, record.kind, record.name, record.bytes);
 }
 
-bool GuestMemory::load_state(const u8*& cursor, const u8* end, std::string& why) {
+bool GuestMemory::load_state(const u8*& cursor, const u8* end, std::string& why, const ClaimRecord& claim) {
     u32 count = 0;
     if (!get_pod(cursor, end, count) || count > 0xFFFEu) {
         why = "region count";
@@ -406,6 +413,14 @@ bool GuestMemory::load_state(const u8*& cursor, const u8* end, std::string& why)
         if (committed > size || static_cast<std::size_t>(end - cursor) < committed) {
             why = "region " + name + " bytes";
             return false;
+        }
+        if (claim) {
+            const int taken = claim(Record{base, size, committed, static_cast<RegionKind>(kind), name, cursor}, why);
+            if (taken < 0) return false;
+            if (taken > 0) {
+                cursor += committed;
+                continue;
+            }
         }
         const Region* existing = nullptr;
         for (const Region& region : regions_) {
@@ -545,6 +560,7 @@ void GuestMemory::notify_translation_change() const {
 // ---- unmapped-access diagnostics (fixtures and unit tests) ------------------------------
 
 void GuestMemory::note_unmapped_read(u32 address, u32 size) {
+    if (retired_stop_ != nullptr && in_retired_arenas(address)) retired_stop_(retired_stop_context_, address, size, false, 0u);
     ++diagnostics_.unmapped_reads;
     if (diagnostics_.unmapped_reads == 1) diagnostics_.first_unmapped_read_address = address;
     if (trace_unmapped_ && diagnostics_.messages.size() < 64) {
@@ -553,6 +569,7 @@ void GuestMemory::note_unmapped_read(u32 address, u32 size) {
 }
 
 void GuestMemory::note_unmapped_write(u32 address, u32 size, u64 value) {
+    if (retired_stop_ != nullptr && in_retired_arenas(address)) retired_stop_(retired_stop_context_, address, size, true, value);
     ++diagnostics_.unmapped_writes;
     if (diagnostics_.unmapped_writes == 1) diagnostics_.first_unmapped_write_address = address;
     if (trace_unmapped_ && diagnostics_.messages.size() < 64) {

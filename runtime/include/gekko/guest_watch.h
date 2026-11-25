@@ -33,6 +33,7 @@ struct Range {
     u32 base = 0;
     u32 size = 0;
     std::string label;
+    u32 stride = 0;  // element size of an array of records (0 = none): hits are split by offset inside the element
 };
 
 // A row's (or native code's) accesses to one watched range.
@@ -42,6 +43,11 @@ struct Hit {
     u32 row = 0;                // guest address of the translated row; 0 = native code
     std::uint64_t native_rva = 0;  // native: the innermost frame's RVA in its module
     std::uint64_t native_address = 0;  // native: the innermost frame's address (named in the report)
+    // A row's hit: the innermost host function when that is NOT the row's own generated code (native code the row
+    // called, or that was served inside it); 0 = the row's own loads and stores.
+    std::uint64_t inner_function = 0;
+    u32 offset = 0;             // (address - range base) % stride, when the range has a stride
+    bool has_offset = false;
     std::uint64_t count = 0;
     u32 first_guest_address = 0;
 };
@@ -61,9 +67,11 @@ void stop();
 bool active();
 std::vector<Hit> hits();
 Totals totals();
-// Writes a CSV: label,kind,row,native_rva,native_symbol,count,first_guest_address - and the totals as comments.
+// Writes a CSV: label,kind,row,native_rva,native_symbol,count,first_guest_address,inner,offset - and the totals as
+// comments. inner: for a row's hit "(row code)" or the innermost native function under the row; for native code the
+// function. offset: hex offset inside the range's element, empty without a stride.
 bool write_report(const std::string& path, std::string* error);
-// Parses "0xBASE 0xSIZE label" lines ('#' comments).
+// Parses "0xBASE 0xSIZE label [stride=0xN]" lines ('#' comments).
 bool parse_ranges(const std::string& path, std::vector<Range>& out, std::string* error);
 
 }  // namespace guest_watch

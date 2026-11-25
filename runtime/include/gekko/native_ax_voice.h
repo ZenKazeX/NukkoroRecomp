@@ -4,7 +4,9 @@
 // write into the guest AXVPB (stride 0x22C; the game's GCAX code and CRI read those fields back), with the
 // OSDisableInterrupts / OSRestoreInterrupts bracket dropped: an owner runs between guest instructions, so the
 // update is atomic and the MSR is untouched (the original restores it). The sync-flag word at AXVPB+0x1C is the
-// SDK's dirty mask for its AXVPB -> PB copy; the guest __AXSyncPB still consumes it until the frame engine is native.
+// SDK's dirty mask for its AXVPB -> PB copy. It and the other sync bookkeeping words (+0x20 +0x24 +0x28 +0x30) are
+// native storage when the owners are installed with an AxVoiceWords (ax_voice_words.h); without one (the contract
+// tests' reference arrangement) they are the guest words, as in the original.
 //
 // Original (main.dol, PAL GUPP8P):
 //   AXSetVoiceMix     0x803871B0 (vpb, mix*): 18 halfwords from mix* to vpb+0x14A.., each stored as is; vpb+0x144 = the
@@ -20,6 +22,7 @@
 #include <cstring>
 #include <string>
 
+#include "gekko/ax_voice_words.h"
 #include "gekko/cpu.h"
 #include "gekko/native_guest_call.h"
 #include "gekko/types.h"
@@ -134,13 +137,14 @@ inline void unlink_from_stack(Cpu& c, u32 vpb) {
 }
 
 // 0x80386E44 __AXSetPBDefault: the fields a free voice carries.
-inline void set_pb_default(Cpu& c, u32 vpb) {
+inline void set_pb_default(Cpu& c, u32 vpb, AxVoiceWords* words = nullptr) {
+    const AxVoiceWordAccess word{c, words};
     c.mem_write16(vpb + 0x146u, 0);
     c.mem_write16(vpb + 0x16Eu, 0);
-    c.mem_write32(vpb + kSyncFlags, 0x2000A4u);
-    c.mem_write32(vpb + 0x28u, 0u);
-    c.mem_write32(vpb + 0x24u, 0u);
-    c.mem_write32(vpb + 0x30u, vpb + 0x34u);
+    word.set(vpb, AxVoiceWords::kFlags, 0x2000A4u);
+    word.set(vpb, AxVoiceWords::kRingCount, 0u);
+    word.set(vpb, AxVoiceWords::kWord24, 0u);
+    word.set(vpb, AxVoiceWords::kRingPointer, vpb + 0x34u);
     for (const u32 off : {0x184u, 0x182u, 0x180u, 0x17Eu, 0x17Cu, 0x1F2u}) c.mem_write16(vpb + off, 0);
 }
 
@@ -255,7 +259,7 @@ inline u32 mix_derive_gains(Cpu& c, u32 channel, u32 delta) {
 // MIXInitChannel(vpb, mode, input, f, g, pan, aux, p): fills the channel from the arguments, derives the sixteen-bit gains
 // at +0x38..+0x5C under the sound mode (0: two-channel, 1/2: with the pan tables' 0x20/0x24, 3: four-channel with 0x30/0x34)
 // and commits them as the voice's mix block (the same 18-halfword block AXSetVoiceMix writes) with the dirty bits 0x212.
-inline void mix_init_channel(Cpu& c) {
+inline void mix_init_channel(Cpu& c, AxVoiceWords* words = nullptr) {
     const u32 vpb = c.gpr[3];
     const u32 channel = kMixChannels + c.mem_read32(vpb + kVpbIndexWord) * kMixChannelSize;
     const u32 flags_arg = c.gpr[4];
@@ -290,7 +294,7 @@ inline void mix_init_channel(Cpu& c) {
     }
     c.mem_write16(vpb + 0x16Cu, 0);
     c.mem_write16(vpb + kMixFlags, static_cast<u16>(mix_flags));
-    c.mem_write32(vpb + kSyncFlags, c.mem_read32(vpb + kSyncFlags) | 0x212u);
+    AxVoiceWordAccess{c, words}.or_flags(vpb, 0x212u);
 }
 
 
@@ -300,8 +304,9 @@ inline void mix_init_channel(Cpu& c) {
 // ramp: for the input gain vpb+0x19C (current) / +0x19E (delta = (target - current) / 160, truncated), for the mix block the
 // current gain and its delta per slot, with the dirty bits; vpb+0x1C |= 0x200 / 0x12. At the end, the stream-volume ramp: one
 // step per call of the stream volume (sda+0x5DC0) towards its target (sda+0x5DC4) through the AISetStreamVolLeft / Right owners (serve_owner).
-inline void mix_update_settings(Cpu& c) {
+inline void mix_update_settings(Cpu& c, AxVoiceWords* words = nullptr) {
     const u32 sda = c.gpr[13];
+    const AxVoiceWordAccess word{c, words};
     const auto ramp = [](u32 current, u32 target) {  // mulhw(0x66666667, d) >> 6, plus the sign bit: d / 160 toward zero
         const s64 product = static_cast<s64>(0x66666667) * static_cast<s64>(static_cast<s32>(target - current));
         s32 step = static_cast<s32>(product >> 32) >> 6;
@@ -343,7 +348,7 @@ inline void mix_update_settings(Cpu& c) {
         if (input_changed) {
             c.mem_write16(vpb + 0x19Cu, c.mem_read16(channel + 0x38u));
             c.mem_write16(vpb + 0x19Eu, ramp(c.mem_read16(channel + 0x38u), c.mem_read16(channel + 0x3Au)));
-            c.mem_write32(vpb + kSyncFlags, c.mem_read32(vpb + kSyncFlags) | 0x200u);
+            word.or_flags(vpb, 0x200u);
         }
         if (!mix_changed) continue;
         struct Slot { u32 gain_at, vpb_at, value_mask, delta_mask; };
@@ -359,7 +364,7 @@ inline void mix_update_settings(Cpu& c) {
             if (delta != 0) mix_flags |= slot.delta_mask;
         }
         c.mem_write16(vpb + kMixFlags, static_cast<u16>(mix_flags));
-        c.mem_write32(vpb + kSyncFlags, c.mem_read32(vpb + kSyncFlags) | 0x12u);
+        word.or_flags(vpb, 0x12u);
     }
     const s32 target = static_cast<s32>(c.mem_read32(sda + kSdaMixState1));
     s32 current = static_cast<s32>(c.mem_read32(sda + kSdaMixState0));
@@ -376,14 +381,15 @@ inline void mix_update_settings(Cpu& c) {
     }
 }
 
-inline void install(Cpu& cpu) {
+// `words`: the native sync bookkeeping words (must outlive the owners); null keeps them in guest memory.
+inline void install(Cpu& cpu, AxVoiceWords* words = nullptr) {
     const auto own = [&cpu](u32 address, const char* name, auto&& serve) {
         cpu.install_hle(address, [serve](Cpu& c) {
             serve(c);
             return true;  // an owner never declines
         }, std::string("AX voice: ") + name);
     };
-    own(kSetVoiceMix, "AXSetVoiceMix", [](Cpu& c) {
+    own(kSetVoiceMix, "AXSetVoiceMix", [words](Cpu& c) {
         const u32 vpb = c.gpr[3], mix = c.gpr[4];
         u32 flags = 0;
         for (u32 i = 0; i < kMixCount; ++i) {
@@ -392,9 +398,9 @@ inline void install(Cpu& cpu) {
             if (value != 0) flags |= kMixMasks[i];
         }
         c.mem_write16(vpb + kMixFlags, static_cast<u16>(flags));
-        c.mem_write32(vpb + kSyncFlags, c.mem_read32(vpb + kSyncFlags) | 0x12u);
+        AxVoiceWordAccess{c, words}.or_flags(vpb, 0x12u);
     });
-    own(kSetVoiceSrcRatio, "AXSetVoiceSrcRatio", [](Cpu& c) {
+    own(kSetVoiceSrcRatio, "AXSetVoiceSrcRatio", [words](Cpu& c) {
         const u32 vpb = c.gpr[3];
         const u32 scale_bits = c.mem_read32(c.gpr[2] + kSrcRatioScaleSda2);
         float scale;
@@ -406,11 +412,13 @@ inline void install(Cpu& cpu) {
         if (value > kSrcRatioMax) value = kSrcRatioMax;
         c.mem_write16(vpb + kSrcRatioHigh, static_cast<u16>(value >> 16));
         c.mem_write16(vpb + kSrcRatioLow, static_cast<u16>(value));
-        c.mem_write32(vpb + kSyncFlags, c.mem_read32(vpb + kSyncFlags) | 0x80000u);
+        AxVoiceWordAccess{c, words}.or_flags(vpb, 0x80000u);
     });
-    const auto sync = [](Cpu& c, u32 vpb, u32 clear, u32 set) {
-        c.mem_write32(vpb + kSyncFlags, (c.mem_read32(vpb + kSyncFlags) & ~clear) | set);
+    const auto sync = [words](Cpu& c, u32 vpb, u32 clear, u32 set) {
+        const AxVoiceWordAccess word{c, words};
+        word.set(vpb, AxVoiceWords::kFlags, (word.get(vpb, AxVoiceWords::kFlags) & ~clear) | set);
     };
+    const auto set_depop = [words](Cpu& c, u32 vpb) { AxVoiceWordAccess{c, words}.set(vpb, AxVoiceWords::kDepop, 1u); };
     own(kSetVoiceSrcType, "AXSetVoiceSrcType", [sync](Cpu& c) {
         const u32 vpb = c.gpr[3], pb = vpb + kEmbeddedPb;
         switch (static_cast<s32>(c.gpr[4])) {  // signed compares; other values change nothing
@@ -423,12 +431,12 @@ inline void install(Cpu& cpu) {
         }
         sync(c, vpb, 0, 1u);
     });
-    own(kSetVoiceState, "AXSetVoiceState", [sync](Cpu& c) {
+    own(kSetVoiceState, "AXSetVoiceState", [sync, set_depop](Cpu& c) {
         const u32 vpb = c.gpr[3];
         const u16 state = static_cast<u16>(c.gpr[4]);
         c.mem_write16(vpb + kStateHalfword, state);
         sync(c, vpb, 0, 4u);
-        if (state == 0) c.mem_write32(vpb + kDepopWord, 1u);
+        if (state == 0) set_depop(c, vpb);
     });
     own(kSetVoiceAddr, "AXSetVoiceAddr", [sync](Cpu& c) {
         const u32 vpb = c.gpr[3], src = c.gpr[4], dst = vpb + kAddrBlock;
@@ -450,18 +458,18 @@ inline void install(Cpu& cpu) {
         for (u32 i = 0; i < 14; i += 2) c.mem_write16(vpb + kSrcBlock + i, c.mem_read16(src + i));
         sync(c, vpb, 0x80000u, 0x40000u);
     });
-    own(kFreeVoice, "AXFreeVoice", [](Cpu& c) {
+    own(kFreeVoice, "AXFreeVoice", [words, set_depop](Cpu& c) {
         const u32 vpb = c.gpr[3];
         unlink_from_stack(c, vpb);
-        if (c.mem_read16(vpb + kStateHalfword) == 1) c.mem_write32(vpb + kDepopWord, 1u);
-        set_pb_default(c, vpb);
+        if (c.mem_read16(vpb + kStateHalfword) == 1) set_depop(c, vpb);
+        set_pb_default(c, vpb, words);
         c.mem_write32(vpb, c.mem_read32(kStackHeads));  // push on the free stack (priority 0)
         c.mem_write32(kStackHeads, vpb);
         c.mem_write32(vpb + kPriorityWord, 0u);
     });
     // AXAcquireVoice(priority, dropCallback, context) -> AXVPB*: the free stack first; else the lowest-priority voice of a
     // priority below the request (its tail, or the sole element), told through its drop callback with interrupts off.
-    own(kAcquireVoice, "AXAcquireVoice", [](Cpu& c) {
+    own(kAcquireVoice, "AXAcquireVoice", [words, set_depop](Cpu& c) {
         const u32 priority = c.gpr[3], callback = c.gpr[4], context = c.gpr[5];
         u32 voice = c.mem_read32(kStackHeads);
         if (voice != 0) c.mem_write32(kStackHeads, c.mem_read32(voice));
@@ -484,7 +492,7 @@ inline void install(Cpu& cpu) {
                 }
                 if (taken == 0) continue;
                 voice = taken;
-                if (c.mem_read16(voice + kStateHalfword) == 1) c.mem_write32(voice + kDepopWord, 1u);
+                if (c.mem_read16(voice + kStateHalfword) == 1) set_depop(c, voice);
                 const u32 drop = c.mem_read32(voice + 0x10u);
                 if (drop != 0) {
                     const u32 saved_msr = c.msr();
@@ -512,7 +520,7 @@ inline void install(Cpu& cpu) {
             c.mem_write32(voice + kPriorityWord, priority);
             c.mem_write32(voice + 0x10u, callback);
             c.mem_write32(voice + 0x14u, context);
-            set_pb_default(c, voice);
+            set_pb_default(c, voice, words);
         }
         c.gpr[3] = voice;
     });
@@ -548,8 +556,8 @@ inline void install(Cpu& cpu) {
         c.mem_write32(c.gpr[13] + kSdaMixHookA, c.gpr[3]);
         c.mem_write32(c.gpr[13] + kSdaMixHookB, c.gpr[4]);
     });
-    own(kMixUpdateSettings, "MIXUpdateSettings", [](Cpu& c) { mix_update_settings(c); });
-    own(kMixInitChannel, "MIXInitChannel", [](Cpu& c) { mix_init_channel(c); });
+    own(kMixUpdateSettings, "MIXUpdateSettings", [words](Cpu& c) { mix_update_settings(c, words); });
+    own(kMixInitChannel, "MIXInitChannel", [words](Cpu& c) { mix_init_channel(c, words); });
     own(kMixReleaseChannel, "MIXReleaseChannel", [channel_of](Cpu& c) { c.mem_write32(channel_of(c), 0u); });
     own(kMixSetInput, "MIXSetInput", [channel_of](Cpu& c) {
         const u32 channel = channel_of(c);

@@ -88,7 +88,23 @@ constexpr u32 kSaveMagic = 0x4B474B53u;  // 'SKGK'
 // of the audio block; versions before 31 hold it in guest memory (the SDK's PB array) and load by taking that over.
 // 32: the frame builder's two next-frame lists are native (AxLists, native_ax_frame.h), saved after the PB image; older versions hold
 // them in guest memory (the SDK's command-list slots) and load by parsing those.
-constexpr u32 kSaveVersion = 33u;
+// 34 (2026-11-17): a trailing u64, the frames handed to the renderer on this timeline (System::render_frames_total),
+// so a restored run's reports continue the count. Versions before 34 restore none and the count continues from the
+// process's own. (One day of builds wrote version 33 files that already end in this u64; they are read as such.)
+// The state report prints this number, so every replay reference hash of state.json moved with it: the user's
+// decision of 2026-11-17, references regenerated in tools/native/gate_references.json.
+// 2026-11-21, no bump (FORMAT BOUNDARY): the native arenas (motion clip pool, GCAX sound banks, CRI's stream ring)
+// left the guest window and are native storage of their components. Each component writes its own bytes, as the
+// record of the window's region list that version 24-34 files hold for it (same base, size, committed bytes, kind and
+// name, after the window's regions under the same count: native_arena_images / GuestMemory::save_state's `others`),
+// and takes it back on load (arena_record below). The layout is byte-for-byte version 34's, so files of every
+// supported version load here and this build's files load in a version-34 build; the record's base is a label now.
+constexpr u32 kSaveVersion = 34u;
+#if !defined(GEKKO_CARD_MODEL)
+// The memory-card record of the checkpoint when the image has no card model (native/win N1): NativeCard::kChannels
+// channels, each idle. The format is unchanged, so the version is not bumped.
+constexpr u8 kIdleCardChannels = 2u;
+#endif
 // 33: no layout change; the AX frame is native and its guest bodies (__AXOutNewFrame, the AI / DSP callbacks, the DSP mailbox) are gone. States of
 // older versions are converted at load (audio_state.cpp); one saved while the CPU was inside one of those bodies has no code to resume in and
 // faults at the first DSP register access.
@@ -142,6 +158,18 @@ bool adopt_aram_image(System& system, const u8* image, std::string& why) {
         if (!system.motion_store().adopt_pool(pool, bytes, image + pool, why)) return false;
     }
     return true;
+}
+
+// A record of the region list that names a native arena (by its label): its bytes go to the arena's component.
+// 1 taken, -1 refused (the file's record does not fit the component), 0 not an arena's record.
+int arena_record(System& system, const GuestMemory::Record& record, std::string& why) {
+    if (record.base == NativeMotionStore::kRecordLabel)
+        return system.motion_store().restore_image(record.size, record.committed, record.bytes, why) ? 1 : -1;
+    SoundArena* store = record.base == NativeSoundBanks::kRecordLabel   ? &system.sound_banks().arena()
+                        : record.base == NativeStreamRing::kRecordLabel ? &system.stream_ring().arena()
+                                                                        : nullptr;
+    if (store == nullptr) return 0;
+    return store->restore_image(record.size, record.committed, record.bytes, why) ? 1 : -1;
 }
 
 RendererStateHooks& renderer_hooks() {
@@ -223,6 +251,15 @@ bool invalidate_restored_shadow_render_history(System& system) noexcept {
 // ---------------------------------------------------------------------------
 
 u32 save_state_version() noexcept { return kSaveVersion; }
+
+std::vector<NativeArenaImage> native_arena_images(System& system) {
+    std::vector<NativeArenaImage> images;
+    NativeArenaImage image;
+    if (system.sound_banks().arena().image(image)) images.push_back(image);
+    if (system.stream_ring().arena().image(image)) images.push_back(image);
+    if (system.motion_store().image(image)) images.push_back(image);
+    return images;
+}
 
 const char* renderer_state_kind_name(RendererStateKind kind) noexcept {
     switch (kind) {
@@ -353,7 +390,9 @@ bool save_state(System& system, const std::filesystem::path& path, std::string* 
 
     // The card's working image is the host file: commit what the persistence
     // debounce still holds, so the file matches the machine saved below.
+#if defined(GEKKO_CARD_MODEL)
     system.card().flush();
+#endif
 
     std::vector<u8> blob;
     blob.reserve(static_cast<std::size_t>(system.guest_memory().committed_bytes()) + (48u << 20));
@@ -377,7 +416,15 @@ bool save_state(System& system, const std::filesystem::path& path, std::string* 
         // 0 (RendererStateHooks::own_words) and put back right after.
         GEKKO_PROFILE_ZONE("mem/savestate ram");
         [[maybe_unused]] const std::size_t before = blob.size();
-        with_renderer_words_cleared(system, [&] { system.guest_memory().save_state(blob); });
+        system.publish_ax_output_to_guest();  // the AX output passes are native storage; the file keeps them in the guest image
+        system.publish_ax_voice_words_to_guest();  // likewise the voices' sync bookkeeping words
+        system.publish_motion_banks_to_guest();  // and the motion bank registry's state block (B003)
+        // The native arenas' own records follow the window's regions (FORMAT BOUNDARY, kSaveVersion).
+        std::vector<GuestMemory::Record> arenas;
+        for (const NativeArenaImage& image : native_arena_images(system))
+            arenas.push_back(GuestMemory::Record{image.label, image.size, image.committed, GuestMemory::RegionKind::Arena,
+                                                 image.name, image.bytes});
+        with_renderer_words_cleared(system, [&] { system.guest_memory().save_state(blob, arenas); });
         GEKKO_PROFILE_VALUE(blob.size() - before);
     }
 
@@ -400,7 +447,14 @@ bool save_state(System& system, const std::filesystem::path& path, std::string* 
 #else
         System::save_idle_immediate_state(blob);
 #endif
+#if defined(GEKKO_CARD_MODEL)
         system.card().save_state(blob);
+#else
+        // FORMAT BOUNDARY (native/win N1): the checkpoint keeps the record an idle card wrote (NativeCard::save_state:
+        // the channel count, then per channel no pending completion and result 0), so checkpoints written before the
+        // card model left the image still load and new ones load in a tree that has it.
+        System::save_idle_card_state(blob);
+#endif
         system.ipl().save_state(blob);
         if (system.native_expand_jobs() != nullptr) {  // enable_file_api creates the four services together
             system.native_jobs().save_state(blob);
@@ -440,6 +494,7 @@ bool save_state(System& system, const std::filesystem::path& path, std::string* 
         state::put<u32>(blob, static_cast<u32>(block.size()));
         state::put_bytes(blob, block.data(), block.size());
     }
+    state::put<u64>(blob, system.render_frames_total());  // version 34
 
     std::error_code ec;
     const std::filesystem::path parent = path.parent_path();
@@ -612,7 +667,21 @@ bool load_state(System& system, const std::filesystem::path& path, std::string* 
         // unmapped.
         GEKKO_PROFILE_ZONE("mem/savestate restore ram");
         std::string why;
-        if (!system.guest_memory().load_state(cursor, end, why)) return bad(("guest memory: " + why).c_str());
+        // Each native arena's record restores its own storage (arena_record; in place where the storage has the
+        // record's size). An arena the file does not name is not part of the restored machine: its storage goes.
+        bool named_motion = false, named_banks = false, named_ring = false;
+        const bool restored = system.guest_memory().load_state(
+            cursor, end, why, [&](const GuestMemory::Record& record, std::string& reason) {
+                const int taken = arena_record(system, record, reason);
+                named_motion = named_motion || (taken > 0 && record.base == NativeMotionStore::kRecordLabel);
+                named_banks = named_banks || (taken > 0 && record.base == NativeSoundBanks::kRecordLabel);
+                named_ring = named_ring || (taken > 0 && record.base == NativeStreamRing::kRecordLabel);
+                return taken;
+            });
+        if (!restored) return bad(("guest memory: " + why).c_str());
+        if (!named_motion) system.motion_store().discard();
+        if (!named_banks) system.sound_banks().arena().discard();
+        if (!named_ring) system.stream_ring().arena().discard();
         if (version < kFirstVersionWithoutAram) {
             u64 count = 0;
             if (!state::get<u64>(cursor, end, count) || count != kAramImageBytes) return bad("ARAM image");
@@ -644,7 +713,22 @@ bool load_state(System& system, const std::filesystem::path& path, std::string* 
 #else
         if (!System::load_idle_immediate_state(cursor, end)) return bad("native immediate geometry (an open primitive)");
 #endif
+#if defined(GEKKO_CARD_MODEL)
         if (!system.card().load_state(cursor, end)) return bad("native card");
+#else
+        {
+            // The idle card record (see the save side). A checkpoint taken with a card completion in flight belongs
+            // to the card model's test tree and cannot be continued by an image without it.
+            u8 channels = 0;
+            if (!state::get<u8>(cursor, end, channels) || channels != kIdleCardChannels) return bad("native card");
+            for (u8 channel = 0; channel < kIdleCardChannels; ++channel) {
+                u8 kind = 0;
+                s32 result = 0;
+                if (!state::get<u8>(cursor, end, kind) || !state::get<s32>(cursor, end, result)) return bad("native card");
+                if (kind != 0u) return bad("native card (a card completion is pending; this image has no card model)");
+            }
+        }
+#endif
         if (!system.ipl().load_state(cursor, end)) return bad("native IPL services");
         // Without mounted assets (the unit tests' System) the four services are idle: their blocks are read into
         // idle instances and dropped.
@@ -745,6 +829,15 @@ bool load_state(System& system, const std::filesystem::path& path, std::string* 
             std::fprintf(stderr, "[savestate] version 19 has no decoder/mixer history; "
                                  "audio continuation may differ until history is rebuilt.\n");
         }
+        if (version >= 34u || (version == 33u && static_cast<std::size_t>(end - cursor) == sizeof(u64))) {
+            u64 render_frames = 0;
+            if (!state::get<u64>(cursor, end, render_frames)) return bad("render frame count");
+            system.rebase_render_frames(render_frames);
+        }
+        system.import_ax_output_from_guest();  // the AX output passes: read back from the restored guest image
+        system.import_ax_voice_words_from_guest();  // and the voices' sync bookkeeping words
+        // the motion bank registry (B003): rebuilt from the restored image's bank list and state block
+        if (!system.import_motion_banks_from_guest()) return bad("motion bank list");
         if (cursor != end) return bad("trailing data");
     }
     {

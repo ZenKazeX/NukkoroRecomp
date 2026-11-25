@@ -428,6 +428,7 @@ Cpu::Cpu(GuestMemory& memory)
 Cpu::~Cpu() {
     fm_unregister(this);
     memory_.remove_translation_listener(this);
+    if (unmapped_access_stops_) memory_.set_retired_access_stop(nullptr, nullptr);
 }
 
 void Cpu::reset() {
@@ -582,6 +583,14 @@ void Cpu::rebuild_hle_slots() noexcept {
     hle_slots_all_ = all;
     hle_shared_.clear();
     std::fill(std::begin(hle_slots_), std::end(hle_slots_), all ? kHleSlotAll : kHleSlotEmpty);
+    // cpu/opt2: the occupancy bits hle_clear tests first. Every bit is set here and cleared below only for a slot
+    // that is still kHleSlotEmpty when the table is complete, so a clear bit always means an empty slot.
+    // GEKKO_PF_HLE_BITMAP=0 (A/B control) leaves every bit set: hle_clear is then the slot test alone.
+    static const bool bitmap = [] {
+        const char* e = std::getenv("GEKKO_PF_HLE_BITMAP");
+        return !(e != nullptr && e[0] == '0' && e[1] == '\0');
+    }();
+    std::fill(std::begin(hle_occupied_), std::end(hle_occupied_), u8{0xFF});
     if (all) return;
     for (std::size_t i = 0; i < hle_.size(); ++i) {
         const HleEntry& entry = *hle_[i];
@@ -591,6 +600,13 @@ void Cpu::rebuild_hle_slots() noexcept {
         slot = (slot == kHleSlotEmpty && !reserved_value) ? entry.address : kHleSlotAll;
         hle_slot_entry_[index] = static_cast<u32>(i);  // read only while the slot names this address
         hle_slot_ptr_[index] = hle_[i].get();          // likewise: the hot paths take the entry from here
+    }
+    if (bitmap) {
+        for (u32 index = 0; index < kHleSlotCount; ++index) {
+            if (hle_slots_[index] == kHleSlotEmpty) {
+                hle_occupied_[index >> 3] = static_cast<u8>(hle_occupied_[index >> 3] & ~(1u << (index & 7u)));
+            }
+        }
     }
     // Each shared slot's hooks, listed together: one pass over the hooks, then grouped by slot (install_hle rebuilds
     // per hook, so this stays linear in the hook count).
@@ -851,6 +867,14 @@ GEKKO_NOINLINE void native_owner_missing(Cpu& cpu, u32 address) {
 }
 }  // namespace
 
+#if defined(__clang__) && !defined(SHADOW_CPU_REFERENCE_BUILD)
+// The rest of the inline serve_native_owner (cpu.h): the slot did not name the owner (then the exact filter decides,
+// as below), or the owner declined (then nothing is called again).
+void Cpu::serve_native_owner_cold(u32 address, bool declined) {
+    if (!declined && try_hle(address)) return;
+    native_owner_missing(*this, address);
+}
+#else
 void Cpu::serve_native_owner(u32 address) {
     // The owner's slot names exactly this address (rebuild_hle_slots; verification and a latched fault fill every slot
     // with kHleSlotAll, so neither reaches here): call the handler straight from the flat slot table - no find_hle,
@@ -876,6 +900,7 @@ void Cpu::serve_native_owner(u32 address) {
     }
     native_owner_missing(*this, address);
 }
+#endif
 
 void Cpu::request_stop(StopReason reason, const std::string& detail) {
     // Raise the stop flag first, ahead of the first-writer-wins guard.
@@ -1398,6 +1423,11 @@ void Cpu::unmapped_access(u32 address, u32 bytes, bool write, u64 value) {
     } else if (address < 0x80000000u) {
         what = "an address below the program image (a null pointer or a GameCube physical address)";
         owner = "nothing: the game's address window has no physical addresses (docs/memory-architecture-20261006)";
+    } else if (GuestMemory::in_retired_arenas(address)) {
+        what = "the native arenas' former range 0x90000000-0x9FFFFFFF (the motion clip pool, the GCAX sound banks, "
+               "CRI's stream ring: guest-window regions until 2026-11-21)";
+        owner = "native storage of NativeMotionStore / SoundArena, reached only through their native APIs; a pool "
+                "address is a handle, never a guest pointer";
     } else if (const GuestMemory::Region* region = memory_.region_at(address)) {
         what = GuestMemory::kind_name(region->kind);
         owner = "a range of the region that is reserved but not committed";
@@ -1422,6 +1452,12 @@ void Cpu::unmapped_access(u32 address, u32 bytes, bool write, u64 value) {
     // Contain the unwinding native code: every later access is suppressed and
     // no call runs until reset() or load_state() replaces the machine.
     latch_memory_fault(address, write, true);
+}
+
+void Cpu::retired_host_access(void* context, u32 address, u32 bytes, bool write, u64 value) {
+    Cpu& cpu = *static_cast<Cpu*>(context);
+    if (cpu.memory_fault_.latched) return;  // stopped already: the first access is the one named
+    cpu.unmapped_access(address, bytes, write, value);
 }
 
 // Host diagnostic peeks (audit memory-model-4). These used to be the

@@ -31,7 +31,7 @@ your disc, so please keep it to yourself.
 - Optional, for Japanese voices: the **Japanese** release (game ID **GUPJ8P**), extracted into a different folder (see
   [Japanese voices](#japanese-voices))
 - [Visual Studio 2026](https://visualstudio.microsoft.com/downloads/) with the *Desktop development with C++* workload
-- [CMake](https://cmake.org/download/) 3.25 or newer
+- CMake 3.25 or newer. The Visual Studio workload above installs one (*C++ CMake tools for Windows*) and the setup finds it there; a separate [CMake](https://cmake.org/download/) install works too
 - [Python 3](https://www.python.org/downloads/)
 - The Microsoft Edge WebView2 Runtime (included in Windows 11; on Windows 10 the setup offers the download)
 

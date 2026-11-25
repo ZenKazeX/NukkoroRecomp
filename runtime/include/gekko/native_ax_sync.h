@@ -20,11 +20,17 @@
 //    depop record read them, and that went with the list (step 3b).
 //  - afterwards the dirty / write-ring words of every synced voice are cleared (+0x1C +0x20 +0x24 +0x28, +0x30 = self + 0x34).
 // The cache invalidate / store calls of the original have no effect on guest memory here and are not performed.
+//
+// The dirty / depop / write-ring words (+0x1C +0x20 +0x24 +0x28 +0x30) are native storage when an AxVoiceWords is given
+// (ax_voice_words.h, native/win N9); the profile's per-voice sync counter (sda 0x5DA8) is counted in a register and
+// stored once per frame instead of being read and written in guest memory per voice (same final value).
 
 #include <cstddef>
+#include <cstdio>
 #include <string>
 
 #include "gekko/ax_pb_image.h"
+#include "gekko/ax_voice_words.h"
 #include "gekko/cpu.h"
 #include "gekko/types.h"
 
@@ -69,8 +75,8 @@ inline void push32(Cpu& c, u32 e, const Pb& pb, u32 offset) { pb.w32(offset, c.m
 // The pending-write ring: vpb+0x28 words between vpb+0x34 and the DSP's update list. With the dirty bit 0x80 the guest's list goes to the
 // DSP; with the whole-block bit 0x80000000 the original copies the list back the other way (DSP side -> AXVPB), which is what the first
 // arm of __AXSyncPB does.
-inline void copy_write_ring(Cpu& c, AxPbImage& image, u32 vpb, u32 index, bool to_dsp) {
-    const u32 count = c.mem_read32(vpb + 0x28u);
+inline void copy_write_ring(Cpu& c, AxPbImage& image, u32 vpb, u32 index, bool to_dsp, const AxVoiceWordRef& word) {
+    const u32 count = word.get(AxVoiceWords::kRingCount);
     if (count == 0u || index >= AxPbImage::kCount) return;
     for (u32 i = 0; i < count; ++i) {
         if (to_dsp) image.set_ring_word(index, i, c.mem_read32(vpb + 0x34u + 4u * i));
@@ -78,14 +84,12 @@ inline void copy_write_ring(Cpu& c, AxPbImage& image, u32 vpb, u32 index, bool t
     }
 }
 
-// 0x80386474 __AXSyncPB.
-inline void sync_pb(Cpu& c, AxPbImage& image, u32 vpb) {
-    const u32 sda = c.gpr[13];
-    c.mem_write32(sda + kSdaSyncCount, c.mem_read32(sda + kSdaSyncCount) + 1u);
+// 0x80386474 __AXSyncPB. The original also counts the call in sda 0x5DA8: the caller (sync_pbs) does, once per frame.
+inline void sync_pb(Cpu& c, AxPbImage& image, u32 vpb, const AxVoiceWordRef& word) {
     const u32 e = vpb + kEmbedded;
     const u32 index = c.mem_read32(vpb + 0x18u);
     const Pb pb{image, index};
-    const u32 flags = c.mem_read32(vpb + 0x1Cu);
+    const u32 flags = word.get(AxVoiceWords::kFlags);
     if (flags == 0u) {  // nothing pending: the DSP's state and position come back
         c.mem_write16(e + 0xE, pb.r16(0xE));
         c.mem_write16(e + 0x64, pb.r16(0x64));
@@ -95,7 +99,7 @@ inline void sync_pb(Cpu& c, AxPbImage& image, u32 vpb) {
     }
     if ((flags & 0x80000000u) != 0u) {  // a whole new parameter block
         for (u32 off = 0; off <= 0xCCu; off += 4u) push32(c, e, pb, off);
-        copy_write_ring(c, image, vpb, index, false);
+        copy_write_ring(c, image, vpb, index, false, word);
         return;
     }
     if ((flags & 0x1u) != 0u) {
@@ -116,7 +120,7 @@ inline void sync_pb(Cpu& c, AxPbImage& image, u32 vpb) {
     }
     if ((flags & 0x80u) != 0u) {
         copy16(c, e, pb, 0x44, 0x4C);
-        copy_write_ring(c, image, vpb, index, true);
+        copy_write_ring(c, image, vpb, index, true, word);
     }
     if ((flags & 0x100u) != 0u) copy16(c, e, pb, 0x52, 0x62);
     if ((flags & 0x400u) != 0u) {
@@ -160,25 +164,39 @@ inline void clear_pb_ramps(const Pb& pb) {
 }
 
 // 0x80386BC0 __AXSyncPBs(cycles): see the header comment.
-inline void sync_pbs(Cpu& c, AxPbImage& image) {
+inline void sync_pbs(Cpu& c, AxPbImage& image, AxVoiceWords* words = nullptr) {
     const u32 sda = c.gpr[13];
-    c.mem_write32(sda + kSdaSyncCount, 0u);
+    const AxVoiceWordAccess access{c, words};
+    if (words != nullptr && words->verify_guest_untouched) {
+        u32 address = 0u, found = 0u, expected = 0u;
+        if (words->guest_differs(c.guest_memory(), address, found, expected)) {
+            char detail[160];
+            std::snprintf(detail, sizeof(detail),
+                          "AX voice sync word at 0x%08X was written by code that is not an AX owner (0x%08X, this runtime left 0x%08X)",
+                          address, found, expected);
+            c.request_stop(StopReason::ExecutionFault, detail);
+            return;
+        }
+    }
+    u32 synced = 0u;  // the original's per-call counter (sda 0x5DA8)
     u32 total = c.mem_read32(sda + kSdaCycles) + 0x10000u + c.gpr[3] - 0x55F0u;
     const u32 budget = c.mem_read32(sda + kSdaBudget);
-    const auto clear_after_sync = [&](u32 vpb) {
-        c.mem_write32(vpb + 0x1Cu, 0u);
-        c.mem_write32(vpb + 0x20u, 0u);
-        c.mem_write32(vpb + 0x28u, 0u);
-        c.mem_write32(vpb + 0x24u, 0u);
-        c.mem_write32(vpb + 0x30u, vpb + 0x34u);
+    const auto clear_after_sync = [](const AxVoiceWordRef& word) {
+        word.set(AxVoiceWords::kFlags, 0u);
+        word.set(AxVoiceWords::kDepop, 0u);
+        word.set(AxVoiceWords::kRingCount, 0u);
+        word.set(AxVoiceWords::kWord24, 0u);
+        word.set(AxVoiceWords::kRingPointer, word.vpb + 0x34u);
     };
     for (u32 priority = 0x1F; priority >= 1u; --priority) {
         u32 vpb = c.mem_read32(kStackHeads + (priority << 2));
         while (vpb != 0u) {
             const Pb pb{image, c.mem_read32(vpb + 0x18u)};
-            const bool running = c.mem_read16(vpb + 0x146u) == 1u || c.mem_read32(vpb + 0x28u) != 0u;
+            const AxVoiceWordRef word = access.of(vpb);  // resolved once per voice
+            const bool running = c.mem_read16(vpb + 0x146u) == 1u || word.get(AxVoiceWords::kRingCount) != 0u;
             if (!running) {
-                sync_pb(c, image, vpb);
+                sync_pb(c, image, vpb, word);
+                ++synced;
             } else {
                 if (c.mem_read16(vpb + 0x140u) != 2u)
                     total += c.mem_read32(kCostTable + (static_cast<u32>(c.mem_read16(vpb + 0x1DEu)) << 2));
@@ -190,28 +208,30 @@ inline void sync_pbs(Cpu& c, AxPbImage& image) {
                 total += (b + a) + 0x8Cu;
                 total += d;
                 if (budget > total) {
-                    sync_pb(c, image, vpb);
+                    sync_pb(c, image, vpb, word);
+                    ++synced;
                 } else {  // dropped: the console DSP could not have mixed it
                     clear_pb_ramps(pb);
                     c.mem_write16(vpb + 0x146u, 0);
                     push_callback_stack(c, vpb);
                 }
             }
-            clear_after_sync(vpb);
+            clear_after_sync(word);
             vpb = c.mem_read32(vpb);
         }
     }
     c.mem_write32(sda + kSdaTotalCost, total);
+    c.mem_write32(sda + kSdaSyncCount, synced);
     for (u32 vpb = c.mem_read32(kStackHeads); vpb != 0u; vpb = c.mem_read32(vpb)) {  // the free stack
         const Pb pb{image, c.mem_read32(vpb + 0x18u)};
-        c.mem_write32(vpb + 0x20u, 0u);
+        access.of(vpb).set(AxVoiceWords::kDepop, 0u);
         clear_pb_ramps(pb);
     }
 }
 
-inline void install(Cpu& cpu, AxPbImage& image) {
-    cpu.install_hle(kSyncPBs, [&image](Cpu& c) {
-        sync_pbs(c, image);
+inline void install(Cpu& cpu, AxPbImage& image, AxVoiceWords* words = nullptr) {
+    cpu.install_hle(kSyncPBs, [&image, words](Cpu& c) {
+        sync_pbs(c, image, words);
         return true;  // an owner never declines
     }, std::string("AX sync: __AXSyncPBs"));
 }

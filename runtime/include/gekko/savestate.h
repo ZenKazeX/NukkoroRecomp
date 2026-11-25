@@ -46,6 +46,7 @@
 #include <type_traits>
 #include <vector>
 
+#include "gekko/native_arena_storage.h"
 #include "gekko/types.h"
 
 namespace gekko {
@@ -153,6 +154,11 @@ RendererStateKind renderer_state_kind(System& system) noexcept;
 // reading 0, as a savestate writes them, and puts them back afterwards. At a
 // boundary only (no translated code running).
 void with_renderer_words_cleared(System& system, const std::function<void()>& body);
+
+// The native arenas (the GCAX sound banks, CRI's stream ring, the motion clip pool: native storage of their
+// components since 2026-11-21, gekko/native_arena_storage.h) that exist, in the order a run from boot creates them -
+// the order their records follow the guest window's regions in a checkpoint and in the state report.
+std::vector<NativeArenaImage> native_arena_images(System& system);
 
 // A savestate's header, read without restoring anything.
 struct StateHeader {

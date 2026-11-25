@@ -22,6 +22,27 @@
 
 namespace {
 using namespace gekko;
+
+// Second arrangement (native/win N9): the voices' sync bookkeeping words in native storage (ax_voice_words.h). The
+// guest's copy is imported before every owner call and published after it, so the comparison with the original
+// stays "all guest memory"; g_native_evidence counts owner calls after which the guest copy was still stale, i.e.
+// the owner really worked on the native words.
+bool g_native_words = false;
+AxVoiceWords g_words;
+unsigned g_native_evidence = 0;
+AxVoiceWords* words_or_null() { return g_native_words ? &g_words : nullptr; }
+void before_owner(GuestMemory& memory) {
+    if (g_native_words) g_words.import_from_guest(memory);
+}
+void after_owner(GuestMemory& memory) {
+    if (!g_native_words) return;
+    for (u32 i = 0; i < AxVoiceWords::kCount; ++i)
+        if (g_words.voice[i] != g_words.guest[i]) {
+            ++g_native_evidence;
+            break;
+        }
+    g_words.publish_to_guest(memory);
+}
 u32 g_extra[5] = {0, 0, 0, 0, 0};  // r6..r10 of the next call (MIXInitChannel)
 unsigned g_acquired = 0, g_acquire_null = 0, g_callbacks = 0;
 constexpr u32 kStack = 0x817E0000u, kReturn = 0x817FF000u, kR2 = 0x805FA780u, kR13 = 0x805EC500u;
@@ -82,7 +103,7 @@ struct Machine {
 
 struct Owner {
     Machine m;
-    explicit Owner(const char* path) : m(path) { ax_voice::install(m.cpu); }
+    explicit Owner(const char* path) : m(path) { ax_voice::install(m.cpu, words_or_null()); }
     void call(u32 entry, u32 r3, u32 r4) {
         const u32 msr = m.cpu.msr();
         m.cpu.reset();
@@ -91,7 +112,9 @@ struct Owner {
         m.cpu.gpr[13] = kR13;
         m.cpu.gpr[3] = r3;
         m.cpu.gpr[4] = r4;
+        before_owner(m.memory);
         require(m.cpu.try_hle(entry), "the owner declined the call");
+        after_owner(m.memory);
     }
 };
 
@@ -124,7 +147,9 @@ unsigned compare(Machine& a, Owner& b, u32 entry, u32 vpb, u32 r4, double f1, bo
     b.m.cpu.gpr[5] = r5;
     for (unsigned i = 0; i < 5; ++i) b.m.cpu.gpr[6 + i] = g_extra[i];
     b.m.cpu.gpr[1] = kStack;
+    before_owner(b.m.memory);
     require(b.m.cpu.try_hle(entry), "the owner declined the call");
+    after_owner(b.m.memory);
     require(a.cpu.msr() == b.m.cpu.msr(), "the machine state register differs");
     require(a.cpu.fpr[31].bits[0] == b.m.cpu.fpr[31].bits[0], "f31 differs");
     if (entry == ax_voice::kAcquireVoice) {
@@ -444,6 +469,10 @@ int main(int argc, char** argv) {
     try {
         require(argc > 1, "usage: ax_voice_contract_tests <main.dol>");
         run(argv[1]);
+        g_native_words = true;
+        g_acquired = g_acquire_null = g_callbacks = 0; run(argv[1]);
+        if (g_native_evidence == 0u) throw std::runtime_error("the native-words arrangement never left the guest copy stale: the owners did not use the native words");
+        std::printf("PASS again with the voices' sync words in native storage (%u owner calls changed native words the guest copy did not yet hold)\n", g_native_evidence);
     } catch (const std::exception& error) {
         std::fprintf(stderr, "FAIL: %s\n", error.what());
         return 1;

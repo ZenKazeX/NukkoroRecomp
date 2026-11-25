@@ -13,6 +13,7 @@
 #include "assets/light_slots.h"
 #include "gekko/cpu.h"
 #include "gekko/gc_addr.h"
+#include "gekko/native_effect_update.h"
 #include "gekko/uv_anim_time.h"
 #include "rw_driver.h"
 
@@ -756,6 +757,8 @@ void RwDriver::matfx_layers(Cpu& c, u32 fx, u32 fx_kind, u32 geometry_flags, flo
 u32 RwDriver::pipeline_atomic(Cpu& c, u32 pipeline, u32 atomic) {
     ++stats_.atomics;
     tag_draws(c);
+    // Independent frame (render/frame_interp.h): the atomic is the object these draws show. Host-only.
+    builder_.set_key(atomic);
     const u32 geometry = c.mem_read32(atomic + layout::kAtomicGeometry);
     if (geometry == 0u)
         return pipeline;
@@ -1544,6 +1547,7 @@ void RwDriver::shared_uv(Cpu& c, u32 material, u32 geometry, u32 fx_kind, render
 void RwDriver::draw_proxy_atomic(Cpu& c, u32 atomic, const render::Float3x4& world, render::LightSetId lights,
                                  bool world_lit, bool world_ambient, const render::Recipe& recipe, float cutoff,
                                  const render::Float3x4* palette, u32 bone_count, bool uva) {
+    builder_.set_key(0u);  // one atomic stands in at many places: no identity to follow between frames
     const u32 geometry = c.mem_read32(atomic + layout::kAtomicGeometry);
     if (geometry == 0u)
         return;
@@ -1718,7 +1722,24 @@ void RwDriver::particle_batch(Cpu& c, u32 atomic, const render::Material& materi
                      recipe.alpha_cutoff, pass_camera_.frame.m[0][3], pass_camera_.frame.m[1][3],
                      pass_camera_.frame.m[2][3], pass_camera_.near_plane, pass_camera_.far_plane);
     }
-    builder_.particles(batch, particle_records_.data(), count, recipe);
+    // The records' identities: the units the effect system's fill wrote, one per record in the same order, when the
+    // fill before this draw was this tank's (gekko/native_effect_update.h). Any other producer's records carry none.
+    // Walked only while the independent frame reads them: in the coupled mode this costs one load per batch.
+    const render::ParticleTag* tags = nullptr;
+    u32 unit = 0;
+    if (gekko::effect_update::particle_identities_wanted() && gekko::effect_update::last_fill(atomic, &unit)) {
+        particle_tags_.resize(count);
+        u32 i = 0;
+        for (; i < count && unit != 0u; ++i) {
+            particle_tags_[i].id = unit;
+            const u32 age_bits = c.mem_read32(unit + gekko::effect_update::kUnitAge);
+            std::memcpy(&particle_tags_[i].age, &age_bits, sizeof(float));
+            unit = c.mem_read32(unit + gekko::effect_update::kUnitNext);
+        }
+        if (i == count && unit == 0u)  // the list is exactly the records
+            tags = particle_tags_.data();
+    }
+    builder_.particles(batch, particle_records_.data(), count, recipe, tags);
     ++stats_.particle_batches;
     stats_.particles += count;
 }
@@ -1854,6 +1875,7 @@ render::MeshHandle RwDriver::sector_mesh(Cpu& c, u32 sector) {
 u32 RwDriver::pipeline_sector(Cpu& c, u32 pipeline, u32 sector) {
     ++stats_.sectors;
     tag_draws(c, render::EffectLayer::None, true);  // a land class's sector (layers.cpp), else the world
+    builder_.set_key(0u);  // the land does not move
     if (c.mem_read16(sector + layout::kSectorVertexCount) == 0u)
         return pipeline;
     const render::MeshHandle mesh = sector_mesh(c, sector);

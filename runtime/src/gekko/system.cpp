@@ -1,7 +1,9 @@
 #include "gekko/system.h"
+#include "gekko/native_sound_ampdb.h"
 #include "gekko/thread_name.h"  // ES-T1
 
 #include "gekko/camera.h"
+#include "gekko/host_files.h"  // save_trace::claim_owner (native/win N1)
 #include "gekko/native_axfx_effects.h"
 #include "gekko/native_guest_scheduler.h"
 #include "gekko/native_os_arena_clock.h"
@@ -9,6 +11,8 @@
 #include "gekko/native_trk.h"
 #include "gekko/native_gx_display.h"
 #include "gekko/native_gx_texobj.h"
+#include "gekko/native_shoe_jets.h"
+#include "gekko/native_rw_alloc.h"
 #include "gekko/native_driver_callbacks.h"
 #include "gekko/menu_backgrounds.h"
 #include "gekko/world_anchor.h"
@@ -48,6 +52,7 @@
 #include <limits>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -628,8 +633,27 @@ System::System() : cpu_(memory_) {
     cpu_.set_lifted(&lifted_);
     audio_ = std::make_unique<NativeAudio>(cpu_, memory_, *interrupts_);
     audio_->set_ax_frame(ax_frame::kAiCallback, [this](Cpu& c, u32 scratch, u32 step, u32& target, u32& r3, u32& r4) {
+        // Timing of the audio frame (AxMixerReport::frame_*): a pending guest call ends when the frame is entered
+        // again; the native part is this call. Host clocks only; nothing the guest can observe.
+        const auto entered = std::chrono::steady_clock::now();
+        if (ax_frame_call_pending_) {
+            const u64 waited = static_cast<u64>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(entered - ax_frame_call_start_).count());
+            ax_report_.frame_calls_ns += waited;
+            if (ax_frame_call_is_callback_) ax_report_.frame_callback_ns += waited;
+            ax_frame_call_pending_ = false;
+        }
+        ++ax_report_.frame_steps;
         ax_frame::Call call;
-        if (!ax_frame::frame_advance(c, ax_engine_, scratch, step, call)) return false;
+        const bool calls = ax_frame::frame_advance(c, ax_engine_, scratch, step, call);
+        const auto left = std::chrono::steady_clock::now();
+        ax_report_.frame_native_ns +=
+            static_cast<u64>(std::chrono::duration_cast<std::chrono::nanoseconds>(left - entered).count());
+        if (!calls) return false;
+        ax_frame_call_pending_ = true;
+        ax_frame_call_start_ = left;
+        ax_frame_call_is_callback_ = call.frame_callback;  // told by the frame: the timing reads no guest memory
+        if (ax_frame_call_is_callback_) ++ax_report_.frame_callbacks;
         target = call.target;
         r3 = call.r3;
         r4 = call.r4;
@@ -641,6 +665,7 @@ System::System() : cpu_(memory_) {
     // The layout objects' range: the game's draw distance (docs/DRAW_DISTANCE.md).
     object_range_ = std::make_unique<NativeObjectRange>(cpu_);
     motion_store_ = std::make_unique<NativeMotionStore>(cpu_, memory_);
+    motion_banks_ = std::make_unique<MotionBankStore>(cpu_, memory_, *motion_store_);
     sound_banks_ = std::make_unique<NativeSoundBanks>(cpu_, memory_);
     stream_ring_ = std::make_unique<NativeStreamRing>(cpu_, memory_);
     // Attached effects follow their object as it is this frame (docs/RENDER_FLICKER.md "Fourth bug").
@@ -653,7 +678,9 @@ System::System() : cpu_(memory_) {
 #endif
     // The memory card (the PC's save storage under the game's CARD file
     // system) and the OS's other external-interface clients.
+#if defined(GEKKO_CARD_MODEL)
     card_ = std::make_unique<NativeCard>(cpu_, memory_, *interrupts_);
+#endif
     save_store_ = std::make_unique<SaveStore>(cpu_, memory_);
     ipl_ = std::make_unique<NativeIpl>(cpu_, *interrupts_);
     // The console's reset and boot controls (OSResetSystem ends the program).
@@ -1622,6 +1649,7 @@ bool System::native_health_bar_draw(Cpu& cpu) {
 #endif  // G5
 }
 
+#if defined(GEKKO_CARD_MODEL)
 void System::set_memory_card_path(std::filesystem::path path,
                                   std::filesystem::path gci_working_path) {
     // The settings fall back to the factory image first, so an unusable card
@@ -1630,6 +1658,7 @@ void System::set_memory_card_path(std::filesystem::path path,
     card_->set_path(std::move(path), std::move(gci_working_path));
     if (card_->present()) ipl_->bind_card(card_->source_path(), card_->backing_path(), card_->image());
 }
+#endif
 
 void System::set_save_file(std::filesystem::path save) {
     ipl_->bind_save_folder(save.parent_path());
@@ -1637,6 +1666,7 @@ void System::set_save_file(std::filesystem::path save) {
     save_store_active_ = true;
 }
 
+#if defined(GEKKO_CARD_MODEL)
 bool System::memory_card_present() const noexcept {
     return card_->present();
 }
@@ -1644,6 +1674,7 @@ bool System::memory_card_present() const noexcept {
 const std::filesystem::path& System::memory_card_backing_path() const noexcept {
     return card_->backing_path();
 }
+#endif
 
 const std::filesystem::path& System::memory_card_sram_path() const noexcept {
     return ipl_->companion_path();
@@ -2002,7 +2033,7 @@ void System::start() {
     if (const char* path = std::getenv("GEKKO_CALL_CENSUS"); path != nullptr && path[0] != '\0') {
         static std::FILE* census = std::fopen(path, "w");
         if (census != nullptr) {
-            std::fputs("address,game_ticks,r3,r4,lr,f1,r3_word\n", census);
+            std::fputs("address,game_ticks,r3,r4,lr,f1,r3_word,hash\n", census);
             // GEKKO_CALL_CENSUS_R3_WORD=<hex offset>: also the word at r3 + offset (0 when unmapped).
             static const char* word_env = std::getenv("GEKKO_CALL_CENSUS_R3_WORD");
             static const long word_offset = word_env != nullptr ? std::strtol(word_env, nullptr, 16) : -1;
@@ -2020,9 +2051,20 @@ void System::start() {
                             if ((at_word & 3u) == 0u && cpu.guest_memory().mapped(GcAddr(at_word), 4u))
                                 word = cpu.mem_read32(at_word);
                         }
-                        std::fprintf(census, "%08X,%llu,%08X,%08X,%08X,%016llX,%08X\n", address,
+                        // GEKKO_CALL_CENSUS_HASH=<register>:<hex bytes>: also an FNV-1a hash of the bytes the register
+                        // points at (0 when unmapped), to tell calls with the same contents apart from calls with new ones.
+                        static const char* hash_env = std::getenv("GEKKO_CALL_CENSUS_HASH");
+                        static const unsigned hash_reg = hash_env != nullptr ? static_cast<unsigned>(std::strtoul(hash_env, nullptr, 10)) & 31u : 0u;
+                        static const u32 hash_bytes = hash_env != nullptr && std::strchr(hash_env, ':') != nullptr
+                                                          ? static_cast<u32>(std::strtoul(std::strchr(hash_env, ':') + 1, nullptr, 16)) : 0u;
+                        u32 hash = 0u;
+                        if (hash_bytes != 0u && cpu.guest_memory().mapped(GcAddr(cpu.gpr[hash_reg]), hash_bytes)) {
+                            hash = 2166136261u;
+                            for (u32 i = 0; i < hash_bytes; ++i) hash = (hash ^ cpu.mem_read8(cpu.gpr[hash_reg] + i)) * 16777619u;
+                        }
+                        std::fprintf(census, "%08X,%llu,%08X,%08X,%08X,%016llX,%08X,%08X\n", address,
                                      static_cast<unsigned long long>(cpu.game_clock().now()), cpu.gpr[3], cpu.gpr[4],
-                                     cpu.lr, static_cast<unsigned long long>(cpu.fpr[1].bits[0]), word);
+                                     cpu.lr, static_cast<unsigned long long>(cpu.fpr[1].bits[0]), word, hash);
                         return false;
                     },
                     "call census (declines)");
@@ -2267,7 +2309,9 @@ void System::start() {
                     "copy (stale trace)");
             chara_colli_.trace_stale_contacts(cpu_);
         }
-        if (chara_colli_pass_) {  // --chara-colli-pass (opt-in): the manager's pair pass natively
+        // The manager's pair pass natively (CMake SHADOW_CHARA_COLLI_PASS; GEKKO_CHARA_COLLI_PASS=0/1 and
+        // --[no-]chara-colli-pass override it at run time).
+        if (chara_colli_pass_ >= 0 ? chara_colli_pass_ != 0 : CharaColliIntrinsic::pass_default()) {
             cpu_.install_hle(
                 CharaColliIntrinsic::kPass, [this](Cpu& cpu) { return chara_colli_.serve_pass(cpu); },
                 "CharaColli manager pair pass");
@@ -2870,13 +2914,16 @@ void System::start() {
     // The AX library's registration entries (gekko/native_ax_registration.h, audio-ax step 1).
     ax_registration::install(cpu_);
     // The AX voice setters (gekko/native_ax_voice.h, audio-ax stage c).
-    ax_voice::install(cpu_);
+    ax_voice::install(cpu_, &ax_voice_words_);
     // The native AX sync (gekko/native_ax_sync.h, audio-ax stage e step 1).
-    ax_sync::install(cpu_, ax_pb_image_);
+    ax_sync::install(cpu_, ax_pb_image_, &ax_voice_words_);
     ax_frame::install(cpu_, ax_lists_);
     ax_engine_.image = &ax_pb_image_;
     ax_engine_.lists = &ax_lists_;
+    ax_engine_.words = &ax_voice_words_;
     ax_engine_.mix = [this](u32 list) { run_ax_mix(list); };
+    ax_engine_.clear_output = [this] { ax_output_.fill(0); };
+    audio_->set_pass_source([this](u32 address, u32 bytes) -> const s16* { return ax_output_native(address, bytes); });
     ax_frame::install_engine(cpu_, ax_engine_);
     // The OS font library (gekko/native_os_font.h): OSGetFontEncode natively, the ROM font loaders never entered.
     os_font::install(cpu_);
@@ -2888,6 +2935,7 @@ void System::start() {
     s1_chars::install(cpu_);  // s1/core: the character sweep query 0x80021934 (gekko/native_s1_chars.h)
     s1_shptr::install(cpu_);  // s1/core: the counted-handle family (gekko/native_s1_shptr.h)
     s1_core::install(cpu_);  // s1/core: the layout manager's one-player scan (gekko/native_s1_core.h, docs/re/core.md)
+    sound_ampdb::install(cpu_);  // the GCAX dB -> amplitude search 0x8043C3F0 (gekko/native_sound_ampdb.h, docs/re/sound.md)
     s1_target2::install(cpu_);  // s1/target: the target registry's query layer (gekko/native_s1_target2.h, docs/re/target-tree.md); hooks only with the switch on
     mtn_pose::install(cpu_);  // the pose pass: bone-tree walk, node callbacks, slerp chain (gekko/native_mtn_pose.h, docs/agents/opt-mtn2.md)
     // The effect system's particle update (gekko/native_effect_update.h): the command updates and the unit step.
@@ -2934,9 +2982,11 @@ void System::start() {
     frame_limiter_->install();
     object_range_->install();
     motion_store_->install();
+    motion_banks_->install();
     sound_banks_->install();
     stream_ring_->install();
     attached_effects_->install();
+    shoe_jets::install(cpu_);  // Shadow's fourth shoe jet (gekko/native_shoe_jets.h; SHADOW_RETAIL_SHOE_JETS=1: retail)
     gx_sync_->install();
     gx_state::install(cpu_);  // the GX state API (docs/agents/card-saves.md, gxA): served, nothing kept
     gx_display::install(cpu_);  // the display-copy and FIFO-setup leaves (gekko/native_gx_display.h)
@@ -2945,13 +2995,20 @@ void System::start() {
     rw_raster::install(cpu_, *gx_sync_);  // the RenderWare raster life cycle (docs/agents/card-saves.md, rwR2)
     // The game's saves: the native save store (one host GCI) or, with set_memory_card_path (the reference tests'
     // oracle), the card model.
+#if defined(GEKKO_CARD_MODEL)
     if (save_store_active_) save_store_->install();
     else card_->install();
+#else
+    // No card model in this image: the save store is the only save service, and a System without one cannot run.
+    if (!save_store_active_) throw std::runtime_error("System::start: no save file set (set_save_file) and this image has no memory-card model");
+    save_store_->install();
+#endif
     ipl_->install();
     rw_image::install(cpu_);  // RwImageGetRaster (standard function 6; docs/agents/gx-rw-plan.md, rwR2 step 3)
     rw_pixel::install(cpu_);  // the GameCube driver's colour <-> pixel standard functions (docs/agents/gx-rw-plan.md, rwR2)
     (void)os_settings::install(cpu_);  // the console settings accessors, released through the UnlockSram owner above
     os_heap::install(cpu_);  // the OS heap routines (OSInitAlloc / OSCreateHeap / OSAllocFromHeap / OSFreeToHeap ...)
+    rw_alloc::install(cpu_);  // RwMalloc / RwFree and their wrappers as one native call each (gekko/native_rw_alloc.h; GEKKO_RW_ALLOC=0: the bodies)
     os_panic::install(cpu_);  // OSPanic: the game own end (The End.) ends the program
     os_misc::install(cpu_, debug_console_);  // OSGetConsoleType and the empty DVD callback 0x80378320
 #if !defined(SHADOW_RENDER_LIFTED)
@@ -2972,6 +3029,7 @@ void System::start() {
     trk::install(cpu_);
     os_machine_check::install(cpu_, debug_console_);  // DMAErrorHandler: prints its two lines, then stops (no host machine check)
     math_affine::install(cpu_);  // the 3x4 matrix leaves 0x8040C6CC / C5EC / C7E0 (docs/agents/os-other.md, step 15)
+    math_mtx::install(cpu_);     // the SDK's PSMTXConcat 0x8037976C (docs/hal/HAL_DETACHMENT.md section 4 step 1)
     adx_decode::install(cpu_);   // the ADX stereo 4-bit block decoder 0x803C5B2C (docs/agents/opt-adx.md)
     ax_mix_alloc::install(cpu_);  // the AX MIX table alloc / free wrappers (class D of audio.ax)
     reset_controls_->install();
@@ -3241,6 +3299,26 @@ void System::install_boot_stage_hooks() {
         },
         "boot-stage: Select Mode hand-off at AdvFolder's first phase request");
 
+    // --boot-scene (2026-11-18). 0x801746F0(holder, event id) builds the TPjsEventActionManager that loads
+    // event\eventNNNN_scene?.one (format string 0x804C4E54, read in its constructor 0x80173EF4). Measured on
+    // --boot-2p stg0800: ShowAction starts event 950 at 1.517 s and 978 at 5.600 s. The first start of the run is
+    // given the requested id; every later one is the game's own. Developer navigation only.
+    if (boot_stage_.scene != 0u) {
+        constexpr u32 kStartEventScene = 0x801746F0u;
+        install_chained_hle(
+            kStartEventScene,
+            [this](Cpu& cpu) {
+                if (boot_stage_.scene_replaced != 0u) return false;
+                boot_stage_.scene_replaced = cpu.gpr[4];
+                cpu.gpr[4] = boot_stage_.scene;
+                std::fprintf(stderr, "[boot-stage] scene event%04u started in place of event%04u at %.3f s of game time\n",
+                             boot_stage_.scene, boot_stage_.scene_replaced,
+                             static_cast<double>(cpu.game_clock().now()) / static_cast<double>(kGameTicksPerSecond));
+                return false;  // declined: the guest function runs with the new argument
+            },
+            "boot-scene: the first in-stage event scene start");
+    }
+
     // --boot-cutscene. The story sequence's two loops ask the story manager for their next entry with
     // 0x8025D810(story, &entry, kind, pop 0): 0x802D21B4 (a new game's, kind 0) from 0x802D21E4, and 0x802D1900 (kind
     // 1) from 0x802D1948. The entry is {event, stage, kind}; one without a stage becomes a cutscene step:
@@ -3275,6 +3353,27 @@ void System::install_boot_stage_hooks() {
                     return true;
                 }
                 if (boot_stage_.cutscene_handed) return false;
+                if (boot_stage_.story_stage != 0u && boot_stage_.single_story_load) {
+                    // One load (2026-11-18). The loop at 0x802D21B4 plays an entry whose stage equals its current-stage
+                    // word (+0xC) through the PlayAction branch (0x802D22B8), which is how a new game opens Westopolis:
+                    // measured, one stage load and no release. An entry with another stage builds `new
+                    // StageManager(stage, 1)` first, which loads and releases the stage 0.55 s later before the play
+                    // load - stg0202's release then destroys the BKTankController before its tank exists and faults.
+                    // Set the word in the first answer so the first branch taken is the play branch.
+                    const u32 first = cpu.gpr[4];
+                    cpu.mem_write32(cpu.gpr[31] + 0xCu, boot_stage_.story_stage);
+                    cpu.mem_write32(first, 0u);
+                    cpu.mem_write32(first + 4u, boot_stage_.story_stage);
+                    cpu.mem_write32(first + 8u, cpu.gpr[5]);
+                    cpu.gpr[3] = 1u;
+                    boot_stage_.cutscene_handed = true;
+                    boot_stage_.story_stage_play_handed = true;
+                    std::fprintf(stderr, "[boot-stage] stg%04u handed to PlayStory as its current stage (one load) at %.3f s "
+                                         "of game time\n",
+                                 boot_stage_.story_stage,
+                                 static_cast<double>(cpu.game_clock().now()) / static_cast<double>(kGameTicksPerSecond));
+                    return true;
+                }
                 const u32 entry = cpu.gpr[4];
                 cpu.mem_write32(entry, boot_stage_.cutscene);
                 cpu.mem_write32(entry + 4u, boot_stage_.story_stage);
@@ -3888,6 +3987,30 @@ void System::import_ax_pb_image_from_guest() {
     memory_.read_block(AxPbImage::kBase, ax_pb_image_.pb.data(), static_cast<u32>(ax_pb_image_.pb.size()));
     memory_.read_block(AxPbImage::kRingBase, ax_pb_image_.ring.data(), static_cast<u32>(ax_pb_image_.ring.size()));
 }
+
+// The guest image holds the passes as big-endian bytes (checkpoints, the state report); the native storage is host order.
+void System::publish_ax_output_to_guest() {
+    std::array<u8, kAxOutputBytes> bytes;
+    for (std::size_t i = 0; i < ax_output_.size(); ++i) {
+        const u16 sample = static_cast<u16>(ax_output_[i]);
+        bytes[i * 2u] = static_cast<u8>(sample >> 8);
+        bytes[i * 2u + 1u] = static_cast<u8>(sample);
+    }
+    (void)memory_.write(GcAddr(ax_frame::kOutBase), bytes.data(), bytes.size());
+}
+
+void System::import_ax_output_from_guest() {
+    std::array<u8, kAxOutputBytes> bytes;
+    if (!memory_.read(GcAddr(ax_frame::kOutBase), bytes.data(), bytes.size())) {
+        ax_output_.fill(0);
+        return;
+    }
+    for (std::size_t i = 0; i < ax_output_.size(); ++i) ax_output_[i] = static_cast<s16>(load_be16(bytes.data() + i * 2u));
+}
+
+void System::publish_motion_banks_to_guest() { motion_banks_->publish_to_guest(); }
+
+bool System::import_motion_banks_from_guest() { return motion_banks_->import_from_guest(); }
 
 void System::reset_host_audio_state() noexcept {
     ax_pb_image_.clear();
@@ -4791,11 +4914,22 @@ void System::run_ax_mix(u32 command_list) {
     }
     ax_report_.mixed_voices += stats.voices_mixed;
     if (stats.peak > ax_report_.peak) ax_report_.peak = stats.peak;
-    // The guest's audio interface buffer: 160 frames of {first, second} big-endian s16, first = the main bus mixed
-    // with pb+18 (the order this runtime's AI consumer has always read).
-    for (u32 index = 0; index < kSamples; ++index) {
-        memory_.write16(output + (index * 2u + 0u) * 2u, static_cast<u16>(mixed.left[index]));
-        memory_.write16(output + (index * 2u + 1u) * 2u, static_cast<u16>(mixed.right[index]));
+    // The audio interface pass: 160 frames of {first, second} s16, first = the main bus mixed with pb+18 (the order
+    // this runtime's AI consumer has always read).
+    // Native storage when the list's output is one of the engine's two passes (it always is in this game): host-order
+    // samples, no guest memory written, no byte order conversion. Any other address keeps the guest's big-endian writes.
+    if (s16* const native = ax_output_native(output, kSamples * 4u)) {
+        for (u32 index = 0; index < kSamples; ++index) {
+            native[index * 2u] = mixed.left[index];
+            native[index * 2u + 1u] = mixed.right[index];
+        }
+        ++ax_report_.output_native_frames;
+    } else {
+        for (u32 index = 0; index < kSamples; ++index) {
+            memory_.write16(output + (index * 2u + 0u) * 2u, static_cast<u16>(mixed.left[index]));
+            memory_.write16(output + (index * 2u + 1u) * 2u, static_cast<u16>(mixed.right[index]));
+        }
+        ++ax_report_.output_guest_frames;
     }
     ++ax_report_.mixed_frames;
     audio_audit::event(audio_audit::Lane::Guest, "mix-done", cpu_.game_clock().now(),
@@ -4931,11 +5065,20 @@ void System::move_clock_to(u64 when) {
     const u64 now = clock.now();
     if (when <= now) return;
     clock.set_now(when);
+#if defined(GEKKO_CARD_MODEL)
     card_->tick((when - now) * kDeviceCyclesPerTick);
+#else
+    // The thread that moves the game clock owns the save trace (host diagnostics; the card's tick used to claim it).
+    save_trace::claim_owner();
+#endif
 }
 
 void System::schedule_devices() {
+#if defined(GEKKO_CARD_MODEL)
     const u64 cycles = card_->cycles_until_persist();
+#else
+    const u64 cycles = ~0ull;  // no device with a deferred host write: the save store writes when the game saves
+#endif
     GameClock& clock = cpu_.game_clock();
     if (cycles == ~0ull) {
         clock.cancel(GameEvent::Devices);
@@ -5220,7 +5363,7 @@ std::string System::stop_report() const {
 
 std::string System::progress_report() const {
     std::ostringstream out;
-    char line[384];
+    char line[512];
     {
         const NativeVideo::Stats& video = video_->stats();
         std::snprintf(line, sizeof(line),
@@ -5301,6 +5444,7 @@ std::string System::progress_report() const {
             << s.options_exit_saves_skipped << ", boot languages " << s.boot_languages << "; stray card calls "
             << s.stray_card_calls << "\n";
     } else {
+#if defined(GEKKO_CARD_MODEL)
         const NativeCard::Stats& card = card_->stats();
         std::snprintf(line, sizeof(line),
                       "  Memory card A: %s, %llu probes, %llu mounts (%llu failed), %llu unmounts; "
@@ -5318,6 +5462,7 @@ std::string System::progress_report() const {
                       static_cast<unsigned long long>(card.callbacks),
                       static_cast<unsigned long long>(card.dropped_detached));
         out << line << "\n";
+#endif
         const NativeIpl::Stats& ipl = ipl_->stats();
         std::snprintf(line, sizeof(line),
                       "  IPL services: SRAM read %llu, %llu unlocks (%llu commits: %llu persisted, %llu "
@@ -5426,7 +5571,8 @@ std::string System::progress_report() const {
     std::snprintf(line, sizeof(line),
                   "  Native CharaColli pair pass: %llu calls, %llu served to the end; handed back to the guest: %llu "
                   "expired, %llu count, %llu cut short, %llu other getters; %llu distance tests, %llu narrow phases "
-                  "(%llu in contact); %llu checked against the guest body, %llu differed",
+                  "(%llu in contact); %llu checked against the guest body, %llu differed, %llu with a different dead "
+                  "stack",
                   static_cast<unsigned long long>(chara_colli_.pass_calls()),
                   static_cast<unsigned long long>(chara_colli_.pass_finished()),
                   static_cast<unsigned long long>(chara_colli_.pass_back(0)),
@@ -5437,7 +5583,8 @@ std::string System::progress_report() const {
                   static_cast<unsigned long long>(chara_colli_.pass_narrow()),
                   static_cast<unsigned long long>(chara_colli_.pass_contacts()),
                   static_cast<unsigned long long>(chara_colli_.pass_verified()),
-                  static_cast<unsigned long long>(chara_colli_.pass_differed()));
+                  static_cast<unsigned long long>(chara_colli_.pass_differed()),
+                  static_cast<unsigned long long>(chara_colli_.pass_dead_differed()));
     out << line << "\n";
     if (trace_stale_contacts_)
         out << chara_colli_.stale_summary();

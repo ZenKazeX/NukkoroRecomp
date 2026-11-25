@@ -35,6 +35,22 @@
 #define GEKKO_CPU_RESTRICT
 #endif
 
+// native/win: translation coverage (ppcrecomp --coverage, CMake SHADOW_RECOMP_COVERAGE; a measurement build only).
+// Every emitted body starts with GEKKO_COVER(<its row's address>); the generated table unit defines the marks and
+// writes the rows that ran at process exit (GEKKO_COVERAGE=<file>, united with what the file already lists).
+#if defined(SHADOW_RECOMP_COVERAGE)
+#include <cstdio>
+#include <cstdlib>
+namespace gekko {
+namespace recomp {
+// One byte per guest instruction word of the image's code; the generator passes a row's word index (no guest
+// address is named here: a literal in this file would be a liveness root, tools/ppcrecomp/liveness_roots.py).
+extern unsigned char g_cover[];
+}  // namespace recomp
+}  // namespace gekko
+#define GEKKO_COVER(word) (::gekko::recomp::g_cover[word] = 1)
+#endif
+
 namespace gekko {
 namespace recomp {
 
@@ -85,8 +101,18 @@ extern const u32 kLiftSiteWords[];
 // the generated code before the branch, so this only performs the
 // transfer. A linked call: the emitted site runs the callee's published
 // transfers after it (Cpu::finish_transfers).
-inline void call_indirect(Cpu& c, u32 target, u32 link) {
-    if (indirect_call_trace::enabled()) indirect_call_trace::record(link - 4u, target);   // observation only
+//
+// cpu/opt2: the two arms that are not the native call are out of line (the trace record, and the hand-back to the
+// dispatcher), each a tail call. With them in line the function needed a frame and four saved registers on every
+// indirect call for calls that almost never happen, and the usual path jumped over the trace record. The order
+// of effects is the old one: record (when tracing), LR, lookup, the native call or the hand-back.
+GEKKO_NOINLINE inline void call_indirect_miss(Cpu& c, u32 target, u32 link) {
+    // RC-gen-7: its own reason, and the site (a linked call's link is the word after it), so the fallback work list
+    // names the bctrl instead of site 0.
+    c.leave_to_dispatcher(target, FallbackReason::IndirectTarget, link - 4u);
+}
+GEKKO_NOINLINE inline void call_indirect_traced(Cpu& c, u32 target, u32 link) {
+    indirect_call_trace::record(link - 4u, target);   // observation only
     c.lr = link;
     if (const RecompiledCode* table = c.recompiled()) {
         if (const RecompiledCode::Fn native = table->lookup(target)) {
@@ -94,9 +120,23 @@ inline void call_indirect(Cpu& c, u32 target, u32 link) {
             return;
         }
     }
-    // RC-gen-7: its own reason, and the site (a linked call's link is the word after it), so the fallback work list
-    // names the bctrl instead of site 0.
-    c.leave_to_dispatcher(target, FallbackReason::IndirectTarget, link - 4u);
+    call_indirect_miss(c, target, link);
+}
+inline void call_indirect(Cpu& c, u32 target, u32 link) {
+    // cpu/opt4: usual answer first, the rare arm leaves (types.h, GEKKO_LIKELY): the shape MSVC 19.52 places out of line.
+    if (!indirect_call_trace::enabled()) GEKKO_LIKELY {
+    } else {
+        call_indirect_traced(c, target, link);
+        return;
+    }
+    c.lr = link;
+    if (const RecompiledCode* table = c.recompiled()) {
+        if (const RecompiledCode::Fn native = table->lookup(target)) {
+            native(c);
+            return;
+        }
+    }
+    call_indirect_miss(c, target, link);
 }
 
 // Branch to a register-held target without a link (bctr, blr to a non-return

@@ -3,6 +3,9 @@
 // disassembly cited there (python -B tools/doldis.py <address>:<count>); the
 // CARDControl layout is section 3's.
 
+// Compiled only with the card model (CMake SHADOW_CARD_MODEL: the save store's oracle in the tests tree).
+#if defined(GEKKO_CARD_MODEL)
+
 #include "gekko/native_card.h"
 
 #include <algorithm>
@@ -1151,3 +1154,5 @@ bool NativeCard::load_state(const u8*& cursor, const u8* end) {
 void NativeCard::reset() noexcept { pending_ = {}; }
 
 }  // namespace gekko
+
+#endif  // GEKKO_CARD_MODEL

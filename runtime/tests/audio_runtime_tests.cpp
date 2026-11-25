@@ -257,6 +257,41 @@ bool test_overflow_accounting() {
     return true;
 }
 
+// publish_frames (host-order samples, the native mixer's pass) queues exactly what publish_block queues for the same
+// samples as big-endian bytes: across the ring's wrap, and behind a partial sample publish_block left pending.
+bool test_host_order_frames() {
+    const auto host_range = [](u64 first, u64 count) {
+        std::vector<s16> samples(count * 2u);
+        for (u64 i = 0; i < count; ++i) {
+            samples[i * 2u] = left_of(first + i);
+            samples[i * 2u + 1u] = right_of(first + i);
+        }
+        return samples;
+    };
+    AudioRuntime runtime;
+    CHECK(runtime.open(manual_config(64)));
+    std::vector<s16> frames(64u * 2u);
+    const std::vector<s16> a = host_range(0u, 40u);
+    runtime.publish_frames(a.data(), 40u);
+    CHECK(runtime.consume_source_frames(frames.data(), 64u) == 40u);
+    for (u64 i = 0; i < 40u; ++i) CHECK(frames[i * 2u] == left_of(i) && frames[i * 2u + 1u] == right_of(i));
+    const std::vector<s16> b = host_range(40u, 40u);  // wraps the 64-frame ring
+    runtime.publish_frames(b.data(), 40u);
+    const std::vector<u8> c = encode_range(80u, 2u);   // big-endian bytes after host-order frames
+    runtime.publish_block(c.data(), 6u);               // frame 80 and half of frame 81 (carry 2)
+    const std::vector<s16> d = host_range(82u, 3u);    // host-order frames behind a pending carry
+    runtime.publish_frames(d.data(), 3u);              // byte stream: rest of 81 is NOT in it, so the carry pairs with 82's first half
+    CHECK(runtime.consume_source_frames(frames.data(), 64u) == 44u);
+    for (u64 i = 0; i < 41u; ++i) CHECK(frames[i * 2u] == left_of(40u + i) && frames[i * 2u + 1u] == right_of(40u + i));
+    // The carried half sample (left of 81) is completed by the first two bytes of what follows (left of 82), exactly
+    // as publish_block would complete it with the same samples as bytes.
+    CHECK(frames[41u * 2u] == left_of(81u) && frames[41u * 2u + 1u] == left_of(82u));
+    CHECK(frames[42u * 2u] == right_of(82u) && frames[42u * 2u + 1u] == left_of(83u));
+    const AudioRuntime::Report r = runtime.report();
+    CHECK(r.dropped_frames == 0u && r.produced_frames == 84u);
+    return true;
+}
+
 bool test_partial_sample_carry() {
     {
         AudioRuntime runtime;
@@ -1613,6 +1648,7 @@ int main(int argc, char** argv) {
         {"ring_spsc_stress_1e7", test_ring_spsc_stress},
         {"overflow_accounting", test_overflow_accounting},
         {"partial_sample_carry", test_partial_sample_carry},
+        {"host_order_frames", test_host_order_frames},
         {"epoch_reset", test_epoch_reset},
         {"concurrent_epoch_reset", test_concurrent_epoch_reset},
         {"null_mode", test_null_mode},

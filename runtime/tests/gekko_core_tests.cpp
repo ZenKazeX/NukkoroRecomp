@@ -2249,6 +2249,19 @@ void test_try_hle_filter_is_exact_for_any_hook_count() {
     }
     require(unhooked > 1000000u && cpu.hle_slow_calls() == slow,
             "no unhooked call may leave the inline filter (was: every call, 16 hooks > 8)");
+    // cpu/opt2: the entry thunks' filter (hle_clear: the occupancy bit, then the slot). It may only answer "clear"
+    // for an address try_hle rejects inline, never for a hooked one, and with sixteen hooks in 8192 slots it must
+    // answer "clear" for nearly every unhooked address (a set bit only costs the slot test).
+    u32 clear = 0;
+    for (u32 address = 0x80004000u; address < 0x80504000u; address += 4u) {
+        if (cpu.has_hle(address)) {
+            require(!cpu.hle_clear(address), "a hooked address must never pass the entry filter");
+        } else if (cpu.hle_clear(address)) {
+            ++clear;
+        }
+    }
+    require(clear > unhooked - unhooked / 256u && cpu.hle_slow_calls() == slow,
+            "the entry filter passes unhooked addresses without the slow path");
     for (const u32 hook : hooks) require(cpu.try_hle(hook), "every hooked address must be served");
     require(served == 16u && cpu.hle_slow_calls() == slow + 16u, "each hooked call takes the slow path once");
 
@@ -2258,6 +2271,8 @@ void test_try_hle_filter_is_exact_for_any_hook_count() {
     require(cpu.try_hle(0x80100000u) && cpu.try_hle(0x80101000u) && served == 18u,
             "hooks sharing a slot are both served");
     require(!cpu.try_hle(0x80102000u), "an unhooked address in a shared slot is still declined");
+    require(!cpu.hle_clear(0x80100000u) && !cpu.hle_clear(0x80101000u),
+            "hooks sharing a slot never pass the entry filter");
 
     // A handler that declines runs the native body.
     cpu.install_hle(0x80200000u, [](Cpu&) { return false; }, "declines");
@@ -2268,6 +2283,9 @@ void test_try_hle_filter_is_exact_for_any_hook_count() {
     slow = cpu.hle_slow_calls();
     cpu.try_hle(0x80300000u);
     require(cpu.hle_slow_calls() == slow + 1u, "while verifying every call reaches try_hle_slow");
+    for (u32 address = 0x80004000u; address < 0x80504000u; address += 0x404u) {
+        require(!cpu.hle_clear(address), "while verifying no address passes the entry filter");
+    }
     cpu.set_verify_recompiled(false);
     slow = cpu.hle_slow_calls();
     require(!cpu.try_hle(0x80300004u) && cpu.hle_slow_calls() == slow,

@@ -1,4 +1,5 @@
 #include "gekko/lifted_render.h"
+#include "gekko/native_effect_update.h"
 #include "gekko/native_rw_world.h"
 #include "gekko/native_rw_device_state.h"
 #include "gekko/native_rw_registry.h"
@@ -35,6 +36,8 @@
 
 #include "gekko/cpu.h"
 #include "render/effect_layers.h"
+#include "render/frame_interp.h"
+#include "render/frame_timeline.h"
 #include "src/gekko/effect_layer_overlay.h"
 #include "render/packet_queue.h"
 #include "render/present_trace.h"
@@ -122,6 +125,24 @@ struct LiftedRender::Impl {
         return n;
     }
     std::uint64_t render_failures = 0;
+    // Independent frame (LiftedRender::set_independent; UI thread, the counters under telemetry_mutex).
+    struct Independent {
+        bool on = false;
+        double rate_hz = 0.0;
+        // SHADOW_IF_REPEAT=1 (measurement): the newest game frame drawn again and again as it is - the cost of a
+        // picture without anything between frames. Counted as repeats, never as states between frames.
+        bool repeat = false;
+        render::FramePacket prev, cur, built;
+        bool have_prev = false, have_cur = false;
+        bool cur_shown = false;       // the newest frame has been shown as the game made it (alpha 1)
+        bool commit_pending = false;  // no picture has advanced the histories for the newest frame yet
+        render::PacketInterpolator interpolator;
+        render::FrameTimeline timeline;
+        std::int64_t next_slot_ns = 0;  // the cap's next start
+        void* timer = nullptr;          // a high-resolution waitable timer for the cap
+        LiftedRender::IndependentStats stats;
+        std::FILE* trace = nullptr;     // SHADOW_IF_TRACE=<csv>: one row per pair, one per picture
+    } independent;
     // Captures (the UI thread or the headless thread; armed from any thread by the development link).
     mutable std::mutex capture_mutex;
     LiftedCapture capture;
@@ -432,6 +453,12 @@ void LiftedRender::start_early(const LiftedRenderOptions& options) {
     e.thread = std::thread([&e, impl, renderer_options] { e.ok = impl->renderer.create(renderer_options, &e.error); });
 }
 
+void LiftedRender::settle_early() {
+    Early& e = early();
+    std::lock_guard<std::mutex> lock(e.mutex);
+    if (e.thread.joinable()) e.thread.join();
+}
+
 bool LiftedRender::start(const LiftedRenderOptions& options, std::string* error) {
     // pf-load: the creation start_early() began, taken over when it makes the same renderer.
     bool taken = false, early_ok = false;
@@ -522,7 +549,8 @@ void LiftedRender::set_fps_counter(bool on) { impl_->effect_overlay.set_fps_coun
 void LiftedRender::set_vsync(bool on) noexcept {
     const bool changed = impl_->options.vsync != on;
     impl_->options.vsync = on;
-    gekko::phase_lock::display_paced().store(on, std::memory_order_relaxed);
+    // Independent frame: the display paces the pictures, not the game's frames - nothing to lock the game clock to.
+    gekko::phase_lock::display_paced().store(on && !impl_->independent.on, std::memory_order_relaxed);
     if (changed) {
         // V-Sync off: nothing steers the game clock's phase (no vblank to lock to); it keeps the shift it has. On again:
         // the lock starts from new holds only - samples from before the switch measured another reference.
@@ -831,6 +859,8 @@ bool LiftedRender::present_newest(std::chrono::milliseconds wait, std::string* e
         return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(b - a).count());
     };
     if (sample) *sample = {};
+    if (impl_->independent.on && impl_->attached)
+        return present_independent(wait, error, sample);
     const bool timed = impl_->options.collect_timing;
     const auto wait_begin = timed ? Clock::now() : Clock::time_point{};
     // SHADOW_R2_CREDIT_FIRST=0 (A/B): take the packet first and wait for the swap chain's credit holding it, as before
@@ -1028,6 +1058,292 @@ bool LiftedRender::present_newest(std::chrono::milliseconds wait, std::string* e
     return true;
 }
 
+// ---- independent frame (docs/re/independent-frame/) -------------------------------------------------------------
+
+void LiftedRender::set_independent(bool on, double rate_hz) noexcept {
+    Impl::Independent& f = impl_->independent;
+    if (!(rate_hz > 0.0) || !std::isfinite(rate_hz))
+        rate_hz = 0.0;
+    const bool changed = f.on != on;
+    f.rate_hz = rate_hz;
+    f.next_slot_ns = 0;
+    if (!changed)
+        return;
+    f.on = on;
+    static const bool repeat = [] {
+        const char* v = std::getenv("SHADOW_IF_REPEAT");
+        return v != nullptr && v[0] == '1';
+    }();
+    f.repeat = repeat;
+    // The game thread tags its particles only while pictures are built between frames.
+    gekko::effect_update::want_particle_identities(on && !repeat);
+    if (on && f.trace == nullptr) {
+        if (const char* path = std::getenv("SHADOW_IF_TRACE"); path != nullptr && path[0] != '\0') {
+            f.trace = std::fopen(path, "w");
+            if (f.trace != nullptr)
+                std::fputs("row,steady_ns,frame,game_ticks,alpha,age_ms,commit,continuous,cut,keyed,followed,still,"
+                           "snapped,bones,cameras,object_step,camera_step,camera_turn_cos\n",
+                           f.trace);
+        }
+    }
+    // The game clock is not steered by the display while pictures are independent of the game's frames; back in the
+    // coupled mode the lock starts from new holds only (as after a V-Sync change).
+    gekko::phase_lock::display_paced().store(impl_->options.vsync && !on, std::memory_order_relaxed);
+    gekko::phase_lock::published_hold_ns().store(gekko::phase_lock::kNothingMeasured, std::memory_order_relaxed);
+    gekko::phase_lock::published_target_shift_ns().store(gekko::phase_lock::kNothingMeasured,
+                                                         std::memory_order_relaxed);
+    ++impl_->pacing_epoch;
+    if (!on) {
+        // The packets held go back; the next coupled frame is the newest the game pushes.
+        f.interpolator.clear();
+        f.timeline.reset();
+        if (f.have_cur)
+            impl_->renderer.finish_packets(f.cur.tick);
+        if (f.have_cur && impl_->driver)
+            impl_->driver->recycle_packet(std::move(f.cur));
+        f.prev = render::FramePacket{};
+        f.cur = render::FramePacket{};
+        f.have_prev = f.have_cur = f.cur_shown = f.commit_pending = false;
+    }
+}
+
+bool LiftedRender::independent() const noexcept { return impl_->independent.on; }
+
+LiftedRender::IndependentStats LiftedRender::independent_stats() const {
+    std::lock_guard<std::mutex> lock(impl_->telemetry_mutex);
+    return impl_->independent.stats;
+}
+
+bool LiftedRender::present_independent(std::chrono::milliseconds wait, std::string* error,
+                                       PresentationSample* sample) {
+    using Clock = std::chrono::steady_clock;
+    const auto steady_ns = [] {
+        return std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now().time_since_epoch()).count();
+    };
+    Impl& s = *impl_;
+    Impl::Independent& f = s.independent;
+    IndependentStats delta;  // this call's counts, added under the lock at the end
+    const auto publish = [&] {
+        std::lock_guard<std::mutex> lock(s.telemetry_mutex);
+        IndependentStats& t = f.stats;
+        t.game_frames += delta.game_frames;
+        t.game_frames_skipped += delta.game_frames_skipped;
+        t.iterations += 1u;
+        t.idle += delta.idle;
+        t.pictures += delta.pictures;
+        t.between += delta.between;
+        t.at_frame += delta.at_frame;
+        t.repeats += delta.repeats;
+        t.history_commits += delta.history_commits;
+        t.cuts += delta.cuts;
+        t.breaks += delta.breaks;
+        t.keyed += delta.keyed;
+        t.followed += delta.followed;
+        t.still += delta.still;
+        t.snapped += delta.snapped;
+        t.bones += delta.bones;
+        t.cameras += delta.cameras;
+        t.alpha_sum += delta.alpha_sum;
+        t.age_sum_ms += delta.age_sum_ms;
+        t.build_sum_ms += delta.build_sum_ms;
+        t.pair_sum_ms += delta.pair_sum_ms;
+        t.particles += delta.particles;
+        t.particles_tagged += delta.particles_tagged;
+        t.particles_followed += delta.particles_followed;
+        t.particles_still += delta.particles_still;
+        t.particles_born += delta.particles_born;
+        t.particles_reused += delta.particles_reused;
+        t.particles_placed += delta.particles_placed;
+        t.particle_batches += delta.particle_batches;
+        t.largest_particle_step = std::max(t.largest_particle_step, delta.largest_particle_step);
+        t.immediates += delta.immediates;
+        t.immediates_followed += delta.immediates_followed;
+        t.immediates_still += delta.immediates_still;
+        t.immediates_snapped += delta.immediates_snapped;
+        t.immediate_vertices += delta.immediate_vertices;
+        t.largest_immediate_step = std::max(t.largest_immediate_step, delta.largest_immediate_step);
+        t.largest_object_step = std::max(t.largest_object_step, delta.largest_object_step);
+        t.largest_camera_step = std::max(t.largest_camera_step, delta.largest_camera_step);
+        t.smallest_camera_turn_cos = std::min(t.smallest_camera_turn_cos, delta.smallest_camera_turn_cos);
+    };
+    // Nothing new to show - no frame yet, or the newest already shown as the game made it: wait for the game. A
+    // picture is never drawn twice (SHADOW_IF_REPEAT asks for exactly that, to measure it).
+    if (!f.have_cur || (f.cur_shown && !f.repeat)) {
+        if (!s.frames.wait_for_packet(wait)) {
+            delta.idle = 1u;
+            publish();
+            return true;
+        }
+    }
+    // The swap chain's credit first (with V-Sync the display's refresh paces the pictures), then the cap, and only
+    // then the newest game frame and the time the picture is placed at.
+    s.renderer.acquire_frame();
+    if (f.rate_hz > 0.0) {
+        const auto period = static_cast<std::int64_t>(1e9 / f.rate_hz);
+        std::int64_t now = steady_ns();
+        if (f.next_slot_ns == 0 || now - f.next_slot_ns > 4 * period)
+            f.next_slot_ns = now;  // the first picture, or far behind: start again from here
+        if (f.timer == nullptr)
+            f.timer = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+        // Sleep to within a millisecond of the slot, then yield up to it (a timer alone wakes 0.3-1.3 ms late).
+        const std::int64_t remaining = f.next_slot_ns - now;
+        if (f.timer != nullptr && remaining > 1'500'000) {
+            LARGE_INTEGER due;
+            due.QuadPart = -((remaining - 1'000'000) / 100);
+            if (SetWaitableTimer(static_cast<HANDLE>(f.timer), &due, 0, nullptr, nullptr, FALSE))
+                WaitForSingleObject(static_cast<HANDLE>(f.timer), 100);
+        }
+        while ((now = steady_ns()) < f.next_slot_ns)
+            SwitchToThread();
+        f.next_slot_ns += period;
+    }
+    render::FramePacket incoming;
+    if (s.frames.pop_newest(&incoming, std::chrono::milliseconds(0))) {
+        render::present_trace::record(render::present_trace::Ev::Pop, incoming.tick, incoming.game_ticks);
+        f.interpolator.clear();  // it points into the packets about to move
+        if (f.have_prev && s.driver)
+            s.driver->recycle_packet(std::move(f.prev));  // its vectors' capacity serves the game's next frame
+        f.prev = std::move(f.cur);
+        f.have_prev = f.have_cur;
+        f.cur = std::move(incoming);
+        f.have_cur = true;
+        f.cur_shown = false;
+        f.commit_pending = true;
+        // Every packet before this one is finished: no picture names its handles any more (a picture's draw list is
+        // always the newest frame's). The newest itself is finished only when the frame after it arrives - pictures
+        // of it are still to come, and a handle the game released while building it may be named by its draws.
+        if (f.cur.tick != 0u)
+            s.renderer.finish_packets(f.cur.tick - 1u);
+        delta.game_frames = 1u;
+        if (f.have_prev && f.cur.tick > f.prev.tick + 1u)
+            delta.game_frames_skipped = f.cur.tick - f.prev.tick - 1u;
+        // The frame as the game made it: the effect layer switches, then a capture asked of this frame (the exact
+        // frame, never a picture between two).
+        render::apply_effect_layers(f.cur, render::effect_layer_switches().state());
+        s.capture_filtered(f.cur);
+        const auto pair_begin = Clock::now();
+        f.timeline.arrive(f.cur.tick, f.cur.game_ticks, f.cur.pushed_ns);
+        const bool continuous = f.have_prev && f.timeline.continuous() && !f.repeat;
+        f.interpolator.pair(continuous ? &f.prev : nullptr, &f.cur);
+        delta.pair_sum_ms = std::chrono::duration<double, std::milli>(Clock::now() - pair_begin).count();
+        const render::InterpStats& p = f.interpolator.stats();
+        if (f.have_prev && !f.repeat) {
+            if (!continuous)
+                delta.breaks = 1u;
+            else if (p.cut)
+                delta.cuts = 1u;
+        }
+        delta.keyed = p.keyed;
+        delta.followed = p.followed;
+        delta.still = p.still;
+        delta.snapped = p.snapped;
+        delta.bones = p.bones;
+        delta.cameras = p.cameras;
+        delta.particles = p.particles;
+        delta.particles_tagged = p.particles_tagged;
+        delta.particles_followed = p.particles_followed;
+        delta.particles_still = p.particles_still;
+        delta.particles_born = p.particles_born;
+        delta.particles_reused = p.particles_reused;
+        delta.particles_placed = p.particles_placed;
+        delta.particle_batches = p.particle_batches;
+        delta.largest_particle_step = p.largest_particle_step;
+        delta.immediates = p.immediates;
+        delta.immediates_followed = p.immediates_followed;
+        delta.immediates_still = p.immediates_still;
+        delta.immediates_snapped = p.immediates_snapped;
+        delta.immediate_vertices = p.immediate_vertices;
+        delta.largest_immediate_step = p.largest_immediate_step;
+        delta.largest_object_step = p.largest_object_step;
+        delta.largest_camera_step = p.largest_camera_step;
+        delta.smallest_camera_turn_cos = p.smallest_camera_turn_cos;
+        if (f.trace != nullptr)
+            std::fprintf(f.trace, "pair,%lld,%llu,%llu,,,,%d,%d,%u,%u,%u,%u,%u,%u,%g,%g,%g\n",
+                         static_cast<long long>(f.cur.pushed_ns), static_cast<unsigned long long>(f.cur.tick),
+                         static_cast<unsigned long long>(f.cur.game_ticks), continuous ? 1 : 0, p.cut ? 1 : 0, p.keyed,
+                         p.followed, p.still, p.snapped, p.bones, p.cameras, p.largest_object_step,
+                         p.largest_camera_step, p.smallest_camera_turn_cos);
+    }
+    if (!f.have_cur) {
+        delta.idle = 1u;
+        publish();
+        return true;
+    }
+    const std::int64_t now_ns = steady_ns();
+    const bool placed = f.interpolator.paired() && !f.interpolator.stats().cut;
+    const float alpha = placed ? f.timeline.alpha(now_ns) : 1.0f;
+    if (alpha >= 1.0f && f.cur_shown && !f.repeat) {
+        // The newest frame is already on screen as it is and the game has made no other.
+        delta.idle = 1u;
+        publish();
+        return true;
+    }
+    GEKKO_PROFILE_ZONE("present/independent");
+    const auto build_begin = Clock::now();
+    f.interpolator.build(alpha, &f.built);
+    s.effect_overlay.append(f.built, s.renderer, s.width, s.height);
+    const auto render_begin = Clock::now();
+    delta.build_sum_ms = std::chrono::duration<double, std::milli>(render_begin - build_begin).count();
+    // The views' histories (the motion trail's feedback) advance once per game frame: by the first picture of it.
+    const bool commit = f.commit_pending;
+    f.commit_pending = false;
+    const bool ok = s.renderer.render(
+        f.built, s.options.vsync ? render::PresentMode::VSync : render::PresentMode::Immediate, error, nullptr, commit);
+    const auto render_end = Clock::now();
+    render::present_trace::record(render::present_trace::Ev::RenderEnd, f.cur.tick, ok ? 1u : 0u);
+    const double age_ms = f.timeline.age_ns(now_ns) / 1e6;
+    if (f.trace != nullptr)
+        std::fprintf(f.trace, "picture,%lld,%llu,%llu,%.5f,%.3f,%d,,,,,,,,,,,\n", static_cast<long long>(now_ns),
+                     static_cast<unsigned long long>(f.cur.tick), static_cast<unsigned long long>(f.cur.game_ticks),
+                     static_cast<double>(alpha), age_ms, commit ? 1 : 0);
+    if (s.options.collect_timing) {
+        const auto render_ns = static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(render_end - render_begin).count());
+        if (sample) {
+            sample->attempted = true;
+            sample->success = ok;
+            sample->index = s.presented + 1u;
+            sample->packet_tick = f.cur.tick;
+            sample->game_ticks = f.cur.game_ticks;
+            sample->render_present_ns = render_ns;
+            sample->finished_at = render_end;
+            sample->has_interval = s.have_present;
+            if (sample->has_interval)
+                sample->interval_ms = std::chrono::duration<double, std::milli>(render_end - s.last_present).count();
+        }
+        std::lock_guard<std::mutex> lock(s.telemetry_mutex);
+        ++s.timing.attempts;
+        s.timing.presents += ok ? 1u : 0u;
+        s.timing.failures += ok ? 0u : 1u;
+        s.timing.render_present_ns += render_ns;
+    }
+    if (!ok) {
+        ++s.render_failures;
+        publish();
+        return false;
+    }
+    delta.pictures = 1u;
+    if (commit)
+        delta.history_commits = 1u;
+    if (alpha >= 1.0f) {
+        if (f.cur_shown)
+            delta.repeats = 1u;
+        else
+            delta.at_frame = 1u;
+        f.cur_shown = true;
+    } else if (alpha > 0.0f) {
+        delta.between = 1u;
+    } else {
+        delta.at_frame = 1u;  // alpha 0: the frame before, as the game made its transforms
+    }
+    delta.alpha_sum = static_cast<double>(alpha);
+    delta.age_sum_ms = age_ms;
+    ++s.presented;
+    s.note_present(render_end);
+    publish();
+    return true;
+}
+
 LiftedRender::Telemetry LiftedRender::telemetry() const {
     Telemetry out;
     {
@@ -1097,6 +1413,33 @@ std::string LiftedRender::report_text() const {
     out << "[lifted-render] queue: pushed " << q.pushed << " popped " << q.popped
         << " dropped " << q.dropped << " shutdown discards " << q.discarded_on_close
         << " pending " << q.pending << "\n";
+    if (const IndependentStats i = independent_stats(); i.iterations != 0u) {
+        const double pictures = i.pictures != 0u ? static_cast<double>(i.pictures) : 1.0;
+        out << "[independent-frame] game frames taken " << i.game_frames << " (skipped " << i.game_frames_skipped
+            << "); pictures " << i.pictures << ": between two frames " << i.between << ", a frame as made "
+            << i.at_frame << ", repeats " << i.repeats << "; iterations " << i.iterations << " (idle " << i.idle
+            << "); history advanced " << i.history_commits << " times\n";
+        out << "[independent-frame] pairs: cuts " << i.cuts << " timeline breaks " << i.breaks << "; draws keyed "
+            << i.keyed << " followed " << i.followed << " still " << i.still << " shown as B " << i.snapped
+            << "; bones followed " << i.bones << " cameras followed " << i.cameras << "; largest object step "
+            << i.largest_object_step << " camera step " << i.largest_camera_step << " smallest camera turn cos "
+            << i.smallest_camera_turn_cos << "\n";
+        out << "[independent-frame] particles: " << i.particles << " tagged " << i.particles_tagged << " followed "
+            << i.particles_followed << " still " << i.particles_still << " shown as B: born " << i.particles_born
+            << " reused " << i.particles_reused << " placed " << i.particles_placed << "; batches followed "
+            << i.particle_batches << "; largest particle step " << i.largest_particle_step << "\n";
+        out << "[independent-frame] trails (world immediates with a key): " << i.immediates << " followed "
+            << i.immediates_followed << " still " << i.immediates_still << " shown as B " << i.immediates_snapped
+            << "; vertices followed " << i.immediate_vertices << "; largest vertex step " << i.largest_immediate_step
+            << "\n";
+        out << std::fixed << std::setprecision(4) << "[independent-frame] per picture: alpha mean "
+            << i.alpha_sum / pictures << ", newest frame's age " << i.age_sum_ms / pictures << " ms, packet build "
+            << i.build_sum_ms / pictures << " ms CPU; pairing "
+            << (i.game_frames != 0u ? i.pair_sum_ms / static_cast<double>(i.game_frames) : 0.0)
+            << " ms per game frame\n";
+        out.unsetf(std::ios::floatfield);
+        out << std::setprecision(6);
+    }
     out << "[lifted-render] renderer: frames " << r.frames << " last draws " << r.draws << " (skipped "
         << r.skipped_draws << ", all frames " << r.skipped_draws_total << ") pipelines " << r.pipelines << " textures "
         << r.textures << " meshes " << r.meshes << " (skinned " << r.skinned_meshes << ", delta-morphed "

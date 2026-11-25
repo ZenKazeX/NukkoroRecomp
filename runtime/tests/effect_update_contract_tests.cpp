@@ -16,6 +16,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <functional>
@@ -31,6 +32,7 @@ namespace eu = gekko::effect_update;
 constexpr u32 kReturn = 0x817FF000u, kStack = 0x817E0000u, kR2 = 0x805FA780u, kR13 = 0x805EC500u;
 constexpr u32 kArena = 0x81400000u, kArenaSize = 0x2800u;
 constexpr u32 kPoolGlobal = 0x805E25C8u;
+constexpr u32 kMagicDouble = 0x8051B848u;  // 0x4330000080000000 in the image
 constexpr u32 kScriptStep = 0x80429224u;
 constexpr u32 kDtorStub = 0x81500100u, kUpdateStub = 0x81500200u;
 // the particle renderer's draw: render-state get / set and the tank's render callback (stubs on both machines)
@@ -52,7 +54,22 @@ u32 g_seed = 0x0DDBA11u;
 u32 rnd() { g_seed = g_seed * 1664525u + 1013904223u; return g_seed >> 8 ^ (g_seed << 16); }
 u32 pick(u32 n) { return rnd() % n; }
 
+// The plain profile: nine fields in ten are ordinary values, so that most operations of a call have ordinary operands and
+// results (the owner's single-precision route, gekko/fast_single.h) while the exceptional classes still turn up beside them.
+bool g_plain = false;
+
 u32 float_word() {  // a float for a field: mostly ordinary, with every exceptional class represented
+    if (g_plain && pick(10) != 0) {
+        // ordinary values over a wide range of magnitudes: sums that cancel, products that stay ordinary
+        const u32 kind = pick(8);
+        float v = (static_cast<float>(pick(2000001)) - 1000000.0f) / 250000.0f;
+        if (kind == 0) v = static_cast<float>(static_cast<s32>(pick(2001)) - 1000) * 0.25f;  // short mantissas: exact sums, ties
+        else if (kind == 1) v *= 4096.0f;
+        else if (kind == 2) v *= 1.0f / 65536.0f;
+        u32 w;
+        std::memcpy(&w, &v, 4);
+        return w;
+    }
     const u32 r = pick(100);
     if (r < 62) {  // ordinary values in a useful range
         const float v = (static_cast<float>(pick(2000001)) - 1000000.0f) / 250000.0f;
@@ -83,10 +100,16 @@ u32 limit_float() {
     std::memcpy(&w, &v, 4);
     return w;
 }
-u64 dt_bits() {  // a float argument: always a value a single holds
-    switch (pick(10)) {
+u64 dt_bits() {  // a float argument: nearly always a value a single holds
+    switch (pick(g_plain ? 14 : 10)) {
         case 0: return single_to_double_bits(float_word());
         case 1: return single_to_double_bits(0u);
+        case 10: {  // (plain profile) a double that no single holds: the register is a double register
+            const float v = static_cast<float>(1u + pick(60000)) / 1000000.0f;
+            u32 w;
+            std::memcpy(&w, &v, 4);
+            return single_to_double_bits(w) | (1u + pick(0x0FFFFFFFu));
+        }
         default: {
             const float v = static_cast<float>(pick(60001)) / 1000000.0f;
             u32 w;
@@ -255,6 +278,11 @@ void build_system(Pair& p, Kind kind, bool scripts) {
     p.w(kSystem + 0x138u, rnd());
     p.w(kPoolGlobal, kPool);
     p.w(kPool + 4u, rnd());
+    // The int -> double bias of the alpha ramp is a constant the original loads from memory on every call: mostly the
+    // game's own value, now and then another one (an owner that assumes the value is caught).
+    const u32 bias = pick(16);
+    p.w(kMagicDouble, bias == 0 ? 0x43300000u : bias == 1 ? 0x43300001u : 0x43300000u);
+    p.w(kMagicDouble + 4u, bias == 0 ? 0u : bias == 1 ? rnd() : 0x80000000u);
     // vtables: [0] [4] destructor [0xC] update
     const u32 updates[5] = {eu::kAlphaRamp, eu::kScalar, eu::kVector, eu::kVector2D, kUpdateStub};
     for (u32 v = 0; v < 5u; ++v) {
@@ -389,9 +417,12 @@ void run_case(Machine& o, Machine& n, const Case& c, unsigned calls, const std::
                 std::snprintf(t, sizeof t, "%s: a callee-saved register r/f%u differs", c.name, r);
                 detail = t;
             }
-        if (same && (o.cpu.fpscr & 0xFFu) != (n.cpu.fpscr & 0xFFu)) {
+        // FPSCR: everything but FR / FI / FPRF (the result flags the last compare or operation leaves, which no code reads):
+        // the control byte and the sticky exception bits, which an unordered compare raises.
+        if (same && (o.cpu.fpscr & ~0x7F000u) != (n.cpu.fpscr & ~0x7F000u)) {
             same = false;
-            detail = std::string(c.name) + ": FPSCR control byte differs";
+            std::snprintf(t, sizeof t, "%s ni=%d FPSCR differs: original %08X native %08X (call %u)", c.name, ni, o.cpu.fpscr, n.cpu.fpscr, i);
+            detail = t;
         }
         if (same && n.cpu.stopped()) { same = false; detail = std::string(c.name) + ": the native machine stopped"; }
         ++g_checked;
@@ -623,6 +654,23 @@ int main(int argc, char** argv) {
             Machine& o = c.scripts ? original : original_real;
             Machine& n = c.scripts ? native : native_real;
             run_case(o, n, c, c.kind == Kind::Units ? kUnitCalls : kCommandCalls, c.serve, true, nullptr);
+        }
+        // The same cases on the plain profile (the owner's single-precision route), three times as many calls.
+        g_plain = true;
+        for (const Case& c : cases) {
+            Machine& o = c.scripts ? original : original_real;
+            Machine& n = c.scripts ? native : native_real;
+            run_case(o, n, c, 3u * (c.kind == Kind::Units ? kUnitCalls : kCommandCalls), c.serve, true, nullptr);
+        }
+        const int plain_failures = g_failures;
+        g_plain = false;
+        if (argc == 2 && std::getenv("EFFECT_UPDATE_PLAIN_ONLY") != nullptr) {  // for the must-fail copies of the owner
+            if (plain_failures != 0) {
+                std::fprintf(stderr, "FAIL effect update contract: %d mismatches of %d calls\n", g_failures, g_checked);
+                return 1;
+            }
+            std::printf("PASS effect update contract (plain profile only): %d calls compared\n", g_checked);
+            return 0;
         }
 
         // Negative controls: the same comparison must catch a wrong native.

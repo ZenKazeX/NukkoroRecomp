@@ -96,6 +96,9 @@ void serve_sample_vec3_reciprocal(Cpu& cpu);
 void serve_sample_vec3(Cpu& cpu);
 void serve_sample_vec3_at_20(Cpu& cpu);
 void serve_sample_vec3_scaled(Cpu& cpu);
+// Statistics: calls of the four vector samplers by route. 0: two or three Hermite lanes evaluated side by side; 1: every lane
+// decided by reading alone, the lanes one by one; 2: the lane-by-lane code (a lane advances, another sampler or interpolator).
+unsigned long long vec3_route(unsigned kind) noexcept;
 
 void install(Cpu& cpu);
 

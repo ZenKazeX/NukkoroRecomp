@@ -2024,6 +2024,31 @@ void AudioRuntime::close() {
 }
 
 void AudioRuntime::publish_block(HostAudioPointer64 bytes, AudioByteOffset64 size) noexcept {
+    publish(bytes, size, false);
+}
+
+void AudioRuntime::publish_frames(const s16* samples, AudioFrameIndex64 frames) noexcept {
+    if (samples == nullptr || frames == 0u) return;
+    if (impl_->producer.carry_bytes != 0u) {
+        // A partial big-endian sample is pending from publish_block: keep the byte stream exact by going through it.
+        u8 guest_order[256];
+        for (AudioFrameIndex64 done = 0; done < frames;) {
+            const AudioFrameIndex64 chunk = std::min<AudioFrameIndex64>(frames - done, sizeof(guest_order) / 4u);
+            for (AudioFrameIndex64 i = 0; i < chunk * 2u; ++i) {
+                const u16 sample = static_cast<u16>(samples[done * 2u + i]);
+                guest_order[i * 2u] = static_cast<u8>(sample >> 8);
+                guest_order[i * 2u + 1u] = static_cast<u8>(sample);
+            }
+            publish(guest_order, chunk * 4u, false);
+            done += chunk;
+        }
+        return;
+    }
+    publish(reinterpret_cast<HostAudioPointer64>(samples), frames * 4u, true);
+}
+
+// `host_order`: whole frames of host-order s16 with no carry pending (publish_frames guarantees both).
+void AudioRuntime::publish(HostAudioPointer64 bytes, AudioByteOffset64 size, bool host_order) noexcept {
     if (bytes == nullptr || size == 0u) return;
     // The production drumbeat on the game thread: NativeAudio calls this once
     // per finished AI pass (640 bytes), 200 times per game second. A guest
@@ -2074,10 +2099,18 @@ void AudioRuntime::publish_block(HostAudioPointer64 bytes, AudioByteOffset64 siz
             p.carry_bytes = static_cast<u32>(next_carry);
             return;
         }
-        const auto write_run = [&p](SampleCounter64 position, HostAudioPointer64 source,
-                                    AudioFrameIndex64 count) noexcept {
+        const auto write_run = [&p, host_order](SampleCounter64 position, HostAudioPointer64 source,
+                                                AudioFrameIndex64 count) noexcept {
             const AudioFrameIndex64 index = position & p.mask;
             const AudioFrameIndex64 first = std::min(count, p.capacity - index);
+            if (host_order) {
+                std::memcpy(p.ring + static_cast<std::size_t>(index) * 2u, source, static_cast<std::size_t>(first) * 4u);
+                if (first < count) {
+                    std::memcpy(p.ring, source + static_cast<std::size_t>(first) * 4u,
+                                static_cast<std::size_t>(count - first) * 4u);
+                }
+                return;
+            }
             convert_be_frames(p.ring + static_cast<std::size_t>(index) * 2u, source, first);
             if (first < count) {
                 convert_be_frames(p.ring, source + static_cast<std::size_t>(first) * 4u, count - first);

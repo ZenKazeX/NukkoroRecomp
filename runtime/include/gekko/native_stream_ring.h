@@ -12,8 +12,9 @@
 // clears it. AX voices play the ring by its ARAM addresses (base + offset), which CRI writes into their parameter
 // blocks.
 //
-// Native here: the ring lives in a native arena (SoundArena; sound addresses at kSoundBase, past the GCAX banks'
-// span). Two call sites are lowered (extract/lift-sites-native.txt): the ARAlloc returns the arena's sound
+// Native here: the ring lives in a native store (SoundArena: native storage owned here, outside the game's address
+// window since 2026-11-21; sound addresses at kSoundBase, past the GCAX banks' span, handles only native code
+// resolves). Two call sites are lowered (extract/lift-sites-native.txt): the ARAlloc returns the arena's sound
 // address; the ARFree releases it and reports the size, as ARFree does. The stream server's transfers belong to the
 // native ADX output (gekko/native_adx_output.h) since 2026-11-03: copy() puts each chunk into the ring and the
 // output completes it at once (until then two lowered ARQPostRequest sites handed the completion to the DSP DMA
@@ -32,13 +33,15 @@ class GuestMemory;
 class NativeStreamRing {
 public:
     NativeStreamRing(Cpu& cpu, GuestMemory& memory) noexcept
-        : cpu_(cpu), arena_(memory, kSoundBase, kSoundSpan, kArenaBase, "native stream ring") {}
+        : cpu_(cpu), arena_(memory, kSoundBase, kSoundSpan, kRecordLabel, "native stream ring") {}
 
     void install();
 
     static constexpr u32 kSoundBase = 0x02000000u;  // past the GCAX banks' span (NativeSoundBanks)
     static constexpr u32 kSoundSpan = 0x01000000u;
-    static constexpr u32 kArenaBase = 0x95000000u;  // guest window, after the banks' arena
+    // The window base the ring had while it was a guest-window region (until 2026-11-21): now only the label of its
+    // checkpoint record and state-report entry (NativeArenaImage).
+    static constexpr u32 kRecordLabel = 0x95000000u;
 
     const SoundArena& arena() const noexcept { return arena_; }
 

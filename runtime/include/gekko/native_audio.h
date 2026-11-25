@@ -74,6 +74,15 @@ public:
     // (nullptr when the buffer is not host-backed: the pass is still time).
     using PassSink = std::function<void(hw::HostAudioPointer64, hw::AudioByteOffset64)>;
     void set_pass_sink(PassSink sink) { sink_ = std::move(sink); }
+    // Where a pass's samples are when they are not in guest memory: the AX engine's output passes are native storage
+    // (System::ax_output_), interleaved left / right s16 in HOST byte order. Returns null for a range it does not
+    // hold; the pass then reads guest memory (big-endian bytes) as before.
+    using PassSource = std::function<const s16*(u32 address, u32 bytes)>;
+    void set_pass_source(PassSource source) { source_ = std::move(source); }
+    // Where a finished pass from the PassSource goes: the same host-order samples, `frames` stereo frames. Without
+    // one, such a pass is handed to the PassSink as big-endian bytes (converted for the call).
+    using HostPassSink = std::function<void(const s16* stereo, u64 frames)>;
+    void set_host_pass_sink(HostPassSink sink) { host_sink_ = std::move(sink); }
 
     // GameEvent::Audio: the current pass ended at `now`.
     void on_pass_end(u64 now);
@@ -135,6 +144,8 @@ private:
     u32 ax_frame_callback_ = 0u;
     bool ax_frame_step(Cpu& c, u32 frame, u32 step);
     PassSink sink_;
+    PassSource source_;
+    HostPassSink host_sink_;
     Stats stats_;
 
     // ---- the AI DMA engine --------------------------------------------------

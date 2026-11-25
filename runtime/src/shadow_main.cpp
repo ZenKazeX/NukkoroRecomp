@@ -334,6 +334,25 @@ const TuneEntry* find_tune_entry(const std::string& name) noexcept {
 // as the objects come into existence; an entry whose scope never materialises
 // (a window switch in a headless run) is reported by the caller, not silently
 // dropped.
+// The memory-card model's host-write counters for the stall report. Without the model (GEKKO_CARD_MODEL off: the game's
+// image, native/win N1) there is no card and they are zero.
+struct CardHostWrites {
+    gekko::u64 persists = 0;
+    gekko::u64 persist_ns = 0;
+    gekko::u64 writes = 0;
+    bool tick_wired = false;
+};
+CardHostWrites card_host_writes([[maybe_unused]] const gekko::System& system) {
+    CardHostWrites out;
+#if defined(GEKKO_CARD_MODEL)
+    out.persists = system.card().stats().persists;
+    out.persist_ns = system.card().stats().persist_ns;
+    out.writes = system.card().stats().writes;
+    out.tick_wired = system.card().persist_tick_wired();
+#endif
+    return out;
+}
+
 void apply_host_tuning(const std::vector<std::pair<std::string, bool>>& tuning, TuneScope scope,
                        gekko::System* system,
                        gekko::HostWindow* window, std::set<std::string>* applied) {
@@ -344,7 +363,11 @@ void apply_host_tuning(const std::vector<std::pair<std::string, bool>>& tuning, 
         switch (entry->id) {
             case 27: system->set_ax_sample_resampling(on); break;
             case 28: system->set_ax_adpcm_cursor(on); break;
+#if defined(GEKKO_CARD_MODEL)
             case 29: system->card().set_persist_debounce(on); break;
+#else
+            case 29: break;  // no memory-card model in this image: nothing to debounce
+#endif
             case 35: gekko::set_host_job_notify_one(on); break;
             case 38: window->set_plume_narrow_queue_lock(on); break;
             case 39: window->set_plume_deferred_pin_release(on); break;
@@ -626,7 +649,8 @@ struct Options {
     // first instruction, so a cold-boot replay reports only the accesses after a point (e.g. after an SDK init whose
     // own writes are the retired state). Headless only, like --save-state-at-tick, whose boundary it uses.
     gekko::u64 watch_guest_from_tick = 0;
-    bool chara_colli_pass = false;  // the manager's pair pass itself too (opt-in: not exact yet)
+    bool verify_ax_voice_words = false;  // --verify-ax-voice-words: stop if non-owner code writes a voice's sync words
+    int chara_colli_pass = -1;  // the manager's pair pass itself too: -1 the build's default (GEKKO_CHARA_COLLI_PASS), 0 / 1 forced
     bool chara_colli_bone_memo = true;  // GeneralBone runs reused (false: every update computed)
     bool chara_colli_bone_native = true;  // GeneralBone updates computed natively (false: by the guest)
     // Host FPR snapshot across exceptions. Always on in the single-thread configuration (the default: the native CRI
@@ -666,6 +690,7 @@ struct Options {
     std::optional<gekko::u32> boot_stage;
     std::optional<gekko::u32> boot_event;
     std::optional<gekko::u32> boot_cutscene;  // --boot-cutscene: a story cutscene through PlayStory
+    std::optional<gekko::u32> boot_scene;     // --boot-scene: an in-stage event scene in a booted stage
     std::optional<gekko::u32> boot_story_stage;  // --boot-story-stage: any stage as PlayStory's first entry
     std::optional<gekko::u32> boot_2p;           // --boot-2p: a 2P arena through Play2POnce
     bool boot_2p_three = false;                  // --boot-2p-three: the three arenas through Play2PThree
@@ -1087,6 +1112,11 @@ gekko::u64 block_digest(const gekko::u8* data, std::size_t size) {
 std::string state_report_json(gekko::System& system, gekko::u64 render_frames, gekko::u64 boundary_tick,
                               const std::vector<GuestRange>& ranges, bool memory_digest) {
     gekko::dev::Json report;
+    // The AX output passes are native storage; the report describes the machine in the guest image's terms, as a
+    // checkpoint does, so they are published into their guest range before it is digested.
+    system.publish_ax_output_to_guest();
+    system.publish_ax_voice_words_to_guest();
+    system.publish_motion_banks_to_guest();  // the motion bank registry's state block (B003)
     const gekko::RendererStateKind kind = gekko::renderer_state_kind(system);
     report.field("format", "shadow-state-report 1")
         .field("game_ticks", system.game_ticks())
@@ -1111,16 +1141,13 @@ std::string state_report_json(gekko::System& system, gekko::u64 render_frames, g
         constexpr std::size_t kBlock = 64u << 10;
         digest = "{\"block_bytes\":" + std::to_string(kBlock) + ",\"regions\":[";
         bool first_region = true;
-        for (const gekko::GuestMemory::Region& region : system.guest_memory().regions()) {
+        const auto add_entry = [&](const std::string& name, gekko::u32 base, gekko::u32 committed, const gekko::u8* bytes) {
             if (!first_region) digest += ",";
             first_region = false;
-            digest += "{\"name\":" + gekko::dev::quote(region.name) + ",\"base\":" + std::to_string(region.base) +
-                      ",\"committed\":" + std::to_string(region.committed) + ",\"blocks\":[";
-            const gekko::u8* bytes = region.committed != 0u
-                                         ? system.guest_memory().peek(gekko::GcAddr(region.base), region.committed)
-                                         : nullptr;
-            for (std::size_t offset = 0; bytes != nullptr && offset < region.committed; offset += kBlock) {
-                const std::size_t size = (std::min)(kBlock, static_cast<std::size_t>(region.committed) - offset);
+            digest += "{\"name\":" + gekko::dev::quote(name) + ",\"base\":" + std::to_string(base) +
+                      ",\"committed\":" + std::to_string(committed) + ",\"blocks\":[";
+            for (std::size_t offset = 0; bytes != nullptr && offset < committed; offset += kBlock) {
+                const std::size_t size = (std::min)(kBlock, static_cast<std::size_t>(committed) - offset);
                 char hash[24];
                 std::snprintf(hash, sizeof(hash), "\"%016llx\"",
                               static_cast<unsigned long long>(block_digest(bytes + offset, size)));
@@ -1128,7 +1155,16 @@ std::string state_report_json(gekko::System& system, gekko::u64 render_frames, g
                 digest += hash;
             }
             digest += "]}";
+        };
+        for (const gekko::GuestMemory::Region& region : system.guest_memory().regions()) {
+            add_entry(region.name, region.base, region.committed,
+                      region.committed != 0u ? system.guest_memory().peek(gekko::GcAddr(region.base), region.committed)
+                                             : nullptr);
         }
+        // The native arenas (native storage since 2026-11-21): the same bytes under the same labels as when they were
+        // regions of the window, in the order a run from boot created them, read from their components.
+        for (const gekko::NativeArenaImage& arena : gekko::native_arena_images(system))
+            add_entry(arena.name, arena.label, arena.committed, arena.committed != 0u ? arena.bytes : nullptr);
         digest += "]}";
     });
     peeks += "}";
@@ -1550,8 +1586,9 @@ void print_usage() {
                  "                            native)\n"
                  "  --trace-stale-contacts    diagnostic: count guest reads of the contact bytes the narrow\n"
                  "                            phase copied from stale stack (slow)\n"
-                 "  --chara-colli-pass        experimental: the CharaColli manager's pair pass natively (its\n"
-                 "                            stale-stack contact bytes differ: docs/CPU_FINAL_HAUNT.md)\n"
+                 "  --no-chara-colli-pass     A/B: run the guest CharaColli manager pair pass (0x800C7068)\n"
+                 "                            instead of the native one (also GEKKO_CHARA_COLLI_PASS=0)\n"
+                 "  --chara-colli-pass        the native pair pass, when the build's default is off\n"
                  "  --no-chara-colli-manage   A/B: the CharaColli manager pass's vf 0x7C updates in the\n"
                  "                            guest\n"
                  "  --chara-colli-bone-guest  A/B: GeneralBone updates not reused run by the guest\n"
@@ -1615,13 +1652,20 @@ void print_usage() {
                  "                            input into the stage (wait out the hand-off first)\n"
                  "  --boot-event <eventNNNN>  DEVELOPER NAVIGATION: the same hand-off into\n"
                  "                            StageSequence::PlayEvent - one in-engine event\n"
-                 "                            (files/event/eventNNNN*) played by recovered code\n"
+                 "                            (files/event/eventNNNN*) played by recovered code.\n"
+                 "                            The id must have a stage record (--list-stages:\n"
+                 "                            0800..0802, 0901..0911); others are refused\n"
+                 "  --boot-scene <eventNNNN>  DEVELOPER NAVIGATION: with a stage hand-off\n"
+                 "                            (--boot-stage, --boot-2p, ...): the stage's first\n"
+                 "                            in-stage event scene start plays this scene\n"
+                 "                            (files/event/eventNNNN_scene?.one) instead of its\n"
+                 "                            own - the 2P scenes 0803..0826, 09xx\n"
                  "  --boot-cutscene <eventNNNN> DEVELOPER NAVIGATION: any story cutscene. The\n"
                  "                            --boot-story hand-off, with the cutscene as the\n"
                  "                            story's first entry: its event script\n"
                  "                            (files/event/eventNNNN.scr) or, without one, its\n"
-                 "                            movie (ENNNN.sfd). --boot-event is the 2P intros'\n"
-                 "                            event stages (0800-0826) only\n"
+                 "                            movie (ENNNN.sfd). --boot-event is for the event\n"
+                 "                            stages only\n"
                  "  --boot-story-stage <stgNNNN> DEVELOPER NAVIGATION: any stage of the guest\n"
                  "                            table (also 0700 / 0710 and the others no Select\n"
                  "                            Mode grid lists) as the --boot-story hand-off's\n"
@@ -2099,6 +2143,12 @@ int run(Options options) {
     // asset mount; start() below waits for it and takes it over (gekko/lifted_render.h start_early). No guest
     // instruction runs before start() returns, as before.
     if (gekko::recomp::kFunctionCount != 0u) gekko::LiftedRender::start_early(lifted_render_options());
+    // Every return from here on (the option errors below return 2 while the creation may still be running) waits for
+    // the creation inside main: joined from the static's destructor instead, it deadlocks against the C runtime's
+    // exit lock and the process never ends (gekko/lifted_render.h settle_early; found 2026-11-17).
+    struct EarlyRenderSettle {
+        ~EarlyRenderSettle() { gekko::LiftedRender::settle_early(); }
+    } early_render_settle;
 #endif
     // Internal scale. ONE control, and it means the same thing to both
     // backends: the integer, isotropic multiplier between the guest's 640x528
@@ -2601,6 +2651,22 @@ int run(Options options) {
                       << "* in the game data" << std::endl;
             return 2;
         }
+        // Through this hand-off the id becomes the current stage: StageManager (0x80178494) looks the current stage
+        // up in the guest stage table (0x80177020, 59 records of 0x50 bytes at 0x804C5AE8) and dereferences the
+        // record without a null check. An id that has event files but no stage record (event0803..0826, 0912..)
+        // faulted 0.05 s after the hand-off (measured 2026-11-18); refuse it here. How the game itself plays
+        // event0803..0826 (the 2P intros) is NOT established - not through this hand-off as it stands.
+        bool in_stage_table = false;
+        for (gekko::u32 record = 0; record < 59u; ++record) {
+            if (system.guest_memory().read32(0x804C5AE8u + record * 0x50u) == *options.boot_event) in_stage_table = true;
+        }
+        if (!in_stage_table) {
+            std::cerr << "ERROR: --boot-event " << prefix
+                      << " has no record in the guest stage table, so StageSequence::PlayEvent cannot open it; "
+                         "run --list-stages (the event stages are stg0800..0802 and stg0901..0911)"
+                      << std::endl;
+            return 2;
+        }
         system.set_boot_event(*options.boot_event);
     }
     if (options.boot_cutscene) {
@@ -2699,6 +2765,26 @@ int run(Options options) {
             return 2;
         }
         system.set_boot_flashback();
+    }
+    if (options.boot_scene) {
+        if (!system.boot_stage_report().requested) {
+            std::cerr << "ERROR: --boot-scene needs a stage hand-off to play in (--boot-stage, --boot-2p, "
+                         "--boot-story-stage, ...)"
+                      << std::endl;
+            return 2;
+        }
+        char prefix[24];
+        std::snprintf(prefix, sizeof(prefix), "event%04u_scene", static_cast<unsigned>(*options.boot_scene));
+        bool present = false;
+        std::error_code listing_error;
+        for (const auto& entry : std::filesystem::directory_iterator(*root / "files" / "event", listing_error)) {
+            if (entry.path().filename().string().rfind(prefix, 0) == 0) present = true;
+        }
+        if (!present) {
+            std::cerr << "ERROR: --boot-scene: no files/event/" << prefix << "* in the game data" << std::endl;
+            return 2;
+        }
+        system.set_boot_scene(*options.boot_scene);
     }
     auto contexts = std::make_shared<std::set<gekko::u32>>();
     if (options.context_hook != 0) {
@@ -2939,6 +3025,29 @@ int run(Options options) {
                 }
             }
         });
+    // The AX engine's own passes arrive as host-order samples and go into the ring as they are; only a requested
+    // capture converts them, to the dump's documented big-endian format.
+    system.audio().set_host_pass_sink(
+        [&audio_runtime, &audio_dump_stream, capture_enabled = capture_ready]
+        (const gekko::s16* samples, gekko::u64 frames) mutable {
+            audio_runtime.publish_frames(samples, frames);
+            if (!capture_enabled) return;
+            gekko::u8 guest_order[1024];
+            for (gekko::u64 done = 0; done < frames * 2u && capture_enabled;) {
+                const gekko::u64 chunk = std::min<gekko::u64>(frames * 2u - done, sizeof(guest_order) / 2u);
+                for (gekko::u64 i = 0; i < chunk; ++i) {
+                    const gekko::u16 sample = static_cast<gekko::u16>(samples[done + i]);
+                    guest_order[i * 2u] = static_cast<gekko::u8>(sample >> 8);
+                    guest_order[i * 2u + 1u] = static_cast<gekko::u8>(sample);
+                }
+                audio_dump_stream.write(reinterpret_cast<const char*>(guest_order), static_cast<std::streamsize>(chunk * 2u));
+                if (!audio_dump_stream) {
+                    capture_enabled = false;
+                    std::cerr << "[audio-dump] write failed; capture stopped\n";
+                }
+                done += chunk;
+            }
+        });
     // OFF unless explicitly asked for. This is the one place the runtime ever
     // lied to the game: it wrote MWS_PLY_STAT_PLAYEND into the player's own
     // handle whether or not the movie had finished, because with a frozen
@@ -2946,6 +3055,8 @@ int run(Options options) {
     // clock runs now, so movies end through the player's own logic and the
     // forgery would only cut them off after 50 VI frames. It survives solely as
     // an A/B switch against the old behaviour.
+    system.set_verify_ax_voice_words(options.verify_ax_voice_words);
+    if (options.verify_ax_voice_words) std::cout << "AX voice sync words: guest copy verified untouched every AX frame\n";
     system.set_divide_intrinsics(options.divide_intrinsics);
     system.set_dynamic_cast_intrinsic(options.dynamic_cast_intrinsic);
     system.set_matrix_multiply_intrinsic(options.matrix_multiply_intrinsic);
@@ -2954,7 +3065,8 @@ int run(Options options) {
     system.set_verify_chara_colli(options.verify_chara_colli);
     system.set_chara_colli_loops(options.chara_colli_loops);
     system.set_chara_colli_manage(options.chara_colli_manage);
-    system.set_chara_colli_pass(options.chara_colli_pass);
+    if (options.chara_colli_pass >= 0)
+        system.set_chara_colli_pass(options.chara_colli_pass != 0);
     system.set_trace_stale_contacts(options.trace_stale_contacts);
     system.set_chara_colli_bone_native(options.chara_colli_bone_native);
     system.set_chara_colli_bone_memo(options.chara_colli_bone_memo);
@@ -3371,6 +3483,15 @@ int run(Options options) {
     const std::filesystem::path state_slot =
         options.state_file ? *options.state_file
                            : (executable_directory() / "save-data" / "slot0.gekkostate");
+    // The renderer's own frame count for System::render_frames_total (the reports' timeline frame count).
+#if defined(SHADOW_RENDER_LIFTED)
+    system.set_render_frame_counter([&lifted_render] { return static_cast<gekko::u64>(lifted_render.next_frame()); });
+#else
+    system.set_render_frame_counter([&system] {
+        const gekko::RwCapture* capture_layer = system.native_capture();
+        return capture_layer != nullptr ? static_cast<gekko::u64>(capture_layer->report().presents) : gekko::u64{0};
+    });
+#endif
     if (options.load_state_at_start) {
         // Before the first instruction retires, so no guest function is on the
         // native stack and nothing has been submitted to the renderer yet.
@@ -3608,7 +3729,12 @@ int run(Options options) {
         tape.set_meta("command_line", line);
         if (options.boot_stage) tape.set_meta("boot_stage", std::to_string(*options.boot_stage));
         tape.set_meta("video", options.pal_boot ? "pal" : "ntsc");
-        const fs::path card = system.memory_card_backing_path(), sram = system.memory_card_sram_path();
+        const fs::path sram = system.memory_card_sram_path();
+#if defined(GEKKO_CARD_MODEL)
+        const fs::path card = system.memory_card_backing_path();
+#else
+        const fs::path card;  // no memory-card model in this image: a recording has no card file
+#endif
         if (!card.empty()) tape.set_meta("card", "fnv64 " + file_fnv64(card) + " " + card.string());
         if (!sram.empty()) tape.set_meta("sram", "fnv64 " + file_fnv64(sram) + " " + sram.string());
         const gekko::DisplaySettings s = gekko::display_settings().current();
@@ -5038,9 +5164,10 @@ int run(Options options) {
                         // a clock advance - so without this bucket a save
                         // window reads as "native-execution" (2026-09-05: 13
                         // windows of 123-167 ms).
-                        const gekko::u64 card_persists_now = system.card().stats().persists;
+                        const CardHostWrites card_now = card_host_writes(system);
+                        const gekko::u64 card_persists_now = card_now.persists;
                         const double card_ms =
-                            static_cast<double>(system.card().stats().persist_ns -
+                            static_cast<double>(card_now.persist_ns -
                                                 last_card_persist_ns) / 1.0e6;
                         const char* reason =
                             card_ms > duration_ms * 0.5                   ? "memory-card-persist"
@@ -5065,8 +5192,8 @@ int run(Options options) {
                                                                          last_card_persists),
                                          card_ms,
                                          static_cast<unsigned long long>(
-                                             system.card().stats().writes),
-                                         system.card().persist_tick_wired() ? "yes" : "NO",
+                                             card_now.writes),
+                                         card_now.tick_wired ? "yes" : "NO",
                                          cpu.ctr, cpu.cr, cpu.xer, cpu.msr(),
                                          static_cast<unsigned long long>(cpu.time_base()),
                                          cpu.decrementer(), cpu.external_interrupt() ? 1u : 0u,
@@ -5085,8 +5212,8 @@ int run(Options options) {
                     last_asset_read_ns = system.assets().stats().read_ns;
                     last_interpreted = system.cpu().interpreted_instructions();
                     last_service_instructions = total;
-                    last_card_persists = system.card().stats().persists;
-                    last_card_persist_ns = system.card().stats().persist_ns;
+                    last_card_persists = card_host_writes(system).persists;
+                    last_card_persist_ns = card_host_writes(system).persist_ns;
 
                     // Renderer-specific interval telemetry. Frame/timing deltas
                     // describe this window; resource counters retain their own
@@ -5286,7 +5413,7 @@ int run(Options options) {
                     .field("game_ticks", system.game_ticks())
                     .field("game_seconds", game_seconds(system))
                     .field("vi_frames", static_cast<gekko::u64>(system.video().frames()))
-                    .field("render_frames", render_frames())
+                    .field("render_frames", system.render_frames_total())
                     .field("boundary_tick", dev_request_tick.load(std::memory_order_acquire))
                     .field("tape_recording", tape_recorder != nullptr && tape_recorder->recording())
                     .field("tape_playing", input_tape.playing())
@@ -5363,7 +5490,7 @@ int run(Options options) {
                     .field("boundary_request_tick", asked_at)
                     .field("press_tick", snapshot_press_tick.load(std::memory_order_acquire))
                     .field("vi_frames", static_cast<gekko::u64>(system.video().frames()))
-                    .field("render_frames", render_frames())
+                    .field("render_frames", system.render_frames_total())
                     .field("state", saved ? "state.gekkostate" : "");
                 if (!saved) {
                     std::cerr << "[Snapshot] the savestate failed: " << error << "\n";
@@ -5380,7 +5507,7 @@ int run(Options options) {
                 }
                 {
                     std::ofstream out(folder / "report.json", std::ios::binary | std::ios::trunc);
-                    out << state_report_json(system, render_frames(), asked_at, report_ranges, true) << "\n";
+                    out << state_report_json(system, system.render_frames_total(), asked_at, report_ranges, true) << "\n";
                 }
                 manifest.field("report", "report.json");
                 // The reference frame: the first one finished after this boundary (both renderers stamp it with the
@@ -5554,7 +5681,7 @@ int run(Options options) {
                         std::string range_error;
                         parse_guest_ranges(r.text("peeks"), ranges, &range_error);
                         std::ofstream out(path_from_utf8(report), std::ios::binary | std::ios::trunc);
-                        out << state_report_json(system, render_frames(),
+                        out << state_report_json(system, system.render_frames_total(),
                                                  dev_request_tick.load(std::memory_order_acquire), ranges, true)
                             << "\n";
                         body.field("report", report);
@@ -5613,7 +5740,7 @@ int run(Options options) {
                         return;
                     }
                     gekko::dev::Json body;
-                    body.raw("report", state_report_json(system, render_frames(),
+                    body.raw("report", state_report_json(system, system.render_frames_total(),
                                                          dev_request_tick.load(std::memory_order_acquire), ranges,
                                                          r.flag("memory", true)));
                     dev_link.reply(r.id, true, body);
@@ -6044,6 +6171,13 @@ int run(Options options) {
                     system.cpu().request_stop_from_host(gekko::StopReason::HostRequest, "renderer failed");
                 }
             }
+            // Independent frame (docs/re/independent-frame/): frame interpolation on = pictures at the UI thread's own
+            // rate, between the game's frames. The cap is the render rate when one was asked for; the setting's
+            // default of 60 (the game's own rate) asks for none - V-Sync or the GPU then set the rate.
+            const auto independent_cap = [&options](double rate) {
+                return (rate == 60.0 && !options.render_rate_explicit) ? 0.0 : rate;
+            };
+            lifted_render.set_independent(frame_interpolation, independent_cap(options.render_rate));
             while (!game_done.load(std::memory_order_acquire)) {
                 GEKKO_PROFILE_ZONE("ui/iteration");  // the lifted present loop: messages, input, one present
                 if (!window.pump() || window.escape_pressed()) {
@@ -6159,6 +6293,7 @@ int run(Options options) {
                         render_clock.set_target_hz(settings.render_rate);
                         render_clock.reset(std::chrono::steady_clock::now());
                         frame_interpolation = settings.frame_interpolation;
+                        lifted_render.set_independent(frame_interpolation, independent_cap(settings.render_rate));
                     }
                     if ((changes & gekko::kDisplayOverlayChange) != 0u)
                         lifted_render.set_fps_counter(settings.fps_counter);
@@ -7380,6 +7515,15 @@ int run(Options options) {
                       << mix_ms << " ms, total " << (advance_ms + mix_ms) << " ms ("
                       << ((advance_ms + mix_ms) / ax_frames)
                       << " ms per 5 ms AX frame)\n";
+            // The audio frame as a whole (native part over all steps; mix is inside it) and the guest calls it makes.
+            std::cout << "AX frame on the game thread: native " << static_cast<double>(ax.frame_native_ns) / 1.0e6
+                      << " ms over " << ax.frame_steps << " steps ("
+                      << static_cast<double>(ax.frame_native_ns) / 1.0e3 / ax_frames << " us per AX frame, of which mix "
+                      << static_cast<double>(ax.mix_ns) / 1.0e3 / ax_frames << " us); guest calls "
+                      << static_cast<double>(ax.frame_calls_ns) / 1.0e6 << " ms, of which the frame callback "
+                      << static_cast<double>(ax.frame_callback_ns) / 1.0e6 << " ms in " << ax.frame_callbacks
+                      << " calls (" << static_cast<double>(ax.frame_callback_ns) / 1.0e3 / ax_frames
+                      << " us per AX frame)\n";
             const double effect_ms = static_cast<double>(ax.effect_ns) / 1.0e6;
             std::cout << "AX room effect: " << ax.effect_scheduled << " frames sent/returned, callback "
                       << ax.effect_processed << " processed, " << ax.effect_bypassed << " bypassed, "
@@ -7563,7 +7707,7 @@ int run(Options options) {
     }
     if (options.state_report) {
         std::ofstream out(*options.state_report, std::ios::binary | std::ios::trunc);
-        out << state_report_json(system, render_frames(), stop_at_request_tick, report_ranges, true) << "\n";
+        out << state_report_json(system, system.render_frames_total(), stop_at_request_tick, report_ranges, true) << "\n";
         std::cout << "[state-report] wrote " << options.state_report->string() << "\n";
     }
     if (options.capture_at_tick && !options.window) {
@@ -7660,6 +7804,15 @@ int run(Options options) {
                         static_cast<double>(motion.fetch_bytes) / (1024.0 * 1024.0),
                         static_cast<double>(motion.committed) / (1024.0 * 1024.0),
                         static_cast<unsigned long long>(motion.interrupt_points));
+            const gekko::MotionBankStore::Stats& registry = system.motion_banks().stats();
+            std::printf("Motion banks (native registry, B003): %llu registered, %llu pool banks built, %llu unregistered, "
+                        "%llu acquires, %llu clip loads (%llu allocation failures), %llu node frees, %llu record queries, "
+                        "%llu interrupts deliverable after a transfer (taken after the owner); %zu banks now\n",
+                        static_cast<unsigned long long>(registry.registered), static_cast<unsigned long long>(registry.built),
+                        static_cast<unsigned long long>(registry.unregistered), static_cast<unsigned long long>(registry.acquires),
+                        static_cast<unsigned long long>(registry.loads), static_cast<unsigned long long>(registry.load_failures),
+                        static_cast<unsigned long long>(registry.frees), static_cast<unsigned long long>(registry.queries),
+                        static_cast<unsigned long long>(registry.deferred_interrupts), system.motion_banks().banks().size());
             const gekko::NativeSoundBanks::Stats& banks = system.sound_banks().stats();
             std::printf("Sound banks (native, no ARAM): %llu reserves, %llu uploads (%.2f MiB), arena reserved %.2f MiB, "
                         "committed %.2f MiB, %llu interrupt points\n",
@@ -8013,8 +8166,9 @@ int run(Options options) {
         {
             // Memory-card host persistence. "tick wired" false would mean the
             // debounce is inert and every card write rewrites the image.
-            const gekko::NativeCard::Stats& card = system.card().stats();
             char persist[320];
+#if defined(GEKKO_CARD_MODEL)
+            const gekko::NativeCard::Stats& card = system.card().stats();
             std::snprintf(persist, sizeof(persist),
                           "    memory card: %llu writes, %llu erases; host "
                           "persists %llu (%llu absorbed by the debounce), %.1f ms total, "
@@ -8028,6 +8182,7 @@ int run(Options options) {
                           system.card().persist_tick_wired() ? "yes" : "NO",
                           static_cast<unsigned long long>(card.persist_failures));
             std::cout << persist;
+#endif
             const gekko::NativeIpl::Stats& ipl = system.ipl().stats();
             std::snprintf(persist, sizeof(persist),
                           "    IPL services: %llu debug-UART lines, %llu SRAM persists, "
@@ -9171,6 +9326,7 @@ int run(Options options) {
                  << ", \"gaps_over_33ms\": " << present_gaps
                  << ", \"unique_interval\": " << histogram_json(unique_present_hist) << "}"
 #endif
+#if defined(GEKKO_CARD_MODEL)
                  << ", \"memory_card\": {\"reads\": " << system.card().stats().reads
                  << ", \"writes\": " << system.card().stats().writes
                  << ", \"erases\": " << system.card().stats().erases
@@ -9181,6 +9337,20 @@ int run(Options options) {
                  << ", \"host_persist_max_ms\": " << static_cast<double>(system.card().stats().persist_ns_max) / 1.0e6
                  << ", \"tick_wired\": " << (system.card().persist_tick_wired() ? "true" : "false")
                  << ", \"failures\": " << system.card().stats().persist_failures << "}"
+#endif
+                 << ", \"audio_engine\": {\"frames\": " << system.ax_mixer_report().frames
+                 << ", \"frame_steps\": " << system.ax_mixer_report().frame_steps
+                 << ", \"frame_native_ns\": " << system.ax_mixer_report().frame_native_ns
+                 << ", \"mix_ns\": " << system.ax_mixer_report().mix_ns
+                 << ", \"advance_ns\": " << system.ax_mixer_report().advance_ns
+                 << ", \"effect_ns\": " << system.ax_mixer_report().effect_ns
+                 << ", \"frame_calls_ns\": " << system.ax_mixer_report().frame_calls_ns
+                 << ", \"frame_callback_ns\": " << system.ax_mixer_report().frame_callback_ns
+                 << ", \"frame_callbacks\": " << system.ax_mixer_report().frame_callbacks
+                 << ", \"output_native_frames\": " << system.ax_mixer_report().output_native_frames
+                 << ", \"output_guest_frames\": " << system.ax_mixer_report().output_guest_frames
+                 << ", \"mixed_frames\": " << system.ax_mixer_report().mixed_frames
+                 << ", \"mixed_voices\": " << system.ax_mixer_report().mixed_voices << "}"
                  << ", \"host_pages\": {\"installs\": " << stats.installs
                  << ", \"invalidations\": " << stats.invalidations
                  << ", \"invalidation_ms\": " << static_cast<double>(stats.invalidation_ns) / 1.0e6
@@ -9215,6 +9385,17 @@ int run(Options options) {
              << ",\n  \"guest_memory\": {\"regions\": " << system.guest_memory().regions().size()
              << ", \"committed_bytes\": " << system.guest_memory().committed_bytes()
              << ", \"reserved_bytes\": " << system.guest_memory().reserved_bytes() << "}";
+        {
+            // The native arenas' storage (outside the guest window since 2026-11-21; gekko/native_arena_storage.h).
+            gekko::u64 committed = 0, reserved = 0;
+            const std::vector<gekko::NativeArenaImage> arenas = gekko::native_arena_images(system);
+            for (const gekko::NativeArenaImage& arena : arenas) {
+                committed += arena.committed;
+                reserved += arena.size;
+            }
+            json << ",\n  \"native_arenas\": {\"count\": " << arenas.size() << ", \"committed_bytes\": " << committed
+                 << ", \"reserved_bytes\": " << reserved << "}";
+        }
         json << "\n}\n";
 
         std::ofstream out(report_path, std::ios::binary | std::ios::trunc);
@@ -9553,8 +9734,16 @@ Options parse_options(int argc, char** argv) {
             options.watch_guest_from_tick = std::strtoull(argv[++index], nullptr, 10);
             continue;
         }
+        if (argument == "--verify-ax-voice-words") {
+            options.verify_ax_voice_words = true;
+            continue;
+        }
         if (argument == "--chara-colli-pass") {
-            options.chara_colli_pass = true;
+            options.chara_colli_pass = 1;
+            continue;
+        }
+        if (argument == "--no-chara-colli-pass") {
+            options.chara_colli_pass = 0;
             continue;
         }
         if (argument == "--no-chara-colli-manage") {
@@ -9795,6 +9984,19 @@ Options parse_options(int argc, char** argv) {
                 std::exit(2);
             }
             options.boot_story_stage = static_cast<gekko::u32>(std::stoul(value, nullptr, 10));
+            continue;
+        }
+        if (argument == "--boot-scene") {
+            std::string value = index + 1 < argc ? argv[++index] : std::string();
+            if (value.rfind("event", 0) == 0) value = value.substr(5);
+            const bool digits = !value.empty() && value.size() <= 4 &&
+                                std::all_of(value.begin(), value.end(),
+                                            [](char c) { return c >= '0' && c <= '9'; });
+            if (!digits || std::stoul(value, nullptr, 10) == 0u) {
+                std::cerr << "ERROR: --boot-scene expects eventNNNN or NNNN (decimal, not 0)" << std::endl;
+                std::exit(2);
+            }
+            options.boot_scene = static_cast<gekko::u32>(std::stoul(value, nullptr, 10));
             continue;
         }
         if (argument == "--boot-cutscene") {

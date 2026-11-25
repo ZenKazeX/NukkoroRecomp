@@ -77,13 +77,27 @@ inline u32 cr_field(const Cpu& c, u32 field) noexcept {
     return (c.cr >> (28u - 4u * field)) & 0xfu;
 }
 
+// cpu/opt2: the CR code of a three-way compare without a data-dependent branch: 8 (LT), 4 (GT) or 2 (EQ), which
+// is 2 << (gt + 2 * lt). MSVC compiled `lt ? 8 : (gt ? 4 : 2)` to a conditional branch on lt, taken or not by the
+// data, in front of every compare and record. XER[SO] is bit 31, the code's bit 0.
+static_assert(kXerSO == 0x80000000u, "compare_code_so shifts XER[SO] down to the CR field's SO bit");
+template <class T>
+GEKKO_ALWAYS_INLINE u32 compare_code(T lhs, T rhs) noexcept {
+    return 2u << (static_cast<u32>(lhs > rhs) + 2u * static_cast<u32>(lhs < rhs));
+}
+template <class T>
+GEKKO_ALWAYS_INLINE u32 compare_code_so(const Cpu& c, T lhs, T rhs) noexcept {
+    return compare_code(lhs, rhs) | (c.xer >> 31);
+}
+
 inline void update_cr0(Cpu& c, u32 value) noexcept {
-    const s32 signed_value = static_cast<s32>(value);
-    u32 flags = signed_value < 0 ? 8u : (signed_value > 0 ? 4u : 2u);
-    if ((c.xer & kXerSO) != 0u) {
-        flags |= 1u;
-    }
-    set_cr_field(c, 0, flags);
+    set_cr_field(c, 0, compare_code_so(c, static_cast<s32>(value), s32{0}));
+}
+
+// cpu/opt2: the force-inlined twin the hot bodies call (ppcrecomp --hot-value bit 8). One definition of the
+// record: the twin is the function above, inlined at the site.
+GEKKO_ALWAYS_INLINE void update_cr0_inl(Cpu& c, u32 value) noexcept {
+    c.cr = (c.cr & 0x0fffffffu) | (compare_code_so(c, static_cast<s32>(value), s32{0}) << 28);
 }
 
 inline void update_cr1(Cpu& c) noexcept { set_cr_field(c, 1, (c.fpscr >> 28) & 0xfu); }
@@ -101,19 +115,11 @@ inline void set_overflow(Cpu& c, bool overflow) noexcept {
 }
 
 GEKKO_ALWAYS_INLINE void cmp(Cpu& c, u32 field, s32 lhs, s32 rhs) noexcept {
-    u32 flags = lhs < rhs ? 8u : (lhs > rhs ? 4u : 2u);
-    if ((c.xer & kXerSO) != 0u) {
-        flags |= 1u;
-    }
-    set_cr_field(c, field, flags);
+    set_cr_field(c, field, compare_code_so(c, lhs, rhs));
 }
 
 GEKKO_ALWAYS_INLINE void cmpl(Cpu& c, u32 field, u32 lhs, u32 rhs) noexcept {
-    u32 flags = lhs < rhs ? 8u : (lhs > rhs ? 4u : 2u);
-    if ((c.xer & kXerSO) != 0u) {
-        flags |= 1u;
-    }
-    set_cr_field(c, field, flags);
+    set_cr_field(c, field, compare_code_so(c, lhs, rhs));
 }
 
 GEKKO_ALWAYS_INLINE bool cr_bit(const Cpu& c, u32 bit) noexcept { return ((c.cr >> (31u - bit)) & 1u) != 0u; }
@@ -440,14 +446,24 @@ GEKKO_NOINLINE inline void fp_compare_unordered(Cpu& c, u64 a_bits, u64 b_bits,
 inline void fp_compare(Cpu& c, u32 field, u64 a_bits, u64 b_bits, bool ordered) noexcept {
     const double va = bits_to_double(a_bits);
     const double vb = bits_to_double(b_bits);
-    u32 flags;
-    if (va < vb) {
-        flags = 8u;
-    } else if (va > vb) {
-        flags = 4u;
-    } else if (va == vb) {
-        flags = 2u;
-    } else {
+    // cpu/opt2: at most one of the three is true (none for a NaN), so the OR is the code the if / else chain gave.
+    u32 flags = (static_cast<u32>(va < vb) << 3) | (static_cast<u32>(va > vb) << 2) | (static_cast<u32>(va == vb) << 1);
+    if (flags == 0u) GEKKO_UNLIKELY {
+        flags = 1u;
+        fp_compare_unordered(c, a_bits, b_bits, ordered);
+    }
+    set_cr_field(c, field, flags);
+    c.fpscr = (c.fpscr & ~kFpscrFPCC) | (flags << 12);
+}
+
+// cpu/opt2: the force-inlined twin the hot bodies call (ppcrecomp --hot-value bit 16): the same tests in the same
+// order, the NaN arm still out of line.
+GEKKO_ALWAYS_INLINE void fp_compare_inl(Cpu& c, u32 field, u64 a_bits, u64 b_bits, bool ordered) noexcept {
+    const double va = bits_to_double(a_bits);
+    const double vb = bits_to_double(b_bits);
+    // cpu/opt2: at most one of the three is true (none for a NaN), so the OR is the code the if / else chain gave.
+    u32 flags = (static_cast<u32>(va < vb) << 3) | (static_cast<u32>(va > vb) << 2) | (static_cast<u32>(va == vb) << 1);
+    if (flags == 0u) GEKKO_UNLIKELY {
         flags = 1u;
         fp_compare_unordered(c, a_bits, b_bits, ordered);
     }
@@ -784,7 +800,7 @@ GEKKO_NOINLINE inline u64 fp_arith_slow(u32 fpscr, u32 op, u64 a_bits, u64 b_bit
 
 GEKKO_ALWAYS_INLINE u64 fp_add(Cpu& c, u64 a, u64 b) noexcept {
     const double r = bits_to_double(a) + bits_to_double(b);
-    if ((fp_detail::tiny_key(double_to_bits(r)) >> 53) < fp_detail::kSumDouble || r != r) {
+    if ((fp_detail::tiny_key(double_to_bits(r)) >> 53) < fp_detail::kSumDouble || r != r) GEKKO_UNLIKELY {
         return fp_arith_slow(c.fpscr, kFpAdd, a, b, 0u);
     }
     return double_to_bits(r);
@@ -792,7 +808,7 @@ GEKKO_ALWAYS_INLINE u64 fp_add(Cpu& c, u64 a, u64 b) noexcept {
 
 GEKKO_ALWAYS_INLINE u64 fp_sub(Cpu& c, u64 a, u64 b) noexcept {
     const double r = bits_to_double(a) - bits_to_double(b);
-    if ((fp_detail::tiny_key(double_to_bits(r)) >> 53) < fp_detail::kSumDouble || r != r) {
+    if ((fp_detail::tiny_key(double_to_bits(r)) >> 53) < fp_detail::kSumDouble || r != r) GEKKO_UNLIKELY {
         return fp_arith_slow(c.fpscr, kFpSub, a, b, 0u);
     }
     return double_to_bits(r);
@@ -802,7 +818,7 @@ GEKKO_ALWAYS_INLINE u64 fp_mul(Cpu& c, u64 a, u64 cc) noexcept {
     const double r = bits_to_double(a) * bits_to_double(cc);
     const u64 key = fp_detail::lower(fp_detail::lower(fp_detail::tiny_key(a), fp_detail::tiny_key(cc)),
                                      fp_detail::tiny_key(double_to_bits(r)));
-    if ((key >> 53) < fp_detail::kTinyDouble || r != r) {
+    if ((key >> 53) < fp_detail::kTinyDouble || r != r) GEKKO_UNLIKELY {
         return fp_arith_slow(c.fpscr, kFpMul, a, 0u, cc);
     }
     return double_to_bits(r);
@@ -812,7 +828,7 @@ GEKKO_ALWAYS_INLINE u64 fp_div(Cpu& c, u64 a, u64 b) noexcept {
     const double r = bits_to_double(a) / bits_to_double(b);
     const u64 key = fp_detail::lower(fp_detail::lower(fp_detail::tiny_key(a), fp_detail::tiny_key(b)),
                                      fp_detail::tiny_key(double_to_bits(r)));
-    if ((key >> 53) < fp_detail::kTinyDouble || r != r) {
+    if ((key >> 53) < fp_detail::kTinyDouble || r != r) GEKKO_UNLIKELY {
         return fp_arith_slow(c.fpscr, kFpDiv, a, b, 0u);
     }
     return double_to_bits(r);
@@ -821,7 +837,7 @@ GEKKO_ALWAYS_INLINE u64 fp_div(Cpu& c, u64 a, u64 b) noexcept {
 // sqrt(b) is tiny only for a tiny b.
 GEKKO_ALWAYS_INLINE u64 fp_sqrt(Cpu& c, u64 b) noexcept {
     const double r = std::sqrt(bits_to_double(b));
-    if ((fp_detail::tiny_key(b) >> 53) < fp_detail::kTinyDouble || r != r) {
+    if ((fp_detail::tiny_key(b) >> 53) < fp_detail::kTinyDouble || r != r) GEKKO_UNLIKELY {
         return fp_arith_slow(c.fpscr, kFpSqrt, 0u, b, 0u);
     }
     return double_to_bits(r);
@@ -840,7 +856,7 @@ GEKKO_ALWAYS_INLINE u64 fp_fused(Cpu& c, u32 kind, u64 a, u64 cc, u64 b) noexcep
     u64 key = fp_detail::lower(fp_detail::tiny_key(a), fp_detail::tiny_key(cc));
     key = fp_detail::lower(fp_detail::lower(key, fp_detail::tiny_key(b)),
                            fp_detail::tiny_key(double_to_bits(r)));
-    if ((key >> 53) < fp_detail::kTinyDouble || r != r) {
+    if ((key >> 53) < fp_detail::kTinyDouble || r != r) GEKKO_UNLIKELY {
         return fp_arith_slow(c.fpscr, kind, a, b, cc);
     }
     return (kind >= kFpNMAdd) ? (double_to_bits(r) ^ kFpSignBit) : double_to_bits(r);
@@ -854,7 +870,7 @@ GEKKO_ALWAYS_INLINE u64 fp_nmsub(Cpu& c, u64 a, u64 cc, u64 b) noexcept { return
 
 GEKKO_ALWAYS_INLINE u64 fps_add(Cpu& c, u64 a, u64 b) noexcept {
     const double r = bits_to_double(a) + bits_to_double(b);
-    if ((fp_detail::tiny_key(double_to_bits(r)) >> 53) < fp_detail::kSumSingle || r != r) {
+    if ((fp_detail::tiny_key(double_to_bits(r)) >> 53) < fp_detail::kSumSingle || r != r) GEKKO_UNLIKELY {
         return fp_arith_slow(c.fpscr, kFpAdd | kFpSingle, a, b, 0u);
     }
     return fp_detail::to_single(r);
@@ -862,7 +878,7 @@ GEKKO_ALWAYS_INLINE u64 fps_add(Cpu& c, u64 a, u64 b) noexcept {
 
 GEKKO_ALWAYS_INLINE u64 fps_sub(Cpu& c, u64 a, u64 b) noexcept {
     const double r = bits_to_double(a) - bits_to_double(b);
-    if ((fp_detail::tiny_key(double_to_bits(r)) >> 53) < fp_detail::kSumSingle || r != r) {
+    if ((fp_detail::tiny_key(double_to_bits(r)) >> 53) < fp_detail::kSumSingle || r != r) GEKKO_UNLIKELY {
         return fp_arith_slow(c.fpscr, kFpSub | kFpSingle, a, b, 0u);
     }
     return fp_detail::to_single(r);
@@ -872,7 +888,7 @@ GEKKO_ALWAYS_INLINE u64 fps_mul(Cpu& c, u64 a, u64 cc) noexcept {
     const double r = bits_to_double(a) * bits_to_double(cc);
     const u64 key = fp_detail::lower(fp_detail::lower(fp_detail::tiny_key(a), fp_detail::tiny_key(cc)),
                                      fp_detail::tiny_key(double_to_bits(r)));
-    if ((key >> 53) < fp_detail::kTinySingle || r != r) {
+    if ((key >> 53) < fp_detail::kTinySingle || r != r) GEKKO_UNLIKELY {
         return fp_arith_slow(c.fpscr, kFpMul | kFpSingle, a, 0u, cc);
     }
     return fp_detail::to_single(r);
@@ -882,7 +898,7 @@ GEKKO_ALWAYS_INLINE u64 fps_div(Cpu& c, u64 a, u64 b) noexcept {
     const double r = bits_to_double(a) / bits_to_double(b);
     const u64 key = fp_detail::lower(fp_detail::lower(fp_detail::tiny_key(a), fp_detail::tiny_key(b)),
                                      fp_detail::tiny_key(double_to_bits(r)));
-    if ((key >> 53) < fp_detail::kTinySingle || r != r) {
+    if ((key >> 53) < fp_detail::kTinySingle || r != r) GEKKO_UNLIKELY {
         return fp_arith_slow(c.fpscr, kFpDiv | kFpSingle, a, b, 0u);
     }
     return fp_detail::to_single(r);
@@ -891,7 +907,7 @@ GEKKO_ALWAYS_INLINE u64 fps_div(Cpu& c, u64 a, u64 b) noexcept {
 // sqrt(b) <= 2^-125 needs b <= 2^-250, itself tiny.
 GEKKO_ALWAYS_INLINE u64 fps_sqrt(Cpu& c, u64 b) noexcept {
     const double r = std::sqrt(bits_to_double(b));
-    if ((fp_detail::tiny_key(b) >> 53) < fp_detail::kTinySingle || r != r) {
+    if ((fp_detail::tiny_key(b) >> 53) < fp_detail::kTinySingle || r != r) GEKKO_UNLIKELY {
         return fp_arith_slow(c.fpscr, kFpSqrt | kFpSingle, 0u, b, 0u);
     }
     return fp_detail::to_single(r);
@@ -910,7 +926,7 @@ GEKKO_ALWAYS_INLINE u64 fps_rsqrte(Cpu& c, u64 b) noexcept {
 // frsp. A NaN needs nothing extra: the host keeps the sign and frB[0-34] and
 // sets the quiet bit, as the round-to-single model does.
 GEKKO_ALWAYS_INLINE u64 fps_round(Cpu& c, u64 b) noexcept {
-    if ((fp_detail::tiny_key(b) >> 53) < fp_detail::kTinySingle) {
+    if ((fp_detail::tiny_key(b) >> 53) < fp_detail::kTinySingle) GEKKO_UNLIKELY {
         return fp_arith_slow(c.fpscr, kFpRound | kFpSingle, 0u, b, 0u);
     }
     return fp_detail::to_single(bits_to_double(b));
@@ -928,7 +944,7 @@ GEKKO_ALWAYS_INLINE u64 fps_fused(Cpu& c, u32 kind, u64 a, u64 cc, u64 b) noexce
     u64 key = fp_detail::lower(fp_detail::tiny_key(a), fp_detail::tiny_key(cc));
     key = fp_detail::lower(fp_detail::lower(key, fp_detail::tiny_key(b)), fp_detail::tiny_key(r_bits));
     // (64-bit mask: a u32 cast made MSVC spill r_bits to the stack in halves.)
-    if ((key >> 53) < fp_detail::kTinySingle || (r_bits & 0x1fffffffull) == 0x10000000ull || r != r) {
+    if ((key >> 53) < fp_detail::kTinySingle || (r_bits & 0x1fffffffull) == 0x10000000ull || r != r) GEKKO_UNLIKELY {
         return fp_arith_slow(c.fpscr, kind | kFpSingle, a, b, cc);
     }
     const u64 out = fp_detail::to_single(r);
@@ -1089,7 +1105,7 @@ GEKKO_NOINLINE inline void psq_store_gx(Cpu& c, u32 site, u32 d, bool w, u32 gqr
 GEKKO_NOINLINE inline void psq_load(Cpu& c, u32 d, u32 address, bool w, u32 gqr_index) {
     const u32 gqr = c.spr[SPR_GQR0 + gqr_index];
     const u32 type = (gqr >> 16) & 7u;
-    if (type >= 4u) {
+    if (type >= 4u) GEKKO_UNLIKELY {
         psq_load_quantised(c, d, address, w, type, gqr >> 24);
         return;
     }
@@ -1106,13 +1122,44 @@ GEKKO_NOINLINE inline void psq_load(Cpu& c, u32 d, u32 address, bool w, u32 gqr_
 GEKKO_NOINLINE inline void psq_store(Cpu& c, u32 d, u32 address, bool w, u32 gqr_index) {
     const u32 gqr = c.spr[SPR_GQR0 + gqr_index];
     const u32 type = gqr & 7u;
-    if (type >= 4u) {
+    if (type >= 4u) GEKKO_UNLIKELY {
         psq_store_quantised(c, d, address, w, type, gqr >> 8);
         return;
     }
     // Type 0 stores the word by bit selection, except that a denorm stores a
     // zero (PAGE 112; audit paired-single-8). The old narrowing cast wrote the
     // denormal and quieted signalling NaNs.
+    c.mem_write32(address, double_to_single_bits_flush(c.fpr[d].bits[0]));
+    if (!w) {
+        c.mem_write32(address + 4u, double_to_single_bits_flush(c.fpr[d].bits[1]));
+    }
+}
+
+// cpu/opt2: the force-inlined twins the hot bodies call (ppcrecomp --hot-value bit 32). The type-0 path (every FP
+// prologue and epilogue) is inline; the integer types still go to the out-of-line quantised functions. The same
+// statements as psq_load / psq_store above.
+GEKKO_ALWAYS_INLINE void psq_load_inl(Cpu& c, u32 d, u32 address, bool w, u32 gqr_index) {
+    const u32 gqr = c.spr[SPR_GQR0 + gqr_index];
+    const u32 type = (gqr >> 16) & 7u;
+    if (type >= 4u) GEKKO_UNLIKELY {
+        psq_load_quantised(c, d, address, w, type, gqr >> 24);
+        return;
+    }
+    c.fpr[d].bits[0] = single_to_double_bits(c.mem_read32(address));
+    if (w) {
+        c.fpr[d].bits[1] = double_to_bits(1.0);
+    } else {
+        c.fpr[d].bits[1] = single_to_double_bits(c.mem_read32(address + 4u));
+    }
+}
+
+GEKKO_ALWAYS_INLINE void psq_store_inl(Cpu& c, u32 d, u32 address, bool w, u32 gqr_index) {
+    const u32 gqr = c.spr[SPR_GQR0 + gqr_index];
+    const u32 type = gqr & 7u;
+    if (type >= 4u) GEKKO_UNLIKELY {
+        psq_store_quantised(c, d, address, w, type, gqr >> 8);
+        return;
+    }
     c.mem_write32(address, double_to_single_bits_flush(c.fpr[d].bits[0]));
     if (!w) {
         c.mem_write32(address + 4u, double_to_single_bits_flush(c.fpr[d].bits[1]));

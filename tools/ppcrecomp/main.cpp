@@ -101,6 +101,29 @@ bool g_annotate_lines = false;
 // s3/gen: hot-body GPR read cache (see GprCache). --no-gpr-cache restores the previous text
 // byte for byte (A/B and the differential test use both spellings from one binary).
 bool g_gpr_cache = true;
+// cpu/opt2: the hot-body value pass (see HotValuePass). 0 = off: the generated text is byte-identical to a build
+// without it.
+std::uint32_t g_hot_value = 0;
+std::uint64_t g_hv_single_loads = 0;
+std::uint64_t g_hv_single_stores = 0;
+std::uint64_t g_hv_cr_removed = 0;
+std::uint64_t g_hv_fpr_removed = 0;
+// Negative controls of the differential test: 1 = a store forwards across a label, 2 = calls are not observers.
+std::uint32_t g_hot_value_mutant = 0;
+// cpu/opt2: --hot-layout. The same statements in an order of blocks that lets the usual path of a call fall
+// through (see hv_apply_layout and the hot body's entry in emit_function): the checks that almost never fire are
+// marked GEKKO_UNLIKELY, and a direct bl to an ordinary row enters the row's hot body itself (entry 0: the hook
+// filter, then the first instruction) instead of jumping through the entry thunk. Off: byte-identical text.
+bool g_hot_layout = false;
+// cpu/opt4: rare checks as `if (usual) GEKKO_LIKELY {} else { ...; return; }` (see hv_apply_layout). False
+// (--hot-layout-attr): the attribute-only text of cpu/opt2.
+bool g_hot_layout_structural = true;
+// Diagnostic (--hot-layout-parts MASK, default 7): 1 the call rule (rare arm leaves through the entry dispatch / the
+// tail), 2 the entry block and the hook filter, 4 the guards that leave. A cleared bit keeps cpu/opt2's text there.
+std::uint32_t g_hot_layout_parts = 7u;
+// Rows a direct call enters at the hot body: translated rows of their own that no runtime source names (a row a
+// hook can be installed at keeps the thunk, whose hooked path runs the handler without the body's frame).
+std::unordered_set<u32> g_direct_rows;
 std::uint64_t g_gpr_cache_reads_cached = 0;
 std::uint64_t g_gpr_cache_reads_filled = 0;
 
@@ -115,6 +138,20 @@ std::uint64_t g_inlined_leaf_sites = 0;
 bool g_inline_no_hooks = false;
 // Negative control of the contract test (difftest leaf tree, WILL_FAIL): 1 drops the callee's first instruction.
 std::uint32_t g_inline_leaf_mutant = 0;
+// native/win: --coverage. Every emitted body (hot body, cold trampoline, a containment-collapsed row's forwarder, a
+// spliced leaf) starts with GEKKO_COVER(<row address>): one byte store that records that the row's translation ran
+// (gekko/recomp.h; the runtime writes the set with GEKKO_COVERAGE=<file>). A measurement build only: off by
+// default, and the generated text is then byte-identical to a build without this code.
+bool g_coverage = false;
+std::uint32_t g_cover_base = 0;   // the lowest row address
+std::uint32_t g_cover_words = 0;  // instruction words from there to the end of the highest row
+std::string cover_mark(std::uint32_t address) {
+    if (!g_coverage) return {};
+    char text[64];
+    std::snprintf(text, sizeof(text), "    GEKKO_COVER(%uu);  // 0x%08X\n",
+                  static_cast<unsigned>((address - g_cover_base) / 4u), static_cast<unsigned>(address));
+    return text;
+}
 
 // --wait-points (extract/wait-points.txt, tools/ppcrecomp/wait_points.py):
 // back-edge site -> loop head of every side-effect-free polling loop. Taking
@@ -908,6 +945,8 @@ std::string emit_branch_condition(EmitContext& e, u32 instruction, bool decremen
 // fault fill) takes Cpu::enter_slow, also a tail call - the same order and checks as
 // `if (c.try_hle(A)) return; body(c, A);`, with no stack frame in the thunk (Cpu::hle_clear).
 std::string entry_thunk(const std::string& name, const std::string& body_symbol, u32 address) {
+    // cpu/opt2 (--hot-layout): entry 0 of a direct row's body is this thunk's filter followed by the body.
+    if (g_direct_rows.count(address) != 0u) return "void " + name + "(Cpu& c) { " + body_symbol + "(c, 0u); }\n";
     return "void " + name + "(Cpu& c) { if (c.hle_clear(" + hexu(address) + ")) return " + body_symbol + "(c, " +
            hexu(address) + "); c.enter_slow(" + hexu(address) + ", &" + body_symbol + "); }\n";
 }
@@ -951,6 +990,8 @@ void emit_call_transfer(EmitContext& e, u32 target, u32 link) {
         // is a barrier for the cache exactly like the call it stands for.
         if (e.inline_leaf_ok && leaf_inline_wanted(target))
             line(e, "gekko_leaf_inline(" + hexu(target) + ");");
+        else if (g_direct_rows.count(target) != 0u && e.recompiled->find(target)->second == target)
+            line(e, fn_symbol(target) + "_body(c, 0u);");  // cpu/opt2: the thunk's filter is the body's entry 0
         else
             line(e, transfer_symbol(e, target) + "(c);");
     } else {
@@ -3174,7 +3215,13 @@ bool parse_options(int argc, char** argv, Options& options) {
         else if (argument == "--functions") options.functions = value();
         else if (argument == "--no-gap-sweep") g_gap_sweep = false;
         else if (argument == "--no-gpr-cache") g_gpr_cache = false;
+        else if (argument == "--hot-layout") g_hot_layout = true;
+        else if (argument == "--hot-layout-attr") { g_hot_layout = true; g_hot_layout_structural = false; }
+        else if (argument == "--hot-layout-parts") g_hot_layout_parts = static_cast<std::uint32_t>(number(0u));
+        else if (argument == "--hot-value") g_hot_value = static_cast<std::uint32_t>(number(0u));
+        else if (argument == "--hot-value-mutant") g_hot_value_mutant = static_cast<std::uint32_t>(number(0u));
         else if (argument == "--inline-no-hooks") g_inline_no_hooks = true;
+        else if (argument == "--coverage") g_coverage = true;
         else if (argument == "--inline-leaves-mutant") g_inline_leaf_mutant = static_cast<std::uint32_t>(number(0u));
         else if (argument == "--inline-leaves") { g_inline_leaf_max = static_cast<std::uint32_t>(number(1u)); g_inline_leaves = true; }
         else if (argument == "--no-wide-entries") g_wide_entries = false;
@@ -3461,6 +3508,7 @@ std::size_t gpr_member_end(std::string_view text, std::size_t start) {
         while (j < rest.size() && rest[j] >= '0' && rest[j] <= '9') { ++j; ++digits; }
         if (digits == 0) return std::string::npos;
         if (gpr_starts_with(rest.substr(j), "_hot")) j += 4;
+        else if (gpr_starts_with(rest.substr(j), "_raw")) j += 4;  // cpu/opt2: the unswapped word (hot-value pass)
         if (j >= rest.size() || rest[j] != '(') return std::string::npos;
         return start + j + 1;
     }
@@ -3540,6 +3588,12 @@ enum class GprStmt { Barrier, Transparent, Assign, Jump };
 
 bool gpr_local_assign(std::string_view text) {
     static const char* const kLocals[] = {"ea", "tmp", "tmp64", "cnd", "cra", "crb", "fa", "fb"};
+    // cpu/opt2: `fs<n> = ` (the hot-value pass's single-word locals; plain assignment only).
+    if (text.size() > 2u && text[0] == 'f' && text[1] == 's' && text[2] >= '0' && text[2] <= '9') {
+        std::size_t i = 2;
+        while (i < text.size() && text[i] >= '0' && text[i] <= '9') ++i;
+        return gpr_starts_with(text.substr(i), " = ");
+    }
     for (const char* local : kLocals) {
         const std::size_t n = std::strlen(local);
         if (!gpr_starts_with(text, local) || text.size() <= n || gpr_is_ident_char(text[n])) continue;
@@ -3720,6 +3774,651 @@ private:
 };
 
 // ---------------------------------------------------------------------------
+// cpu/opt2: hot-body value pass (--hot-value MASK, 2026-11-15)
+//
+// Three exact rewrites of a hot body's text, done on the emitter's own spelling before the GPR cache pass:
+//
+//   1  single forward. lfs keeps the word it loaded in a host local fs<n> (as it lies in guest memory:
+//      Cpu::mem_read32_raw, the same one access without the byte swap). A later stfs of the same register in
+//      the same unlabeled run stores that word (Cpu::mem_write32_raw) instead of narrowing the register again:
+//      the D.7 store conversion of the D.6 load expansion is the identity on all 2^32 words
+//      (fp_single_round_trip_tests sweeps them), so the word is the one double_to_single_bits would have
+//      produced. Same accesses, same order, same bytes.
+//   2  CR. A compare or an Rc=1 record (ppc::cmp, ppc::cmpl, ppc::update_cr0) whose CR field is written again on
+//      every path before anything can read it is not written.
+//   4  FPR. The same for an FPR half assigned from tmp64 or from another half (the ps1 copy of a scalar single
+//      result, a register an lfs/stfs copy only passes through).
+//
+// "Before anything can read it" is default-deny. A statement is transparent only when the GPR cache's strict
+// allowlist accepts it AND it names CR / the FPRs only in the spellings modelled here (literal c.fpr[n].bits[k],
+// ppc::cr_bit, the three compare helpers, ppc::fp_compare) AND every ppc:: helper it calls is on the pure list
+// below (tools/ppcrecomp/test_hot_value.py checks that list against ppc_ops.h). Everything else is an observer,
+// at which every CR field and every FPR half is live: calls, returns, exits, owners, lowered sites, back-edge
+// polls, the MSR[FP] / HID2 guards (their exceptions save the context), paired-single helpers, mfcr / mtcrf / CR
+// logic, unknown text, and the end of the function. So at every point where the Cpu object can be read by anything
+// but this body's own modelled statements it holds exactly what it held before the pass; a removed write was dead
+// on every path, by backward liveness over the body's own labels and gotos (a faint-variable fixed point: a
+// removed statement reads nothing).
+//
+// Guest memory accesses are not observers: an access the flat map does not serve is resolved by the fault handler
+// through the same slow path (device, journal, trace), which reads no CR field and no FPR; a latched data fault
+// stops the machine.
+// ---------------------------------------------------------------------------
+
+struct HvLive {
+    u64 fpr = 0;  // bit 2n + k: c.fpr[n].bits[k]
+    u32 cr = 0;   // bit f: CR field f
+    static HvLive all() {
+        HvLive v;
+        v.fpr = ~0ull;
+        v.cr = 0xFFu;
+        return v;
+    }
+    bool operator==(const HvLive& o) const { return fpr == o.fpr && cr == o.cr; }
+    HvLive operator|(const HvLive& o) const {
+        HvLive v;
+        v.fpr = fpr | o.fpr;
+        v.cr = cr | o.cr;
+        return v;
+    }
+    HvLive minus(const HvLive& o) const {
+        HvLive v;
+        v.fpr = fpr & ~o.fpr;
+        v.cr = cr & ~o.cr;
+        return v;
+    }
+    bool intersects(const HvLive& o) const { return (fpr & o.fpr) != 0u || (cr & o.cr) != 0u; }
+};
+
+// Parses `c.fpr[<n>].bits[<k>]` at text[at].
+bool hv_parse_fpr(std::string_view text, std::size_t at, u32& reg, u32& half, std::size_t& length) {
+    if (at > text.size() || !gpr_starts_with(text.substr(at), "c.fpr[")) return false;
+    std::size_t i = at + 6;
+    u32 value = 0;
+    std::size_t digits = 0;
+    while (i < text.size() && text[i] >= '0' && text[i] <= '9' && digits < 3) {
+        value = value * 10u + static_cast<u32>(text[i] - '0');
+        ++i;
+        ++digits;
+    }
+    if (digits == 0 || value > 31u || !gpr_starts_with(text.substr(i), "].bits[")) return false;
+    i += 7;
+    if (i + 1 >= text.size() || (text[i] != '0' && text[i] != '1') || text[i + 1] != ']') return false;
+    reg = value;
+    half = static_cast<u32>(text[i] - '0');
+    length = i + 2 - at;
+    return true;
+}
+
+// Every FPR half `text` names; false when a c.fpr spelling is not the literal one.
+bool hv_fpr_refs(std::string_view text, u64& mask) {
+    for (std::size_t at = text.find("c.fpr"); at != std::string_view::npos; at = text.find("c.fpr", at + 1)) {
+        u32 reg = 0;
+        u32 half = 0;
+        std::size_t length = 0;
+        if (!hv_parse_fpr(text, at, reg, half, length)) return false;
+        mask |= 1ull << (reg * 2u + half);
+    }
+    return true;
+}
+
+// `(c, <digits>u` at text[at] (right after a helper's name): the literal.
+bool hv_first_literal(std::string_view text, std::size_t at, u32& value) {
+    if (at > text.size() || !gpr_starts_with(text.substr(at), "(c, ")) return false;
+    std::size_t i = at + 4;
+    u32 v = 0;
+    std::size_t digits = 0;
+    while (i < text.size() && text[i] >= '0' && text[i] <= '9' && digits < 5) {
+        v = v * 10u + static_cast<u32>(text[i] - '0');
+        ++i;
+        ++digits;
+    }
+    if (digits == 0 || i >= text.size() || text[i] != 'u') return false;
+    if (i + 1 < text.size() && gpr_is_ident_char(text[i + 1])) return false;
+    value = v;
+    return true;
+}
+
+// ppc:: helpers that neither read nor write a CR field or an FPR and cannot leave the body (ppc_ops.h; the
+// differential test re-derives the complement from the header and fails when a helper that touches CR or the
+// FPRs is listed here). fps_* and fp_* (but fp_compare) are arithmetic on values.
+bool hv_pure_helper(std::string_view name) {
+    static const char* const kPure[] = {
+        "rotl32", "srw",    "slw",    "sraw",   "srawi",  "mullw",  "mulli",  "mulhw",  "mulhwu", "divw",
+        "divwu",  "cntlzw", "addic",  "addc",   "adde",   "addze",  "addme",  "add_oe", "subfc",  "subfe",
+        "subfze", "subfme", "subfic", "subf_oe", "neg_oe", "fctiw",  "lwarx",
+    };
+    for (const char* pure : kPure) {
+        if (name == pure) return true;
+    }
+    if (name == "fp_compare" || name == "fp_compare_inl") return false;
+    return gpr_starts_with(name, "fps_") || gpr_starts_with(name, "fp_");
+}
+
+struct HvStmt {
+    bool observer = false;
+    bool removable = false;
+    HvLive use;
+    HvLive kill;
+};
+
+HvStmt hv_observer() {
+    HvStmt s;
+    s.observer = true;
+    return s;
+}
+
+// One brace-free statement of the hot body.
+HvStmt hv_classify(std::string_view text) {
+    u32 assign_reg = 0;
+    std::string_view assign_rhs;
+    bool substitute = false;
+    const GprStmt kind = gpr_classify(text, assign_reg, assign_rhs, substitute);
+    if ((kind != GprStmt::Transparent && kind != GprStmt::Assign) || !substitute) return hv_observer();
+    if (text.find('{') != std::string_view::npos || text.find("return") != std::string_view::npos) return hv_observer();
+    // c.cr by name: mfcr, mtcrf, the CR logical instructions.
+    for (std::size_t at = text.find("c.cr"); at != std::string_view::npos; at = text.find("c.cr", at + 1)) {
+        if (at + 4 >= text.size() || !gpr_is_ident_char(text[at + 4])) return hv_observer();
+    }
+    HvStmt s;
+    std::size_t helpers = 0;
+    for (std::size_t at = text.find("ppc::"); at != std::string_view::npos; at = text.find("ppc::", at + 5)) {
+        ++helpers;
+        std::size_t end = at + 5;
+        while (end < text.size() && gpr_is_ident_char(text[end])) ++end;
+        const std::string_view name = text.substr(at + 5, end - at - 5);
+        u32 literal = 0;
+        if (name == "cmp" || name == "cmpl" || name == "update_cr0" || name == "fp_compare") {
+            if (at != 0) return hv_observer();
+            u32 field = 0;
+            if (name == "update_cr0") {
+                if (!gpr_starts_with(text.substr(end), "(c, ")) return hv_observer();
+            } else if (!hv_first_literal(text, end, field) || field > 7u) {
+                return hv_observer();
+            }
+            s.kill.cr |= 1u << field;
+            s.removable = name != "fp_compare";
+        } else if (name == "cr_bit") {
+            if (!hv_first_literal(text, end, literal) || literal > 31u) return hv_observer();
+            s.use.cr |= 1u << (literal >> 2);
+        } else if (name == "read_spr" || name == "write_spr") {
+            // XER, LR, CTR are plain members; any other SPR may be a device (DEC, HID2, the time base).
+            if (!hv_first_literal(text, end, literal) || (literal != 1u && literal != 8u && literal != 9u)) {
+                return hv_observer();
+            }
+        } else if (!hv_pure_helper(name)) {
+            return hv_observer();
+        }
+    }
+    if (s.removable && (helpers != 1 || text.find("c.mem_") != std::string_view::npos ||
+                        text.find("c.fpr") != std::string_view::npos)) {
+        s.removable = false;
+    }
+    u32 reg = 0;
+    u32 half = 0;
+    std::size_t length = 0;
+    if (hv_parse_fpr(text, 0, reg, half, length)) {
+        if (!gpr_starts_with(text.substr(length), " = ")) return hv_observer();
+        const std::string_view value = text.substr(length + 3, text.size() - length - 4);
+        if (!hv_fpr_refs(value, s.use.fpr)) return hv_observer();
+        s.kill.fpr |= 1ull << (reg * 2u + half);
+        u32 reg2 = 0;
+        u32 half2 = 0;
+        std::size_t length2 = 0;
+        s.removable = value == "tmp64" || (hv_parse_fpr(value, 0, reg2, half2, length2) && length2 == value.size());
+    } else if (!hv_fpr_refs(text, s.use.fpr)) {
+        return hv_observer();
+    }
+    return s;
+}
+
+// `goto L_XXXXXXXX;`
+bool hv_label_goto(std::string_view text, u32& target) {
+    if (text.size() != 16u || !gpr_starts_with(text, "goto L_") || text.back() != ';') return false;
+    u32 value = 0;
+    for (std::size_t i = 7; i < 15u; ++i) {
+        const char ch = text[i];
+        u32 digit = 0;
+        if (ch >= '0' && ch <= '9') digit = static_cast<u32>(ch - '0');
+        else if (ch >= 'A' && ch <= 'F') digit = static_cast<u32>(ch - 'A') + 10u;
+        else return false;
+        value = (value << 4) | digit;
+    }
+    target = value;
+    return true;
+}
+
+std::string_view hv_strip(std::string_view whole) {
+    std::size_t indent = 0;
+    while (indent < whole.size() && whole[indent] == ' ') ++indent;
+    return whole.substr(indent);
+}
+
+struct HvPiece {
+    u32 address = 0;
+    bool label = false;
+    bool falls = true;
+    std::string* code = nullptr;
+};
+
+class HotValuePass {
+public:
+    u32 fs_used() const { return fs_used_; }
+
+    void run(std::vector<HvPiece>& pieces) {
+        if (g_hot_value == 0u || pieces.empty()) return;
+        std::vector<std::vector<Node>> all(pieces.size());
+        for (std::size_t p = 0; p < pieces.size(); ++p) parse(*pieces[p].code, all[p]);
+        if ((g_hot_value & 1u) != 0u) forward(pieces, all);
+        if ((g_hot_value & 6u) != 0u) liveness(pieces, all);
+        for (std::size_t p = 0; p < pieces.size(); ++p) {
+            std::string out;
+            out.reserve(pieces[p].code->size() + 64u);
+            for (const Node& node : all[p]) {
+                if (node.dead) {
+                    if (node.stmt.kill.cr != 0u) ++g_hv_cr_removed;
+                    else ++g_hv_fpr_removed;
+                    continue;
+                }
+                out += node.text;
+            }
+            *pieces[p].code = std::move(out);
+        }
+    }
+
+private:
+    enum class Kind { Plain, Observer, Goto, CondGoto };
+    struct Node {
+        Kind kind = Kind::Plain;
+        std::string text;  // the node's lines, each ended by a newline
+        HvStmt stmt;
+        u32 target = 0;  // Goto / CondGoto
+        HvLive in;
+        bool dead = false;
+    };
+
+    static void parse(const std::string& code, std::vector<Node>& nodes) {
+        std::vector<std::string_view> lines;
+        for (std::size_t pos = 0; pos < code.size();) {
+            std::size_t nl = code.find('\n', pos);
+            if (nl == std::string::npos) nl = code.size();
+            lines.emplace_back(code.data() + pos, nl - pos);
+            pos = nl < code.size() ? nl + 1u : nl;
+        }
+        for (std::size_t i = 0; i < lines.size();) {
+            const std::string_view text = hv_strip(lines[i]);
+            Node node;
+            node.text.assign(lines[i]);
+            node.text.push_back('\n');
+            if (text.empty() || text[0] == '#') {
+                nodes.push_back(std::move(node));
+                ++i;
+                continue;
+            }
+            const int open = static_cast<int>(std::count(text.begin(), text.end(), '{'));
+            const int close = static_cast<int>(std::count(text.begin(), text.end(), '}'));
+            if (open != close) {
+                int depth = open - close;
+                std::size_t j = i + 1;
+                while (j < lines.size() && depth > 0) {
+                    const std::string_view inner = lines[j];
+                    depth += static_cast<int>(std::count(inner.begin(), inner.end(), '{')) -
+                             static_cast<int>(std::count(inner.begin(), inner.end(), '}'));
+                    node.text.append(inner);
+                    node.text.push_back('\n');
+                    ++j;
+                }
+                u32 target = 0;
+                const bool clean = gpr_block_header_ok(text) && depth == 0 && j == i + 3u &&
+                                   hv_strip(lines[i + 2]) == "}" && hv_label_goto(hv_strip(lines[i + 1]), target);
+                node.kind = clean ? Kind::CondGoto : Kind::Observer;
+                node.target = target;
+                nodes.push_back(std::move(node));
+                i = j;
+                continue;
+            }
+            u32 target = 0;
+            if (hv_label_goto(text, target)) {
+                node.kind = Kind::Goto;
+                node.target = target;
+            } else if (gpr_label_like(text) || gpr_starts_with(text, "goto ") || text == "return;") {
+                node.kind = Kind::Observer;
+            } else {
+                node.stmt = hv_classify(text);
+                if (node.stmt.observer) node.kind = Kind::Observer;
+                if (g_hot_value_mutant == 2u && node.kind == Kind::Observer &&
+                    (gpr_starts_with(text, "fn_") || gpr_starts_with(text, "if (c.exiting()") ||
+                     gpr_starts_with(text, "if (c.pc != "))) {
+                    node.kind = Kind::Plain;
+                    node.stmt = HvStmt();
+                }
+            }
+            nodes.push_back(std::move(node));
+            ++i;
+        }
+        if (nodes.empty()) nodes.emplace_back();
+    }
+
+    // `c.fpr[<n>].bits[<half>] = tmp64;`
+    static bool half_from_tmp64(const Node& node, u32 half, u32& reg) {
+        if (node.kind != Kind::Plain) return false;
+        std::string_view text = hv_strip(node.text);
+        if (text.empty() || text.back() != '\n') return false;
+        text.remove_suffix(1);
+        u32 r = 0;
+        u32 h = 0;
+        std::size_t length = 0;
+        if (!hv_parse_fpr(text, 0, r, h, length) || h != half || text.substr(length) != " = tmp64;") return false;
+        reg = r;
+        return true;
+    }
+
+    void forward(const std::vector<HvPiece>& pieces, std::vector<std::vector<Node>>& all) {
+        static constexpr std::string_view kLoad = "tmp64 = single_to_double_bits(c.mem_read32(ea));";
+        static constexpr std::string_view kStoreHead = "c.mem_write32(ea, double_to_single_bits(";
+        u32 valid = 0;
+        u32 previous = 0;
+        bool first = true;
+        bool broken = true;
+        for (std::size_t p = 0; p < pieces.size(); ++p) {
+            const bool run_starts = first || pieces[p].label || broken || pieces[p].address != previous + 4u;
+            if (run_starts && !(g_hot_value_mutant == 1u && pieces[p].label)) valid = 0;
+            std::vector<Node>& nodes = all[p];
+            for (std::size_t n = 0; n < nodes.size(); ++n) {
+                Node& node = nodes[n];
+                if (node.kind == Kind::Observer || node.kind == Kind::Goto) {
+                    valid = 0;
+                    continue;
+                }
+                if (node.kind == Kind::CondGoto) continue;  // the path that falls through keeps the run
+                const std::string_view whole(node.text.data(), node.text.empty() ? 0u : node.text.size() - 1u);
+                const std::string_view text = hv_strip(whole);
+                const std::size_t indent = whole.size() - text.size();
+                u32 reg = 0;
+                u32 reg1 = 0;
+                if (text == kLoad && n + 2 < nodes.size() && half_from_tmp64(nodes[n + 1], 0u, reg) &&
+                    half_from_tmp64(nodes[n + 2], 1u, reg1) && reg1 == reg) {
+                    const std::string name = "fs" + std::to_string(reg);
+                    std::string replaced(indent, ' ');
+                    replaced += name + " = c.mem_read32_raw(ea);\n";
+                    replaced.append(indent, ' ');
+                    replaced += "tmp64 = single_to_double_bits(bswap32(" + name + "));\n";
+                    node.text = std::move(replaced);
+                    valid |= 1u << reg;
+                    fs_used_ |= 1u << reg;
+                    ++g_hv_single_loads;
+                    n += 2;
+                    continue;
+                }
+                u32 half = 0;
+                std::size_t length = 0;
+                if (gpr_starts_with(text, kStoreHead) && hv_parse_fpr(text, kStoreHead.size(), reg, half, length) &&
+                    half == 0u && text.substr(kStoreHead.size() + length) == "));") {
+                    if ((valid & (1u << reg)) != 0u) {
+                        std::string replaced(indent, ' ');
+                        replaced += "c.mem_write32_raw(ea, fs" + std::to_string(reg) + ");\n";
+                        node.text = std::move(replaced);
+                        node.stmt = hv_classify(hv_strip(std::string_view(node.text.data(), node.text.size() - 1u)));
+                        if (node.stmt.observer) node.kind = Kind::Observer;  // cannot happen: the allowlist takes it
+                        ++g_hv_single_stores;
+                    }
+                    continue;
+                }
+                for (u32 r = 0; r < 32u; ++r) {
+                    if ((node.stmt.kill.fpr & (1ull << (r * 2u))) != 0u) valid &= ~(1u << r);
+                }
+            }
+            broken = !pieces[p].falls;
+            previous = pieces[p].address;
+            first = false;
+        }
+    }
+
+    static void liveness(const std::vector<HvPiece>& pieces, std::vector<std::vector<Node>>& all) {
+        std::unordered_map<u32, std::size_t> labels;
+        for (std::size_t p = 0; p < pieces.size(); ++p) {
+            if (pieces[p].label) labels.emplace(pieces[p].address, p);
+        }
+        const auto target_live = [&](u32 address) {
+            const auto it = labels.find(address);
+            return it == labels.end() ? HvLive::all() : all[it->second].front().in;
+        };
+        HvLive enabled;
+        if ((g_hot_value & 2u) != 0u) enabled.cr = 0xFFu;
+        if ((g_hot_value & 4u) != 0u) enabled.fpr = ~0ull;
+        bool changed = true;
+        while (changed) {
+            changed = false;
+            for (std::size_t p = pieces.size(); p-- > 0;) {
+                HvLive out = HvLive::all();  // the end of the function, a gap, a terminator
+                if (pieces[p].falls && p + 1 < pieces.size() && pieces[p + 1].address == pieces[p].address + 4u) {
+                    out = all[p + 1].front().in;
+                }
+                std::vector<Node>& nodes = all[p];
+                for (std::size_t n = nodes.size(); n-- > 0;) {
+                    Node& node = nodes[n];
+                    HvLive in;
+                    switch (node.kind) {
+                        case Kind::Observer: in = HvLive::all(); break;
+                        case Kind::Goto: in = target_live(node.target); break;
+                        case Kind::CondGoto: in = out | target_live(node.target); break;
+                        case Kind::Plain:
+                            node.dead = node.stmt.removable && node.stmt.kill.intersects(enabled) &&
+                                        !node.stmt.kill.intersects(out);
+                            in = node.dead ? out : (out.minus(node.stmt.kill) | node.stmt.use);
+                            break;
+                    }
+                    if (!(in == node.in)) {
+                        node.in = in;
+                        changed = true;
+                    }
+                    out = in;
+                }
+            }
+        }
+    }
+
+    u32 fs_used_ = 0u;
+};
+
+// Bits 8 / 16 / 32 of --hot-value: the hot bodies call the force-inlined twin of update_cr0 / fp_compare /
+// psq_load + psq_store (ppc_ops.h: the same body, GEKKO_ALWAYS_INLINE). The out-of-line originals stay for
+// every other caller. Matched by the exact emitted spelling, like retarget_hot_accessors.
+void hv_retarget_helpers(std::string& code) {
+    struct Rule {
+        std::uint32_t bit;
+        const char* from;
+        const char* to;
+    };
+    static const Rule kRules[] = {
+        {8u, "ppc::update_cr0(c, ", "ppc::update_cr0_inl(c, "},
+        {16u, "ppc::fp_compare(c, ", "ppc::fp_compare_inl(c, "},
+        {32u, "ppc::psq_load(c, ", "ppc::psq_load_inl(c, "},
+        {32u, "ppc::psq_store(c, ", "ppc::psq_store_inl(c, "},
+    };
+    for (const Rule& rule : kRules) {
+        if ((g_hot_value & rule.bit) == 0u) continue;
+        const std::string from(rule.from);
+        const std::string to(rule.to);
+        for (std::size_t at = code.find(from); at != std::string::npos; at = code.find(from, at + to.size())) {
+            code.replace(at, from.size(), to);
+        }
+    }
+}
+
+// cpu/opt2 (--hot-layout): marks the checks of a hot body that almost never fire GEKKO_UNLIKELY, by their exact
+// emitted spelling, so the compiler puts their blocks out of line and the usual path falls through. Without the
+// attribute MSVC lays the block of `if (rare) { call; return; }` in line and makes the usual path jump over it:
+// a taken branch after every call (the exit check), one at many FP instructions (the MSR[FP] guard), one at every
+// polled back edge. The statements and their order of evaluation are unchanged (`a && b` as `if (a) { if (b) }`).
+//
+// cpu/opt4 (2026-11-16): the attribute alone is not enough. MSVC 19.52 ignores [[likely]] / [[unlikely]] for block
+// placement (a hinted and an unhinted body compile to the same bytes); what it places out of line is the `else`
+// block of `if (usual) {} else { ...; return; }` when that block never rejoins the body. So every rare check is
+// emitted in that shape (g_hot_layout_structural, the default of --hot-layout; --hot-layout-attr keeps the
+// attribute-only text of cpu/opt2):
+//   * `if (C) { X; return; }` becomes `if (!(C)) GEKKO_LIKELY {} else { X; return; }`: the same condition, the same
+//     block, on the other arm.
+//   * the exit check followed by the pc check of a call,
+//         if (c.exiting() && c.finish_transfers()) return;
+//         if (c.pc != L) { recomp::resume_elsewhere(c, S); return; }
+//     rejoins the body when the callee's published transfers have run and nothing else is pending, and a block
+//     that rejoins is placed in line. That arm now makes the pc check itself and goes on at the link through the
+//     body's own entry dispatch: `entry = c.pc; goto gekko_top;` (c.pc is the link there; the dispatch has a case
+//     for every hot label, and the link of a call is one). Same host frame, same guest instructions in the same
+//     order; no host local is live at a label (the GPR cache and the value pass end at labels and at calls). A
+//     call that is the row's last instruction ends its arm in the row's tail text instead (the transfer to what
+//     follows the row); a link that is not a hot label of the row keeps the attribute-only spelling.
+//     Two other forms of this arm were built and measured on 2026-11-16 and are not in the generator:
+//       - the rest of the row published as a transfer for the waiting frame (bounded stack, but the Westopolis
+//         replay ended on another state: every ancestor is then re-entered at its link in turn, and something
+//         in the runtime depends on that; not found);
+//       - `<row>_body_at(c, link); return;` (exact on the replays, but MSVC compiled about one such arm per
+//         function as a real call, 13,025 in the image: host stack that grows with a guest loop).
+
+// `if (COND) { <marker>` at `at` (the position of the ") {" that ends COND): rewrites the statement's head to
+// `if (!(COND)) GEKKO_LIKELY {} else { <marker>`. False (nothing changed) when the condition's start is not found
+// on the way back or its parentheses do not balance.
+bool hv_invert_guard(std::string& code, std::size_t at, std::size_t& resume_at) {
+    static const std::string kIf = "if (";
+    const std::size_t start = code.rfind(kIf, at);
+    if (start == std::string::npos) return false;
+    const std::string condition = code.substr(start + kIf.size(), at - (start + kIf.size()));
+    int depth = 0;
+    for (const char ch : condition) {
+        if (ch == '(') ++depth;
+        else if (ch == ')' && --depth < 0) return false;
+        else if (ch == ';' || ch == '{' || ch == '}' || ch == '\n') return false;
+    }
+    if (depth != 0) return false;
+    const std::string head = "if (!(" + condition + ")) GEKKO_LIKELY {} else {";
+    code.replace(start, at + 3u - start, head);  // "if (" COND ") {"
+    resume_at = start + head.size();
+    return true;
+}
+
+// What the call rule needs to know about the row: which link addresses the body's entry dispatch has a case for
+// (its hot labels other than the first instruction), and the row's end. A call that is the row's last instruction
+// continues in the text after the row (`tail`: the transfer to whatever follows), so its rare arm ends in that
+// text instead; any other link keeps the attribute-only spelling.
+struct HvLayoutRow {
+    const std::unordered_set<u32>* hot_labels = nullptr;
+    u32 end = 0;            // one past the row
+    u32 last = 0;           // its last instruction
+    std::string tail;       // the text after the last instruction, on one line; empty: not usable
+};
+std::uint64_t g_layout_calls_resumed = 0;
+std::uint64_t g_layout_calls_tail = 0;
+std::uint64_t g_layout_calls_kept = 0;
+
+void hv_apply_layout(std::string& code, bool& top_used, const HvLayoutRow& row) {
+    if (g_hot_layout_structural) {
+        // The call's exit check and pc check, as one unit (see above).
+        static const std::string kExit = kCallExitCheck;
+        static const std::string kPcHead = "if (c.pc != ";
+        static const std::string kPcMid = ") { recomp::resume_elsewhere(c, ";
+        static const std::string kPcTail = "); return; }";
+        for (std::size_t at = code.find(kExit); at != std::string::npos;) {
+            std::size_t p = at + kExit.size();
+            while (p < code.size() && (code[p] == ' ' || code[p] == '\n')) ++p;
+            std::size_t next = at + kExit.size();
+            if (code.compare(p, kPcHead.size(), kPcHead) == 0) {
+                const std::size_t link_at = p + kPcHead.size();
+                const std::size_t mid = code.find(kPcMid, link_at);
+                const std::size_t site_at = mid == std::string::npos ? mid : mid + kPcMid.size();
+                const std::size_t tail = mid == std::string::npos ? mid : code.find(kPcTail, site_at);
+                if (mid != std::string::npos && tail != std::string::npos && mid - link_at == 11u && tail - site_at == 11u) {
+                    const std::string link = code.substr(link_at, 11u);  // 0xXXXXXXXXu
+                    const std::string site = code.substr(site_at, 11u);
+                    const std::string between = code.substr(at + kExit.size(), p - (at + kExit.size()));
+                    const u32 link_value = static_cast<u32>(std::strtoul(link.c_str() + 2, nullptr, 16));
+                    const u32 site_value = static_cast<u32>(std::strtoul(site.c_str() + 2, nullptr, 16));
+                    std::string rest;  // how the rare arm continues the row once the callee's transfers have run
+                    if ((g_hot_layout_parts & 1u) == 0u) {
+                    } else if (row.hot_labels != nullptr && row.hot_labels->count(link_value) != 0u) {
+                        rest = "entry = c.pc; goto gekko_top;";
+                        top_used = true;
+                        ++g_layout_calls_resumed;
+                    } else if (link_value == row.end && site_value == row.last && !row.tail.empty()) {
+                        rest = row.tail;
+                        ++g_layout_calls_tail;
+                    }
+                    std::string replacement;
+                    if (!rest.empty()) {
+                        replacement =
+                            "if (!c.exiting()) GEKKO_LIKELY {} else { if (c.finish_transfers()) return; if (c.pc != " + link +
+                            ") { recomp::resume_elsewhere(c, " + site + "); return; } " + rest + " }";
+                    } else {
+                        replacement = "if (c.exiting()) GEKKO_UNLIKELY { if (c.finish_transfers()) return; }";
+                        ++g_layout_calls_kept;
+                    }
+                    replacement += between + "if (c.pc == " + link + ") GEKKO_LIKELY {} else { recomp::resume_elsewhere(c, " +
+                                   site + "); return; }";
+                    code.replace(at, tail + kPcTail.size() - at, replacement);
+                    next = at + replacement.size();
+                }
+            }
+            at = code.find(kExit, next);
+        }
+        // {what precedes the ") {" that ends the condition, what follows it}: the guards of hv_apply_layout's old rules.
+        static const char* const kMarkers[][2] = {
+            {"", ") { recomp::fp_unavailable("},
+            {"", ") { recomp::illegal_instruction("},
+            {"c.needs_dispatch()", ") { c.leave_to_dispatcher("},
+            {"&& c.needs_dispatch()", ") { c.pc = tmp; c.leave_to_dispatcher("},
+        };
+        for (const auto& marker : kMarkers) {
+            if ((g_hot_layout_parts & 4u) == 0u) break;
+            const std::string prefix(marker[0]);
+            const std::string from = prefix + marker[1];
+            for (std::size_t found = code.find(from); found != std::string::npos;) {
+                const std::size_t at = found + prefix.size();  // the ") {"
+                std::size_t next = found + from.size();
+                // Only a guard that leaves: the block is `{ ...; return; }` on this line, with no block inside.
+                const std::size_t line_end = code.find('\n', at);
+                const std::size_t close = code.find("return; }", at);
+                const std::size_t inner = code.find('{', at + 3u);
+                if (close != std::string::npos && (line_end == std::string::npos || close < line_end) &&
+                    (inner == std::string::npos || inner > close)) {
+                    std::size_t resume_at = 0;
+                    if (hv_invert_guard(code, at, resume_at)) next = resume_at;
+                }
+                found = code.find(from, next);
+            }
+        }
+        return;
+    }
+    static const char* const kRules[][2] = {
+        {") { recomp::fp_unavailable(", ") GEKKO_UNLIKELY { recomp::fp_unavailable("},
+        {") { recomp::illegal_instruction(", ") GEKKO_UNLIKELY { recomp::illegal_instruction("},
+        {"if (c.exiting() && c.finish_transfers()) return;",
+         "if (c.exiting()) GEKKO_UNLIKELY { if (c.finish_transfers()) return; }"},
+        {") { recomp::resume_elsewhere(", ") GEKKO_UNLIKELY { recomp::resume_elsewhere("},
+        {"if (c.needs_dispatch()) { c.leave_to_dispatcher(", "if (c.needs_dispatch()) GEKKO_UNLIKELY { c.leave_to_dispatcher("},
+        {"&& c.needs_dispatch()) { c.pc = tmp; ", "&& c.needs_dispatch()) GEKKO_UNLIKELY { c.pc = tmp; "},
+    };
+    for (const auto& rule : kRules) {
+        const std::string from(rule[0]);
+        const std::string to(rule[1]);
+        for (std::size_t at = code.find(from); at != std::string::npos; at = code.find(from, at + to.size())) {
+            code.replace(at, from.size(), to);
+        }
+    }
+}
+
+// The fs<n> locals a body declares for the pass.
+std::string hv_fs_decl(u32 used, const char* suffix) {
+    std::string decl;
+    for (u32 reg = 0; reg < 32u; ++reg) {
+        if ((used & (1u << reg)) == 0u) continue;
+        decl += decl.empty() ? "    u32 fs" : " u32 fs";
+        decl += std::to_string(reg) + suffix + " = 0;";
+    }
+    if (!decl.empty()) decl += "\n";
+    return decl;
+}
+
+// ---------------------------------------------------------------------------
 // cs2/cpu: leaf inlining
 //
 // A direct `bl` to a small straight-line leaf costs the call sequence around its few instructions: LR store,
@@ -3811,6 +4510,14 @@ std::string leaf_rename(const std::string& text, u32& used_gp) {
                 reg = reg * 10u + static_cast<u32>(word[k] - '0');
             }
             if (digits && reg < 32u) { rename = true; used_gp |= 1u << reg; }
+        }
+        // cpu/opt2: the hot-value pass's fs<n> locals.
+        if (!rename && word.size() >= 3u && word[0] == 'f' && word[1] == 's') {
+            bool digits = true;
+            for (std::size_t k = 2; k < word.size(); ++k) {
+                if (word[k] < '0' || word[k] > '9') { digits = false; break; }
+            }
+            rename = digits;
         }
         out += word;
         if (rename) out += "@@";
@@ -3909,6 +4616,28 @@ LeafInline build_leaf_inline(u32 target) {
         first = false;
     }
     if (g_inline_leaf_mutant == 1u && !pieces.empty()) pieces.front().code.clear();
+    HotValuePass hot_value;
+    if (g_hot_value != 0u) {
+        const std::uint64_t saved[4] = {g_hv_single_loads, g_hv_single_stores, g_hv_cr_removed, g_hv_fpr_removed};
+        std::vector<HvPiece> hv_pieces;
+        hv_pieces.reserve(pieces.size());
+        for (Piece& piece : pieces) {
+            HvPiece hv;
+            hv.address = piece.address;
+            hv.label = piece.label;
+            hv.falls = piece.falls;
+            hv.code = &piece.code;
+            hv_pieces.push_back(hv);
+        }
+        hot_value.run(hv_pieces);
+        if ((g_hot_value & 0x38u) != 0u) {
+            for (Piece& piece : pieces) hv_retarget_helpers(piece.code);
+        }
+        g_hv_single_loads = saved[0];
+        g_hv_single_stores = saved[1];
+        g_hv_cr_removed = saved[2];
+        g_hv_fpr_removed = saved[3];
+    }
     // The cache pass, as for a hot body (its statistics are not this function's).
     const std::uint64_t saved_filled = g_gpr_cache_reads_filled;
     const std::uint64_t saved_cached = g_gpr_cache_reads_cached;
@@ -3935,6 +4664,7 @@ LeafInline build_leaf_inline(u32 target) {
     if (!leaf_text_safe(body)) return none;
     u32 used_gp = 0;
     const std::string renamed = leaf_rename(body, used_gp);
+    const std::string fs_decl = hv_fs_decl(hot_value.fs_used(), "@@");
     LeafInline result;
     result.ok = true;
     std::string& text = result.text;
@@ -3946,6 +4676,7 @@ LeafInline build_leaf_inline(u32 target) {
     for (u32 reg = 0; reg < 32u; ++reg) {
         if ((used_gp & (1u << reg)) != 0u) text += "    u32 gp" + std::to_string(reg) + "@@ = 0;\n";
     }
+    text += fs_decl;
     text += renamed;
     text += "    }\n";
     text += "    gekko_leaf_end@@: ;\n";
@@ -3978,7 +4709,7 @@ void substitute_leaf_sites(std::string& code, unsigned& counter) {
             const std::string hex(text.substr(kMarker.size() - 2u + 2u, 8u));
             const u32 target = static_cast<u32>(std::strtoul(hex.c_str(), nullptr, 16));
             const LeafInline& leaf = g_leaf_cache.at(target);
-            std::string block = leaf.text;
+            std::string block = cover_mark(target) + leaf.text;
             const std::string suffix = "_i" + std::to_string(counter++);
             for (std::size_t at = block.find("@@"); at != std::string::npos; at = block.find("@@", at + suffix.size()))
                 block.replace(at, 2u, suffix);
@@ -4038,7 +4769,8 @@ std::string emit_function(const DolImage& image, const Candidate& candidate,
         // discarded, and building them twice (hot+cold) for 3,601 absorbed
         // rows is pure generator cost.
         std::string text = annotate('a', candidate.record.address);
-        text += "static void " + body_symbol + "(Cpu& c, u32 entry) { " +
+        text += "static void " + body_symbol + "(Cpu& c, u32 entry) {" +
+                (g_coverage ? "\n" + cover_mark(candidate.record.address) + "    " : std::string(" ")) +
                 fn_symbol(candidate.absorbed_by) + "_at(c, entry); }\n";
         text += "void " + fn_symbol(candidate.record.address) +
                 "_at(Cpu& c, u32 entry) { " + body_symbol + "(c, entry); }\n";
@@ -4156,6 +4888,23 @@ std::string emit_function(const DolImage& image, const Candidate& candidate,
     // s3/gen: serve register reads of an unlabeled run from host locals (hot
     // text only; every write still goes to c.gpr). Runs break at labels, at
     // non-contiguous addresses and after anything that cannot fall through.
+    HotValuePass hot_value;
+    if (g_hot_value != 0u) {
+        std::vector<HvPiece> hv_pieces;
+        hv_pieces.reserve(ir.size());
+        for (IrInsn& insn : ir) {
+            HvPiece piece;
+            piece.address = insn.address;
+            piece.label = insn.hot_label;
+            piece.falls = insn.falls_through;
+            piece.code = &insn.hot_code;
+            hv_pieces.push_back(piece);
+        }
+        hot_value.run(hv_pieces);
+        if ((g_hot_value & 0x38u) != 0u) {
+            for (IrInsn& insn : ir) hv_retarget_helpers(insn.hot_code);
+        }
+    }
     GprCache gpr_cache;
     if (g_gpr_cache) {
         u32 previous = 0;
@@ -4180,6 +4929,7 @@ std::string emit_function(const DolImage& image, const Candidate& candidate,
         gpr_cache_decl += std::to_string(reg) + " = 0;";
     }
     if (!gpr_cache_decl.empty()) gpr_cache_decl += "\n";
+    gpr_cache_decl += hv_fs_decl(hot_value.fs_used(), "");
 
     std::string hot_body;
     std::size_t hot_annotation_bytes = 0;  // --annotate-lines only; kept out of the report
@@ -4199,6 +4949,36 @@ std::string emit_function(const DolImage& image, const Candidate& candidate,
     hot_body += tail_code;
     emit_shared_indirect_dispatch(hot_cap);
     hot_body += hot_cap.body;
+    bool top_used = false;  // the body needs its gekko_top label (hv_apply_layout's call rule)
+    if (g_hot_layout) {
+        std::unordered_set<u32> row_hot_labels;
+        for (const IrInsn& insn : ir) {
+            if (insn.hot_label && insn.address != candidate.record.address) row_hot_labels.insert(insn.address);
+        }
+        HvLayoutRow row;
+        row.hot_labels = &row_hot_labels;
+        row.end = candidate.record.address + candidate.record.size;
+        row.last = ir.empty() ? 0u : ir.back().address;
+
+        // The tail on one line; used only when it is statements that end in `return;` (it always is: emit_jump).
+        for (std::size_t i = 0; i < tail_code.size();) {
+            const std::size_t nl = tail_code.find('\n', i);
+            const std::size_t stop = nl == std::string::npos ? tail_code.size() : nl;
+            std::size_t first = i;
+            while (first < stop && tail_code[first] == ' ') ++first;
+            if (first < stop) {
+                if (!row.tail.empty()) row.tail += ' ';
+                row.tail.append(tail_code, first, stop - first);
+            }
+            i = stop + 1u;
+        }
+        const std::string kReturn = "return;";
+        if (row.tail.size() < kReturn.size() || row.tail.compare(row.tail.size() - kReturn.size(), kReturn.size(), kReturn) != 0 ||
+            row.tail.find('{') != std::string::npos || row.tail.find('#') != std::string::npos) {
+            row.tail.clear();
+        }
+        hv_apply_layout(hot_body, top_used, row);
+    }
 
     g_ir_insns += ir.size();
     for (const IrInsn& insn : ir) {
@@ -4213,6 +4993,7 @@ std::string emit_function(const DolImage& image, const Candidate& candidate,
     // accepts every hot label, not only declared thunks, so a cold trampoline
     // can join at a branch target without regenerating the rest of the function.
     text += "static void " + cold_symbol + "(Cpu& c, u32 entry);\n";
+
     {
         std::vector<u32> hot_entries;
         for (const IrInsn& insn : ir) {
@@ -4220,15 +5001,65 @@ std::string emit_function(const DolImage& image, const Candidate& candidate,
                 hot_entries.push_back(insn.address);
             }
         }
-        text += "static void " + body_symbol + "(Cpu& GEKKO_CPU_RESTRICT c, u32 entry) {\n";
+        const bool direct = g_direct_rows.count(candidate.record.address) != 0u;
+        text += std::string(direct ? "GEKKO_NOINLINE void " : "static void ") + body_symbol +
+                "(Cpu& GEKKO_CPU_RESTRICT c, u32 entry) {\n";
         if (hot_cap.indirect_dispatch_used) text += "    u32 gekko_indirect_site = 0;\n";
         text += annotate('g', candidate.record.address);
         text += "    u32 ea = 0; u32 tmp = 0; u32 cra = 0; u32 crb = 0; bool cnd = false;\n";
         text += "    u64 tmp64 = 0; double fa = 0.0; double fb = 0.0;\n";
         text += "    (void)ea; (void)tmp; (void)cra; (void)crb; (void)cnd;\n";
         text += "    (void)tmp64; (void)fa; (void)fb;\n";
+        text += cover_mark(candidate.record.address);
         text += gpr_cache_decl;
-        if (hot_entries.empty()) {
+        if (g_hot_layout) {
+            // cpu/opt2: the other entries first, as one block the compiler moves out of line, so the entry every
+            // call takes falls through into the body. A direct row's entry 0 then runs the hook filter exactly
+            // as its thunk did (Cpu::hle_clear, then Cpu::try_hle_slow: served = return, declined = the body);
+            // its own address is an ordinary entry without the filter (the cold trampoline's back edge to the
+            // first instruction, a caller that has run the filter).
+            if (direct || !hot_entries.empty()) {
+                // cpu/opt4: `if (usual) {} else { ...; return; }`, the shape the compiler places out of line
+                // without the attribute (hv_apply_layout).
+                // gekko_top: where a call's rare arm re-enters the dispatch (hv_apply_layout's call rule).
+                if (top_used) text += "gekko_top:\n";
+                if (g_hot_layout_structural && (g_hot_layout_parts & 2u) != 0u)
+                    text += "    if (entry == " + (direct ? std::string("0u") : hexu(candidate.record.address)) +
+                            ") GEKKO_LIKELY {} else {\n";
+                else
+                text += "    if (entry != " + (direct ? std::string("0u") : hexu(candidate.record.address)) +
+                        ") GEKKO_UNLIKELY {\n";
+                text += "        switch (entry) {\n";
+                if (direct) {
+                    text += "            case " + hexu(candidate.record.address) + ": goto " +
+                            label(candidate.record.address) + ";\n";
+                }
+                for (const u32 address : hot_entries) {
+                    text += "            case " + hexu(address) + ": goto " + label(address) + ";\n";
+                }
+                text += "            default: break;\n";
+                text += "        }\n";
+                text += "        " + cold_symbol + "(c, entry);\n";
+                text += "        return;\n";
+                text += "    }\n";
+            } else {
+                text += "    (void)entry;\n";
+            }
+            if (direct && g_hot_layout_structural && (g_hot_layout_parts & 2u) != 0u) {
+                // cpu/opt4: the same filter (`!hle_clear(A)` is `!hle_vacant(A) && hle_named(A)`) with the usual
+                // answer first and a rare arm that never rejoins: a hook that declined, or a slot another hook
+                // occupies, runs the body through the row's own entry (the cold trampoline's back edge to the
+                // first instruction: entry A, the entry without the filter).
+                const std::string a = hexu(candidate.record.address);
+                text += "    if (c.hle_vacant(" + a + ")) GEKKO_LIKELY {} else { if (c.hle_named(" + a +
+                        ")) { if (c.hle_entry_slow(" + a + ")) return; } " + cold_symbol + "(c, " + a + "); return; }\n";
+            } else if (direct) {
+                text += "    if (!c.hle_clear(" + hexu(candidate.record.address) + ")) GEKKO_UNLIKELY { if (c.hle_entry_slow(" +
+                        hexu(candidate.record.address) + ")) return; }\n";
+            }
+            text += hot_body;
+            text += "}\n";
+        } else if (hot_entries.empty()) {
             text += "    (void)entry;\n";
             text += hot_body;
             text += "}\n";
@@ -4256,6 +5087,7 @@ std::string emit_function(const DolImage& image, const Candidate& candidate,
     text += "    u64 tmp64 = 0; double fa = 0.0; double fb = 0.0;\n";
     text += "    (void)ea; (void)tmp; (void)cra; (void)crb; (void)cnd;\n";
     text += "    (void)tmp64; (void)fa; (void)fb;\n";
+    text += cover_mark(candidate.record.address);
     // COLD trampoline. Interior entry is still native: every reachable address
     // has a dispatch case. A hot label joins the optimized body; a mid-block
     // address runs only the IR suffix to the next hot label (same snippets the
@@ -4412,9 +5244,70 @@ int run_gpr_cache_filter() {
     return 0;
 }
 
+// Test hook (tools/ppcrecomp/test_hot_value.py): runs the hot-body value pass over one body read from stdin.
+// Input: "@piece <hex address> <label 0|1> <falls 0|1>" starts an instruction's snippet, "@end" ends the body.
+// Output repeats the markers with the rewritten snippets and ends with "@fs <mask>" (the fs<n> locals used).
+int run_hot_value_filter(std::uint32_t mask, std::uint32_t mutant) {
+    g_hot_value = mask;
+    g_hot_value_mutant = mutant;
+    struct Row {
+        std::string marker;
+        u32 address = 0;
+        bool label = false;
+        bool falls = true;
+        std::string code;
+    };
+    std::vector<Row> rows;
+    char buffer[4096];
+    while (std::fgets(buffer, sizeof(buffer), stdin) != nullptr) {
+        std::string text(buffer);
+        while (!text.empty() && (text.back() == '\n' || text.back() == '\r')) text.pop_back();
+        if (text == "@end") break;
+        if (text.rfind("@piece ", 0) == 0) {
+            Row row;
+            row.marker = text;
+            char* cursor = nullptr;
+            row.address = static_cast<u32>(std::strtoul(text.c_str() + 7, &cursor, 16));
+            row.label = std::strtoul(cursor, &cursor, 10) != 0u;
+            row.falls = std::strtoul(cursor, &cursor, 10) != 0u;
+            rows.push_back(std::move(row));
+            continue;
+        }
+        if (rows.empty()) return 2;
+        rows.back().code += text;
+        rows.back().code += '\n';
+    }
+    std::vector<HvPiece> pieces;
+    pieces.reserve(rows.size());
+    for (Row& row : rows) {
+        HvPiece piece;
+        piece.address = row.address;
+        piece.label = row.label;
+        piece.falls = row.falls;
+        piece.code = &row.code;
+        pieces.push_back(piece);
+    }
+    HotValuePass pass;
+    pass.run(pieces);
+    if ((g_hot_value & 0x38u) != 0u) {
+        for (Row& row : rows) hv_retarget_helpers(row.code);
+    }
+    for (const Row& row : rows) {
+        std::fputs((row.marker + "\n").c_str(), stdout);
+        std::fputs(row.code.c_str(), stdout);
+    }
+    std::printf("@fs %u\n", pass.fs_used());
+    return 0;
+}
+
 int main(int argc, char** argv) {
     for (int index = 1; index < argc; ++index) {
         if (std::strcmp(argv[index], "--gpr-cache-filter") == 0) return run_gpr_cache_filter();
+        if (std::strcmp(argv[index], "--hot-value-filter") == 0) {
+            const std::uint32_t mask = index + 1 < argc ? static_cast<std::uint32_t>(std::strtoul(argv[index + 1], nullptr, 0)) : 7u;
+            const std::uint32_t mutant = index + 2 < argc ? static_cast<std::uint32_t>(std::strtoul(argv[index + 2], nullptr, 0)) : 0u;
+            return run_hot_value_filter(mask, mutant);
+        }
     }
     Options options;
     if (!parse_options(argc, argv, options)) {
@@ -6209,6 +7102,17 @@ int main(int argc, char** argv) {
     if (g_inline_leaves) {
         for (const Candidate& candidate : accepted) g_leaf_rows.emplace(candidate.record.address, &candidate);
     }
+    g_direct_rows.clear();
+    if (g_hot_layout) {
+        for (const Candidate& candidate : accepted) {
+            const u32 address = candidate.record.address;
+            if (candidate.native_owner || candidate.absorbed_by != 0u || g_empty_variadic_leaves.count(address) != 0u ||
+                g_inline_roots.count(address) != 0u) {
+                continue;
+            }
+            g_direct_rows.insert(address);
+        }
+    }
     // ---- write the generated sources ----
     const std::string out = options.out;
     OutputStats output_stats;
@@ -6255,6 +7159,12 @@ int main(int argc, char** argv) {
                 }
             }
         }
+        // cpu/opt2 (--hot-layout): the hot bodies direct calls enter (entry 0).
+        for (const Candidate& candidate : accepted) {
+            if (g_direct_rows.count(candidate.record.address) != 0u) {
+                header << "void " << fn_symbol(candidate.record.address) << "_body(Cpu& GEKKO_CPU_RESTRICT c, u32 entry);\n";
+            }
+        }
         // The lowered call sites' generated functions (recomp_table.cpp).
         if (std::any_of(g_lift_sites.begin(), g_lift_sites.end(), [](const auto& entry) {
                 return entry.second.kind == LiftKind::AffineMatrixCopy;
@@ -6285,6 +7195,15 @@ int main(int argc, char** argv) {
     // Emit one shard at a time. Keeping every emitted body alive duplicated
     // the whole generated corpus in RAM; only a single shard and current
     // function need storage. Preserve the existing row order and placement.
+    if (g_coverage && !accepted.empty()) {
+        std::uint32_t low = 0xffffffffu, high = 0u;
+        for (const Candidate& candidate : accepted) {
+            low = std::min(low, candidate.record.address);
+            high = std::max(high, candidate.record.address + candidate.record.size);
+        }
+        g_cover_base = low;
+        g_cover_words = (high - low) / 4u + 1u;
+    }
     for (std::size_t shard = 0; shard < shards; ++shard) {
         std::ostringstream stream;
         stream << "// Generated by tools/ppcrecomp. Do not edit.\n";
@@ -6338,6 +7257,27 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "leaf inlining (<= %u instructions): %zu callees spliced at %llu hot call sites\n",
                      static_cast<unsigned>(g_inline_leaf_max), g_inlined_leaf_targets.size(),
                      static_cast<unsigned long long>(g_inlined_leaf_sites));
+    }
+    if (g_hot_layout) {
+        std::fprintf(stderr, "hot layout: %zu rows entered at their hot body by direct calls (entry 0)\n",
+                     g_direct_rows.size());
+        if (g_hot_layout_structural) {
+            std::fprintf(stderr,
+                         "hot layout (structural): call checks whose rare arm leaves: %llu through the body's entry dispatch, "
+                         "%llu through the row's tail; %llu kept the attribute-only spelling\n",
+                         static_cast<unsigned long long>(g_layout_calls_resumed),
+                         static_cast<unsigned long long>(g_layout_calls_tail),
+                         static_cast<unsigned long long>(g_layout_calls_kept));
+        }
+    }
+    if (g_hot_value != 0u) {
+        std::fprintf(stderr,
+                     "hot value pass (mask %u): %llu single loads keep their word, %llu single stores forwarded, "
+                     "%llu CR writes and %llu FPR half writes removed (hot bodies; spliced leaves not counted)\n",
+                     static_cast<unsigned>(g_hot_value), static_cast<unsigned long long>(g_hv_single_loads),
+                     static_cast<unsigned long long>(g_hv_single_stores),
+                     static_cast<unsigned long long>(g_hv_cr_removed),
+                     static_cast<unsigned long long>(g_hv_fpr_removed));
     }
     if (g_gpr_cache) {
         std::fprintf(stderr, "gpr cache: %llu register reads filled from c.gpr, %llu served from locals\n",
@@ -6782,6 +7722,34 @@ GEKKO_NOINLINE bool call_type_query(Cpu& c, u32 site, u16 query, u32 target) {
         if (lift_records.empty()) table << "    0u,\n";
         table << "};\n#endif\n\n";
         std::fprintf(stderr, "dispatch ranges: %zu contiguous translated runs\n", disjoint.size());
+        if (g_coverage) {
+            // The marks (GEKKO_COVER, gekko/recomp.h) and their report: at process exit, GEKKO_COVERAGE=<file> gets
+            // one line per row whose translation ran, united with the rows the file already lists (runs accumulate).
+            table << "\n// --coverage: one byte per guest instruction word; a row's mark is the byte of its address.\n"
+                  << "constexpr u32 kCoverBase = " << hexu(g_cover_base) << ", kCoverWords = " << g_cover_words << "u;\n"
+                  << "unsigned char g_cover[kCoverWords] = {};\n"
+                  << "namespace {\n"
+                  << "struct CoverReport {\n"
+                  << "    ~CoverReport() {\n"
+                  << "        char path[1024] = {};\n"
+                  << "        std::size_t size = 0;\n"
+                  << "        if (getenv_s(&size, path, sizeof(path), \"GEKKO_COVERAGE\") != 0 || size == 0u) return;\n"
+                  << "        std::FILE* old = nullptr;\n"
+                  << "        if (fopen_s(&old, path, \"r\") == 0 && old != nullptr) {\n"
+                  << "            unsigned address = 0;\n"
+                  << "            while (fscanf_s(old, \"%x\", &address) == 1)\n"
+                  << "                if (address >= kCoverBase && (address - kCoverBase) / 4u < kCoverWords) g_cover[(address - kCoverBase) / 4u] = 1;\n"
+                  << "            std::fclose(old);\n"
+                  << "        }\n"
+                  << "        std::FILE* f = nullptr;\n"
+                  << "        if (fopen_s(&f, path, \"w\") != 0 || f == nullptr) return;\n"
+                  << "        for (u32 i = 0; i < kCoverWords; ++i)\n"
+                  << "            if (g_cover[i] != 0u) std::fprintf(f, \"%08X\\n\", static_cast<unsigned>(kCoverBase + i * 4u));\n"
+                  << "        std::fclose(f);\n"
+                  << "    }\n"
+                  << "} g_cover_report;\n"
+                  << "}  // namespace\n\n";
+        }
         table << "}  // namespace recomp\n}  // namespace gekko\n";
         if (!write_if_changed(out + "/recomp_table.cpp", table.str(), output_stats)) return 1;
     }

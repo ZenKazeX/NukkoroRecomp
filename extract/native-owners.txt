@@ -135,6 +135,43 @@
 0x80422550 motion store: pool destroy
 0x804225B0 motion store: pool create
 #
+# runtime/src/gekko/native_motion_bank_store.cpp (MotionBankStore::install; SubQ batch B003,
+# recovered/game/motion/README.md): the motion bank registry as native structures - the bank
+# list, pool records, clip nodes and use counts, held ids and cursors of the state block
+# 0x805F2458..77 - and the 15 functions of the store over it. Clip bytes, nodes and bank
+# headers stay in the game heap (same allocations); the state block is published only for
+# checkpoints and state reports. Must equal MotionBankStore::addresses().
+0x80412764 motion banks: drop loaded clips
+0x80412868 motion banks: next record
+0x80412E3C motion banks: record query
+0x8041342C motion banks: handle of
+0x8041352C motion banks: track cursor
+0x80413644 motion banks: frame range
+0x80413788 motion banks: id of name
+0x80413870 motion banks: name of
+0x80413970 motion banks: data of
+0x80413A24 motion banks: unregister
+0x804140A8 motion banks: register
+0x80414290 motion banks: release
+0x80414368 motion banks: acquire
+0x80414588 motion banks: build pool bank
+0x8041ADAC motion banks: slot bind
+# The symbol map's rows that start inside those bodies (unreachable `b` words MWCC leaves after a
+# loop or a call; two are census roots): owned so that no original word of an owned body is
+# translated; the owner stops the run if one is ever entered.
+0x80412978 motion banks: unreachable branch in 0x80412868
+0x80412E20 motion banks: unreachable branches in 0x80412868
+0x80412F4C motion banks: unreachable branch in 0x80412E3C
+0x80413410 motion banks: unreachable branches in 0x80412E3C
+0x8041346C motion banks: unreachable branch in 0x8041342C
+0x80413514 motion banks: unreachable branch in 0x8041342C
+0x80413564 motion banks: unreachable branch in 0x8041352C
+0x804136C8 motion banks: unreachable branch in 0x80413644
+0x80413770 motion banks: unreachable branch in 0x80413644
+0x80413B9C motion banks: unreachable branch in 0x80413A24
+0x804142AC motion banks: unreachable branch in 0x80414290
+0x80414354 motion banks: unreachable branch in 0x80414290
+#
 # runtime/src/gekko/native_sound_banks.cpp (NativeSoundBanks::install): the
 # GCAX sound banks without ARAM (docs/ARAM.md step 2) - the banks live in a
 # native arena and the bank upload is a plain copy (no ARQ, no wait); the init's
@@ -650,12 +687,11 @@
 0x803992C8 GX BP state register setter
 # runtime/src/gekko/native_os_font.cpp (os_font::install): the OS font library (docs/agents/os-font.md). OSGetFontEncode
 # is served natively (r3 = 0 ANSI: the video contract serves no Japanese encoder; the live caller is CARDInit);
-# OSInitFont and OSGetFontTexture are owned as never entered (the font comes from the boot ROM, which this program
-# does not have): entering them stops the run. Their callees (ReadFont, Decode, GetFontCode, ExpandFontSheet,
+# OSInitFont is owned as never entered (the font comes from the boot ROM, which this program does not have): entering
+# it stops the run. OSGetFontTexture is retired (native/win N7): no owner, no body, nothing calls it. Their callees (ReadFont, Decode, GetFontCode, ExpandFontSheet,
 # ParseStringS) lose their last entry. Must equal os_font::Owners (native_file_api_tests).
 0x80375150 OSGetFontEncode
 0x80375DA0 OSInitFont
-0x80375FAC OSGetFontTexture
 # runtime/src/gekko/native_mix_entries.cpp (mix_entries::install): the AX mixer library's MIXQuit (a bare blr) and
 # MIXSetSoundMode (stw r3,0x5DC8(r13): the sound-mode word the mixer's own bodies read). Must equal
 # mix_entries::Owners (native_file_api_tests).
@@ -757,6 +793,12 @@
 0x8040C94C matrix 3x4 concat
 0x8040CD24 matrix 3x4 invert in place
 0x8040CF48 matrix 3x4 invert
+#
+# runtime/src/gekko/native_math_mtx.cpp (math_mtx::install; docs/hal/HAL_DETACHMENT.md section 4 step 1): the Dolphin SDK's
+# PSMTXConcat (mtx.c, paired singles), the last SDK body live translated code reached (one caller, 0x804A7334). A plain-float
+# fast path in the original's lane order with one-rounding fma and the exact psq / fps_* sequence for NaN, tiny values, a
+# quantised GQR0 or an input overlapping the stack frame. Must equal math_mtx::Owners (native_file_api_tests).
+0x8037976C PSMTXConcat
 #
 # runtime/src/gekko/native_mtn_pose.cpp (mtn_pose::install): the Mtn pose pass (docs/agents/opt-mtn2.md): the bone-tree walk, the node
 # callbacks (rotations, scales, translations, one bone's Euler angles) and the matrix -> quaternion -> slerp -> matrix chain with the

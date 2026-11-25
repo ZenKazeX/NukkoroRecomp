@@ -110,6 +110,9 @@ public:
     // distance test native; contact events, records and the narrow phase (vf 0x80) the guest's, called with the
     // guest's own return addresses (the contract and the hand-backs at run_pass in the .cpp).
     static constexpr u32 kPass = 0x800C7068u;
+    // Whether the pass is installed when nothing on the command line says: the build's default (CMake option
+    // SHADOW_CHARA_COLLI_PASS), overridden by GEKKO_CHARA_COLLI_PASS=0/1.
+    static bool pass_default() noexcept;
     bool serve_pass(Cpu& cpu);
     u64 pass_calls() const noexcept { return pass_calls_; }
     u64 pass_finished() const noexcept { return pass_finished_; }
@@ -120,6 +123,7 @@ public:
     u64 pass_contacts() const noexcept { return pass_contacts_; }  // narrow phases in contact
     u64 pass_verified() const noexcept { return pass_verified_; }
     u64 pass_differed() const noexcept { return pass_differed_; }
+    u64 pass_dead_differed() const noexcept { return pass_dead_differed_; }  // passes whose dead stack differed
 
     // --trace-stale-contacts (observation only; every guest access then takes the traced slow path): the narrow
     // phase copies its stack contact results R (0x8001FF00 initialises three words) into the heap contact objects
@@ -263,7 +267,13 @@ private:
     bool run_pass(Cpu& cpu);
     bool verify_pass(Cpu& cpu);
     u64 pass_calls_ = 0, pass_finished_ = 0, pass_back_[4] = {}, pass_pairs_ = 0, pass_narrow_ = 0,
-        pass_contacts_ = 0, pass_verified_ = 0, pass_differed_ = 0;
+        pass_contacts_ = 0, pass_verified_ = 0, pass_differed_ = 0, pass_dead_differed_ = 0;
+    // run_pass: the helpers' frame words below its frame (f - 0x80 .. f + 4), held until guest code can see them.
+    u32 pass_dead_[34] = {};
+    u64 pass_pending_ = 0;
+    u32 pass_dead_base_ = 0;
+    void pass_flush(Cpu& cpu);
+    std::unordered_map<u32, BoneRun> pass_memo_;  // --verify-chara-colli: the memo as the pass found it
 
     DynamicCastIntrinsic* cast_ = nullptr;
 

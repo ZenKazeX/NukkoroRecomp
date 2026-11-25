@@ -27,6 +27,27 @@
 
 namespace {
 using namespace gekko;
+
+// Second arrangement (native/win N9): the voices' sync bookkeeping words in native storage (ax_voice_words.h). The
+// guest's copy is imported before every owner call and published after it, so the comparison with the original
+// stays "all guest memory"; g_native_evidence counts owner calls after which the guest copy was still stale, i.e.
+// the owner really worked on the native words.
+bool g_native_words = false;
+AxVoiceWords g_words;
+unsigned g_native_evidence = 0;
+AxVoiceWords* words_or_null() { return g_native_words ? &g_words : nullptr; }
+void before_owner(GuestMemory& memory) {
+    if (g_native_words) g_words.import_from_guest(memory);
+}
+void after_owner(GuestMemory& memory) {
+    if (!g_native_words) return;
+    for (u32 i = 0; i < AxVoiceWords::kCount; ++i)
+        if (g_words.voice[i] != g_words.guest[i]) {
+            ++g_native_evidence;
+            break;
+        }
+    g_words.publish_to_guest(memory);
+}
 constexpr u32 kStack = 0x817E0000u, kReturn = 0x817FF000u, kR2 = 0x805FA780u, kR13 = 0x805EC500u;
 constexpr u32 kLow = 0x80000000u, kHigh = 0x80600000u;
 constexpr u32 kVpbBase = 0x805989A0u, kVpbStride = 0x22Cu, kHeads = 0x80587DC0u, kTails = 0x80587E40u;
@@ -255,6 +276,7 @@ void frame_world(const char* dol, u32 rounds) {
     engine.image = &image;
     engine.lists = &lists;
     engine.mix = [&owner](u32 list) { owner.memory.write32(kLogMail, list); };
+    engine.words = words_or_null();
     ax_frame::install(owner.cpu, lists);
     ax_frame::install_engine(owner.cpu, engine);
     Rng rng;
@@ -327,6 +349,7 @@ void frame_world(const char* dol, u32 rounds) {
         original.original(0x80385A20u, interrupts);  // the DSP's resume callback: the state word returns to 1
         // The native frame is the AI handler's step machine: every call it asks for runs to completion, as the delivery's guest calls do.
         owner.prepare(kAiCallbackEntry, interrupts);
+        before_owner(owner.memory);
         {
             ax_frame::Call call;
             unsigned step = 0;
@@ -337,6 +360,7 @@ void frame_world(const char* dol, u32 rounds) {
                 require(step < 400u, "the frame asked for too many calls");
             }
         }
+        after_owner(owner.memory);
         require(!owner.cpu.stopped(), "the native frame stopped the machine");
         require(original.cpu.msr() == owner.cpu.msr(), "the machine state register differs");
         // The list the original handed the DSP is the slot the native engine mixed.
@@ -365,6 +389,7 @@ void init_quit_world(const char* dol, u32 rounds) {
     engine.image = &image;
     engine.lists = &lists;
     engine.mix = [](u32) {};
+    engine.words = words_or_null();
     ax_frame::install(owner.cpu, lists);
     ax_frame::install_engine(owner.cpu, engine);
     Rng rng;
@@ -393,7 +418,9 @@ void init_quit_world(const char* dol, u32 rounds) {
         const bool interrupts = (round & 1u) != 0u;
         original.original(ax_frame::kInit, interrupts);
         owner.prepare(ax_frame::kInit, interrupts);
+        before_owner(owner.memory);
         require(owner.cpu.try_hle(ax_frame::kInit), "the owner declined AXInit");
+        after_owner(owner.memory);
         require(!owner.cpu.stopped(), "the native AXInit stopped the machine");
         require(original.cpu.msr() == owner.cpu.msr(), "AXInit: the machine state register differs");
         // The original's engine state the native one does not keep: the DSP INIT handshake flags and the quit queue (sda 0x5D5C..0x5D6C),
@@ -410,7 +437,9 @@ void init_quit_world(const char* dol, u32 rounds) {
         // AXQuit
         original.original(ax_frame::kQuit, interrupts);
         owner.prepare(ax_frame::kQuit, interrupts);
+        before_owner(owner.memory);
         require(owner.cpu.try_hle(ax_frame::kQuit), "the owner declined AXQuit");
+        after_owner(owner.memory);
         require(!owner.cpu.stopped(), "the native AXQuit stopped the machine");
         require(original.cpu.msr() == owner.cpu.msr(), "AXQuit: the machine state register differs");
         for (Machine* m : {&original, &owner}) {
@@ -431,6 +460,12 @@ int main(int argc, char** argv) {
         std::printf("PASS native AX frame sequencing: %u frames equal the original (drop callbacks %u, aux A calls %u, aux B calls %u, frame callbacks %u)\n",
                     g_frames, g_drops, g_aux_a, g_aux_b, g_frame_cb);
         std::printf("PASS native AXInit / AXQuit: %u rounds equal the original\n", g_inits);
+        g_native_words = true;
+        frame_world(argv[1], 400);
+        init_quit_world(argv[1], 40);
+        require(g_native_evidence != 0u, "the native-words arrangement never left the guest copy stale");
+        std::printf("PASS again with the voices' sync words in native storage (%u owner calls changed native words the guest copy did not yet hold)\n",
+                    g_native_evidence);
         return 0;
     } catch (const std::exception& error) {
         std::fprintf(stderr, "FAIL: %s\n", error.what());

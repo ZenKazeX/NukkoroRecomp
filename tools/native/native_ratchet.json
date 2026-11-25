@@ -1,0 +1,6 @@
+{
+ "max_translated": 37738,
+ "max_cpu_signature": 5272,
+ "max_guest_machine_bytes": 87213392,
+ "comment": "Ratchets of tools/native/verify_native_runtime.py: the linked image may not exceed these. Lowered with --write-ratchet after a migration step; never raised to make a build pass."
+}

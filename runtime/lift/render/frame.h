@@ -229,6 +229,15 @@ struct Particle {
 };
 static_assert(sizeof(Particle) == 44, "a particle is the 44-byte record the renderer streams per instance");
 
+// Which particle of the game a record shows (FramePacket::particle_tags, one per record): `id` names the game's
+// particle for as long as it lives (0: not known) and `age` is the game's own age of it, which never goes back while
+// it lives - an id seen again with a smaller age is another particle at a reused place. Host-only: the renderer never
+// reads it; the independent frame (render/frame_interp.h) follows a particle from one game frame to the next by it.
+struct ParticleTag {
+    std::uint32_t id = 0;
+    float age = 0.0f;
+};
+
 // A particle system's draw (shaders/particles.hlsl): `count` particles of the packet's list from `first`, spanning
 // +/- size/2 along `right` and `up` (world space; the quad's first corner is -right -up).
 struct ParticleBatch {
@@ -302,6 +311,10 @@ struct DrawRecord {
     std::uint32_t immediate = kNoImmediate;  // index into FramePacket::immediates
     MorphRange morph;
     EffectLayer layer = EffectLayer::None;   // render/effect_layers.h: the effect the draw belongs to (when tagged)
+    // Independent frame (render/frame_interp.h): which game object the draw shows, so the renderer can find the same
+    // object in the packet before this one and show a state between the two. 0: no identity (never interpolated).
+    // Host-only: the game never reads it, and the renderer draws a packet the same with or without it.
+    std::uint64_t key = 0;
 };
 
 // A pass draws into its view's targets. The game renders parts of one picture with different cameras into the same
@@ -345,6 +358,8 @@ struct FramePacket {
     std::vector<Float3x4> bones;  // skin palettes, referenced by the draws' bone ranges
     std::vector<float> morph_weights;  // delta-morph weights, referenced by the draws' morph ranges
     std::vector<Particle> particles;
+    // One per particle, in step with `particles` - or empty, when no producer tagged any (the coupled mode).
+    std::vector<ParticleTag> particle_tags;
     std::vector<ParticleBatch> particle_batches;  // referenced by the draws' `particles`
     std::vector<ImmediateVertex> immediate_vertices;
     std::vector<std::uint32_t> immediate_indices;
@@ -368,7 +383,9 @@ public:
     void draw(MeshHandle mesh, std::uint32_t submesh, const Material& material, const Float3x4& world,
               const Recipe& recipe, LightSetId lights = kNoLights, BoneRange bones = {}, MorphRange morph = {});
     // A particle batch drawn at this point of the pass: `count` records (the batch's first / count are set here).
-    void particles(const ParticleBatch& batch, const Particle* records, std::uint32_t count, const Recipe& recipe);
+    // `tags`: the records' identities (`count` of them), or null when the producer does not know them.
+    void particles(const ParticleBatch& batch, const Particle* records, std::uint32_t count, const Recipe& recipe,
+                   const ParticleTag* tags = nullptr);
     // Immediate geometry drawn at this point of the pass (the draw's ranges are set here; `indices` may be null).
     void immediate(const ImmediateDraw& draw, const ImmediateVertex* vertices, std::uint32_t vertex_count,
                    const std::uint32_t* indices, std::uint32_t index_count, const Float3x4& world,
@@ -402,8 +419,13 @@ public:
     // The effect layer the next draws belong to (render/effect_layers.h); stamped on every draw until changed.
     void set_layer(EffectLayer layer) noexcept { layer_ = layer; }
     EffectLayer layer() const noexcept { return layer_; }
+    // The identity of the game object the next mesh draws and particle batches show (DrawRecord::key); stamped on
+    // them until changed. 0: none. World-space immediate geometry takes it too (the effect's identity, set around the
+    // draw); canvas geometry never carries one.
+    void set_key(std::uint64_t key) noexcept { key_ = key; }
 
 private:
+    std::uint64_t key_ = 0;
     EffectLayer layer_ = EffectLayer::None;
     FramePacket packet_;
     std::mutex recycled_mutex_;  // C3: the rendered packet given back, taken by begin_frame

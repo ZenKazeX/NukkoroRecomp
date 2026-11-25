@@ -184,10 +184,18 @@ class ContractObserver {
             system.cpu().save_state(fragment);
             data.block(fragment.data(), fragment.size());
             // The game's address window (every region, its bounds and its
-            // committed bytes, the native sound stores among them), written while
-            // guest execution is suspended in the hook.
+            // committed bytes), then the native arenas' records in the same format
+            // (native storage since 2026-11-21: the savestate's FORMAT BOUNDARY),
+            // written while guest execution is suspended in the hook.
             fragment.clear();
-            system.guest_memory().save_state(fragment);
+            {
+                std::vector<gekko::GuestMemory::Record> arenas;
+                for (const gekko::NativeArenaImage& image : gekko::native_arena_images(system))
+                    arenas.push_back(gekko::GuestMemory::Record{image.label, image.size, image.committed,
+                                                                gekko::GuestMemory::RegionKind::Arena, image.name,
+                                                                image.bytes});
+                system.guest_memory().save_state(fragment, arenas);
+            }
             data.bytes(reinterpret_cast<const char*>(fragment.data()), fragment.size());
             // Reuse each maintained serializer, never hand-transcribe device
             // state. A single temporary is reused, not retained per boundary.
@@ -206,7 +214,13 @@ class ContractObserver {
             fragment.clear(); gekko::System::save_idle_immediate_state(fragment);  // G5: the idle block
             data.block(fragment.data(), fragment.size());
 #endif
-            device(system.card()); device(system.ipl());
+#if defined(GEKKO_CARD_MODEL)
+            device(system.card());
+#else
+            fragment.clear(); gekko::System::save_idle_card_state(fragment);  // native/win N1: the idle card block
+            data.block(fragment.data(), fragment.size());
+#endif
+            device(system.ipl());
             data.finish();
             // Metadata is written only after the fragment closes successfully.
             // Names/fields are fixed; no mutable string is embedded in JSON.

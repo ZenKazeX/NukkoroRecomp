@@ -22,10 +22,15 @@
 // 0x80375150..0x80376044 (a scan of every load / store through r13 in the DOL's text finds no other reader; the
 // guest watch over a full Westopolis replay confirms it, gate 3).
 //
-// OSInitFont and OSGetFontTexture are owned as never entered: the original fills the font buffers by reading the
-// font from the boot ROM through __OSReadROM 0x80377C7C, which native_ipl.cpp refuses (this program has no boot
-// ROM), so a native version could serve nothing. If the program ever enters them the machine stops with the entry's
-// name, exactly as the refused ROM reader and the debug-monitor hand-off do. No result is faked.
+// OSInitFont is owned as never entered: the original fills the font buffers by reading the font from the boot ROM
+// through __OSReadROM 0x80377C7C, which native_ipl.cpp refuses (this program has no boot ROM), so a native version
+// could serve nothing. If the program ever enters it the machine stops with the entry's name, exactly as the refused
+// ROM reader and the debug-monitor hand-off do. No result is faked.
+//
+// OSGetFontTexture (the function 0x20C bytes after OSInitFont) is RETIRED (native/win N7, 2026-11-17): it is no owner
+// and the program contains no code for it. Nothing calls it (no translated caller, no data word, no native caller),
+// the generator prunes its body in the game image and in the tests tree, and an entry would stop in the dispatcher
+// as any address without code does. Its address is deliberately not written in this runtime: a literal would root it.
 
 #include "gekko/types.h"
 
@@ -39,7 +44,6 @@ namespace gekko::os_font {
 
 constexpr u32 kGetFontEncode = 0x80375150u;   // OSGetFontEncode(): served natively
 constexpr u32 kInitFont = 0x80375DA0u;        // OSInitFont(fontData): never entered, stops
-constexpr u32 kGetFontTexture = 0x80375FACu;  // OSGetFontTexture(string, &image, &x, &y, &width): never entered, stops
 
 constexpr u32 kTvFormatWord = 0x800000CCu;       // OS TV format (0 NTSC, 1 PAL, 2 MPAL, 5 EURGB60 ...)
 constexpr u16 kEncodeAnsi = 0u;
@@ -58,8 +62,7 @@ struct Owners {
     };
     static const Address* addresses(std::size_t& count) noexcept {
         static constexpr Address kAddresses[] = {{kGetFontEncode, "OSGetFontEncode"},
-                                                 {kInitFont, "OSInitFont"},
-                                                 {kGetFontTexture, "OSGetFontTexture"}};
+                                                 {kInitFont, "OSInitFont"}};
         count = sizeof(kAddresses) / sizeof(kAddresses[0]);
         return kAddresses;
     }
@@ -67,10 +70,10 @@ struct Owners {
 
 // OSGetFontEncode: r3 = the encoding. Reads the TV-format word; writes nothing else.
 void serve_get_font_encode(Cpu& cpu) noexcept;
-// OSInitFont / OSGetFontTexture entered: stops the run with the entry's name.
+// OSInitFont entered: stops the run with the entry's name.
 void serve_never_entered(Cpu& cpu, const char* name) noexcept;
 
-// Installs the three owners on the CPU.
+// Installs the two owners on the CPU.
 void install(Cpu& cpu);
 
 }  // namespace gekko::os_font

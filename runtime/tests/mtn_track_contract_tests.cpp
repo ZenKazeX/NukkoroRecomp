@@ -243,6 +243,29 @@ void randomize_context(Machine& o, Machine& n, u32 st) {
     fill(o, n, kCtx + 0x8u, rate);
 }
 
+// The vector samplers' "together" profile (the owner evaluates the lanes side by side when each of them only reads): most lanes get
+// key pairs that all hold one context time, ordinary values with the odd exceptional one among them, and are not finished; the
+// rest stay as randomize_track drew them, so calls with one lane that must advance, with a flat or finished lane, with an operand
+// the plain route does not take in exactly one lane, and with all three interpolating are all frequent. Returns a time inside every
+// aligned pair.
+bool g_together = false;
+u32 ordinary_value();
+float align_tracks(Machine& o, Machine& n, u32 first, u32 count) {
+    const float at = float(pick(12)) + float(pick(64)) * (1.0f / 64.0f);
+    for (u32 k = 0; k < count; ++k) {
+        const u32 st = first + 0x40u * k;
+        if (pick(8) == 0) continue;
+        fill(o, n, st + 0x20u, f2w(at - float(pick(3)) * 0.25f));
+        fill(o, n, st + 0x30u, f2w(at + 1.0f + float(pick(5))));
+        for (u32 off : {0x24u, 0x28u, 0x2Cu, 0x34u, 0x38u, 0x3Cu})
+            fill(o, n, st + off, pick(14) == 0 ? value_word() : (pick(6) == 0 ? 0u : ordinary_value()));
+        u32 flags = o.memory.peek32(st + 4u) & ~1u;
+        if (pick(8) != 0) flags &= ~8u;
+        fill(o, n, st + 4u, flags);
+    }
+    return at + float(1 + pick(998)) * 0.001f;
+}
+
 // ---- generic runner: one entry, random state, original vs native ------------------------------------------------------------------
 enum class Kind { Sample, Seek, Init, Vec3 };
 void run_track_case(Machine& o, Machine& n, const char* name, u32 entry, Kind kind, u32 vec_base, u32 tracks_stride_count,
@@ -255,14 +278,20 @@ void run_track_case(Machine& o, Machine& n, const char* name, u32 entry, Kind ki
         u32 object = kState;
         if (kind == Kind::Vec3) {
             object = kArena + 0x08u;  // x y z at +0..+0xB; tracks from +vec_base
+            // (together profile, the forms whose tracks start at +0x20: they then lie behind the context block) now and then one
+            // of the result words IS the context's time word: the original samples the later lanes at the value it has just stored
+            if (g_together && vec_base == 0x20u && pick(40) == 0) object = kCtx + 0xCu - 4u * pick(3);
             for (u32 k = 0; k < tracks_stride_count; ++k) {
                 const u32 st = object + vec_base + 0x40u * k;
                 randomize_track(o, n, st, kRecord);
-                if (pick(4) == 0) fill(o, n, st + 8u, 0u);  // a track without a stream is skipped
+                if (pick(g_together ? 10 : 4) == 0) fill(o, n, st + 8u, 0u);  // a track without a stream is skipped
             }
+            const bool aligned = g_together && pick(6) != 0;
+            const float inside = aligned ? align_tracks(o, n, object + vec_base, tracks_stride_count) : 0.0f;
             if (vec_base == 0x20u) fill(o, n, object + 0x10u, pick(3) == 0 ? value_word() : f2w(0.5f * float(pick(6))));  // the scale of the last form
-            fill(o, n, kR13 + 0x5F78u, pick(6) == 0 ? 0x80416020u : 0x804162ACu);
+            fill(o, n, kR13 + 0x5F78u, pick(g_together ? 20 : 6) == 0 ? 0x80416020u : 0x804162ACu);
             randomize_context(o, n, object + vec_base + 0x00u);
+            if (aligned && pick(5) != 0) fill(o, n, kCtx + 0xCu, f2w(inside));
         } else {
             randomize_track(o, n, object, kRecord);
             if (kind == Kind::Init) {
@@ -378,6 +407,21 @@ int main(int argc, char** argv) {
             require(midpoints > 100, "the directed fused cases did not reach the midpoint case");
             std::printf("fused multiply-add: 400000 directed triples equal ppc::fps_madd (%u of them on a single midpoint)\n", midpoints);
         }
+        // Directed: the side-by-side route tests "0 < |x| < 2^-100" on a key, 2 * bits - 1 below 0x1AFFFFFE, where the one-lane
+        // route tests (magnitude - 1) < 0x0D7FFFFF. The two are the same predicate: every one of the 2^32 bit patterns.
+        {
+            u64 differing = 0, tiny = 0;
+            for (u64 x64 = 0; x64 < 0x100000000ull; ++x64) {
+                const u32 x = static_cast<u32>(x64);
+                const bool one_lane = ((x & 0x7FFFFFFFu) - 1u) < 0x0D7FFFFFu;
+                const bool key = static_cast<u32>(x + x - 1u) < 0x1AFFFFFEu;
+                differing += one_lane != key ? 1u : 0u;
+                tiny += one_lane ? 1u : 0u;
+            }
+            require(differing == 0, "the lanes' tiny key is not the one-lane route's tiny test");
+            std::printf("tiny key: equal to the one-lane test on all 4294967296 bit patterns (%llu of them tiny)\n",
+                        static_cast<unsigned long long>(tiny));
+        }
         constexpr unsigned kCalls = 120000;
         run_hermite_case(original, native, "HermiteValue", mtn_track::kHermiteValue, mtn_track::serve_hermite_value, kCalls, true);
         run_hermite_case(original, native, "HermiteSlope", mtn_track::kHermiteSlope, mtn_track::serve_hermite_slope, kCalls, true);
@@ -399,6 +443,20 @@ int main(int argc, char** argv) {
                        [](Cpu& cpu) { mtn_track::serve_sample_vec3_at_20(cpu); }, kCalls / 2, true, nullptr);
         run_track_case(original, native, "SampleVec3Scaled", mtn_track::kSampleVec3Scaled, Kind::Vec3, 0x20u, 3,
                        [](Cpu& cpu) { mtn_track::serve_sample_vec3_scaled(cpu); }, kCalls / 2, true, nullptr);
+        // The same four on the together profile (see align_tracks).
+        g_together = true;
+        run_track_case(original, native, "SampleVec3Reciprocal(together)", mtn_track::kSampleVec3Reciprocal, Kind::Vec3, 0x10u, 3,
+                       [](Cpu& cpu) { mtn_track::serve_sample_vec3_reciprocal(cpu); }, kCalls, true, nullptr);
+        run_track_case(original, native, "SampleVec3(together)", mtn_track::kSampleVec3, Kind::Vec3, 0x10u, 3,
+                       [](Cpu& cpu) { mtn_track::serve_sample_vec3(cpu); }, kCalls, true, nullptr);
+        run_track_case(original, native, "SampleVec3At20(together)", mtn_track::kSampleVec3At20, Kind::Vec3, 0x20u, 3,
+                       [](Cpu& cpu) { mtn_track::serve_sample_vec3_at_20(cpu); }, kCalls, true, nullptr);
+        run_track_case(original, native, "SampleVec3Scaled(together)", mtn_track::kSampleVec3Scaled, Kind::Vec3, 0x20u, 3,
+                       [](Cpu& cpu) { mtn_track::serve_sample_vec3_scaled(cpu); }, kCalls, true, nullptr);
+        g_together = false;
+        std::printf("vector samplers by route: %llu calls with lanes side by side, %llu read-only lane by lane, %llu lane-by-lane code\n",
+                    mtn_track::vec3_route(0), mtn_track::vec3_route(1), mtn_track::vec3_route(2));
+        require(mtn_track::vec3_route(0) > 100000ull, "the together profile did not reach the side-by-side route");
 
         // Negative controls: the same comparison must catch a wrong native.
         unsigned caught_ni = 0, caught_ulp = 0, caught_flag = 0, caught_seek = 0;

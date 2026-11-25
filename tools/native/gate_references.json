@@ -1,0 +1,26 @@
+{
+  "comment": "Reference hashes of the tape gate (tools/native/gate.ps1). md5 prefixes, as recorded in docs/agents/CPU_OPT*_RESULT.md for cpu/opt .. cpu/opt4 (77bed6e0). A reference changes only with a deliberate, documented behaviour change; never to make a gate pass.",
+  "recorded": "2026-11-17",
+  "state_note": "State hashes are of state.json with savestate_version 34 (native/win, checkpoint version bump of 2026-11-17, the user's decision). The version-33 values were 5c27c8fa6c7d (Westopolis) and 039b7d06d130 (Final Haunt): the two reports are byte-identical once that one field is replaced (0 memory blocks differ), shown on native/win before the change. A build at checkpoint version 33 (cpu/opt4 and earlier) must be gated against the version-33 values. gate.ps1 does that by itself: it reads savestate_version from the run's state.json and takes the reference from state_md5_12_by_savestate_version; a version without an entry there fails the check (state_md5_12 is the newest version's value, kept for readers).",
+  "base_commit": "77bed6e0ef0847dd9f61731fb67af4bef8e86d32",
+  "westopolis": {
+    "stage": "stg0100",
+    "tape_dir": "source/.build/platform/ab-westopolis/host-a",
+    "budget_ms": 316000,
+    "state_md5_12": "6d9d956eec70",
+    "state_md5_12_by_savestate_version": { "33": "5c27c8fa6c7d", "34": "6d9d956eec70" },
+    "pcm_md5_16": "c64ee7883f980f73",
+    "behaviour_md5_12": "1c58e3df08dd",
+    "behaviour_base": "wt-cpu-opt/.build/co/gate-base/g/beh/behaviour.jsonl",
+    "shots_count": 10,
+    "shots_md5_12": "5ff173d70e8e"
+  },
+  "final_haunt": {
+    "stage": "stg0604",
+    "tape_dir": "source/.build/recordings/final-haunt",
+    "budget_ms": 120000,
+    "state_md5_12": "46e94ea3142c",
+    "state_md5_12_by_savestate_version": { "33": "039b7d06d130", "34": "46e94ea3142c" },
+    "pcm_md5_16": "fa2abc800651039e"
+  }
+}

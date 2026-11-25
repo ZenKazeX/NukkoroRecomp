@@ -688,7 +688,7 @@ site 0x8041A24C 0x4BFF2F4D affine_matrix_copy
 site 0x8041AB18 0x4BFF2681 affine_matrix_copy
 site 0x8041AB34 0x4BFF2665 affine_matrix_copy
 site 0x8041ABCC 0x4BFF25CD affine_matrix_copy
-site 0x8041AE44 0x4BFF2355 affine_matrix_copy
+# (0x8041AE44, in the slot bind 0x8041ADAC, is gone with its body: the bind is a native owner, B003, and copies natively.)
 site 0x8041B568 0x4BFF1C31 affine_matrix_copy
 site 0x8041B578 0x4BFF1C21 affine_matrix_copy
 site 0x8041B724 0x4BFF1A75 affine_matrix_copy

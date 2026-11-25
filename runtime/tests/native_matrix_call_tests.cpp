@@ -207,8 +207,9 @@ int main(int argc, char** argv) {
             require(expected->second == recomp::kLiftSiteWords[i], "copy-site generated word differs from catalog");
             sites.emplace_back(site.lower, site.address + 4u);
         }
-        require(sites.size() == 675u && sites.size() == copy_words.size(),
-                "all 675 copy-family sites must be present");
+        // 674: the site 0x8041AE44 left with the slot bind's body (0x8041ADAC is a native owner, B003).
+        require(sites.size() == 674u && sites.size() == copy_words.size(),
+                "all 674 copy-family sites must be present");
         std::array<u8, 256> initial{};
         for (unsigned i = 0; i < initial.size(); ++i) initial[i] = u8(i * 71u);
         unsigned cases = 0;
@@ -290,7 +291,7 @@ int main(int argc, char** argv) {
             require(actual == initial && accesses == 0 && cpu.pc == pc_before && cpu.lr == lr_before,
                     "cut copy accessed storage or changed the prior fault continuation");
         }
-        std::printf("PASS 675 generated matrix-copy sites: %u overlap/observation/journal cases; 2700 invalid-span refusals; 675 prior-fault cuts\n", cases);
+        std::printf("PASS 674 generated matrix-copy sites: %u overlap/observation/journal cases; 2696 invalid-span refusals; 674 prior-fault cuts\n", cases);
         return 0;
     } catch (const std::exception& error) {
         std::fprintf(stderr, "FAIL generated matrix callers: %s\n", error.what());

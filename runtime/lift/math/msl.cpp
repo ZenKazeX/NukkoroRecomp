@@ -13,9 +13,34 @@
 #if defined(__AVX2__) || defined(__FMA__)
 #include <immintrin.h>
 #endif
+#include <cstdlib>
+
+// The exact fast sin / cos of the medium range (recovered/msl/math/fast_trig: the same bits as sin_library /
+// cos_library below for every input, test recovered/msl/math/fast_trig/test). Needs FMA3. Run-time switch
+// GEKKO_FAST_TRIG=1 / 0 (default on, see kFastTrigDefault).
+#if defined(__AVX2__)
+#define SHADOW_MSL_FAST_TRIG_AVAILABLE 1
+#include "math/fast_trig.h"
+#else
+#define SHADOW_MSL_FAST_TRIG_AVAILABLE 0
+#endif
 
 namespace shadow::math::msl {
 namespace {
+
+// Default ON since 2026-11-24 (gate 12/12; same-exe ABBA -0.40 % cycles Westopolis 7/7, -0.30 % Final Haunt 9/11);
+// SHADOW_MSL_FAST_TRIG_OFF builds the library form as the default.
+#ifdef SHADOW_MSL_FAST_TRIG_OFF
+constexpr bool kFastTrigDefault = false;
+#else
+constexpr bool kFastTrigDefault = true;
+#endif
+// Zero-initialised (the library form) until dynamic initialisation has read the switch.
+const bool g_fast_trig = [] {
+    const char* v = std::getenv("GEKKO_FAST_TRIG");
+    if (v != nullptr && (v[0] == '0' || v[0] == '1')) return v[0] == '1';
+    return kFastTrigDefault;
+}();
 
 using u32 = std::uint32_t;
 using u64 = std::uint64_t;
@@ -453,8 +478,30 @@ double detail::kernel_cos(double x, double y) noexcept {
     return a - t;
 }
 
-// ---- sin 803B2AFC, cos 803B2594
+// ---- sin 803B2AFC, cos 803B2594 (the library form; sin / cos below may serve the medium range from fast_trig.h)
+namespace {
+double sin_library(double x) noexcept;
+double cos_library(double x) noexcept;
+}  // namespace
+
 double sin(double x) noexcept {
+#if SHADOW_MSL_FAST_TRIG_AVAILABLE
+    if (g_fast_trig && (hi(x) & 0x7FFFFFFFu) <= shadow::recovered::fast::trig_detail::kMediumCut)
+        return shadow::recovered::fast::sin(x);
+#endif
+    return sin_library(x);
+}
+
+double cos(double x) noexcept {
+#if SHADOW_MSL_FAST_TRIG_AVAILABLE
+    if (g_fast_trig && (hi(x) & 0x7FFFFFFFu) <= shadow::recovered::fast::trig_detail::kMediumCut)
+        return shadow::recovered::fast::cos(x);
+#endif
+    return cos_library(x);
+}
+
+namespace {
+double sin_library(double x) noexcept {
     const s32 ix = s32(hi(x) & 0x7FFFFFFFu);
     if (ix <= 0x3FE921FB) return detail::kernel_sin(x, kZero, 0);
     if (ix >= 0x7FF00000) return nan_sub(x, x);  // sin(Inf or NaN) is NaN
@@ -467,7 +514,7 @@ double sin(double x) noexcept {
     }
 }
 
-double cos(double x) noexcept {
+double cos_library(double x) noexcept {
     const s32 ix = s32(hi(x) & 0x7FFFFFFFu);
     if (ix <= 0x3FE921FB) return detail::kernel_cos(x, kZero);
     if (ix >= 0x7FF00000) return nan_sub(x, x);
@@ -479,6 +526,7 @@ double cos(double x) noexcept {
         default: return detail::kernel_sin(r.y0, r.y1, 1);
     }
 }
+}  // namespace
 
 // ---- __kernel_tan 803B1FFC (r2 + 0x1560..0x1590, T at 80515570), tan 803B2BD4 (its kernel y at r2 + 0x1620)
 namespace {

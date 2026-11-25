@@ -165,9 +165,21 @@ void installed_owners(Oracle& o) {
     }
     const Result init = run(os_font::kInitFont, 0u);
     require(init.stopped && init.detail.find("OSInitFont") != std::string::npos, "OSInitFont must stop the run by name");
-    const Result texture = run(os_font::kGetFontTexture, 0u);
-    require(texture.stopped && texture.detail.find("OSGetFontTexture") != std::string::npos,
-            "OSGetFontTexture must stop the run by name");
+    // OSGetFontTexture is retired (native/win N7): it is not in the owner table and no hook sits on its entry, the
+    // function that follows OSInitFont's 0x20C bytes. (Computed, not written: a literal would root the address.)
+    const u32 retired_texture = os_font::kInitFont + 0x20Cu;
+    std::size_t owner_count = 0;
+    const os_font::Owners::Address* owners = os_font::Owners::addresses(owner_count);
+    require(owner_count == 2u, "the OS font owner table must hold exactly OSGetFontEncode and OSInitFont");
+    for (std::size_t i = 0; i < owner_count; ++i)
+        require(owners[i].address != retired_texture, "OSGetFontTexture must not be an owner any more");
+    {
+        GuestMemory memory;
+        Cpu cpu(memory);
+        os_font::install(cpu);
+        require(cpu.hle_clear(retired_texture), "no hook may be installed on the retired OSGetFontTexture entry");
+        require(!cpu.hle_clear(os_font::kInitFont), "control: the OSInitFont entry must still carry its owner");
+    }
     (void)o;
 }
 

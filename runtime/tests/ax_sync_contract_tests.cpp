@@ -21,6 +21,27 @@
 
 namespace {
 using namespace gekko;
+
+// Second arrangement (native/win N9): the voices' sync bookkeeping words in native storage (ax_voice_words.h). The
+// guest's copy is imported before every owner call and published after it, so the comparison with the original
+// stays "all guest memory"; g_native_evidence counts owner calls after which the guest copy was still stale, i.e.
+// the owner really worked on the native words.
+bool g_native_words = false;
+AxVoiceWords g_words;
+unsigned g_native_evidence = 0;
+AxVoiceWords* words_or_null() { return g_native_words ? &g_words : nullptr; }
+void before_owner(GuestMemory& memory) {
+    if (g_native_words) g_words.import_from_guest(memory);
+}
+void after_owner(GuestMemory& memory) {
+    if (!g_native_words) return;
+    for (u32 i = 0; i < AxVoiceWords::kCount; ++i)
+        if (g_words.voice[i] != g_words.guest[i]) {
+            ++g_native_evidence;
+            break;
+        }
+    g_words.publish_to_guest(memory);
+}
 constexpr u32 kStack = 0x817E0000u, kReturn = 0x817FF000u, kR2 = 0x805FA780u, kR13 = 0x805EC500u;
 constexpr u32 kLow = 0x80000000u, kHigh = 0x80600000u;
 constexpr u32 kVpbBase = 0x805989A0u, kVpbStride = 0x22Cu, kHeads = 0x80587DC0u, kTails = 0x80587E40u;
@@ -104,7 +125,7 @@ void run(const char* dol) {
         m->memory.write32(0x80372508u, 0x4E800020u);
         m->memory.write32(0x80372534u, 0x4E800020u);
     }
-    ax_sync::install(owner.cpu, image);
+    ax_sync::install(owner.cpu, image, words_or_null());
     Rng rng;
     unsigned cases = 0;
     for (u32 round = 0; round < 260; ++round) {
@@ -166,7 +187,9 @@ void run(const char* dol) {
         const bool interrupts = (round & 1u) != 0u;
         original.original(ax_sync::kSyncPBs, arg, interrupts);
         owner.prepare(ax_sync::kSyncPBs, arg, interrupts);
+        before_owner(owner.memory);
         require(owner.cpu.try_hle(ax_sync::kSyncPBs), "the owner declined the call");
+        after_owner(owner.memory);
         require(original.cpu.msr() == owner.cpu.msr(), "the machine state register differs");
         std::vector<u8> sa = original.snapshot(), sb = owner.snapshot();
         // The PB array and its update rings are the DSP side's copy: the original keeps them in guest memory, the owner in the image.
@@ -220,12 +243,37 @@ void run(const char* dol) {
                 cases, g_drops);
     require(g_drops > 20, "too few worlds reached the drop path");
 }
+// The diagnostic check (--verify-ax-voice-words): a write to the guest copy of a sync word by anything but an owner
+// stops the run; an untouched copy does not.
+void verify_control(const char* dol) {
+    Machine m(dol);
+    AxPbImage image;
+    AxVoiceWords words;
+    std::vector<u8> zero(kVpbStride * 64, 0);
+    m.memory.write_block(kVpbBase, zero.data(), zero.size());
+    m.memory.write_block(kHeads, std::vector<u8>(0x80, 0).data(), 0x80);
+    words.import_from_guest(m.memory);
+    words.verify_guest_untouched = true;
+    m.prepare(ax_sync::kSyncPBs, 0u, false);
+    ax_sync::sync_pbs(m.cpu, image, &words);
+    require(!m.cpu.stopped(), "verify control: an untouched guest copy stopped the run");
+    m.memory.write32(kVpbBase + 3u * kVpbStride + 0x1Cu, 0x10u);  // what a translated setter would have done
+    m.prepare(ax_sync::kSyncPBs, 0u, false);
+    ax_sync::sync_pbs(m.cpu, image, &words);
+    require(m.cpu.stopped(), "verify control: a foreign write to a voice's dirty word was not detected");
+    std::printf("PASS verify control: a foreign write to the guest copy of a sync word stops the run; none does not\n");
+}
 }  // namespace
 
 int main(int argc, char** argv) {
     try {
         require(argc > 1, "usage: ax_sync_contract_tests <main.dol>");
         run(argv[1]);
+        g_native_words = true;
+        run(argv[1]);
+        if (g_native_evidence == 0u) throw std::runtime_error("the native-words arrangement never left the guest copy stale: the owners did not use the native words");
+        verify_control(argv[1]);
+        std::printf("PASS again with the voices' sync words in native storage (%u owner calls changed native words the guest copy did not yet hold)\n", g_native_evidence);
     } catch (const std::exception& error) {
         std::fprintf(stderr, "FAIL: %s\n", error.what());
         return 1;

@@ -36,10 +36,6 @@ void install(Cpu& cpu) {
         serve_never_entered(c, "OSInitFont");
         return true;
     }, "native OS font: OSInitFont (never entered)");
-    cpu.install_hle(kGetFontTexture, [](Cpu& c) {
-        serve_never_entered(c, "OSGetFontTexture");
-        return true;
-    }, "native OS font: OSGetFontTexture (never entered)");
 }
 
 }  // namespace gekko::os_font

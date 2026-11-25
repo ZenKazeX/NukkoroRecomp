@@ -67,7 +67,7 @@ void NativeMotionStore::stop(Cpu& c, const std::string& why) {
 // 0x804225B0: once, the pool's base (the original ARAllocs 6 MiB here); each stage, its first node from the heap -
 // the same allocation, so the heap is the original's.
 void NativeMotionStore::pool_create(Cpu& c) {
-    if (!ensure_arena(c))
+    if (!ensure_storage(c))
         return;
     if (c.mem_read32(c.gpr[13] + kSdaPoolBase) == 0u)
         c.mem_write32(c.gpr[13] + kSdaPoolBase, kPoolBase);
@@ -101,34 +101,36 @@ void NativeMotionStore::pool_destroy(Cpu& c) {
     call_guest(c, kPoolNodeFree, head, 1u);
 }
 
-// A guest-visible copy: straight into the span, except under the verifier's journal or an access trace, where the
-// write goes through GuestMemory::write so it is journalled (rolled back) and traced as a write like a CPU store.
-void NativeMotionStore::copy(u8* destination, u32 to, const u8* source, u32 bytes) {
-    if (memory_.journaling() || memory_.access_traced()) {
-        memory_.write(GcAddr(to), source, bytes);
-        return;
-    }
-    std::memcpy(destination, source, bytes);
-}
-
 // 0x804222C0 (r3 pool address, r4 the game's buffer, r5 bytes): the clip span into the pool.
 void NativeMotionStore::upload(Cpu& c) {
-    const u32 to = pool_address(c.gpr[3]), from = c.gpr[4], bytes = c.gpr[5];
-    if (bytes == 0u) {  // nothing to copy (a zero-sized span resolves to no host memory: not a fault)
+    if (upload_span(c, c.gpr[3], c.gpr[4], c.gpr[5]))
         take_interrupts(c);
+}
+
+bool NativeMotionStore::upload_span(Cpu& c, u32 pool_to, u32 from, u32 bytes) {
+    const u32 to = pool_address(pool_to);
+    if (bytes == 0u) {  // nothing to copy (a zero-sized span resolves to no host memory: not a fault)
         ++stats_.uploads;
-        return;
+        return true;
     }
-    if (!ensure_committed(c, to + bytes))
-        return;
-    u8* destination = memory_.span(GcAddr(to), bytes);
-    const u8* source = memory_.span(GcAddr(from), bytes);
+    if (to < kPoolBase || bytes > kPoolReserve || to - kPoolBase > kPoolReserve - bytes) {
+        stop(c, "an upload outside the pool");
+        return false;
+    }
+    if (!storage_.present() || !commit_through(to + bytes)) {
+        stop(c, "the pool could not commit " + std::to_string(to - kPoolBase + bytes) + " bytes");
+        return false;
+    }
+    u8* destination = pool_bytes(to, bytes);
+    const u8* source = memory_.span(GcAddr(from), bytes);  // the game's buffer: a guest read (traced as one)
     if (destination == nullptr || source == nullptr) {
-        stop(c, "an upload outside mapped memory");
-        return;
+        stop(c, "an upload from outside mapped memory");
+        return false;
     }
-    copy(destination, to, source, bytes);
-    take_interrupts(c);
+    // The pool is native storage: the verifier's journal cannot put it back, so a journalled run is told it had an
+    // effect outside guest memory (GuestMemory::journal_note_host_effect).
+    memory_.journal_note_host_effect();
+    std::memcpy(destination, source, bytes);
     ++stats_.uploads;
     stats_.upload_bytes += bytes;
     if (verify_) {  // the same hash as the ARAM census's "[motion-span]" line for the original's upload
@@ -137,26 +139,44 @@ void NativeMotionStore::upload(Cpu& c) {
             hash = (hash ^ source[i]) * 0x100000001B3ull;
         std::fprintf(stderr, "[motion-span] bytes %u hash %016llX\n", bytes, static_cast<unsigned long long>(hash));
     }
+    return true;
 }
 
 // 0x80422234 (r3 the node's buffer, r4 pool address, r5 bytes): a clip part out of the pool.
 void NativeMotionStore::fetch(Cpu& c) {
-    const u32 to = c.gpr[3], from = pool_address(c.gpr[4]), bytes = c.gpr[5];
+    if (fetch_span(c, c.gpr[3], c.gpr[4], c.gpr[5]))
+        take_interrupts(c);
+}
+
+bool NativeMotionStore::fetch_span(Cpu& c, u32 to, u32 pool_from, u32 bytes) {
+    const u32 from = pool_address(pool_from);
     if (bytes == 0u) {  // an empty clip part
         ++stats_.fetches;
-        take_interrupts(c);
-        return;
+        return true;
     }
-    u8* destination = memory_.span(GcAddr(to), bytes);
-    const u8* source = memory_.span(GcAddr(from), bytes);
-    if (destination == nullptr || source == nullptr) {
-        stop(c, "a fetch outside mapped memory");
-        return;
+    const u8* source = pool_bytes(from, bytes);
+    if (source == nullptr) {
+        stop(c, "a fetch outside the pool's committed bytes");
+        return false;
     }
-    copy(destination, to, source, bytes);
+    // Into the game's memory: a guest-visible write, journalled (rolled back) and traced like a CPU store when the
+    // verifier's journal or an access trace is on.
+    if (memory_.journaling() || memory_.access_traced()) {
+        if (!memory_.write(GcAddr(to), source, bytes)) {
+            stop(c, "a fetch into unmapped memory");
+            return false;
+        }
+    } else {
+        u8* destination = memory_.span(GcAddr(to), bytes);
+        if (destination == nullptr) {
+            stop(c, "a fetch into unmapped memory");
+            return false;
+        }
+        std::memcpy(destination, source, bytes);
+    }
     ++stats_.fetches;
     stats_.fetch_bytes += bytes;
-    take_interrupts(c);
+    return true;
 }
 
 // The original transfers end in a loop that waits for the ARQ's completion; the loop's back edge is where the CPU
@@ -176,45 +196,55 @@ bool NativeMotionStore::adopt_pool(u32 base, u32 bytes, const u8* image, std::st
         why = "a pool outside ARAM's addresses";
         return false;
     }
-    if (memory_.region_at(kArenaBase) == nullptr &&
-        !memory_.map(kArenaBase, kArenaReserve, GuestMemory::kGranule, GuestMemory::RegionKind::Arena,
-                     "native motion pool")) {
-        why = "the arena could not be mapped";
+    if (!commit_through(to + bytes)) {
+        why = "the pool could not commit " + std::to_string(to - kPoolBase + bytes) + " bytes";
         return false;
     }
-    const u32 needed = (to + bytes - kArenaBase + GuestMemory::kGranule - 1u) & ~(GuestMemory::kGranule - 1u);
-    const GuestMemory::Region* region = memory_.region_at(kArenaBase);
-    if (region->committed < needed && !memory_.commit(kArenaBase, needed)) {
-        why = "the arena could not commit " + std::to_string(needed) + " bytes";
-        return false;
-    }
-    std::memcpy(region->host + (to - kArenaBase), image, bytes);
-    stats_.committed = std::max(stats_.committed, needed);
+    std::memcpy(pool_bytes(to, bytes), image, bytes);
     return true;
 }
 
-bool NativeMotionStore::ensure_arena(Cpu& c) {
-    if (memory_.region_at(kArenaBase) == nullptr &&
-        !memory_.map(kArenaBase, kArenaReserve, GuestMemory::kGranule, GuestMemory::RegionKind::Arena,
-                     "native motion pool")) {
-        stop(c, "the arena could not be mapped");
+const u8* NativeMotionStore::pool_bytes(u32 address, u32 bytes) const noexcept {
+    const u32 at = pool_address(address);
+    return at >= kPoolBase ? storage_.at(at - kPoolBase, bytes) : nullptr;
+}
+
+u8* NativeMotionStore::pool_bytes(u32 address, u32 bytes) noexcept {
+    const u32 at = pool_address(address);
+    return at >= kPoolBase ? storage_.at(at - kPoolBase, bytes) : nullptr;
+}
+
+// The storage as the region it replaces was: reserved at kPoolReserve with its first granule committed (the pool's
+// create), then committed further as uploads reach.
+bool NativeMotionStore::commit_through(u32 end) noexcept {
+    if (end < kPoolBase || end - kPoolBase > kPoolReserve) return false;
+    if (!storage_.present() && (!storage_.reserve(kPoolReserve) || !storage_.commit_through(NativeArenaStorage::kGranule)))
+        return false;
+    if (!storage_.commit_through(end - kPoolBase)) return false;
+    stats_.committed = std::max(stats_.committed, storage_.committed());
+    return true;
+}
+
+bool NativeMotionStore::ensure_storage(Cpu& c) {
+    if (!storage_.present() && !commit_through(kPoolBase)) {
+        stop(c, "the pool's storage could not be reserved");
         return false;
     }
     return true;
 }
 
-bool NativeMotionStore::ensure_committed(Cpu& c, u32 end) {
-    const GuestMemory::Region* region = memory_.region_at(kArenaBase);
-    if (region == nullptr || end < kArenaBase || end > kArenaBase + kArenaReserve) {
-        stop(c, "an upload outside the arena");
+bool NativeMotionStore::image(NativeArenaImage& out) const noexcept {
+    if (!storage_.present()) return false;
+    out = NativeArenaImage{"native motion pool", kRecordLabel, storage_.size(), storage_.committed(), storage_.data()};
+    return true;
+}
+
+bool NativeMotionStore::restore_image(u32 size, u32 committed, const u8* bytes, std::string& why) {
+    if (size != kPoolReserve || !storage_.restore(size, committed, bytes)) {
+        why = "native motion pool: the record's bytes could not be restored";
         return false;
     }
-    const u32 needed = (end - kArenaBase + GuestMemory::kGranule - 1u) & ~(GuestMemory::kGranule - 1u);
-    if (region->committed < needed && !memory_.commit(kArenaBase, needed)) {
-        stop(c, "the arena could not commit " + std::to_string(needed) + " bytes");
-        return false;
-    }
-    stats_.committed = std::max(stats_.committed, needed);
+    stats_.committed = std::max(stats_.committed, storage_.committed());
     return true;
 }
 

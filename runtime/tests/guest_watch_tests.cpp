@@ -10,6 +10,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
 #include <string>
 #include <vector>
 
@@ -64,7 +65,7 @@ int main() {
     memory.write32(kWatched, 41u);
 
     std::string error;
-    std::vector<guest_watch::Range> ranges{{kWatched, 0x10u, "probe"}};
+    std::vector<guest_watch::Range> ranges{{kWatched, 0x10u, "probe", 8u}};  // elements of 8 bytes
     if (!guest_watch::start(memory, code, ranges, &error)) {
         std::printf("FAIL: start: %s\n", error.c_str());
         return 1;
@@ -97,6 +98,24 @@ int main() {
           "row B's read inside a helper, attributed to row B (the unwind reached the row's frame)");
     check(native && native->count == 1 && native->native_rva != 0, "native code's read, attributed to native code");
     check(hits.size() == 4u, "exactly four distinct hits (got " + std::to_string(hits.size()) + ")");
+    // Which code under the row made the access, and where in the element.
+    check(a_read && a_read->inner_function == 0u && a_write && a_write->inner_function == 0u,
+          "row A's own loads and stores are reported as the row's code");
+    check(b_read && b_read->inner_function != 0u, "row B's read names the helper that made it");
+    check(a_read && a_read->has_offset && a_read->offset == 0u, "offset 0 of element 0");
+    check(b_read && b_read->offset == 4u, "offset 4 of element 0");
+    check(native && native->offset == 0u && native->inner_function == 0u, "offset 0 of element 1 (address + 8)");
+    {
+        const char* path = "guest_watch_ranges_test.txt";
+        { std::ofstream file(path); file << "# comment\n0x80100040 0x10 probe one stride=0x8\n0x80200000 0x20 plain\n"; }
+        std::vector<guest_watch::Range> parsed;
+        std::string parse_error;
+        check(guest_watch::parse_ranges(path, parsed, &parse_error) && parsed.size() == 2u, "the ranges file parses");
+        check(parsed.size() == 2u && parsed[0].label == "probe one" && parsed[0].stride == 8u && parsed[0].size == 0x10u,
+              "a stride is read and taken off the label");
+        check(parsed.size() == 2u && parsed[1].label == "plain" && parsed[1].stride == 0u, "no stride: none");
+        std::remove(path);
+    }
     const auto t = guest_watch::totals();
     check(t.outside_ranges == 1u, "the same-page access outside the range is counted, not attributed");
     check(t.unattributed == 0u, "every access attributed");

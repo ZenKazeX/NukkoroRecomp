@@ -322,6 +322,9 @@ public:
     // Exactly the bytes the AI DMA engine read: big-endian s16 stereo, normally
     // 32. Any size is accepted; a sample split across calls is carried exactly.
     void publish_block(HostAudioPointer64 big_endian_s16_stereo, AudioByteOffset64 bytes) noexcept;
+    // The same stream as whole frames of host-order s16 stereo (the native mixer's output pass): no byte order
+    // conversion on the way into the ring. May be mixed freely with publish_block.
+    void publish_frames(const s16* host_order_s16_stereo, AudioFrameIndex64 frames) noexcept;
     // Frames of silence for a block the engine read without a host pointer,
     // so the timeline stays exact. Call it on a sample boundary (the DMA engine
     // always is: it moves whole 32-byte blocks). Inside a carried partial
@@ -354,6 +357,7 @@ public:
 private:
     bool finish_first_open();  // the first-open handshake (open(), or wait_open() when deferred)
     struct Impl;
+    void publish(HostAudioPointer64 bytes, AudioByteOffset64 size, bool host_order) noexcept;
     std::unique_ptr<Impl> impl_;
 };
 

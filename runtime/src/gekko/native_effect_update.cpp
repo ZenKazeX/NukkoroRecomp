@@ -2,7 +2,10 @@
 
 #include "gekko/native_effect_update.h"
 
+#include <atomic>
+
 #include "gekko/cpu.h"
+#include "gekko/fast_single.h"
 #include "gekko/native_guest_call.h"
 #include "gekko/native_math_affine.h"
 #include "gekko/native_vec_math.h"
@@ -47,6 +50,139 @@ GEKKO_ALWAYS_INLINE bool equal(Cpu& c, F a, F b, bool ordered) noexcept {
     return false;
 }
 
+// ---- the same arithmetic in plain single precision (gekko/fast_single.h) ------------------------------------------------
+// Every operation below is the exact call it stands for - ppc::fps_* on FPR bit patterns, then the store conversion - with
+// one arm in front of it: when each operand is zero or an ordinary single and so is the result, the host's own float
+// operation gives the same bits (fast_single.h says why), and there is nothing else to do: fps_* writes no state and reads
+// FPSCR[NI] only for the values the test excludes. Memory is read and written in exactly the order of the exact form; only
+// the route a value takes differs.
+struct Num {
+    F bits = 0;      // the FPR image: valid when !ok
+    float f = 0.0f;  // valid when ok: the value, zero or an ordinary single
+    bool ok = false;
+};
+GEKKO_ALWAYS_INLINE F bits_of(const Num& n) noexcept { return n.ok ? fast::fpr_of(n.f) : n.bits; }
+GEKKO_ALWAYS_INLINE Num exact(F bits) noexcept { return Num{bits, 0.0f, false}; }
+GEKKO_ALWAYS_INLINE Num plain(float f) noexcept { return Num{0u, f, true}; }
+// An FPR value: plain when it is exactly a single that is zero or ordinary.
+GEKKO_ALWAYS_INLINE Num num(F bits) noexcept {
+    const double d = bits_to_double(bits);
+    const float f = static_cast<float>(d);
+    return Num{bits, f, static_cast<double>(f) == d && fast::bad_word(float_to_bits(f)) == 0u};
+}
+GEKKO_ALWAYS_INLINE Num num_word(u32 w) noexcept {
+    if (fast::bad_word(w) == 0u) return plain(bits_to_float(w));
+    return exact(L(w));
+}
+
+// S(fps_add(L(w), b))
+GEKKO_ALWAYS_INLINE u32 add_word(Cpu& c, u32 w, const Num& b) noexcept {
+    if (b.ok) {
+        fast::Check k;
+        const float r = k.out(k.in(w) + b.f);
+        if (k.ok()) return float_to_bits(r);
+    }
+    return S(ppc::fps_add(c, L(w), bits_of(b)));
+}
+// fps_add(L(a), L(b))
+GEKKO_ALWAYS_INLINE Num add_words(Cpu& c, u32 a, u32 b) noexcept {
+    fast::Check k;
+    const float r = k.out(k.in(a) + k.in(b));
+    if (k.ok()) return plain(r);
+    return exact(ppc::fps_add(c, L(a), L(b)));
+}
+// fps_mul(L(w), b)
+GEKKO_ALWAYS_INLINE Num mul_word(Cpu& c, u32 w, const Num& b) noexcept {
+    if (b.ok) {
+        fast::Check k;
+        const float r = k.out(k.in(w) * b.f);
+        if (k.ok()) return plain(r);
+    }
+    return exact(ppc::fps_mul(c, L(w), bits_of(b)));
+}
+// S(fps_mul(L(w), b))
+GEKKO_ALWAYS_INLINE u32 mul_store(Cpu& c, u32 w, const Num& b) noexcept {
+    if (b.ok) {
+        fast::Check k;
+        const float r = k.out(k.in(w) * b.f);
+        if (k.ok()) return float_to_bits(r);
+    }
+    return S(ppc::fps_mul(c, L(w), bits_of(b)));
+}
+// fps_mul(a, L(w))
+GEKKO_ALWAYS_INLINE Num mul_by_word(Cpu& c, const Num& a, u32 w) noexcept {
+    if (a.ok) {
+        fast::Check k;
+        const float r = k.out(a.f * k.in(w));
+        if (k.ok()) return plain(r);
+    }
+    return exact(ppc::fps_mul(c, bits_of(a), L(w)));
+}
+GEKKO_ALWAYS_INLINE Num mul(Cpu& c, const Num& a, const Num& b) noexcept {
+    if (a.ok & b.ok) {
+        fast::Check k;
+        const float r = k.out(a.f * b.f);
+        if (k.ok()) return plain(r);
+    }
+    return exact(ppc::fps_mul(c, bits_of(a), bits_of(b)));
+}
+GEKKO_ALWAYS_INLINE Num sub(Cpu& c, const Num& a, const Num& b) noexcept {
+    if (a.ok & b.ok) {
+        fast::Check k;
+        const float r = k.out(a.f - b.f);
+        if (k.ok()) return plain(r);
+    }
+    return exact(ppc::fps_sub(c, bits_of(a), bits_of(b)));
+}
+GEKKO_ALWAYS_INLINE Num div(Cpu& c, const Num& a, const Num& b) noexcept {
+    if (a.ok & b.ok) {
+        fast::Check k;
+        const float r = k.out(a.f / b.f);
+        if (k.ok()) return plain(r);
+    }
+    return exact(ppc::fps_div(c, bits_of(a), bits_of(b)));
+}
+// S(fps_madd(L(a), cc, L(b))): a * cc + b, rounded once
+GEKKO_ALWAYS_INLINE u32 madd_word(Cpu& c, u32 a, const Num& cc, u32 b) noexcept {
+    if (fast::kAvailable && cc.ok) {
+        fast::Check k;
+        const float r = k.out(fast::fma(k.in(a), cc.f, k.in(b)));
+        if (k.ok()) return float_to_bits(r);
+    }
+    return S(ppc::fps_madd(c, L(a), bits_of(cc), L(b)));
+}
+// S(fps_nmsub(a, L(cc), L(b))): -(a * cc - b), the product and the difference rounded once, then the sign turned
+GEKKO_ALWAYS_INLINE u32 nmsub_word(Cpu& c, const Num& a, u32 cc, u32 b) noexcept {
+    if (fast::kAvailable && a.ok) {
+        fast::Check k;
+        const float r = k.out(fast::fma(a.f, k.in(cc), -k.in(b)));
+        if (k.ok()) return float_to_bits(r) ^ 0x80000000u;
+    }
+    return S(ppc::fps_nmsub(c, bits_of(a), L(cc), L(b)));
+}
+
+// The compares on plain values: two ordinary singles compare as their doubles do. Anything else is the exact compare.
+GEKKO_ALWAYS_INLINE bool greater(Cpu& c, const Num& a, const Num& b, bool ordered) noexcept {
+    if (a.ok & b.ok) return a.f > b.f;
+    return greater(c, bits_of(a), bits_of(b), ordered);
+}
+GEKKO_ALWAYS_INLINE bool greater_word(Cpu& c, u32 w, const Num& b, bool ordered) noexcept {
+    if (b.ok && fast::bad_word(w) == 0u) return bits_to_float(w) > b.f;
+    return greater(c, L(w), bits_of(b), ordered);
+}
+GEKKO_ALWAYS_INLINE bool greater_than_word(Cpu& c, const Num& a, u32 w, bool ordered) noexcept {
+    if (a.ok && fast::bad_word(w) == 0u) return a.f > bits_to_float(w);
+    return greater(c, bits_of(a), L(w), ordered);
+}
+GEKKO_ALWAYS_INLINE bool greater_words(Cpu& c, u32 a, u32 b, bool ordered) noexcept {
+    if ((fast::bad_word(a) | fast::bad_word(b)) == 0u) return bits_to_float(a) > bits_to_float(b);
+    return greater(c, L(a), L(b), ordered);
+}
+GEKKO_ALWAYS_INLINE bool equal_word(Cpu& c, const Num& a, u32 w, bool ordered) noexcept {
+    if (a.ok && fast::bad_word(w) == 0u) return a.f == bits_to_float(w);
+    return equal(c, bits_of(a), L(w), ordered);
+}
+
 // ---- the commands -------------------------------------------------------------------------------------------------------
 
 // The command was spent or ran out: when its data record's byte +2 is set, the unit's flags word (the pointer at +0x14) gets
@@ -63,7 +199,7 @@ enum class Step { Finished, Alive, Run };
 
 // The part every update shares: no target = finished; the first call only marks the command started; then elapsed += dt and
 // the command is finished once it exceeds its duration. Run: the update's own work follows.
-GEKKO_ALWAYS_INLINE Step prologue(Cpu& c, u32 self, F dt) noexcept {
+GEKKO_ALWAYS_INLINE Step prologue(Cpu& c, u32 self, const Num& dt) noexcept {
     if (c.mem_read32(self + 0x18u) == 0u) {
         finish(c, self);
         return Step::Finished;
@@ -72,25 +208,29 @@ GEKKO_ALWAYS_INLINE Step prologue(Cpu& c, u32 self, F dt) noexcept {
         c.mem_write8(self + 0x10u, 1u);
         return Step::Alive;
     }
-    c.mem_write32(self + 0x1Cu, S(ppc::fps_add(c, L(c.mem_read32(self + 0x1Cu)), dt)));
-    const F elapsed = L(c.mem_read32(self + 0x1Cu));
-    const F duration = L(c.mem_read32(self + 0x20u));
-    if (greater(c, elapsed, duration, true)) {
+    c.mem_write32(self + 0x1Cu, add_word(c, c.mem_read32(self + 0x1Cu), dt));
+    const u32 elapsed = c.mem_read32(self + 0x1Cu);
+    const u32 duration = c.mem_read32(self + 0x20u);
+    if (greater_words(c, elapsed, duration, true)) {
         finish(c, self);
         return Step::Finished;
     }
     return Step::Run;
 }
 
-bool alpha_ramp(Cpu& c, u32 self, F dt) noexcept {
+bool alpha_ramp(Cpu& c, u32 self, const Num& dt) noexcept {
     const Step step = prologue(c, self, dt);
     if (step != Step::Run) return step == Step::Alive;
     const u32 rate = c.mem_read32(self + 0x24u);
     if (rate == 0u) return true;
-    // (double)rate through the 2^52 bias, rounded to a single by fsubs, scaled by dt, truncated to an int
+    // (double)rate through the 2^52 bias, rounded to a single by fsubs, scaled by dt, truncated to an int. With the bias
+    // the game has there, the difference is the rate as a signed integer, exactly, and its rounding to a single is the
+    // host's int -> float conversion (the rate is not 0 here, so the value is at least 1 in magnitude).
     const F biased = 0x4330000000000000ull | static_cast<u64>(rate ^ 0x80000000u);
-    F delta = ppc::fps_sub(c, biased, c.mem_read64(kMagicDouble));
-    delta = ppc::fps_mul(c, delta, dt);
+    const u64 bias = c.mem_read64(kMagicDouble);
+    const Num as_float = bias == 0x4330000080000000ull ? plain(static_cast<float>(static_cast<s32>(rate)))
+                                                        : exact(ppc::fps_sub(c, biased, bias));
+    const F delta = bits_of(mul(c, as_float, dt));
     const u32 step_value = static_cast<u32>(ppc::fctiw(c, delta, true));
     const u32 cell = c.mem_read32(self + 0x18u);
     const u32 before = c.mem_read32(cell);
@@ -109,28 +249,28 @@ bool alpha_ramp(Cpu& c, u32 self, F dt) noexcept {
     return true;
 }
 
-bool scalar_update(Cpu& c, u32 self, F dt) noexcept {
+bool scalar_update(Cpu& c, u32 self, const Num& dt) noexcept {
     const Step step = prologue(c, self, dt);
     if (step != Step::Run) return step == Step::Alive;
     const u32 cell = c.mem_read32(self + 0x18u);
-    const F rate = L(c.mem_read32(self + 0x24u));
-    const F current = L(c.mem_read32(cell));
-    c.mem_write32(cell, S(ppc::fps_madd(c, rate, dt, current)));
+    const u32 rate = c.mem_read32(self + 0x24u);
+    const u32 current = c.mem_read32(cell);
+    c.mem_write32(cell, madd_word(c, rate, dt, current));
     return true;
 }
 
 // target[i] += rate[i] * dt: the rates are all read (scaled) first, then each target word is read, added and stored in turn
 // (0x800091A4 into a frame temporary, then 0x8040E048).
-GEKKO_ALWAYS_INLINE void add_scaled(Cpu& c, u32 target, u32 vector, F dt) noexcept {
-    const F x = ppc::fps_mul(c, L(c.mem_read32(vector)), dt);
-    const F y = ppc::fps_mul(c, L(c.mem_read32(vector + 4u)), dt);
-    const F z = ppc::fps_mul(c, L(c.mem_read32(vector + 8u)), dt);
-    c.mem_write32(target, S(ppc::fps_add(c, L(c.mem_read32(target)), x)));
-    c.mem_write32(target + 4u, S(ppc::fps_add(c, L(c.mem_read32(target + 4u)), y)));
-    c.mem_write32(target + 8u, S(ppc::fps_add(c, L(c.mem_read32(target + 8u)), z)));
+GEKKO_ALWAYS_INLINE void add_scaled(Cpu& c, u32 target, u32 vector, const Num& dt) noexcept {
+    const Num x = mul_word(c, c.mem_read32(vector), dt);
+    const Num y = mul_word(c, c.mem_read32(vector + 4u), dt);
+    const Num z = mul_word(c, c.mem_read32(vector + 8u), dt);
+    c.mem_write32(target, add_word(c, c.mem_read32(target), x));
+    c.mem_write32(target + 4u, add_word(c, c.mem_read32(target + 4u), y));
+    c.mem_write32(target + 8u, add_word(c, c.mem_read32(target + 8u), z));
 }
 
-bool vector_update(Cpu& c, u32 self, F dt) noexcept {
+bool vector_update(Cpu& c, u32 self, const Num& dt) noexcept {
     const Step step = prologue(c, self, dt);
     if (step != Step::Run) return step == Step::Alive;
     add_scaled(c, c.mem_read32(self + 0x18u), self + 0x24u, dt);
@@ -151,6 +291,7 @@ struct Frame {
     Cpu& c;
     u32 self;
     F dt;
+    Num step;  // dt, plain when it is an ordinary single
     bool failed = false;
 };
 
@@ -167,10 +308,10 @@ bool update_command(Frame& f, u32 command) {
     Cpu& c = f.c;
     const u32 target = c.mem_read32(c.mem_read32(command) + 0xCu);
     switch (target) {
-        case kAlphaRamp: return alpha_ramp(c, command, f.dt);
-        case kScalar: return scalar_update(c, command, f.dt);
+        case kAlphaRamp: return alpha_ramp(c, command, f.step);
+        case kScalar: return scalar_update(c, command, f.step);
         case kVector:
-        case kVector2D: return vector_update(c, command, f.dt);
+        case kVector2D: return vector_update(c, command, f.step);
         default: break;
     }
     c.fpr[1].bits[0] = f.dt;
@@ -211,36 +352,37 @@ GEKKO_ALWAYS_INLINE void pool_swap(Cpu& c, u32 self, u32 word_offset) noexcept {
     c.mem_write32(pool + 4u, word);
 }
 
-GEKKO_ALWAYS_INLINE void scale_in_place(Cpu& c, u32 vector, F factor) noexcept {
+GEKKO_ALWAYS_INLINE void scale_in_place(Cpu& c, u32 vector, const Num& factor) noexcept {
     for (u32 lane = 0; lane < 3u; ++lane)
-        c.mem_write32(vector + 4u * lane, S(ppc::fps_mul(c, L(c.mem_read32(vector + 4u * lane)), factor)));
+        c.mem_write32(vector + 4u * lane, mul_store(c, c.mem_read32(vector + 4u * lane), factor));
 }
 }  // namespace
 
 void serve_alpha_ramp(Cpu& c) {
-    c.gpr[3] = alpha_ramp(c, c.gpr[3], c.fpr[1].bits[0]) ? 1u : 0u;
+    c.gpr[3] = alpha_ramp(c, c.gpr[3], num(c.fpr[1].bits[0])) ? 1u : 0u;
 }
 
 void serve_scalar(Cpu& c) {
-    c.gpr[3] = scalar_update(c, c.gpr[3], c.fpr[1].bits[0]) ? 1u : 0u;
+    c.gpr[3] = scalar_update(c, c.gpr[3], num(c.fpr[1].bits[0])) ? 1u : 0u;
 }
 
 void serve_vector(Cpu& c) {
-    c.gpr[3] = vector_update(c, c.gpr[3], c.fpr[1].bits[0]) ? 1u : 0u;
+    c.gpr[3] = vector_update(c, c.gpr[3], num(c.fpr[1].bits[0])) ? 1u : 0u;
 }
 
 void serve_unit_step(Cpu& c) {
-    Frame f{c, c.gpr[3], c.fpr[1].bits[0]};
+    Frame f{c, c.gpr[3], c.fpr[1].bits[0], num(c.fpr[1].bits[0])};
     const u32 self = f.self;
-    const F dt = f.dt;
+    const Num dt = f.step;
 
     // 1. age the units (unless the definition says there is no limit) and flag the ones past the limit
     if ((c.mem_read32(self + 0x108u) & 0x100u) == 0u) {
-        const F limit = ppc::fps_add(c, L(c.mem_read32(kTinyConstant)), L(c.mem_read32(c.mem_read32(self + 0x124u) + 0xCu)));
+        const u32 tiny = c.mem_read32(kTinyConstant);
+        const Num limit = add_words(c, tiny, c.mem_read32(c.mem_read32(self + 0x124u) + 0xCu));
         for (u32 unit = c.mem_read32(self + 0xFCu); unit != 0u; unit = c.mem_read32(unit + 0x68u)) {
             if ((c.mem_read32(self + 0x18u) & 2u) != 0u)  // the system's flag, read again for every unit
-                c.mem_write32(unit + 0x50u, S(ppc::fps_add(c, L(c.mem_read32(unit + 0x50u)), dt)));
-            if (greater(c, L(c.mem_read32(unit + 0x50u)), limit, true))
+                c.mem_write32(unit + 0x50u, add_word(c, c.mem_read32(unit + 0x50u), dt));
+            if (greater_word(c, c.mem_read32(unit + 0x50u), limit, true))
                 c.mem_write32(unit + 0x4Cu, c.mem_read32(unit + 0x4Cu) | 1u);
         }
     }
@@ -285,28 +427,28 @@ void serve_unit_step(Cpu& c) {
     }
 
     // 4. move the units: position += velocity * dt; the drag blend; the gravity pull on the velocity's y
-    const F zero = L(c.mem_read32(kZeroConstant));
+    const Num zero = num_word(c.mem_read32(kZeroConstant));
     for (u32 unit = c.mem_read32(self + 0xFCu); unit != 0u; unit = c.mem_read32(unit + 0x68u)) {
         add_scaled(c, unit + 4u, unit + 0x1Cu, dt);
-        const F drag = L(c.mem_read32(self + 0x118u));
-        if (!equal(c, zero, drag, false)) {
+        const u32 drag = c.mem_read32(self + 0x118u);
+        if (!equal_word(c, zero, drag, false)) {
             c.gpr[3] = unit + 0x1Cu;
             vec_math::serve_length(c);  // the game's length: f1
-            const F length = c.fpr[1].bits[0];
-            if (greater(c, length, L(c.mem_read32(kTinyConstant)), true)) {
-                const F damped = ppc::fps_mul(c, length, L(c.mem_read32(self + 0x118u)));
+            const Num length = num(c.fpr[1].bits[0]);
+            if (greater_than_word(c, length, c.mem_read32(kTinyConstant), true)) {
+                const Num damped = mul_by_word(c, length, c.mem_read32(self + 0x118u));
                 if (greater(c, damped, length, true)) {
-                    scale_in_place(c, unit + 0x1Cu, L(c.mem_read32(kZeroConstant)));
+                    scale_in_place(c, unit + 0x1Cu, num_word(c.mem_read32(kZeroConstant)));
                 } else {
-                    const F kept = ppc::fps_sub(c, length, damped);
-                    scale_in_place(c, unit + 0x1Cu, ppc::fps_div(c, kept, length));
+                    const Num kept = sub(c, length, damped);
+                    scale_in_place(c, unit + 0x1Cu, div(c, kept, length));
                 }
             }
         }
-        const F gravity = L(c.mem_read32(self + 0x114u));
-        if (!equal(c, zero, gravity, false)) {
-            const F y = L(c.mem_read32(unit + 0x20u));
-            c.mem_write32(unit + 0x20u, S(ppc::fps_nmsub(c, dt, gravity, y)));
+        const u32 gravity = c.mem_read32(self + 0x114u);
+        if (!equal_word(c, zero, gravity, false)) {
+            const u32 y = c.mem_read32(unit + 0x20u);
+            c.mem_write32(unit + 0x20u, nmsub_word(c, dt, gravity, y));
         }
     }
 }
@@ -353,9 +495,28 @@ struct Cursor {
         return at;
     }
 };
+
+// The note of the last served fill (native_effect_update.h, last_fill).
+struct FillNote {
+    u32 tank = 0;
+    u32 first_unit = 0;
+};
+FillNote g_fill_note;
+std::atomic<bool> g_identities_wanted{false};
 }  // namespace
 
+bool last_fill(u32 tank, u32* first_unit) noexcept {
+    if (tank == 0u || g_fill_note.tank != tank)
+        return false;
+    *first_unit = g_fill_note.first_unit;
+    return true;
+}
+
+void want_particle_identities(bool on) noexcept { g_identities_wanted.store(on, std::memory_order_relaxed); }
+bool particle_identities_wanted() noexcept { return g_identities_wanted.load(std::memory_order_relaxed); }
+
 bool serve_ptank_fill(Cpu& c) {
+    g_fill_note.tank = 0u;
     const u32 system = c.gpr[3];
     const u32 sp0 = c.gpr[1];
     const u32 sp = sp0 - 0x60u;
@@ -447,6 +608,8 @@ bool serve_ptank_fill(Cpu& c) {
         c.mem_write32(uv_at + 8u, c.mem_read32(unit + 0x40u));
         c.mem_write32(uv_at + 0xCu, c.mem_read32(unit + 0x44u));
     }
+    g_fill_note.first_unit = head;
+    g_fill_note.tank = tank;
     c.mem_write32(sp + 0x2Cu, position.pointer);
     c.mem_write32(sp + 0x24u, colour.pointer);
     c.mem_write32(sp + 0x1Cu, scale.pointer);

@@ -5,12 +5,24 @@ project(ShadowTheHedgehogNative LANGUAGES CXX)
 # FM (2026-10-20): no volatile-access metadata. MSVC records every volatile access in .rdata$voltmd for
 # ARM64's x64 emulation; with FM's volatile guest accesses that table is 3 MB of image never read on an x64
 # host. Size only: the generated code is unchanged (checked by .text byte comparison).
-if(MSVC)
+if(MSVC AND NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")  # clang-cl has no such option (and emits no such table)
     add_compile_options($<$<COMPILE_LANGUAGE:CXX,C>:/volatileMetadata->)
 endif()
 
 if(WIN32)
     enable_language(RC)
+endif()
+
+# cpu/opt (2026-11-15): whole-program optimization of the Release image (MSVC /GL + /LTCG). The generated shards call
+# the runtime's small helpers (ppc::fp_compare, psq_load/psq_store, update_cr0, the Cpu memory accessors, the owner and
+# indirect-call dispatch) across translation units; without link-time code generation each is a real call. Only the
+# optimizer's view changes: /fp:precise semantics hold across inlining, so guest results stay bit-identical (gated).
+option(SHADOW_LTO "Link-time code generation (/GL + /LTCG) for the Release image" OFF)
+# The 48 generated shards are most of the image; with them under /GL a profile-guided link runs for hours. OFF keeps
+# them ordinary objects (compiled as without SHADOW_LTO) and applies LTCG / PGO to the runtime and native owners only.
+option(SHADOW_LTO_SHARDS "With SHADOW_LTO: the generated recomp shards are /GL objects too" ON)
+if(SHADOW_LTO)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
 endif()
 
 option(SHADOW_BUILD_TESTS "Build native runtime tests" ON)
@@ -32,6 +44,12 @@ option(SHADOW_S1_SHPTR "Counted-handle family owner on by default (quiet window 
 # s1/core: serve the character sweep query 0x80021934 natively by default (gekko/native_s1_chars.h); GEKKO_S1_CHARS=0/1 overrides at run time.
 option(SHADOW_RAM_PROBE "cs2/ram measurement build: per-call-stack live heap bytes (GEKKO_RAM_PROBE=<file>); never for shipped or gate exes" OFF)
 option(SHADOW_S1_CHARS "Character sweep query owner on by default (quiet window 2026-11-13: -1.7% game-thread CPU, 4/5)" ON)
+# cpu/opt5 (revived s2/sound, op3/engine owner): serve the GCAX dB -> amplitude search 0x8043C3F0 natively by default (gekko/native_sound_ampdb.h); GEKKO_OP3_AMPDB=0/1 overrides at run time.
+option(SHADOW_OP3_AMPDB "GCAX dB to amplitude search owner on by default (quiet machine 2026-11-17: -1.5% game-thread CPU, -1.0% cycles, 5/5)" ON)
+# cpu/opt6: the CharaColli manager's per-frame pair pass 0x800C7068 natively by default (gekko/chara_colli_intrinsic.h, run_pass); GEKKO_CHARA_COLLI_PASS=0/1 and --[no-]chara-colli-pass override at run time.
+option(SHADOW_CHARA_COLLI_PASS "CharaColli manager pair pass native by default (quiet machine 2026-11-17: -1.8% game-thread cycles Westopolis, -1.6% Final Haunt, 5/5 each)" ON)
+# native/hal-alloc: RwMalloc / RwFree, RenderWare's free-list pair and the game's two wrappers served as one native call each over the OS heap owner (gekko/native_rw_alloc.h); GEKKO_RW_ALLOC=0/1 overrides at run time.
+option(SHADOW_RW_ALLOC "RwMalloc / RwFree chain native by default (hooks with a hand-back; the bodies stay)" ON)
 # s1/target: serve the target registry query layer natively when ON (gekko/native_s1_target2.h); GEKKO_S1_TARGET2=0/1 overrides at run time. Default OFF.
 option(SHADOW_S1_TARGET2 "Target registry query layer owner on by default (quiet window 2026-11-14: -0.5% game-thread CPU, 5/5)" ON)
 option(SHADOW_ENABLE_PLUME "Present through plume (Direct3D 12)" OFF)
@@ -48,6 +66,14 @@ option(SHADOW_SHIPPING "Compile out development / verification-only paths (GEKKO
 if(SHADOW_SHIPPING)
     set(SHADOW_ENABLE_TRACY OFF CACHE BOOL "" FORCE)
     add_compile_definitions(GEKKO_SHIPPING=1)
+endif()
+# native/win N1 (docs/NATIVE_WINDOWS_MIGRATION.md): the GameCube memory-card block-device model (NativeCard) is the
+# contract ORACLE of the save store in the reference tests; the game itself always saves through the store. It is
+# compiled only where the oracle is needed (the tests tree by default). OFF = no card model in the image: System has no
+# card, no card tick on the game clock, no card owners.
+option(SHADOW_CARD_MODEL "Compile the memory-card block-device model (the save store's test oracle)" ${SHADOW_BUILD_TESTS})
+if(SHADOW_CARD_MODEL)
+    add_compile_definitions(GEKKO_CARD_MODEL=1)
 endif()
 # s1/mtn round 4: the five Mtn NodeWalk callbacks folded into the owned walk (docs/agents/s1-mtn.md). OFF = the guest bodies run as
 # before; ON = folded by default (GEKKO_MTN_FOLD=0 still disables at run time, GEKKO_MTN_FOLD=1 enables when the option is OFF).
@@ -744,6 +770,7 @@ if(WIN32)
         runtime/lift/render/display_modes.cpp
         runtime/lift/render/effect_layers.cpp
         runtime/lift/render/frame.cpp
+        runtime/lift/render/frame_interp.cpp
         runtime/lift/render/packet_stream.cpp
         runtime/lift/render/frame_graph.cpp
         runtime/lift/render/frame_loop.cpp
@@ -913,11 +940,14 @@ add_library(shadow_runtime_common OBJECT
     runtime/src/gekko/native_frame_limiter.cpp
     runtime/src/gekko/self_sampler.cpp
     runtime/src/gekko/native_motion_store.cpp
+    # SubQ batch B003: the motion bank registry, native (docs/NATIVE_WINDOWS_MIGRATION.md section 8).
+    runtime/src/gekko/native_motion_bank_store.cpp
     runtime/src/gekko/native_sound_banks.cpp
     runtime/src/gekko/native_stream_ring.cpp
     runtime/src/gekko/sound_arena.cpp
     runtime/src/gekko/native_object_range.cpp
     runtime/src/gekko/native_attached_effects.cpp
+    runtime/src/gekko/native_shoe_jets.cpp
     runtime/src/gekko/native_gx_state.cpp
     runtime/src/gekko/native_gx_display.cpp
     runtime/src/gekko/native_gx_texobj.cpp
@@ -949,6 +979,7 @@ add_library(shadow_runtime_common OBJECT
     runtime/src/gekko/native_os_machine_check.cpp
     runtime/src/gekko/native_ax_mix_alloc.cpp
     runtime/src/gekko/native_math_affine.cpp
+    runtime/src/gekko/native_math_mtx.cpp
     runtime/src/gekko/native_adx_decode.cpp
     runtime/src/gekko/native_rw_pixel.cpp
     runtime/src/gekko/native_rw_image.cpp
@@ -999,6 +1030,10 @@ add_library(shadow_runtime_common OBJECT
     runtime/src/gekko/native_s1_target2.cpp
     runtime/src/gekko/native_s1_shptr.cpp
     runtime/src/gekko/native_s1_chars.cpp
+    # cpu/opt5 (s2/sound owner)
+    runtime/src/gekko/native_sound_ampdb.cpp
+    # native/hal-alloc: the RwMalloc / RwFree chain above the OS heap
+    runtime/src/gekko/native_rw_alloc.cpp
 )
 # The runtime sources the lifted (shipping) tree does not compile. One list: it removes them below, and the generator's
 # liveness roots for that tree (extract/liveness-roots-lifted.txt) are generated without their literals, so guest code
@@ -1044,6 +1079,15 @@ endif()
 if(SHADOW_S1_CHARS)
     target_compile_definitions(shadow_runtime_common PRIVATE SHADOW_S1_CHARS_DEFAULT=1)
 endif()
+if(SHADOW_OP3_AMPDB)
+    target_compile_definitions(shadow_runtime_common PRIVATE SHADOW_OP3_AMPDB_DEFAULT=1)
+endif()
+if(SHADOW_CHARA_COLLI_PASS)
+    target_compile_definitions(shadow_runtime_common PRIVATE SHADOW_CHARA_COLLI_PASS_DEFAULT=1)
+endif()
+if(SHADOW_RW_ALLOC)
+    target_compile_definitions(shadow_runtime_common PRIVATE SHADOW_RW_ALLOC_DEFAULT=1)
+endif()
 target_compile_features(shadow_runtime_common PUBLIC cxx_std_20)
 target_link_libraries(shadow_runtime_common PUBLIC shadow_host_isa shadow_native_execution shadow_native_memory shadow_native_gameplay shadow_lift shadow_assets shadow_mods)
 # The development link (gekko/dev_link.h) connects to the comparison workstation over loopback TCP.
@@ -1056,11 +1100,11 @@ endif()
 # machinery that existed only for it. tools/ppcrecomp/check_native_boundary.py
 # refuses any of its symbols in either runtime archive and in the executable.
 
-add_library(shadow_runtime STATIC runtime/src/gekko/cpu.cpp runtime/src/gekko/flat_memory.cpp runtime/src/gekko/indirect_call_trace.cpp runtime/src/gekko/native_guest_call.cpp runtime/src/gekko/native_s1_call.cpp)
+add_library(shadow_runtime STATIC runtime/src/gekko/cpu.cpp runtime/src/gekko/flat_memory.cpp runtime/src/gekko/indirect_call_trace.cpp runtime/src/gekko/native_guest_call.cpp runtime/src/gekko/native_s1_call.cpp runtime/src/gekko/native_fast_call.cpp)
 set(SHADOW_CPU_TARGETS shadow_runtime)
 set_property(TARGET shadow_runtime PROPERTY INTERFACE_SHADOW_CPU_EXECUTION native)
 if(SHADOW_BUILD_TESTS OR SHADOW_BUILD_REFERENCE)
-    add_library(shadow_runtime_reference STATIC runtime/src/gekko/cpu.cpp runtime/src/gekko/flat_memory.cpp runtime/src/gekko/indirect_call_trace.cpp runtime/src/gekko/native_guest_call.cpp runtime/src/gekko/native_s1_call.cpp)
+    add_library(shadow_runtime_reference STATIC runtime/src/gekko/cpu.cpp runtime/src/gekko/flat_memory.cpp runtime/src/gekko/indirect_call_trace.cpp runtime/src/gekko/native_guest_call.cpp runtime/src/gekko/native_s1_call.cpp runtime/src/gekko/native_fast_call.cpp)
     target_compile_definitions(shadow_runtime_reference PRIVATE SHADOW_CPU_REFERENCE_BUILD=1)
     set_property(TARGET shadow_runtime_reference PROPERTY INTERFACE_SHADOW_CPU_EXECUTION reference)
     list(APPEND SHADOW_CPU_TARGETS shadow_runtime_reference)
@@ -1265,7 +1309,12 @@ else()
     # test refuses it when a runtime literal is missing.
     # The lifted tree compiles none of SHADOW_LIFTED_UNCOMPILED_SOURCES, so it is rooted by the file made without
     # their literals; the other trees (the R2 baseline, the tests tree) compile them and keep the full file.
-    if(SHADOW_RENDER_LIFTED)
+    # native/win N6: a lifted tree that compiles no test (the game image) is entered by no test, so it is rooted by the
+    # file made without the literals of runtime/tests/ as well (liveness_roots.py --without-tests). A test that names
+    # the address of a retired owner then no longer puts the original body back into the game.
+    if(SHADOW_RENDER_LIFTED AND NOT SHADOW_BUILD_TESTS)
+        set(SHADOW_RECOMP_LIVENESS_ROOTS "${CMAKE_CURRENT_SOURCE_DIR}/extract/liveness-roots-game.txt")
+    elseif(SHADOW_RENDER_LIFTED)
         set(SHADOW_RECOMP_LIVENESS_ROOTS "${CMAKE_CURRENT_SOURCE_DIR}/extract/liveness-roots-lifted.txt")
     else()
         set(SHADOW_RECOMP_LIVENESS_ROOTS "${CMAKE_CURRENT_SOURCE_DIR}/extract/liveness-roots.txt")
@@ -1397,6 +1446,37 @@ else()
     if(NOT SHADOW_RECOMP_INLINE_LEAVES STREQUAL "")
         list(APPEND SHADOW_RECOMP_ARGS --inline-leaves "${SHADOW_RECOMP_INLINE_LEAVES}")
     endif()
+    # cpu/opt2: the hot-body value pass (ppcrecomp --hot-value MASK; the generator's comment above HotValuePass has
+    # the rules). Bits: 1 lfs -> stfs word forwarding, 2 dead CR field writes, 4 dead FPR half writes, 8 / 16 / 32
+    # force-inlined update_cr0 / fp_compare / psq_load + psq_store in the hot bodies. Empty = off: the generated
+    # sources are then byte-identical to a build without the option.
+    set(SHADOW_RECOMP_HOT_VALUE "63" CACHE STRING
+        "ppcrecomp --hot-value MASK (hot-body single forwarding, dead CR / FPR writes, inlined helpers; empty: off)")
+    if(NOT SHADOW_RECOMP_HOT_VALUE STREQUAL "")
+        list(APPEND SHADOW_RECOMP_ARGS --hot-value "${SHADOW_RECOMP_HOT_VALUE}")
+    endif()
+    # cpu/opt2: hot-body block layout (ppcrecomp --hot-layout): rare checks [[unlikely]], direct calls enter the
+    # callee's hot body (entry 0 = the hook filter, then the body). OFF = the A/B control: the generated sources are
+    # then byte-identical to a build without the option.
+    # native/win: translation coverage (ppcrecomp --coverage): every emitted body records that it ran, and the image
+    # writes the set at exit (GEKKO_COVERAGE=<file>, accumulating). A measurement build in its own tree; never for
+    # shipped, gate or timing exes. OFF = the generated sources are byte-identical to a build without the option.
+    option(SHADOW_RECOMP_COVERAGE "ppcrecomp --coverage (which translated rows ran; measurement build only)" OFF)
+    if(SHADOW_RECOMP_COVERAGE)
+        list(APPEND SHADOW_RECOMP_ARGS --coverage)
+    endif()
+    option(SHADOW_RECOMP_HOT_LAYOUT "ppcrecomp --hot-layout (usual path of calls and guards falls through)" ON)
+    if(SHADOW_RECOMP_HOT_LAYOUT)
+        list(APPEND SHADOW_RECOMP_ARGS --hot-layout)
+    endif()
+    # cpu/opt4: which rare checks take the structural spelling (`if (usual) {} else { ...; return; }`, the shape MSVC
+    # 19.52 places out of line; it ignores [[unlikely]]). Bits: 1 the call's exit check, 2 the entry block and the
+    # hook filter, 4 the guards that leave. Empty = the generator's default (all). A/B and bisection only.
+    set(SHADOW_RECOMP_HOT_LAYOUT_PARTS "" CACHE STRING
+        "ppcrecomp --hot-layout-parts MASK (1 call checks, 2 entry + hook filter, 4 guards; empty: all)")
+    if(SHADOW_RECOMP_HOT_LAYOUT AND NOT SHADOW_RECOMP_HOT_LAYOUT_PARTS STREQUAL "")
+        list(APPEND SHADOW_RECOMP_ARGS --hot-layout-parts "${SHADOW_RECOMP_HOT_LAYOUT_PARTS}")
+    endif()
     # R16 (2026-10-20): paired-single sites specialised for one GQR value behind an
     # exact runtime guard (ppcrecomp --psq-sites; ppc::psq_load_k / psq_store_k).
     # Empty (-DSHADOW_RECOMP_PSQ_SITES=) is the A/B control.
@@ -1425,6 +1505,9 @@ else()
         endforeach()
         list(APPEND SHADOW_LIVENESS_ROOTS_CHECK_ARGS --base "${CMAKE_CURRENT_SOURCE_DIR}/extract/liveness-roots.txt")
         list(APPEND SHADOW_LIVENESS_ROOTS_CHECK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/extract/liveness-roots.txt")
+        if(NOT SHADOW_BUILD_TESTS)
+            list(APPEND SHADOW_LIVENESS_ROOTS_CHECK_ARGS --without-tests)  # extract/liveness-roots-game.txt
+        endif()
     endif()
     set(SHADOW_LIVENESS_ROOTS_STAMP "${SHADOW_RECOMP_DIR}/liveness_roots.stamp")
     add_custom_command(
@@ -1452,7 +1535,7 @@ else()
                 "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include/gekko/ppc_instruction_traits.h"
                 "${SHADOW_RECOMP_LIVENESS_ROOTS}"
                 "${SHADOW_RECOMP_JUMP_TABLES}"
-                "${SHADOW_RECOMP_NATIVE_OWNERS}"
+                ${SHADOW_RECOMP_NATIVE_OWNERS}
                 ${SHADOW_RECOMP_NATIVE_OWNERS_LIFTED}
                 ${SHADOW_RECOMP_GX_FAIL_SITES}
                 "${SHADOW_RECOMP_WAIT_POINTS}"
@@ -1483,6 +1566,26 @@ else()
         DEPENDS "${SHADOW_RECOMP_STAMP}"
         VERBATIM)
     add_library(shadow_recomp STATIC ${SHADOW_RECOMP_OUTPUTS})
+    if(SHADOW_LTO AND NOT SHADOW_LTO_SHARDS)
+        set_property(TARGET shadow_recomp PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE OFF)
+    endif()
+    # The profiled translated functions in shards of their own under /GL (2026-11-18): tools/perf/hot_shards.py writes a
+    # recomp_layout.csv that gathers them in the first N shards (the generator carries the layout it finds), and those
+    # N shards become /GL objects so the profile-guided link sees them; the other shards stay ordinary objects. Which
+    # shard a function is in changes no generated statement. 0 = off.
+    set(SHADOW_LTO_HOT_SHARDS "0" CACHE STRING "With SHADOW_LTO and SHADOW_LTO_SHARDS=OFF: the first N generated shards are /GL objects")
+    if(MSVC AND SHADOW_LTO AND NOT SHADOW_LTO_SHARDS AND SHADOW_LTO_HOT_SHARDS GREATER 0)
+        math(EXPR _hot_last "${SHADOW_LTO_HOT_SHARDS} - 1")
+        foreach(_hot RANGE 0 ${_hot_last})
+            if(_hot LESS 10)
+                set(_hot_name "recomp_00${_hot}.cpp")
+            else()
+                set(_hot_name "recomp_0${_hot}.cpp")
+            endif()
+            set_property(SOURCE "${SHADOW_RECOMP_DIR}/${_hot_name}" APPEND PROPERTY COMPILE_OPTIONS "$<$<CONFIG:Release>:/GL>")
+        endforeach()
+        message(STATUS "Generated shards 0..${_hot_last} are /GL objects (hot translated functions under LTCG / PGO)")
+    endif()
     add_dependencies(shadow_recomp shadow_recomp_generate)
     add_dependencies(shadow_recomp_generate shadow_liveness_roots_check)
     target_include_directories(shadow_recomp PRIVATE "${SHADOW_RECOMP_DIR}")
@@ -1505,9 +1608,18 @@ else()
         # functions even at /O2 (C4883). Keep the arithmetic unchanged and
         # let the optimizer finish; make any future suppression a build error.
         # Measured evidence and the Microsoft reference: docs/OPTIMIZATION_RESULTS.md.
+        if(SHADOW_RECOMP_COVERAGE)
+            target_compile_definitions(shadow_recomp PRIVATE SHADOW_RECOMP_COVERAGE=1)
+        endif()
         option(SHADOW_RECOMP_RESTRICT "Generated hot bodies take the Cpu as __restrict (registers stay in host registers across guest memory accesses)" OFF)
         if(SHADOW_RECOMP_RESTRICT)
             target_compile_definitions(shadow_recomp PRIVATE SHADOW_RECOMP_RESTRICT=1)
+        endif()
+        # Extra compiler options for the generated shards only (measurement builds; empty = none).
+        set(SHADOW_RECOMP_EXTRA_FLAGS "" CACHE STRING "Extra compile options for the generated recomp shards only")
+        if(NOT SHADOW_RECOMP_EXTRA_FLAGS STREQUAL "")
+            separate_arguments(_shadow_recomp_extra NATIVE_COMMAND "${SHADOW_RECOMP_EXTRA_FLAGS}")
+            target_compile_options(shadow_recomp PRIVATE ${_shadow_recomp_extra})
         endif()
         target_compile_options(shadow_recomp PRIVATE /W4 /permissive- /wd4702 /wd4102 /wd4065
                                                      /d2OptimizeHugeFunctions /we4883
@@ -1691,6 +1803,28 @@ if(NOT SHADOW_RECOMP_DOL STREQUAL "")
         add_executable(ShadowTheHedgehog runtime/src/shadow_main.cpp)
     endif()
     target_link_libraries(ShadowTheHedgehog PRIVATE shadow_recomp shadow_runtime)
+    # cpu/opt (2026-11-15): profile-guided optimization on top of SHADOW_LTO. GEN links an instrumented image that
+    # writes <pgd>!N.pgc counts; USE links the optimized image from the merged <pgd> (tools/perf/pgo_train.sh). Only
+    # the link changes - the /GL objects are the same for both - and code layout, inlining and branch order are the
+    # only things the profile decides: /fp:precise semantics are unchanged, so guest results stay bit-identical.
+    set(SHADOW_PGO "OFF" CACHE STRING "Profile-guided optimization of the game image: OFF, GEN or USE (needs SHADOW_LTO)")
+    set_property(CACHE SHADOW_PGO PROPERTY STRINGS OFF GEN USE)
+    set(SHADOW_PGO_PGD "${CMAKE_CURRENT_BINARY_DIR}/pgo/ShadowTheHedgehog.pgd" CACHE FILEPATH "PGO database path")
+    if(MSVC AND NOT SHADOW_PGO STREQUAL "OFF")
+        if(NOT SHADOW_LTO)
+            message(FATAL_ERROR "SHADOW_PGO=${SHADOW_PGO} needs SHADOW_LTO=ON")
+        endif()
+        if(SHADOW_PGO STREQUAL "GEN")
+            target_link_options(ShadowTheHedgehog PRIVATE "$<$<CONFIG:Release>:/GENPROFILE:PGD=${SHADOW_PGO_PGD}>")
+        elseif(SHADOW_PGO STREQUAL "USE")
+            if(NOT EXISTS "${SHADOW_PGO_PGD}")
+                message(FATAL_ERROR "SHADOW_PGO=USE: no profile database at ${SHADOW_PGO_PGD}")
+            endif()
+            target_link_options(ShadowTheHedgehog PRIVATE "$<$<CONFIG:Release>:/USEPROFILE:PGD=${SHADOW_PGO_PGD}>")
+        else()
+            message(FATAL_ERROR "SHADOW_PGO must be OFF, GEN or USE")
+        endif()
+    endif()
     if(SHADOW_RAM_PROBE)
         # cs2/ram measurement build: per-call-stack live bytes of the executable's operator new (runtime/src/ram_probe.cpp)
         target_sources(ShadowTheHedgehog PRIVATE runtime/src/ram_probe.cpp)
@@ -1956,6 +2090,18 @@ if(SHADOW_BUILD_TESTS)
         endif()
         add_test(NAME effect_layer_tests COMMAND effect_layer_tests)
         set_tests_properties(effect_layer_tests PROPERTIES TIMEOUT 30 LABELS "lift;render")
+        # Independent frame (docs/re/independent-frame/): a packet between two packets and the render timeline, on
+        # synthetic clocks (frame packets only: no device, no game).
+        add_executable(frame_interp_tests runtime/tests/frame_interp_tests.cpp
+            runtime/lift/render/frame.cpp runtime/lift/render/frame_interp.cpp)
+        target_include_directories(frame_interp_tests PRIVATE runtime/lift)
+        target_compile_features(frame_interp_tests PRIVATE cxx_std_20)
+        if(MSVC)
+            target_compile_options(frame_interp_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET frame_interp_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME frame_interp_tests COMMAND frame_interp_tests)
+        set_tests_properties(frame_interp_tests PROPERTIES TIMEOUT 60 LABELS "lift;render")
     endif()
 
     # The asset importers; with the game data present every disc file is
@@ -2358,6 +2504,20 @@ if(SHADOW_BUILD_TESTS)
     add_test(NAME flat_word_map_tests COMMAND flat_word_map_tests)
     set_tests_properties(flat_word_map_tests PROPERTIES TIMEOUT 60 LABELS "native-runtime")
 
+    # cpu/opt2: stfs(lfs(w)) == w for all 2^32 words: the identity behind ppcrecomp --hot-value bit 1. Compiled with
+    # the flags of the generated code (the host conversions it uses are the ones under test).
+    add_executable(fp_single_round_trip_tests runtime/tests/fp_single_round_trip_tests.cpp)
+    target_include_directories(fp_single_round_trip_tests PRIVATE runtime/include)
+    target_compile_features(fp_single_round_trip_tests PRIVATE cxx_std_20)
+    # The generated code's host instruction level, with the gate every image compiled for it carries.
+    target_link_libraries(fp_single_round_trip_tests PRIVATE shadow_host_isa)
+    if(MSVC)
+        target_compile_options(fp_single_round_trip_tests PRIVATE /W4 /permissive-)
+        set_property(TARGET fp_single_round_trip_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+    add_test(NAME fp_single_round_trip_tests COMMAND fp_single_round_trip_tests)
+    set_tests_properties(fp_single_round_trip_tests PROPERTIES TIMEOUT 600 LABELS "native-runtime")
+
     # opt-intrinsics (round 2): the plain-float routes of the host intrinsics against the original sequences (bit-exact).
     if(TARGET shadow_runtime_reference)
         add_executable(opt_intrinsics_diff_tests runtime/tests/opt_intrinsics_diff_tests.cpp)
@@ -2527,6 +2687,14 @@ if(SHADOW_BUILD_TESTS)
         endif()
         add_test(NAME guest_call_tests COMMAND guest_call_tests)
         set_tests_properties(guest_call_tests PROPERTIES TIMEOUT 120 LABELS "reference;native-contract")
+        add_executable(shoe_jets_tests runtime/tests/shoe_jets_tests.cpp)
+        target_link_libraries(shoe_jets_tests PRIVATE shadow_lift shadow_runtime_reference)
+        if(MSVC)
+            target_compile_options(shoe_jets_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET shoe_jets_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME shoe_jets_tests COMMAND shoe_jets_tests)
+        set_tests_properties(shoe_jets_tests PROPERTIES TIMEOUT 120 LABELS "reference;native-contract")
         add_executable(os_settings_contract_tests runtime/tests/os_settings_contract_tests.cpp)
         target_link_libraries(os_settings_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
         if(MSVC)
@@ -2627,6 +2795,57 @@ if(SHADOW_BUILD_TESTS)
             set_tests_properties(${matrix_name} PROPERTIES TIMEOUT 900 LABELS "reference;native-contract")
             if(NOT matrix_control STREQUAL "")
                 set_tests_properties(${matrix_name} PROPERTIES WILL_FAIL TRUE)
+            endif()
+        endforeach()
+        # docs/hal/HAL_DETACHMENT.md section 4 step 1: the SDK's PSMTXConcat owner against the original words, with controls.
+        foreach(mtx_control "" "--control-quirk" "--control-order" "--control-frame")
+            set(mtx_name math_mtx_contract_tests${mtx_control})
+            if(mtx_control STREQUAL "")
+                add_executable(math_mtx_contract_tests runtime/tests/math_mtx_contract_tests.cpp)
+                target_link_libraries(math_mtx_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+                if(MSVC)
+                    target_compile_options(math_mtx_contract_tests PRIVATE /W4 /permissive-)
+                    set_property(TARGET math_mtx_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+                endif()
+            endif()
+            add_test(NAME ${mtx_name} COMMAND math_mtx_contract_tests "${SHADOW_RECOMP_DOL}" ${mtx_control})
+            set_tests_properties(${mtx_name} PROPERTIES TIMEOUT 900 LABELS "reference;native-contract")
+            if(NOT mtx_control STREQUAL "")
+                set_tests_properties(${mtx_name} PROPERTIES WILL_FAIL TRUE)
+            endif()
+        endforeach()
+        # native/hal-alloc: the native RwMalloc / RwFree chain against the original words over the image's owners, with controls.
+        foreach(rw_alloc_control "" "--control-size" "--control-stack" "--control-result")
+            set(rw_alloc_name rw_alloc_contract_tests${rw_alloc_control})
+            if(rw_alloc_control STREQUAL "")
+                add_executable(rw_alloc_contract_tests runtime/tests/rw_alloc_contract_tests.cpp)
+                target_link_libraries(rw_alloc_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+                if(MSVC)
+                    target_compile_options(rw_alloc_contract_tests PRIVATE /W4 /permissive-)
+                    set_property(TARGET rw_alloc_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+                endif()
+            endif()
+            add_test(NAME ${rw_alloc_name} COMMAND rw_alloc_contract_tests "${SHADOW_RECOMP_DOL}" ${rw_alloc_control})
+            set_tests_properties(${rw_alloc_name} PROPERTIES TIMEOUT 900 LABELS "reference;native-contract")
+            if(NOT rw_alloc_control STREQUAL "")
+                set_tests_properties(${rw_alloc_name} PROPERTIES WILL_FAIL TRUE)
+            endif()
+        endforeach()
+        # SubQ batch B003: the native motion bank store against the original words of its 15 functions, with controls.
+        foreach(motion_banks_control "" "--control-quirk" "--control-order")
+            set(motion_banks_name motion_bank_store_contract_tests${motion_banks_control})
+            if(motion_banks_control STREQUAL "")
+                add_executable(motion_bank_store_contract_tests runtime/tests/motion_bank_store_contract_tests.cpp)
+                target_link_libraries(motion_bank_store_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+                if(MSVC)
+                    target_compile_options(motion_bank_store_contract_tests PRIVATE /W4 /permissive-)
+                    set_property(TARGET motion_bank_store_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+                endif()
+            endif()
+            add_test(NAME ${motion_banks_name} COMMAND motion_bank_store_contract_tests "${SHADOW_RECOMP_DOL}" ${motion_banks_control})
+            set_tests_properties(${motion_banks_name} PROPERTIES TIMEOUT 1800 LABELS "reference;native-contract")
+            if(NOT motion_banks_control STREQUAL "")
+                set_tests_properties(${motion_banks_name} PROPERTIES WILL_FAIL TRUE)
             endif()
         endforeach()
         add_executable(im2d_prims_tests runtime/tests/im2d_prims_tests.cpp runtime/scaffold/rw_driver/im2d_prims.cpp)
@@ -2742,6 +2961,23 @@ if(SHADOW_BUILD_TESTS)
         add_test(NAME mtn_pose_contract_tests COMMAND mtn_pose_contract_tests "${SHADOW_RECOMP_DOL}")
         set_tests_properties(mtn_pose_contract_tests PROPERTIES TIMEOUT 7200 LABELS "reference;native-contract")
         # s1/core
+        # cpu/opt5 (revived s2/sound owner): the GCAX dB -> amplitude search against the original words, with negative controls
+        foreach(ampdb_control "" "--control-offbyone" "--control-nanmatch" "--control-table" "--control-model")
+            set(ampdb_name sound_ampdb_contract_tests${ampdb_control})
+            if(ampdb_control STREQUAL "")
+                add_executable(sound_ampdb_contract_tests runtime/tests/sound_ampdb_contract_tests.cpp)
+                target_link_libraries(sound_ampdb_contract_tests PRIVATE shadow_lift shadow_runtime_reference)
+                if(MSVC)
+                    target_compile_options(sound_ampdb_contract_tests PRIVATE /W4 /permissive-)
+                    set_property(TARGET sound_ampdb_contract_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+                endif()
+            endif()
+            add_test(NAME ${ampdb_name} COMMAND sound_ampdb_contract_tests "${SHADOW_RECOMP_DOL}" ${ampdb_control})
+            set_tests_properties(${ampdb_name} PROPERTIES TIMEOUT 900 LABELS "reference;native-contract")
+            if(NOT ampdb_control STREQUAL "")
+                set_tests_properties(${ampdb_name} PROPERTIES WILL_FAIL TRUE)
+            endif()
+        endforeach()
         add_executable(s1_core_layout_scan_tests runtime/tests/s1_core_layout_scan_tests.cpp)
         target_link_libraries(s1_core_layout_scan_tests PRIVATE shadow_lift shadow_runtime_reference)
         if(MSVC)
@@ -4087,6 +4323,13 @@ if(SHADOW_BUILD_TESTS)
                          "${CMAKE_CURRENT_SOURCE_DIR}/tools/ppcrecomp/test_gpr_cache.py"
                          --generator $<TARGET_FILE:ppcrecomp>)
         set_tests_properties(ppcrecomp_gpr_cache PROPERTIES TIMEOUT 600 LABELS "tools;codegen")
+        # cpu/opt2: hot-body value pass, differential evaluator + negative controls + the ppc_ops.h helper list
+        add_test(NAME ppcrecomp_hot_value
+                 COMMAND "${Python3_EXECUTABLE}" -B
+                         "${CMAKE_CURRENT_SOURCE_DIR}/tools/ppcrecomp/test_hot_value.py"
+                         --generator $<TARGET_FILE:ppcrecomp>
+                         --ppc-ops "${CMAKE_CURRENT_SOURCE_DIR}/runtime/include/gekko/ppc_ops.h")
+        set_tests_properties(ppcrecomp_hot_value PROPERTIES TIMEOUT 900 LABELS "tools;codegen")
         set(SHADOW_TEST_RUNTIME_CONFIGURATION_WORK_DIR
             "${CMAKE_CURRENT_BINARY_DIR}/Testing/runtime-configuration"
             CACHE PATH "Temporary work root for the CPU provider configuration test")
@@ -4154,6 +4397,39 @@ if(SHADOW_BUILD_TESTS)
                              --base "${CMAKE_CURRENT_SOURCE_DIR}/extract/liveness-roots.txt"
                              --check "${CMAKE_CURRENT_SOURCE_DIR}/extract/liveness-roots-lifted.txt")
             set_tests_properties(native_liveness_roots_lifted PROPERTIES TIMEOUT 120 LABELS "native;build")
+            # The game image's roots (a lifted tree without tests): the lifted scan without runtime/tests/.
+            add_test(NAME native_liveness_roots_game
+                     COMMAND "${Python3_EXECUTABLE}" -B
+                             "${CMAKE_CURRENT_SOURCE_DIR}/tools/ppcrecomp/liveness_roots.py"
+                             --runtime "${CMAKE_CURRENT_SOURCE_DIR}/runtime"
+                             --census "${CMAKE_CURRENT_SOURCE_DIR}/test_data/address-census-20261005-v1/census-v2.json"
+                             ${SHADOW_LIFTED_WITHOUT_ARGS} --without-tests
+                             --base "${CMAKE_CURRENT_SOURCE_DIR}/extract/liveness-roots.txt"
+                             --check "${CMAKE_CURRENT_SOURCE_DIR}/extract/liveness-roots-game.txt")
+            set_tests_properties(native_liveness_roots_game PROPERTIES TIMEOUT 120 LABELS "native;build")
+            # native/win (docs/NATIVE_WINDOWS_MIGRATION.md, docs/agents/native-tools.md): the migration tools' own unit
+            # tests, and the ratchet on what of the GameCube execution environment the GAME IMAGE still links
+            # (translated functions, native functions taking Cpu&, guest-machine code bytes). The image is another
+            # tree's product (lifted renderer, no tests), so the test takes that tree's link map by path and is
+            # registered only when one is given. The ratchet file holds the numbers of the gate configuration
+            # (SHADOW_SHIPPING=OFF, SHADOW_WATCH_SYMBOLS=ON, SHADOW_BUILD_REFERENCE=ON); another configuration needs its
+            # own file. Lower it with verify_native_runtime.py --write-ratchet after a step; never raise it.
+            add_test(NAME native_migration_tools
+                     COMMAND "${Python3_EXECUTABLE}" -B -m unittest discover -s . -p "test_*.py")
+            set_tests_properties(native_migration_tools PROPERTIES
+                WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tools/native" TIMEOUT 60 LABELS "tools;validation")
+            # Always registered. Without a map (the variable unset, or the image not built) the test FAILS and says
+            # so: an unmeasured image is not a passing one. The designated run is
+            #   ctest -C Release -R "^native_runtime_ratchet$" --no-tests=error
+            # so that a tree in which the test is not registered at all fails too.
+            set(SHADOW_NATIVE_RATCHET_MAP "" CACHE FILEPATH
+                "Link map of the game image (gate configuration) for the native_runtime_ratchet test; unset = the test fails")
+            add_test(NAME native_runtime_ratchet
+                     COMMAND "${Python3_EXECUTABLE}" -B
+                             "${CMAKE_CURRENT_SOURCE_DIR}/tools/native/verify_native_runtime.py"
+                             --map "${SHADOW_NATIVE_RATCHET_MAP}"
+                             --ratchet "${CMAKE_CURRENT_SOURCE_DIR}/tools/native/native_ratchet.json")
+            set_tests_properties(native_runtime_ratchet PROPERTIES TIMEOUT 120 LABELS "tools;validation;native")
             # GameCube SDK removal (docs/GC_REMOVAL_PLAN.md): the generator's liveness graph classified by the
             # platform manifest. Fails when more platform-SDK bodies are compiled than the ratchet (a new hook or
             # literal pinned SDK code: the work list names what enters it), or when the planner's prediction for a

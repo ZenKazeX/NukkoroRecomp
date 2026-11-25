@@ -12,10 +12,11 @@
 // the voice's addresses as slot base + the wave's offset (nibbles for ADPCM, samples for PCM16, bytes for PCM8),
 // and the DSP reads the samples there.
 //
-// Native here: the banks live in a native arena (a region of the guest window at kArenaBase, reserved to the game's
-// own request; pages are committed as the banks' bytes land in them). The game sees a sound address space at
-// kSoundBase, past the 16 MiB of ARAM, so the stream ring (still in ARAM until its own step) and the banks never
-// share an address; the AX voice decode reads a voice whose addresses lie there straight from the arena (source()).
+// Native here: the banks live in a native store (SoundArena: native storage owned here, outside the game's address
+// window since 2026-11-21, reserved to the game's own request; granules are committed as the banks' bytes land in
+// them). The game sees a sound address space at kSoundBase, past the 16 MiB of ARAM, so the stream ring and the banks
+// never share an address; those addresses are handles only native code resolves: the AX voice decode reads a voice
+// whose addresses lie there straight from the store (source()).
 // The init stays the game's code with two call sites lowered (extract/lift-sites.txt): its ARAlloc returns the
 // arena's sound address, its zero-block upload is a plain copy. gcaxAramDma is owned (a plain copy). Everything
 // else - the slot allocator, the bank loader, the program data, the note-on address arithmetic - stays the game's.
@@ -34,7 +35,7 @@ class GuestMemory;
 class NativeSoundBanks {
 public:
     NativeSoundBanks(Cpu& cpu, GuestMemory& memory) noexcept
-        : cpu_(cpu), arena_(memory, kSoundBase, kSoundSpan, kArenaBase, "native sound banks") {}
+        : cpu_(cpu), arena_(memory, kSoundBase, kSoundSpan, kRecordLabel, "native sound banks") {}
 
     void install();
 
@@ -46,7 +47,9 @@ public:
 
     static constexpr u32 kSoundBase = 0x01000000u;  // the first address past the 16 MiB of ARAM (ARInit's size)
     static constexpr u32 kSoundSpan = 0x01000000u;  // the banks' sound addresses: [kSoundBase, + 16 MiB)
-    static constexpr u32 kArenaBase = 0x94000000u;  // guest window, after the motion store's arena
+    // The window base the banks had while they were a guest-window region (until 2026-11-21): now only the label of
+    // their checkpoint record and state-report entry (NativeArenaImage), so both keep their content.
+    static constexpr u32 kRecordLabel = 0x94000000u;
 
     const SoundArena& arena() const noexcept { return arena_; }
 

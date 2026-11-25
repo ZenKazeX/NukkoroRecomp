@@ -142,7 +142,11 @@ public:
     bool burst_settling() const noexcept { return burst_settle_ > 0u; }
     // Renders the packet into the window's next back buffer and presents it. credit_ns given: eager start
     // (render/burst_ahead.h) - recorded and submitted before the swap chain's credit is taken; *credit_ns = when it came.
-    bool render(const FramePacket& packet, PresentMode mode, std::string* error, std::int64_t* credit_ns = nullptr);
+    // commit_history false (independent frame, render/frame_interp.h): a picture between two game frames - the views'
+    // kept histories (the motion trail's feedback) are read but not replaced, so they advance once per game frame
+    // however many pictures are drawn of it.
+    bool render(const FramePacket& packet, PresentMode mode, std::string* error, std::int64_t* credit_ns = nullptr,
+                bool commit_history = true);
     // How much earlier than the phase lock's schedule packets come now (burst lead), for the hold the lock measures.
     std::int64_t hold_bias_ns() const noexcept;
     // C3 (HW_REPORT S): true while render / render_to_image reads `packet` (any thread). A packet handed back to the

@@ -100,3 +100,5 @@ include("${CMAKE_CURRENT_LIST_DIR}/difftest_f1c.cmake")
 
 # cs2/cpu: ppcrecomp --inline-leaves contract test (+ negative control): the leaf family only.
 include("${CMAKE_CURRENT_LIST_DIR}/difftest_leaf.cmake")
+# cpu/opt2: ppcrecomp --hot-value (single forwarding, dead CR / FPR writes) against the interpreter
+include("${CMAKE_CURRENT_LIST_DIR}/difftest_hot_value.cmake")

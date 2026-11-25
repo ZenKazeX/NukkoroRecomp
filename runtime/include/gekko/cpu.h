@@ -836,6 +836,11 @@ public:
     GEKKO_ALWAYS_INLINE void mem_write64(u32 effective, u64 value) {
         fm_store64(fm_base_ + effective, fm_swap64(value));
     }
+    // cpu/opt2: the same one access with the word as it lies in guest memory (no byte swap): a single-precision
+    // word an lfs loaded and an stfs stores back unchanged (ppcrecomp --hot-value). mem_read32(ea) ==
+    // bswap32(mem_read32_raw(ea)); mem_write32_raw(ea, w) == mem_write32(ea, bswap32(w)).
+    GEKKO_ALWAYS_INLINE u32 mem_read32_raw(u32 effective) { return fm_load32(fm_base_ + effective); }
+    GEKKO_ALWAYS_INLINE void mem_write32_raw(u32 effective, u32 value) { fm_store32(fm_base_ + effective, value); }
     // FM: the vectored-exception entry (cpu.cpp). Public so the process-wide
     // handler can reach the machine that owns a faulting window address.
     static long fm_fault(void* exception_pointers) noexcept;
@@ -929,7 +934,29 @@ public:
     // The generated entry of a native owner (recomp::kNativeOwners): the
     // original body is not in the image, so the installed owner must serve the
     // call. A missing or declining owner stops the machine.
+#if defined(__clang__) && !defined(SHADOW_CPU_REFERENCE_BUILD)
+    // Per-site form (see hle_entry_slow below): the out-of-line function's own statements for the slot that names the
+    // owner, inline at the generated entry; everything else (a shared slot, the verify / fault fill, a declining or
+    // missing owner) in serve_native_owner_cold.
+    GEKKO_ALWAYS_INLINE void serve_native_owner(u32 address) {
+        const u32 slot = hle_slot_of(address);
+        bool declined = false;
+        if (hle_slots_[slot] == address && address > kHleSlotAll && !hle_slots_all_) GEKKO_LIKELY {
+            HleEntry& entry = *hle_slot_ptr_[slot];
+            ++hle_slow_calls_;
+            if (entry.handler.invoke(entry.handler.ctx, *this)) GEKKO_LIKELY {
+                ++entry.hits;
+                if ((exit_pending_ & kExitLeave) == 0u && !stopped()) pc = lr;
+                return;
+            }
+            declined = true;
+        }
+        serve_native_owner_cold(address, declined);
+    }
+    void serve_native_owner_cold(u32 address, bool declined);
+#else
     void serve_native_owner(u32 address);
+#endif
     // cs2/cpu: the sorted addresses of guest functions the generator inlined into their callers
     // (recomp::kInlinedLeaves). Installing a hook at one stops the machine: the inlined calls would skip it.
     void set_inlined_leaves(const u32* sorted, std::size_t count) noexcept {
@@ -961,14 +988,63 @@ public:
     // the old `if (c.try_hle(A)) return; body(c, A);`. Both arms are tail calls, so the thunk needs no stack frame:
     // the old one saved a register and adjusted the stack on every call only because try_hle_slow was a call in the
     // middle of it (2026-11-04 line profile: the thunk line was 0.40 ms/frame, 18 % of translated code).
+    // cpu/opt2: the occupancy bit first (hle_occupied_, 1 KiB for all 8192 slots, so it stays in L1 where the 32 KiB
+    // slot table does not: every translated call makes this test). A clear bit proves the slot is empty, which is
+    // the answer "clear" for every address; a set bit takes the exact slot test as before. The slot test is the
+    // unlikely block, so the compiler lays the usual answer out as the fall-through (written the other way round,
+    // MSVC made every call take a branch around the slot test: +2.2 % game-thread CPU, measured).
     GEKKO_ALWAYS_INLINE bool hle_clear(u32 address) const noexcept {
+        const u32 index = hle_slot_of(address);
+        if ((hle_occupied_[index >> 3] & (1u << (index & 7u))) != 0u) GEKKO_UNLIKELY {
+            const u32 slot = hle_slots_[index];
+            if (slot == address || slot == kHleSlotAll) return false;
+        }
+        return true;
+    }
+    // cpu/opt4: hle_clear's two tests on their own, for the hot body's entry 0 (`if (hle_vacant(A)) {} else { if
+    // (hle_named(A)) { if (hle_entry_slow(A)) return; } <body through its own entry>; return; }`):
+    // !hle_clear(A) == !hle_vacant(A) && hle_named(A).
+    GEKKO_ALWAYS_INLINE bool hle_vacant(u32 address) const noexcept {
+        const u32 index = hle_slot_of(address);
+        return (hle_occupied_[index >> 3] & (1u << (index & 7u))) == 0u;
+    }
+    GEKKO_ALWAYS_INLINE bool hle_named(u32 address) const noexcept {
         const u32 slot = hle_slots_[hle_slot_of(address)];
-        return slot != address && slot != kHleSlotAll;
+        return slot == address || slot == kHleSlotAll;
     }
     using EntryBody = void (*)(Cpu&, u32);
+    // cpu/opt2 (ppcrecomp --hot-layout): entry 0 of a hot body runs `if (!hle_clear(A)) { if (hle_entry_slow(A))
+    // return; }` and then the body: the thunk's `if (hle_clear(A)) return body; enter_slow(A, body)` without the
+    // jump from the thunk. hle_entry_slow is try_hle_slow, the call enter_slow makes.
+#if defined(__clang__) && !defined(SHADOW_CPU_REFERENCE_BUILD)
+    // Per-site owner dispatch (clang images, 2026-11-24). The same statements as try_hle_slow for a slot that names
+    // exactly this address (the usual case of a hooked entry), inline at the generated entry, so every hooked function
+    // has its own indirect call. A profile-guided build then sees one target per site, calls it directly and can
+    // inline the owner into its entry. Every other slot value (shared, the verify / fault fill) takes try_hle_slow
+    // as before; a latched fault fills every slot with kHleSlotAll, so it never reaches the inline arm.
+    GEKKO_ALWAYS_INLINE bool hle_entry_slow(u32 address) {
+        const u32 slot = hle_slot_of(address);
+        if (hle_slots_[slot] == address && address > kHleSlotAll) GEKKO_LIKELY {
+            HleEntry* const entry = hle_slot_ptr_[slot];
+            ++hle_slow_calls_;
+            if (entry->handler.invoke(entry->handler.ctx, *this)) {
+                ++entry->hits;
+                if ((exit_pending_ & kExitLeave) == 0u && !stopped()) pc = lr;
+                return true;
+            }
+            return false;
+        }
+        return try_hle_slow(address);
+    }
+    GEKKO_ALWAYS_INLINE void enter_slow(u32 address, EntryBody body) {
+        if (!hle_entry_slow(address)) body(*this, address);
+    }
+#else
+    bool hle_entry_slow(u32 address) { return try_hle_slow(address); }
     GEKKO_NOINLINE void enter_slow(u32 address, EntryBody body) {
         if (!try_hle_slow(address)) body(*this, address);
     }
+#endif
     // Calls that got past the inline filter. Counted on the out-of-line side
     // only, so the reject path stays call- and write-free.
     u64 hle_slow_calls() const noexcept { return hle_slow_calls_; }
@@ -1045,7 +1121,12 @@ public:
     // location (fail closed: a load yields 0 and the store lands nowhere until
     // the stop is taken). Unset (unit fixtures) such an access is
     // GuestMemory's counted unmapped access.
-    void set_unmapped_access_stops(bool stops) noexcept { unmapped_access_stops_ = stops; }
+    // Set, it also installs this machine as GuestMemory's stop for a host access to the native arenas' former range
+    // (GuestMemory::kRetiredArenaBase): that access stops the machine as a guest one does.
+    void set_unmapped_access_stops(bool stops) noexcept {
+        unmapped_access_stops_ = stops;
+        memory_.set_retired_access_stop(stops ? &Cpu::retired_host_access : nullptr, stops ? this : nullptr);
+    }
     bool unmapped_access_stops() const noexcept { return unmapped_access_stops_; }
     u64 unmapped_accesses_stopped() const noexcept { return unmapped_accesses_stopped_; }
 
@@ -1392,6 +1473,8 @@ private:
         return unmapped_access_stops_ && memory_.peek_pointer(address, bytes) == nullptr && !memory_.device_at(address);
     }
     void unmapped_access(u32 address, u32 bytes, bool write, u64 value);
+    // GuestMemory's retired-range stop (set_unmapped_access_stops): a host access there stops the machine once.
+    static void retired_host_access(void* context, u32 address, u32 bytes, bool write, u64 value);
     // The OS exception entry (os_exception_entry.cpp).
     bool os_vector_installed(Exception vector, u32 index);
     void enter_os_exception(Exception vector);
@@ -1687,6 +1770,9 @@ private:
     // the generated code reaches moves.
     MemoryFault memory_fault_;
     u64 hle_slow_calls_ = 0;
+    // cpu/opt2: bit i set unless hle_slots_[i] is kHleSlotEmpty (rebuild_hle_slots; GEKKO_PF_HLE_BITMAP=0 sets every
+    // bit, which is the slot test alone). Read by hle_clear only.
+    u8 hle_occupied_[kHleSlotCount / 8u]{};
     u32 hle_slots_[kHleSlotCount]{};
     // Exact address -> hle_ index. find_hle used to binary-search 112-byte
     // rows on every hooked call and every dispatcher iteration.

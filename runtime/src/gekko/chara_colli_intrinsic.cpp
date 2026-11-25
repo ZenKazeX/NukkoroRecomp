@@ -4,7 +4,9 @@
 #include "gekko/chara_colli_geometry.h"
 
 #include <algorithm>
+#include <bit>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <utility>
 #include <unordered_map>
@@ -12,6 +14,7 @@
 #include "gekko/cpu.h"
 #include "gekko/dynamic_cast_intrinsic.h"
 #include "gekko/guest_memory.h"
+#include "gekko/native_s1_shptr.h"
 #include "gekko/ppc_ops.h"
 #include "gekko/recomp.h"
 
@@ -987,6 +990,7 @@ void CharaColliIntrinsic::fuzz_bone(Cpu& c, Test test, u32 self) {
 // The guest test (0x800C31EC / 0x800C2854) as it stands at its vf 0x88 call: its frame and saved registers, its
 // argument registers moved, r0 the link. Returns the call's return address.
 u32 CharaColliIntrinsic::bone_test_frame(Cpu& c, Test test) {
+    pass_flush(c);  // (the pair pass's vf 0x7C: guest code follows)
     u32* const g = c.gpr;
     const u32 caller_sp = g[1];
     const u32 link_in = c.lr;
@@ -1028,7 +1032,21 @@ u32 CharaColliIntrinsic::bone_test_frame(Cpu& c, Test test) {
     return link;
 }
 
+// The pair pass's pending dead-frame words (run_pass), written before guest code can read or overwrite them.
+void CharaColliIntrinsic::pass_flush(Cpu& c) {
+    u64 pending = pass_pending_;
+    if (pending == 0u) {
+        return;
+    }
+    pass_pending_ = 0u;
+    for (; pending != 0u; pending &= pending - 1u) {
+        const u32 i = static_cast<u32>(std::countr_zero(pending));
+        c.mem_write32(pass_dead_base_ + 4u * i, pass_dead_[i]);
+    }
+}
+
 int CharaColliIntrinsic::call_guest(Cpu& c, u32 target, u32 link) {
+    pass_flush(c);
     c.gpr[12] = target;
     c.ctr = target;
     recomp::call_indirect(c, target, link);
@@ -1770,6 +1788,8 @@ namespace {
 
 constexpr u32 kRadius = 0x80037380u;      // vf 0x38 (every class): lfs f1, 8(r3)
 constexpr u32 kPassMargin = 0xFFFF99A0u;  // r2 - 0x6660: added to the two radii
+constexpr u32 kPassLock = 0x80028DB0u, kPassCopy = 0x80028D20u, kPassDtor = 0x80028D60u;
+constexpr u32 kPassWeakDtor = 0x8001FC28u;  // weak_ptr dtor (this, flag): weak_count dtor 0x80017454 (this + 4, -1)
 
 GEKKO_ALWAYS_INLINE bool centre_getter(u32 fn) noexcept { return fn == kBodyCentre || fn == kGeneralCentre; }
 
@@ -1781,25 +1801,60 @@ int call_bl(Cpu& c, u32 target, u32 link) {
     return !c.exiting() && c.pc == link ? 1 : 0;
 }
 
-// 0x8001FC28 / 0x80028D60 on a copy whose increment was real: false when the count would reach zero (the guest
-// destroys there, so the caller hands back at the release).
-GEKKO_ALWAYS_INLINE bool drop(Cpu& c, u32 pi, u32 field) {
-    if (pi == 0u)
-        return true;
-    const u32 n = c.mem_read32(pi + field);
-    if (n <= 1u)
-        return false;
-    c.mem_write32(pi + field, n - 1u);
-    return true;
+// The counted-handle chains the pass calls (gekko/native_s1_shptr.h): weak_ptr::lock, the shared_ptr copy
+// constructor and destructor of this type. The default image serves them through their hooks; the pass calls the
+// same owner directly, so the counts and the dead frames are the owner's own.
+struct PassHandles {
+    const s1_shptr::Entry* lock = nullptr;  // 0x80028DB0
+    const s1_shptr::Entry* copy = nullptr;  // 0x80028D20
+    const s1_shptr::Entry* dtor = nullptr;  // 0x80028D60
+};
+PassHandles pass_handles() {
+    PassHandles h;
+    unsigned count = 0;
+    const s1_shptr::Entry* entries = s1_shptr::entries(count);
+    for (unsigned i = 0; i < count; ++i) {
+        if (entries[i].address == kPassLock)
+            h.lock = &entries[i];
+        else if (entries[i].address == kPassCopy)
+            h.copy = &entries[i];
+        else if (entries[i].address == kPassDtor)
+            h.dtor = &entries[i];
+    }
+    return h;
 }
-GEKKO_ALWAYS_INLINE bool drop_weak(Cpu& c, u32 pi) { return drop(c, pi, 8u); }
-GEKKO_ALWAYS_INLINE bool drop_use(Cpu& c, u32 pi) { return drop(c, pi, 4u); }
-GEKKO_ALWAYS_INLINE void hold_use(Cpu& c, u32 pi) {
+// One such call (r3, r4, LR as the guest's bl leaves them): the owner, else the guest function. 1 when it returned.
+GEKKO_ALWAYS_INLINE int handle_call(Cpu& c, const s1_shptr::Entry* entry, u32 target, u32 r3, u32 r4, u32 link) {
+    c.gpr[3] = r3;
+    c.gpr[4] = r4;
+    c.lr = link;
+    if (entry != nullptr && s1_shptr::serve(c, *entry)) {
+    } else {
+        return call_bl(c, target, link);
+    }
+    return 1;
+}
+
+// 0x80017930 (dst + 4, src + 4) after the px store: the weak_ptr's two words, the weak count + 1.
+GEKKO_ALWAYS_INLINE void weak_words(Cpu& c, u32 dst, u32 src) {
+    c.mem_write32(dst, c.mem_read32(src));
+    const u32 pi = c.mem_read32(src + 4u);
+    c.mem_write32(dst + 4u, pi);
     if (pi != 0u)
-        c.mem_write32(pi + 4u, c.mem_read32(pi + 4u) + 1u);
+        c.mem_write32(pi + 8u, c.mem_read32(pi + 8u) + 1u);
 }
 
 }  // namespace
+
+bool CharaColliIntrinsic::pass_default() noexcept {
+    if (const char* v = std::getenv("GEKKO_CHARA_COLLI_PASS"); v != nullptr && (v[0] == '0' || v[0] == '1'))
+        return v[0] == '1';
+#ifdef SHADOW_CHARA_COLLI_PASS_DEFAULT
+    return true;
+#else
+    return false;
+#endif
+}
 
 bool CharaColliIntrinsic::serve_pass(Cpu& c) {
     if (reference_ || (c.msr() & kMsrFp) == 0u)  // MSR[FP] clear: the guest's stfd raises FP-unavailable
@@ -1819,8 +1874,12 @@ int CharaColliIntrinsic::call_manage(Cpu& c, u32 self, u32 link) {
         if (!manage_ || target != kManageEntry[k])
             continue;
         ++manage_calls_;
-        if (run_manage(c, static_cast<Manage>(k)))
-            return c.exiting() ? 0 : 1;  // a GeneralBone update may hand itself to the guest
+        if (run_manage(c, static_cast<Manage>(k))) {
+            if (c.exiting())
+                return 0;  // a GeneralBone update may hand itself to the guest
+            return 2;  // served natively: its LR save word at r1 + 4 is written
+        }
+        pass_flush(c);
         const RecompiledCode* code = c.recompiled();
         if (const RecompiledCode::Range* body = code != nullptr ? code->find_range(target) : nullptr) {
             body->at(c, target);  // declined: its translated body (the entry thunk would come back to the hook)
@@ -1830,6 +1889,7 @@ int CharaColliIntrinsic::call_manage(Cpu& c, u32 self, u32 link) {
         }
         break;
     }
+    pass_flush(c);
     return call_bl(c, target, link);
 }
 
@@ -1838,13 +1898,18 @@ int CharaColliIntrinsic::call_manage(Cpu& c, u32 self, u32 link) {
 // for B (a contact still standing and neither moved: event 0x800C6A4C); a pair where one went inactive, or that
 // moved apart beyond the two radii plus the margin, loses its contact (0x80026AAC, 0x800C77D8); a pair within
 // reach runs the narrow phase (A's vf 0x80) and, on contact, builds the two contact records and their events.
-// Native here: the loops, the weak_ptr copies and locks (an increment and its decrement with no guest code
-// between them change nothing and are not made), vf 0x7C (run_manage), the radius and centre getters, the
-// distance test (0x8040E1D0) and its fcmpo. Guest: contact erase / events / records and the narrow phase, called
+// Native here: the loops, the weak_ptr copies, locks and releases, vf 0x7C (run_manage), the radius and centre
+// getters, the distance test (0x8040E1D0) and its fcmpo. Every helper the guest calls is made with all its
+// writes, in the guest's order: the counts (each increment and each decrement, also the pairs that cancel) and
+// the frame words the helper's translated body leaves below the pass's frame - back chains, LR save words, saved
+// r30 / r31, 0x8040E1D0's difference vector. Those frames are dead, but not without effect: the narrow phase
+// (vf 0x80) leaves words of its stack result unwritten and 0x8002686C copies them into the heap contact object,
+// so a contact holds what the last helper calls left there. The lock, the shared_ptr copy and its destructor are
+// the counted-handle owner's (s1_shptr::serve, called directly: what their hooks do in the default image), with
+// the guest function when it declines. Guest: contact erase / events / records and the narrow phase, called
 // with the guest's own return addresses, every register and frame word as the guest's would be. Handed back to
 // the guest body - at the instruction it stands at - when an entry is expired or a contact null (the guest erases
-// it), a release would reach zero, a count could wrap, a nested call is cut short, or an object's getters are
-// not the known ones.
+// it), a count could wrap, a nested call is cut short, or an object's getters are not the known ones.
 bool CharaColliIntrinsic::run_pass(Cpu& c) {
     u32* const g = c.gpr;
     const u32 caller_sp = g[1];
@@ -1863,20 +1928,168 @@ bool CharaColliIntrinsic::run_pass(Cpu& c) {
         c.mem_write32(f + slot, 0u);
     const u32 m = g[31];
     const auto back = [&](u32 pc, u32 reason) {
+        pass_flush(c);
         ++pass_back_[reason];
         c.leave_to_dispatcher(pc);
         return true;
+    };
+    const PassHandles handles = pass_handles();
+    // The frame words the helpers leave below f (f - 0x80 .. f + 4: dead stack, and the helpers' LR save word) are
+    // kept here, the last value of each, and written to guest memory before any guest code can run (pass_flush):
+    // the same bytes the guest would find, without a guest store for every word of every pair.
+    pass_dead_base_ = f - 0x80u;
+    pass_pending_ = 0u;
+    const auto wr = [this, f](u32 address, u32 value) {
+        const u32 i = (address - (f - 0x80u)) >> 2;
+        pass_dead_[i] = value;
+        pass_pending_ |= u64{1} << i;
+    };
+    const auto guest_bl = [&](u32 target, u32 link) {
+        pass_flush(c);
+        return call_bl(c, target, link);
+    };
+    const auto handle_guest = [&](const s1_shptr::Entry* entry, u32 target, u32 r3, u32 r4, u32 link) {
+        pass_flush(c);
+        return handle_call(c, entry, target, r3, r4, link);
+    };
+    // The helpers the guest calls from the pass's frame, each with the frame words its translated body leaves
+    // below f (and its LR save word at f + 4), in its order:
+    // 0x800C4A64 (dst, &iterator): 0x800C4A94, then 0x80029338 (dst, node) - a weak_ptr copied out of a list node.
+    const auto copy_node = [&](u32 dst, u32 node, u32 link) {
+        wr(f - 0x10u, f);
+        wr(f + 4u, link);
+        wr(f - 4u, g[31]);
+        wr(f - 0x20u, f - 0x10u);
+        wr(f - 0x0Cu, 0x800C4A80u);
+        wr(f - 0x30u, f - 0x20u);
+        wr(f - 0x1Cu, 0x800C4AA4u);
+        wr(f - 0x24u, dst);
+        weak_words(c, dst, node);
+    };
+    // 0x80029338 (dst, src): a weak_ptr copy.
+    const auto copy_weak = [&](u32 dst, u32 src, u32 link) {
+        wr(f - 0x10u, f);
+        wr(f + 4u, link);
+        wr(f - 4u, g[31]);
+        weak_words(c, dst, src);
+    };
+    // 0x8001FC28 (self, -1): 0x80017454 (self + 4, -1), the weak count - 1. At zero the guest destroys the block
+    // (a virtual): the guest function is called. False when that call was cut short.
+    const auto release_weak = [&](u32 self, u32 link) {
+        const u32 pi = c.mem_read32(self + 4u);
+        const u32 weak = pi != 0u ? c.mem_read32(pi + 8u) : 0u;
+        if (pi != 0u && weak == 1u) {
+            g[3] = self;
+            g[4] = 0xFFFFFFFFu;
+            return guest_bl(kPassWeakDtor, link) != 0;
+        }
+        wr(f - 0x10u, f);
+        wr(f + 4u, link);
+        wr(f - 8u, g[30]);
+        wr(f - 4u, g[31]);
+        wr(f - 0x20u, f - 0x10u);
+        wr(f - 0x0Cu, 0x8001FC50u);
+        wr(f - 0x18u, self);
+        wr(f - 0x14u, 0xFFFFFFFFu);
+        if (pi != 0u)
+            c.mem_write32(pi + 8u, weak - 1u);
+        return true;
+    };
+    // 0x80028EA0 (weak_ptr): expired - its frame around the use count getter.
+    const auto expired_call = [&](u32 pi, u32 link) {
+        wr(f - 0x10u, f);
+        wr(f + 4u, link);
+        return expired(c, pi);
+    };
+    // 0x80028DB0 weak_ptr::lock (out, weak) of a live block: the chain's frames as the counted-handle owner
+    // leaves them (native_s1_shptr.cpp serve_lock, the translated chain's: 0x80028EA0, 0x80028E4C with 0x80016838
+    // and 0x80016914, the copy 0x80028D20, the temporary's destructor 0x80028D60 with 0x80009408 and 0x8000945C),
+    // out = {px, pi}, the use count + 1 (two increments, one release). An expired or null block: the owner or the
+    // guest function. 0 when a guest call was cut short.
+    const auto lock_call = [&](u32 out, u32 weak, u32 link) {
+        const u32 pi = c.mem_read32(weak + 4u);
+        const u32 use = pi != 0u ? c.mem_read32(pi + 4u) : 0u;
+        if (use == 0u || use >= 0x7FFFFFFFu)
+            return handle_guest(handles.lock, kPassLock, out, weak, link);
+        const u32 px = c.mem_read32(weak);
+        const u32 f1 = f - 0x30u;
+        wr(f1, f);
+        wr(f + 4u, link);
+        wr(f1 + 0x20u, g[28]);
+        wr(f1 + 0x24u, g[29]);
+        wr(f1 + 0x28u, g[30]);
+        wr(f1 + 0x2Cu, g[31]);
+        wr(f1 - 0x10u, f1);
+        wr(f1 + 4u, 0x80028DD8u);
+        wr(f1 + 4u, 0x80028E00u);
+        wr(f1 - 8u, out);
+        wr(f1 - 4u, weak);
+        wr(f1 - 0x30u, f1 - 0x10u);
+        wr(f1 - 0x0Cu, 0x80028E70u);
+        wr(f1 - 0x14u, weak);
+        wr(f1 + 0x0Cu, pi);
+        wr(f1 - 0x50u, f1 - 0x30u);
+        wr(f1 - 0x2Cu, 0x80016864u);
+        wr(f1 - 0x34u, f1 + 0x0Cu);
+        wr(f1 + 8u, px);
+        wr(f1 + 4u, 0x80028E10u);
+        c.mem_write32(out, px);
+        c.mem_write32(out + 4u, pi);
+        wr(f1 + 4u, 0x80028E24u);
+        wr(f1 - 0x20u, f1 - 0x10u);
+        wr(f1 - 0x0Cu, 0x80028D88u);
+        wr(f1 - 0x18u, f1 + 8u);
+        wr(f1 - 0x14u, 0xFFFFFFFFu);
+        wr(f1 - 0x30u, f1 - 0x20u);
+        wr(f1 - 0x1Cu, 0x80009434u);
+        wr(f1 - 0x24u, 0xFFFFFFFFu);
+        c.mem_write32(pi + 4u, use + 1u);
+        return 1;
+    };
+    // 0x80028D60 (self, -1): the shared_ptr destructor - 0x80009408 (self + 4, -1), 0x8000945C: the use count - 1.
+    // The last use (the guest disposes): the owner declines, the guest function runs.
+    const auto dtor_call = [&](u32 self, u32 link) {
+        const u32 pi = c.mem_read32(self + 4u);
+        const u32 use = pi != 0u ? c.mem_read32(pi + 4u) : 0u;
+        if (pi != 0u && use == 1u)
+            return handle_guest(handles.dtor, kPassDtor, self, 0xFFFFFFFFu, link);
+        wr(f - 0x10u, f);
+        wr(f + 4u, link);
+        wr(f - 8u, g[30]);
+        wr(f - 4u, g[31]);
+        wr(f - 0x20u, f - 0x10u);
+        wr(f - 0x0Cu, kPassDtor + 0x28u);
+        wr(f - 0x18u, self);
+        wr(f - 0x14u, 0xFFFFFFFFu);
+        if (pi != 0u) {
+            wr(f - 0x30u, f - 0x20u);
+            wr(f - 0x1Cu, 0x80009434u);
+            wr(f - 0x24u, 0xFFFFFFFFu);
+            c.mem_write32(pi + 4u, use - 1u);
+        }
+        return 1;
+    };
+    // 0x80028D20 (dst, src): the shared_ptr copy - 0x800097E0: the use count + 1.
+    const auto copy_call = [&](u32 dst, u32 src) {
+        wr(f - 0x10u, f);
+        wr(f + 4u, 0x800C73B4u);
+        wr(f - 4u, g[31]);
+        c.mem_write32(dst, c.mem_read32(src));
+        const u32 pi = c.mem_read32(src + 4u);
+        c.mem_write32(dst + 4u, pi);
+        if (pi != 0u)
+            c.mem_write32(pi + 4u, c.mem_read32(pi + 4u) + 1u);
     };
     // 0x80026AAC (A's contact erased) and 0x800C77D8 (B's side): a pair losing its contact.
     const auto separate = [&](u32 erase_link, u32 event_link) {
         g[3] = g[28];
         g[4] = f + 0x40u;
-        if (call_bl(c, 0x80026AACu, erase_link) == 0)
+        if (guest_bl(0x80026AACu, erase_link) == 0)
             return false;
         g[3] = g[31];
         g[4] = g[20];
         g[5] = g[29];
-        return call_bl(c, 0x800C77D8u, event_link) != 0;
+        return guest_bl(0x800C77D8u, event_link) != 0;
     };
     g[26] = 0u;
     g[30] = 0u;
@@ -1890,24 +2103,27 @@ bool CharaColliIntrinsic::run_pass(Cpu& c) {
         g[27] = g[26];
         while (c.mem_read32(f + 0x50u) != c.mem_read32(c.mem_read32(m) + g[30] + 0x0Cu)) {
             const u32 node = c.mem_read32(f + 0x50u);
-            const u32 px = c.mem_read32(node);
             const u32 pi = c.mem_read32(node + 4u);
             if (!counts_safe(c, pi))
                 return back(0x800C70E0u, 1u);
-            weak_copy(c, f + 0x8Cu, px, pi, false);  // copied and released: no count
-            weak_copy(c, f + 0xA4u, px, pi, true);   // held to the end of A
+            copy_node(f + 0x8Cu, node, 0x800C70ECu);
+            copy_weak(f + 0xA4u, f + 0x8Cu, 0x800C70F8u);  // held to the end of A
+            if (!release_weak(f + 0x8Cu, 0x800C7104u))
+                return back(c.pc, 2u);
             g[24] = 0u;
-            if (expired(c, pi))
+            if (expired_call(pi, 0x800C7110u))
                 return back(0x800C7118u, 0u);
-            c.mem_write32(f + 0x84u, px);  // 0x80028DB0 lock, released at once
-            c.mem_write32(f + 0x88u, pi);
-            g[29] = px;
+            if (lock_call(f + 0x84u, f + 0xA4u, 0x800C7164u) == 0)
+                return back(c.pc, 2u);
+            g[29] = c.mem_read32(f + 0x84u);
+            if (dtor_call(f + 0x84u, 0x800C7174u) == 0)
+                return back(c.pc, 2u);
             c.mem_write32(f + 0x20u, node);  // 0x800C4A40: the iterator steps on
             c.mem_write32(f + 0x50u, node != 0u ? c.mem_read32(node + 0x10u) : 0u);
             const u32 a = g[29];
             if (c.mem_read8(a + 0x2Au) == 0u && c.mem_read8(a + 0x2Bu) == 0u) {
-                if (!drop_weak(c, pi))
-                    return back(0x800C719Cu, 1u);
+                if (!release_weak(f + 0xA4u, 0x800C71A8u))
+                    return back(c.pc, 2u);
                 continue;
             }
             g[28] = a + 0x0Cu;  // A's contact list
@@ -1931,32 +2147,42 @@ bool CharaColliIntrinsic::run_pass(Cpu& c) {
                 }
                 while (c.mem_read32(f + 0x4Cu) != c.mem_read32(c.mem_read32(m) + g[22] + 0x0Cu)) {
                     const u32 b_node = c.mem_read32(f + 0x4Cu);
-                    const u32 bpx = c.mem_read32(b_node);
                     const u32 bpi = c.mem_read32(b_node + 4u);
                     if (!counts_safe(c, bpi))
                         return back(0x800C7258u, 1u);
-                    weak_copy(c, f + 0x7Cu, bpx, bpi, false);
-                    weak_copy(c, f + 0x9Cu, bpx, bpi, true);  // held to the end of B
-                    if (expired(c, bpi))
+                    copy_node(f + 0x7Cu, b_node, 0x800C7264u);
+                    copy_weak(f + 0x9Cu, f + 0x7Cu, 0x800C7270u);  // held to the end of B
+                    if (!release_weak(f + 0x7Cu, 0x800C727Cu))
+                        return back(c.pc, 2u);
+                    if (expired_call(bpi, 0x800C7284u))
                         return back(0x800C728Cu, 0u);
-                    c.mem_write32(f + 0x74u, bpx);
-                    c.mem_write32(f + 0x78u, bpi);
-                    g[21] = bpx;
+                    if (lock_call(f + 0x74u, f + 0x9Cu, 0x800C72D8u) == 0)
+                        return back(c.pc, 2u);
+                    g[21] = c.mem_read32(f + 0x74u);
+                    if (dtor_call(f + 0x74u, 0x800C72E8u) == 0)
+                        return back(c.pc, 2u);
                     c.mem_write32(f + 0x10u, b_node);
                     c.mem_write32(f + 0x4Cu, b_node != 0u ? c.mem_read32(b_node + 0x10u) : 0u);
                     const u32 b = g[21];
                     if (c.mem_read8(b + 0x2Au) == 0u && c.mem_read8(b + 0x2Bu) == 0u) {
-                        if (!drop_weak(c, bpi))
-                            return back(0x800C7310u, 1u);
+                        if (!release_weak(f + 0x9Cu, 0x800C731Cu))
+                            return back(c.pc, 2u);
                         continue;
                     }
+                    // (A served vf 0x7C stores its LR at f + 4 itself: the pending word follows it.)
                     if ((g[24] & 0xFFu) == 0u) {
-                        if (call_manage(c, a, 0x800C733Cu) == 0)
+                        const int managed = call_manage(c, a, 0x800C733Cu);
+                        if (managed == 0)
                             return back(c.pc, 2u);
+                        if (managed == 2)
+                            wr(f + 4u, 0x800C733Cu);
                         g[24] = 1u;
                     }
-                    if (call_manage(c, b, 0x800C7354u) == 0)
+                    const int managed_b = call_manage(c, b, 0x800C7354u);
+                    if (managed_b == 0)
                         return back(c.pc, 2u);
+                    if (managed_b == 2)
+                        wr(f + 4u, 0x800C7354u);
                     // A's contact list searched for B.
                     g[23] = 0u;
                     const u32 contacts = c.mem_read32(g[28] + 8u);
@@ -1964,7 +2190,6 @@ bool CharaColliIntrinsic::run_pass(Cpu& c) {
                     c.mem_write32(f + 0x40u, contacts);
                     while (c.mem_read32(f + 0x40u) != c.mem_read32(g[28] + 0x0Cu)) {
                         const u32 entry = c.mem_read32(f + 0x40u);
-                        const u32 epx = c.mem_read32(entry);
                         const u32 epi = c.mem_read32(entry + 4u);
                         if (!counts_safe(c, epi)) {
                             g[0] = entry;
@@ -1973,36 +2198,44 @@ bool CharaColliIntrinsic::run_pass(Cpu& c) {
                         c.mem_write32(f + 0x3Cu, entry != 0u ? c.mem_read32(entry + 0x1Cu) : 0u);  // 0x80027374
                         c.mem_write32(f + 0x08u, entry);
                         g[17] = entry;
-                        weak_copy(c, f + 0x6Cu, epx, epi, false);  // 0x800588C8, released after the copy
-                        const bool alive = !expired(c, epi);       // 0x80028DB0: a null lock when expired
-                        const u32 lpx = alive ? epx : 0u;
-                        const u32 lpi = alive ? epi : 0u;
-                        c.mem_write32(f + 0x64u, lpx);
-                        c.mem_write32(f + 0x68u, lpi);
-                        c.mem_write32(f + 0x94u, lpx);  // 0x80028D20: the copy held over the event
-                        c.mem_write32(f + 0x98u, lpi);
-                        if (lpx == 0u) {
-                            hold_use(c, lpi);
+                        // 0x800588C8 (f + 0x6C, entry): 0x80029338 - the entry's weak_ptr copied.
+                        wr(f - 0x10u, f);
+                        wr(f + 4u, 0x800C739Cu);
+                        wr(f - 0x20u, f - 0x10u);
+                        wr(f - 0x0Cu, 0x800588D8u);
+                        wr(f - 0x14u, g[31]);
+                        weak_words(c, f + 0x6Cu, entry);
+                        // Locked (a null shared_ptr when expired), the lock copied to be held over the event, the
+                        // lock and the weak copy released.
+                        if (lock_call(f + 0x64u, f + 0x6Cu, 0x800C73A8u) == 0)
+                            return back(c.pc, 2u);
+                        copy_call(f + 0x94u, f + 0x64u);
+                        if (dtor_call(f + 0x64u, 0x800C73C0u) == 0)
+                            return back(c.pc, 2u);
+                        if (!release_weak(f + 0x6Cu, 0x800C73CCu))
+                            return back(c.pc, 2u);
+                        const u32 lpx = c.mem_read32(f + 0x94u);
+                        if (lpx == 0u)
                             return back(0x800C73D8u, 0u);
-                        }
                         if (lpx == b) {
                             g[23] = 1u;
                             if (c.mem_read8(a + 0x29u) == 0u && c.mem_read8(b + 0x29u) == 0u &&
                                 c.mem_read8(a + 0x2Au) != 0u && c.mem_read8(b + 0x2Au) != 0u) {
-                                hold_use(c, lpi);
                                 g[3] = g[31];
                                 g[4] = a;
                                 g[5] = b;
                                 g[6] = g[17];
                                 g[7] = 0u;
                                 g[8] = 0u;
-                                if (call_bl(c, 0x800C6A4Cu, 0x800C744Cu) == 0)
+                                if (guest_bl(0x800C6A4Cu, 0x800C744Cu) == 0)
                                     return back(c.pc, 2u);
-                                if (!drop_use(c, lpi))
-                                    return back(0x800C744Cu, 1u);
                             }
+                            if (dtor_call(f + 0x94u, 0x800C7458u) == 0)
+                                return back(c.pc, 2u);
                             break;
                         }
+                        if (dtor_call(f + 0x94u, 0x800C7468u) == 0)
+                            return back(c.pc, 2u);
                         c.mem_write32(f + 0x40u, c.mem_read32(f + 0x3Cu));
                     }
                     g[20] = b + 0x0Cu;  // B's contact list
@@ -2011,13 +2244,13 @@ bool CharaColliIntrinsic::run_pass(Cpu& c) {
                     if (a_gone || b_gone) {
                         if ((g[23] & 0xFFu) != 0u && !separate(0x800C74CCu, 0x800C74DCu))
                             return back(c.pc, 2u);
-                        if (!drop_weak(c, c.mem_read32(f + 0xA0u)))
-                            return back(0x800C74DCu, 1u);
+                        if (!release_weak(f + 0x9Cu, 0x800C74E8u))
+                            return back(c.pc, 2u);
                         continue;
                     }
                     if (c.mem_read8(a + 0x29u) == 0u && c.mem_read8(b + 0x29u) == 0u) {  // neither moved
-                        if (!drop_weak(c, c.mem_read32(f + 0xA0u)))
-                            return back(0x800C7504u, 1u);
+                        if (!release_weak(f + 0x9Cu, 0x800C7510u))
+                            return back(c.pc, 2u);
                         continue;
                     }
                     const u32 avt = c.mem_read32(a);
@@ -2033,13 +2266,20 @@ bool CharaColliIntrinsic::run_pass(Cpu& c) {
                     c.fpr[31].bits[0] = reach;
                     c.fpr[31].bits[1] = reach;
                     g[17] = b + 0x40u;
-                    const u64 apart = length_squared(c, sub(c, read3(c, a + 0x40u), read3(c, g[17])));
+                    // 0x8040E1D0 (A's centre, B's): its frame, the difference (0x8040DDC4) in it, 0x8040DF7C.
+                    wr(f - 0x20u, f);
+                    wr(f + 4u, 0x800C7580u);
+                    const V3 between = sub(c, read3(c, a + 0x40u), read3(c, g[17]));
+                    wr(f - 0x18u, between.x);
+                    wr(f - 0x14u, between.y);
+                    wr(f - 0x10u, between.z);
+                    const u64 apart = length_squared(c, between);
                     ppc::fp_compare(c, 0u, apart, ppc::fps_mul(c, reach, reach), true);
                     if (!ppc::cr_bit(c, 0u) && !ppc::cr_bit(c, 2u)) {  // cror eq, lt, eq: beyond reach
                         if ((g[23] & 0xFFu) != 0u && !separate(0x800C75A4u, 0x800C75B4u))
                             return back(c.pc, 2u);
-                        if (!drop_weak(c, c.mem_read32(f + 0xA0u)))
-                            return back(0x800C75B4u, 1u);
+                        if (!release_weak(f + 0x9Cu, 0x800C75C0u))
+                            return back(c.pc, 2u);
                         continue;
                     }
                     // The narrow phase: A's vf 0x80 (A, B, four out words).
@@ -2063,63 +2303,63 @@ bool CharaColliIntrinsic::run_pass(Cpu& c) {
                         ++pass_contacts_;
                         g[17] = 0u;
                         g[3] = 0x24u;
-                        if (call_bl(c, 0x80026518u, 0x800C7614u) == 0)
+                        if (guest_bl(0x80026518u, 0x800C7614u) == 0)
                             return back(c.pc, 2u);
                         g[18] = g[3];
                         if (g[18] != 0u) {
-                            weak_copy(c, f + 0x5Cu, c.mem_read32(f + 0x9Cu), c.mem_read32(f + 0xA0u), true);
+                            copy_weak(f + 0x5Cu, f + 0x9Cu, 0x800C7628u);
                             g[5] = c.mem_read32(f + 0x34u);
                             g[3] = g[18];
                             g[6] = c.mem_read32(f + 0x30u);
                             g[4] = f + 0x5Cu;
                             g[7] = c.mem_read32(f + 0x38u);
                             g[17] = 1u;
-                            if (call_bl(c, 0x800C57D8u, 0x800C7644u) == 0)
+                            if (guest_bl(0x800C57D8u, 0x800C7644u) == 0)
                                 return back(c.pc, 2u);
                             g[18] = g[3];
                         }
-                        if ((g[17] & 0xFFu) != 0u && !drop_weak(c, c.mem_read32(f + 0x60u)))
-                            return back(0x800C7650u, 1u);
+                        if ((g[17] & 0xFFu) != 0u && !release_weak(f + 0x5Cu, 0x800C765Cu))
+                            return back(c.pc, 2u);
                         g[19] = 0u;
                         g[3] = 0x24u;
-                        if (call_bl(c, 0x80026518u, 0x800C7668u) == 0)
+                        if (guest_bl(0x80026518u, 0x800C7668u) == 0)
                             return back(c.pc, 2u);
                         g[17] = g[3];
                         if (g[17] != 0u) {
-                            weak_copy(c, f + 0x54u, c.mem_read32(f + 0xA4u), c.mem_read32(f + 0xA8u), true);
+                            copy_weak(f + 0x54u, f + 0xA4u, 0x800C767Cu);
                             g[5] = c.mem_read32(f + 0x38u);
                             g[3] = g[17];
                             g[6] = c.mem_read32(f + 0x2Cu);
                             g[4] = f + 0x54u;
                             g[7] = c.mem_read32(f + 0x34u);
                             g[19] = 1u;
-                            if (call_bl(c, 0x800C57D8u, 0x800C7698u) == 0)
+                            if (guest_bl(0x800C57D8u, 0x800C7698u) == 0)
                                 return back(c.pc, 2u);
                             g[17] = g[3];
                         }
-                        if ((g[19] & 0xFFu) != 0u && !drop_weak(c, c.mem_read32(f + 0x58u)))
-                            return back(0x800C76A4u, 1u);
+                        if ((g[19] & 0xFFu) != 0u && !release_weak(f + 0x54u, 0x800C76B0u))
+                            return back(c.pc, 2u);
                         if ((g[23] & 0xFFu) != 0u) {
                             g[3] = g[28];
                             g[5] = g[18];
                             g[4] = f + 0x40u;
-                            if (call_bl(c, 0x80026B20u, 0x800C76C8u) == 0)
+                            if (guest_bl(0x80026B20u, 0x800C76C8u) == 0)
                                 return back(c.pc, 2u);
                             g[3] = g[28];
                             g[4] = f + 0x40u;
-                            if (call_bl(c, 0x80026AACu, 0x800C76D4u) == 0)
+                            if (guest_bl(0x80026AACu, 0x800C76D4u) == 0)
                                 return back(c.pc, 2u);
                         } else {
                             g[3] = g[31];
                             g[4] = g[28];
                             g[5] = g[18];
-                            if (call_bl(c, 0x800C78E0u, 0x800C76E8u) == 0)
+                            if (guest_bl(0x800C78E0u, 0x800C76E8u) == 0)
                                 return back(c.pc, 2u);
                         }
                         g[3] = g[31];
                         g[4] = g[20];
                         g[5] = g[17];
-                        if (call_bl(c, 0x800C78E0u, 0x800C76F8u) == 0)
+                        if (guest_bl(0x800C78E0u, 0x800C76F8u) == 0)
                             return back(c.pc, 2u);
                         g[3] = g[31];
                         g[4] = g[29];
@@ -2127,20 +2367,21 @@ bool CharaColliIntrinsic::run_pass(Cpu& c) {
                         g[6] = g[18];
                         g[7] = g[17];
                         g[8] = 0u;
-                        if (call_bl(c, 0x800C6A4Cu, 0x800C7714u) == 0)
+                        if (guest_bl(0x800C6A4Cu, 0x800C7714u) == 0)
                             return back(c.pc, 2u);
                     }
-                    if (!drop_weak(c, c.mem_read32(f + 0xA0u)))
-                        return back(0x800C773Cu, 1u);
+                    if (!release_weak(f + 0x9Cu, 0x800C7748u))
+                        return back(c.pc, 2u);
                 }
             }
             // 0x800C7774: A's moved flag cleared, its activity remembered, its held copy released.
-            if (!drop_weak(c, c.mem_read32(f + 0xA8u)))
-                return back(0x800C7774u, 1u);
             c.mem_write8(a + 0x29u, 0u);
             c.mem_write8(a + 0x2Bu, c.mem_read8(a + 0x2Au));
+            if (!release_weak(f + 0xA4u, 0x800C7790u))
+                return back(c.pc, 2u);
         }
     }
+    pass_flush(c);
     // 0x800C77BC: psq_l f31; lfd f31; lmw r17; mtlr; r1 back.
     ppc::psq_load(c, 31u, f + 0xF8u, false, 0u);
     c.fpr[31].bits[0] = c.mem_read64(f + 0xF0u);
@@ -2167,21 +2408,31 @@ bool CharaColliIntrinsic::verify_pass(Cpu& c) {
     take_all(memory, full_before_);
     const u32 pc = c.pc;
     const u64 finished = pass_finished_;
+    // Both runs make their nested calls (the tests, vf 0x7C, the queries) as the default image does - served by
+    // their owners, unverified: the reference is the translated body of the pass in the image that ships, whose
+    // dead frames the narrow phase reads. (A nested verification would also overwrite the snapshots held here.)
+    // The GeneralBone memo is host state that decides whether a nested update runs guest code: both runs start
+    // from the same one.
+    verify_ = false;
+    pass_memo_ = bone_memo_;
     const bool served = run_pass(c);
-    if (!served || pass_finished_ == finished)
+    if (!served || pass_finished_ == finished) {
+        verify_ = true;
         return served;  // handed back to the guest body mid-way: nothing to compare
+    }
     take(c, none, native);
     take_all(memory, full_native_);
     put(c, none, before);
     put_all(memory, full_before_);
+    bone_memo_.swap(pass_memo_);
     const u32 link = c.lr;
-    reference_ = true;
     body->at(c, kPass);
     c.finish_transfers();
-    reference_ = false;
+    verify_ = true;
     if (c.pc != link) {
         put_all(memory, full_native_);
         put(c, none, native);
+        bone_memo_.swap(pass_memo_);
         c.pc = pc;
         ++incomplete_;
         return true;
@@ -2193,6 +2444,42 @@ bool CharaColliIntrinsic::verify_pass(Cpu& c) {
     const u32 elsewhere = full_guest_.size() == full_native_.size()
                               ? first_difference(memory, full_native_, full_guest_, before.gpr[1])
                               : 1u;
+    // The dead stack below the caller's r1 (the pass's own frame and its callees'): not part of the contract of a
+    // call, but what a later callee's unwritten locals hold. Counted on its own.
+    if (full_guest_.size() == full_native_.size()) {
+        const u32 r1 = before.gpr[1];
+        std::size_t at = 0;
+        u32 dead = 0u, dead_count = 0u;
+        for (const GuestMemory::Region& region : memory.regions()) {
+            if (r1 - 0x10000u >= region.base && r1 <= region.base + region.committed) {
+                const std::size_t from = at + (r1 - 0x10000u - region.base);
+                for (u32 i = 0; i < 0x10000u; ++i)
+                    if (full_native_[from + i] != full_guest_[from + i]) {
+                        if (dead == 0u)
+                            dead = r1 - 0x10000u + i;
+                        ++dead_count;
+                    }
+            }
+            at += region.committed;
+        }
+        if (dead != 0u && ++pass_dead_differed_ <= 8u) {
+            std::fprintf(stderr, "[chara-colli] pair pass: the dead stack differs in %u bytes, first at %08X (r1 %08X):",
+                         dead_count, dead, r1);
+            at = 0;
+            u32 shown = 0;
+            for (const GuestMemory::Region& region : memory.regions()) {
+                for (u32 i = 0; i < region.committed && shown < 24u; ++i)
+                    if (full_native_[at + i] != full_guest_[at + i] && region.base + i < r1 &&
+                        r1 - (region.base + i) <= 0x10000u) {
+                        std::fprintf(stderr, " %08X n%02X g%02X", region.base + i, full_native_[at + i],
+                                     full_guest_[at + i]);
+                        ++shown;
+                    }
+                at += region.committed;
+            }
+            std::fprintf(stderr, "\n");
+        }
+    }
     native.gpr[3] = guest.gpr[3];  // the pass returns nothing: r3 is volatile here
     if (!same_contract(native, guest) || elsewhere != 0u) {
         if (++pass_differed_ <= 8u) {

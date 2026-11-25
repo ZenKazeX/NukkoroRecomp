@@ -800,6 +800,7 @@ private:
     bool texture_index_dirty_ = true;
     std::vector<Owned> meshes_;
     std::vector<shadow::render::Particle> particle_records_;  // one batch's records, reused
+    std::vector<shadow::render::ParticleTag> particle_tags_;  // ... and their identities
     std::vector<shadow::render::ImmediateVertex> immediate_vertices_;  // one Im3D render's geometry, reused
     std::vector<std::uint32_t> immediate_indices_;
     std::vector<std::uint16_t> immediate_index_values_;  // an Im2D / Im3D draw's indices in host order, reused

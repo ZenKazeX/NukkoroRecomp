@@ -42,7 +42,8 @@ struct State {
     std::vector<Range> ranges;                            // sorted by base
     std::unordered_map<std::uintptr_t, u32> host_pages;  // host page (either view) -> guest page
     std::map<std::uintptr_t, u32> rows;                   // host entry of a translated row -> its guest address
-    std::map<std::tuple<std::size_t, bool, u32, std::uint64_t>, Hit> hits;
+    // range, write, row, native RVA (native code) or innermost function (under a row), offset in the element
+    std::map<std::tuple<std::size_t, bool, u32, std::uint64_t, u32>, Hit> hits;
     Totals totals;
     PVOID handler = nullptr;
     bool active = false;
@@ -86,11 +87,16 @@ PRUNTIME_FUNCTION primary(PRUNTIME_FUNCTION rf, DWORD64 image) {
 }
 
 // Walk the faulting stack: the first frame that is a translated row decides; none -> native (innermost RVA).
-void attribute(const CONTEXT& faulting, u32& row, std::uint64_t& native_rva, std::uint64_t& native_address, bool& ok) {
+// `inner` is the innermost frame's function (its first address) when a row is found ABOVE it, 0 when the innermost
+// frame is the row's own code.
+void attribute(const CONTEXT& faulting, u32& row, std::uint64_t& native_rva, std::uint64_t& native_address,
+               std::uint64_t& inner, bool& ok) {
     CONTEXT c = faulting;
     State& s = state();
     row = 0;
     native_rva = 0;
+    inner = 0;
+    std::uint64_t innermost = 0;
     ok = false;
     for (int depth = 0; depth < 64; ++depth) {
         DWORD64 image = 0;
@@ -120,6 +126,7 @@ void attribute(const CONTEXT& faulting, u32& row, std::uint64_t& native_rva, std
                     if (hexdigits.find_first_not_of("0123456789ABCDEFabcdef") == std::string_view::npos &&
                         (rest.empty() || rest == "_body")) {
                         row = static_cast<u32>(std::stoul(std::string(hexdigits), nullptr, 16));
+                        inner = depth == 0 ? 0 : innermost;
                         ok = true;
                         return;
                     }
@@ -130,9 +137,12 @@ void attribute(const CONTEXT& faulting, u32& row, std::uint64_t& native_rva, std
         const auto it = begin != 0 ? s.rows.find(begin) : s.rows.end();
         if (it != s.rows.end()) {
             row = it->second;
+            inner = depth == 0 ? 0 : innermost;
             ok = true;
             return;
         }
+        // Not a row. The innermost frame's function: its first address, or the faulting address when unknown.
+        if (depth == 0) innermost = begin != 0 ? begin : c.Rip;
         if (rf == nullptr) {  // a leaf: the return address is at the stack pointer
             if (c.Rsp == 0) return;
             c.Rip = *reinterpret_cast<DWORD64*>(c.Rsp);
@@ -186,11 +196,13 @@ LONG CALLBACK on_exception(EXCEPTION_POINTERS* info) {
         } else {
             const bool write = info->ExceptionRecord->ExceptionInformation[0] == 1;
             u32 row = 0;
-            std::uint64_t rva = 0, address = 0;
+            std::uint64_t rva = 0, address = 0, inner = 0;
             bool ok = false;
-            attribute(*info->ContextRecord, row, rva, address, ok);
+            attribute(*info->ContextRecord, row, rva, address, inner, ok);
             if (!ok) ++s.totals.unattributed;
-            const auto key = std::make_tuple(index, write, row, row != 0 ? 0ull : rva);
+            const Range& range = s.ranges[index];
+            const u32 offset = range.stride != 0 ? (guest - range.base) % range.stride : 0u;
+            const auto key = std::make_tuple(index, write, row, row != 0 ? inner : rva, offset);
             Hit& h = s.hits[key];
             if (h.count == 0) {
                 h.label = s.ranges[index].label;
@@ -198,6 +210,9 @@ LONG CALLBACK on_exception(EXCEPTION_POINTERS* info) {
                 h.row = row;
                 h.native_rva = row != 0 ? 0 : rva;
                 h.native_address = row != 0 ? 0 : address;
+                h.inner_function = row != 0 ? inner : 0;
+                h.offset = offset;
+                h.has_offset = range.stride != 0;
                 h.first_guest_address = guest;
             }
             ++h.count;
@@ -252,6 +267,29 @@ bool start(GuestMemory& memory, const RecompiledCode& code, std::vector<Range> r
         RtlLookupFunctionEntry(reinterpret_cast<DWORD64>(&on_exception), &image, nullptr);
         s.symbols = SymGetModuleInfo64(GetCurrentProcess(), image, &module) != FALSE &&
                     (module.SymType == SymPdb || module.SymType == SymDia);
+        if (!s.symbols && image != 0) {
+            // A renamed copy of the executable (n1-<md5>.exe beside n1-<md5>.pdb): DbgHelp looks for the PDB under the
+            // name recorded at link time, so it finds none - or, worse, a newer build's. Load the PDB that carries the
+            // executable's own name, as the module's symbols.
+            char path[MAX_PATH + 8] = {};
+            const DWORD length = GetModuleFileNameA(reinterpret_cast<HMODULE>(image), path, MAX_PATH);
+            char* const dot = length != 0 && length < MAX_PATH ? std::strrchr(path, '.') : nullptr;
+            if (dot != nullptr) {
+                std::strcpy(dot, ".pdb");
+                if (GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES) {
+                    const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(image);
+                    const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(image + dos->e_lfanew);
+                    SymUnloadModule64(GetCurrentProcess(), image);
+                    if (SymLoadModuleEx(GetCurrentProcess(), nullptr, path, nullptr, image, nt->OptionalHeader.SizeOfImage,
+                                        nullptr, 0) != 0) {
+                        IMAGEHLP_MODULE64 named{};
+                        named.SizeOfStruct = sizeof(named);
+                        s.symbols = SymGetModuleInfo64(GetCurrentProcess(), image, &named) != FALSE &&
+                                    (named.SymType == SymPdb || named.SymType == SymDia);
+                    }
+                }
+            }
+        }
     }
     s.handler = AddVectoredExceptionHandler(1, &on_exception);
     for (const auto& [page, guest] : s.host_pages) {
@@ -346,15 +384,34 @@ bool write_report(const std::string& path, std::string* error) {
         << t.unattributed << "\n";
     out << "# limits: page granularity; another thread's access while a page is open for one instruction is not "
            "seen\n";
-    out << "label,kind,row,native_rva,native_symbol,count,first_guest_address\n";
+    out << "label,kind,row,native_rva,native_symbol,count,first_guest_address,inner,offset\n";
     char buf[128];
+    const auto function_of = [](std::uint64_t address) {  // the name without "+0xoffset"
+        std::string name = symbol_name(address);
+        const std::size_t plus = name.rfind("+0x");
+        if (plus != std::string::npos) name.erase(plus);
+        if (name.empty()) {
+            char raw[32];
+            std::snprintf(raw, sizeof(raw), "(0x%llX)", static_cast<unsigned long long>(address));
+            name = raw;
+        }
+        return name;
+    };
     for (const Hit& h : hits()) {
         std::snprintf(buf, sizeof(buf), ",%s,0x%08X,0x%llX,", h.write ? "write" : "read", h.row,
                       static_cast<unsigned long long>(h.native_rva));
         out << h.label << buf << (h.row == 0 ? symbol_name(h.native_address) : std::string());
-        std::snprintf(buf, sizeof(buf), ",%llu,0x%08X\n", static_cast<unsigned long long>(h.count),
+        std::snprintf(buf, sizeof(buf), ",%llu,0x%08X,", static_cast<unsigned long long>(h.count),
                       h.first_guest_address);
         out << buf;
+        if (h.row == 0) out << function_of(h.native_address);
+        else out << (h.inner_function == 0 ? std::string("(row code)") : function_of(h.inner_function));
+        if (h.has_offset) {
+            std::snprintf(buf, sizeof(buf), ",0x%X\n", h.offset);
+            out << buf;
+        } else {
+            out << ",\n";
+        }
     }
     return static_cast<bool>(out);
 }
@@ -374,6 +431,12 @@ bool parse_ranges(const std::string& path, std::vector<Range>& out, std::string*
         std::getline(fields, label);
         label.erase(0, label.find_first_not_of(" \t"));
         Range r;
+        // An optional trailing "stride=0xN": the element size of an array of records.
+        if (const std::size_t at = label.rfind("stride="); at != std::string::npos && (at == 0 || label[at - 1] == ' ' || label[at - 1] == '\t')) {
+            r.stride = static_cast<u32>(std::stoul(label.substr(at + 7u), nullptr, 0));
+            label.erase(at);
+            label.erase(label.find_last_not_of(" \t") + 1u);
+        }
         r.base = static_cast<u32>(std::stoul(base, nullptr, 0));
         r.size = static_cast<u32>(std::stoul(size, nullptr, 0));
         r.label = label.empty() ? base : label;

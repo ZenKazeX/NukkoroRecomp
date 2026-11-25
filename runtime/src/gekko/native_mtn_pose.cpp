@@ -9,6 +9,7 @@
 #include <initializer_list>
 
 #include "gekko/cpu.h"
+#include "gekko/fast_single.h"
 #include "gekko/gekko_estimate.h"
 #include "gekko/native_guest_call.h"
 #include "gekko/native_math_affine.h"
@@ -44,6 +45,10 @@ GEKKO_ALWAYS_INLINE F LM(Cpu& c, u32 address) { return single_to_double_bits(c.m
 GEKKO_ALWAYS_INLINE void SM(Cpu& c, u32 address, F value) { c.mem_write32(address, double_to_single_bits(value)); }
 GEKKO_ALWAYS_INLINE shadow::math::SubnormalMode mode_of(const Cpu& c) noexcept {
     return (c.fpscr & kFpscrNI) != 0u ? shadow::math::SubnormalMode::Flush : shadow::math::SubnormalMode::Preserve;
+}
+// Statistics counters: written by the game thread only, so a load and a store (no bus lock) keep every count exact.
+GEKKO_ALWAYS_INLINE void bump(std::atomic<unsigned long long>& n) noexcept {
+    n.store(n.load(std::memory_order_relaxed) + 1ull, std::memory_order_relaxed);
 }
 GEKKO_ALWAYS_INLINE float as_float(F v) noexcept { return static_cast<float>(bits_to_double(v)); }
 GEKKO_ALWAYS_INLINE F from_float(float f) noexcept { return single_to_double_bits(float_to_bits(f)); }
@@ -302,8 +307,187 @@ void quat_to_matrix(Cpu& c, u32 out, const Quat& q) {
     SM(c, out + 0xCu, zero);
 }
 
+// ---- MatrixBlend in plain single precision (gekko/fast_single.h) -------------------------------------------------------------------
+// The same operations in the same order as the four routines below it, on floats. Every operand and every result goes through the
+// Check; when one of them is not an ordinary single (NaN, infinity, denormal, a nonzero magnitude below 2^-100, a negative root
+// argument) nothing has been written and the caller runs the exact chain. The only state the exact chain leaves besides the twelve
+// output words is FPSCR[FPCC] of the last root's compare (se_math's sqrt: GT for a positive argument, EQ for zero); it is set the same.
+struct QuatF {
+    float x, y, z, w;
+};
+
+GEKKO_ALWAYS_INLINE float root_fast(fast::Check& k, float s, u32& fpcc) noexcept {
+    if (s > 0.0f) {
+        fpcc = 4u;
+        return k.out(std::sqrt(s));
+    }
+    k.bad |= static_cast<u32>(s < 0.0f);  // the original returns its NaN constant: the exact chain's case
+    fpcc = 2u;
+    return s;  // a zero is returned as it is
+}
+
+GEKKO_ALWAYS_INLINE QuatF matrix_to_quat_fast(Cpu& c, fast::Check& k, u32 m, u32& fpcc) {
+    float f[12];
+    for (u32 i = 0; i < 12u; ++i) {
+        if ((i & 3u) != 3u) f[i] = k.in(c.mem_read32(m + 4u * i));  // the nine words the original reads
+    }
+    const float f4 = f[0], f3 = f[5], f5 = f[10];
+    float f0 = k.out(f4 + f3);
+    f0 = k.out(f5 + f0);
+    const float trace1 = k.out(1.0f + f0);
+    QuatF q;
+    if (!(trace1 < 1.0f)) {
+        const float s = root_fast(k, trace1, fpcc);
+        const float twice = k.out(2.0f * s);
+        const float w = k.out(0.5f * s);
+        const float inv = k.out(1.0f / twice);
+        const float a = k.out(f[9] - f[6]);
+        const float b = k.out(f[2] - f[8]);
+        const float d = k.out(f[4] - f[1]);
+        q.x = k.out(inv * a);
+        q.y = k.out(inv * b);
+        q.z = k.out(inv * d);
+        q.w = w;
+        return q;
+    }
+    const auto largest = [&](float big, float o1, float o2, u32 sa1, u32 sb1, u32 sa2, u32 sb2, u32 da, u32 db, float& out_big,
+                             float& out1, float& out2, float& out_w) {
+        float t = k.out(big - o1);
+        t = k.out(t - o2);
+        const float s = root_fast(k, k.out(1.0f + t), fpcc);
+        const float half = k.out(0.5f * s);
+        const float four_half = k.out(4.0f * half);
+        const float v1 = k.out(f[sa1 >> 2] + f[sb1 >> 2]);
+        const float inv = k.out(1.0f / four_half);
+        const float v2 = k.out(f[sa2 >> 2] + f[sb2 >> 2]);
+        const float v3 = k.out(f[da >> 2] - f[db >> 2]);
+        out_big = half;
+        out1 = k.out(inv * v1);
+        out2 = k.out(inv * v2);
+        out_w = k.out(inv * v3);
+    };
+    if (f4 > f3) {
+        if (f4 > f5) {
+            largest(f4, f3, f5, 0x10u, 4u, 0x20u, 8u, 0x24u, 0x18u, q.x, q.y, q.z, q.w);
+            return q;
+        }
+        largest(f5, f4, f3, 8u, 0x20u, 0x18u, 0x24u, 0x10u, 4u, q.z, q.x, q.y, q.w);
+        return q;
+    }
+    if (f3 > f5) {
+        largest(f3, f5, f4, 0x24u, 0x18u, 4u, 0x10u, 8u, 0x20u, q.y, q.z, q.x, q.w);
+        return q;
+    }
+    largest(f5, f4, f3, 8u, 0x20u, 0x18u, 0x24u, 0x10u, 4u, q.z, q.x, q.y, q.w);
+    return q;
+}
+
+std::atomic<unsigned long long> g_blend_route[2];  // MatrixBlend calls served by the plain route / by the exact chain
+
+bool matrix_blend_fast(Cpu& c, u32 out, u32 a, u32 b, F t_bits) {
+    const float t = static_cast<float>(bits_to_double(t_bits));
+    if (static_cast<double>(t) != bits_to_double(t_bits)) return false;  // not a single value (or a NaN)
+    fast::Check k;
+    (void)k.in(float_to_bits(t));
+    u32 fpcc = 0u;
+    const QuatF qa = matrix_to_quat_fast(c, k, a, fpcc);
+    const QuatF qb = matrix_to_quat_fast(c, k, b, fpcc);
+
+    // QuatSlerp
+    float f1 = k.out(qa.y * qb.y);
+    f1 = k.out(fast::fma(qa.x, qb.x, f1));
+    f1 = k.out(fast::fma(qa.z, qb.z, f1));
+    f1 = k.out(fast::fma(qa.w, qb.w, f1));
+    float sign = 1.0f;
+    if (f1 < 0.0f) {
+        f1 = -f1;
+        sign = -1.0f;
+    }
+    float wa, wb;
+    if (f1 < bits_to_float(kNearOne)) {
+        const shadow::math::SubnormalMode mode = mode_of(c);
+        const float theta = k.out(shadow::math::msl::acosf(f1, mode));
+        const float s = k.out(shadow::math::msl::sinf(theta, mode));
+        const float inv = k.out(1.0f / s);
+        float x = k.out(1.0f - t);
+        x = k.out(x * theta);
+        x = k.out(shadow::math::msl::sinf(x, mode));
+        wb = k.out(inv * x);
+        x = k.out(t * theta);
+        x = k.out(shadow::math::msl::sinf(x, mode));
+        x = k.out(inv * x);
+        wa = k.out(sign * x);
+    } else {
+        wa = k.out(sign * t);
+        wb = k.out(1.0f - t);
+    }
+    const float sx = k.out(qa.x * wa), sy = k.out(qa.y * wa), sz = k.out(qa.z * wa), sw = k.out(qa.w * wa);
+    const float qx = k.out(fast::fma(qb.x, wb, sx));
+    const float qy = k.out(fast::fma(qb.y, wb, sy));
+    const float qz = k.out(fast::fma(qb.z, wb, sz));
+    const float qw = k.out(fast::fma(qb.w, wb, sw));
+
+    // QuatToMatrix
+    float e[12];
+    {
+        const float two = 2.0f;
+        const float f2 = k.out(two * qw);
+        const float g1 = k.out(two * qx);
+        const float f6 = k.out(qx * qy);
+        const float f5 = k.out(qw * qz);
+        const float f31 = k.out(fast::fma(f2, qw, -1.0f));
+        const float f9 = k.out(qx * qz);
+        const float f8 = k.out(qw * qy);
+        const float f3 = k.out(f6 + f5);
+        e[0] = k.out(fast::fma(g1, qx, f31));
+        float f2b = k.out(f9 - f8);
+        const float f1b = k.out(f6 - f5);
+        float f5b = k.out(two * qy);
+        e[4] = k.out(two * f3);
+        e[8] = k.out(two * f2b);
+        const float f3b = k.out(f9 + f8);
+        const float f9b = k.out(qy * qz);
+        const float f8b = k.out(qw * qx);
+        e[1] = k.out(two * f1b);
+        const float f1c = k.out(two * qz);
+        const float f4c = k.out(f9b + f8b);
+        const float f2c = k.out(f9b - f8b);
+        e[5] = k.out(fast::fma(f5b, qy, f31));
+        e[9] = k.out(two * f4c);
+        e[2] = k.out(two * f3b);
+        e[6] = k.out(two * f2c);
+        e[10] = k.out(fast::fma(f1c, qz, f31));
+        e[3] = e[7] = e[11] = 0.0f;
+    }
+
+    // MatrixNormalize(out, out)
+    const float thr = bits_to_float(kEpsilon);
+    for (u32 col = 0; col < 3u; ++col) {
+        const float x = e[col], y = e[4u + col], z = e[8u + col];
+        const float x2 = k.out(x * x);
+        const float y2 = k.out(y * y);
+        const float z2 = k.out(z * z);
+        const float s = k.out(z2 + k.out(x2 + y2));
+        const float len = root_fast(k, s, fpcc);
+        if (!(len > thr)) continue;
+        const float inv = k.out(1.0f / len);
+        e[col] = k.out(x * inv);
+        e[4u + col] = k.out(y * inv);
+        e[8u + col] = k.out(z * inv);
+    }
+    if (!k.ok()) return false;
+    for (u32 i = 0; i < 12u; ++i) c.mem_write32(out + 4u * i, float_to_bits(e[i]));
+    c.fpscr = (c.fpscr & ~kFpscrFPCC) | (fpcc << 12);
+    return true;
+}
+
 // 0x8042167C
 void matrix_blend(Cpu& c, u32 out, u32 a, u32 b, F t) {
+    if (fast::kAvailable && matrix_blend_fast(c, out, a, b, t)) {
+        bump(g_blend_route[0]);
+        return;
+    }
+    bump(g_blend_route[1]);
     const Quat qa = matrix_to_quat(c, a);
     const Quat qb = matrix_to_quat(c, b);
     const Quat q = quat_slerp(c, qa, qb, t);
@@ -348,12 +532,31 @@ constexpr u32 kLinkPost = 0x80419814u;  // liveness-roots: value-only
 // (0x8040C110 / C188 / C200: sin and cos of the angle by sincosf, each rounded to single, then twelve stores) and compose it with the top
 // (0x8040CB14, the retired lift site). Done here without the guest calls: same sin / cos (shadow::math::msl in the caller's NI mode), same
 // matrix words, same composition; the callees' frames and the temporary matrix are dead.
+//
+// The angle is radians(count) of a 16-bit turn count. 2pi * n / 65536 for n = 0..65535 is zero or an ordinary single at every step, so
+// the helpers never take their FPSCR-dependent route: the angle is a function of n alone, and its sine and cosine are functions of n and
+// the NI mode. They are computed by the same calls as before the first time a (mode, n) pair is met and kept (game thread only).
 enum class Axis { Z, Y, X };
-void rotate(Cpu& c, Axis axis, F angle) {
+struct TurnSinCos {
+    float s, co;
+};
+TurnSinCos g_turn_value[2][65536];
+u8 g_turn_known[2][65536];
+
+void rotate(Cpu& c, Axis axis, u32 count) {
     const shadow::math::SubnormalMode mode = mode_of(c);
-    const float a = as_float(angle);
-    const float s = shadow::math::msl::sinf(a, mode);
-    const float co = shadow::math::msl::cosf(a, mode);
+    const u32 n = count & 0xFFFFu, ni = (c.fpscr & kFpscrNI) != 0u ? 1u : 0u;
+    float s, co;
+    if (g_turn_known[ni][n] != 0u) {
+        s = g_turn_value[ni][n].s;
+        co = g_turn_value[ni][n].co;
+    } else {
+        const float a = as_float(radians(c, count));
+        s = shadow::math::msl::sinf(a, mode);
+        co = shadow::math::msl::cosf(a, mode);
+        g_turn_value[ni][n] = {s, co};
+        g_turn_known[ni][n] = 1u;
+    }
     const float ns = bits_to_float(float_to_bits(s) ^ 0x80000000u);  // fneg
     const float zero = 0.0f, one = 1.0f;
     float r[12];
@@ -383,9 +586,9 @@ void rotate(Cpu& c, Axis axis, F angle) {
 
 // The three Euler counts applied to the stack top in the order Z, Y, X (a zero count: no rotation).
 void euler_rotations(Cpu& c, u32 ix, u32 iy, u32 iz) {
-    if (iz != 0u) rotate(c, Axis::Z, radians(c, iz));
-    if (iy != 0u) rotate(c, Axis::Y, radians(c, iy));
-    if (ix != 0u) rotate(c, Axis::X, radians(c, ix));
+    if (iz != 0u) rotate(c, Axis::Z, iz);
+    if (iy != 0u) rotate(c, Axis::Y, iy);
+    if (ix != 0u) rotate(c, Axis::X, ix);
 }
 
 // The original's frame is `size` below the caller's r1; guest calls made inside use it.
@@ -881,10 +1084,10 @@ bool fold_callback(Cpu& c, u32 fn, u32 args) {
     }
     if (!g_fold) return false;
     if (kind >= 2u && !fold_list_ok(c, args, kind != 2u)) {
-        g_fold_back[kind].fetch_add(1, std::memory_order_relaxed);
+        bump(g_fold_back[kind]);
         return false;
     }
-    g_fold_hits[kind].fetch_add(1, std::memory_order_relaxed);
+    bump(g_fold_hits[kind]);
     switch (kind) {
     case 0: fold_scale_callback(c, args); break;
     case 1: fold_translate_callback(c, args); break;
@@ -909,6 +1112,9 @@ constexpr const char* kTreeNames[kTreeKinds] = {"motion update", "sampler pick (
 
 void print_tree_stats() {
     for (unsigned k = 0; k < kTreeKinds; ++k) std::fprintf(stderr, "[mtn_tree] %-26s %llu\n", kTreeNames[k], g_tree_hits[k].load());
+    std::fprintf(stderr, "[mtn_tree] %-26s %llu plain, %llu exact\n", "matrix blend", g_blend_route[0].load(), g_blend_route[1].load());
+    std::fprintf(stderr, "[mtn_tree] %-26s %llu lanes side by side, %llu read-only lane by lane, %llu lane-by-lane code\n",
+                 "vector samplers", mtn_track::vec3_route(0), mtn_track::vec3_route(1), mtn_track::vec3_route(2));
 }
 
 // Values stored for the guest (the sampler triples) and the guest return addresses of the original calls; never entered by this code.
@@ -989,7 +1195,7 @@ bool sampler_pick(Cpu& c, u32 m) {
         if (idx == kNone) break;
         const u32 ch = c.mem_read32(m + 0x10u) + idx * kChannelStride;
         if ((c.mem_read32(ch + 0x90u) & 4u) == 0u) continue;
-        g_tree_hits[1].fetch_add(1, std::memory_order_relaxed);
+        bump(g_tree_hits[1]);
         const F rate = LM(c, ch + 0xA8u), zero = L(kZero);
         const double da = bits_to_double(rate), db = bits_to_double(zero);
         const u32 slot = c.gpr[13];
@@ -1174,7 +1380,7 @@ bool phase_d(Cpu& c, u32 m) {
         if (idx == kNone) break;
         const u32 ch = c.mem_read32(m + 0x10u) + idx * kChannelStride;
         if (i != 0 && (c.mem_read32(ch + 0x90u) & 4u) == 0u) continue;
-        g_phase_d_hits[2].fetch_add(1, std::memory_order_relaxed);
+        bump(g_phase_d_hits[2]);
         stack_push(c);
         compose(c, stack_top(c), ch);
         copy12(c, ch, stack_top(c));
@@ -1352,10 +1558,10 @@ bool phase_d(Cpu& c, u32 m) {
 bool serve_phase_d_hook(Cpu& c) {
     if (!g_phase_d) return false;
     if (!phase_d_ok(c, c.gpr[3])) {
-        g_phase_d_hits[1].fetch_add(1, std::memory_order_relaxed);
+        bump(g_phase_d_hits[1]);
         return false;
     }
-    g_phase_d_hits[0].fetch_add(1, std::memory_order_relaxed);
+    bump(g_phase_d_hits[0]);
     phase_d(c, c.gpr[3]);
     return true;
 }
@@ -1734,7 +1940,7 @@ bool phase_c(Cpu& c, u32 m) {
         if (idx == kNone) break;
         const u32 ch = c.mem_read32(m + 0x10u) + idx * kChannelStride;
         if ((c.mem_read32(ch + 0x90u) & 4u) == 0u) continue;
-        g_phase_c_hits[2].fetch_add(1, std::memory_order_relaxed);
+        bump(g_phase_c_hits[2]);
         bool moved = false;
         const u32 params = c.mem_read32(ch + 0x120u);
         if ((c.mem_read32(params) & 1u) != 0u) {
@@ -1772,10 +1978,10 @@ bool phase_c(Cpu& c, u32 m) {
 bool serve_phase_c_hook(Cpu& c) {
     if (!g_phase_c) return false;
     if (!phase_c_ok(c, c.gpr[3])) {
-        g_phase_c_hits[1].fetch_add(1, std::memory_order_relaxed);
+        bump(g_phase_c_hits[1]);
         return false;
     }
-    g_phase_c_hits[0].fetch_add(1, std::memory_order_relaxed);
+    bump(g_phase_c_hits[0]);
     phase_c(c, c.gpr[3]);
     return true;
 }
@@ -1842,7 +2048,7 @@ void mem_copy(Cpu& c, u32 dst, u32 src, u32 n) {
 
 // 0x8041E498: the node with key `key` in the tree below `node` (children at +0x24 / siblings at +0x28, key = first word of [node + 0xC]).
 u32 find_node(Cpu& c, u32 node, u32 key, unsigned depth = 0) {
-    g_phase_b_hits[4].fetch_add(1, std::memory_order_relaxed);
+    bump(g_phase_b_hits[4]);
     if (depth > 200u) return 0u;
     if (key == c.mem_read32(c.mem_read32(node + 0xCu))) return node;
     for (u32 side = 0x24u; side <= 0x28u; side += 4u) {
@@ -1930,7 +2136,7 @@ bool skip_record(Cpu& c, u32& cursor_arg) {
 bool bind_nodes(Cpu& c, u32 obj, u32 node, u32 idx, u32 cursor, F weight, unsigned depth = 0) {
     if (depth > 200u) return true;
     FrameScope fs(c, 0x30u);
-    g_phase_b_hits[3].fetch_add(1, std::memory_order_relaxed);
+    bump(g_phase_b_hits[3]);
     const u32 key = c.mem_read32(node);
     const u32 found = find_node(c, c.mem_read32(obj + 0xCu), key);
     u32 list = 0u;
@@ -2140,7 +2346,7 @@ u32 range_flags(Cpu& c, u32 a, u32 b, F f1, F f2) {
 // 0x8041ADAC(m, idx): start the clip that channel `idx` asks for.
 bool clip_start(Cpu& c, u32 m, u32 idx) {
     FrameScope fs(c, 0x20u);
-    g_phase_b_hits[2].fetch_add(1, std::memory_order_relaxed);
+    bump(g_phase_b_hits[2]);
     const u32 ch = c.mem_read32(m + 0x10u) + idx * kChannelStride;
     if (!call(c, kClipAcquire, kLinkAcquire, {c.mem_read16(ch + 0x110u)})) return false;
     if ((c.mem_read32(ch + 0x90u) & 4u) != 0u && !call(c, kClipRelease, kLinkReleaseA, {c.mem_read16(ch + 0x128u)})) return false;
@@ -2241,10 +2447,10 @@ bool phase_b(Cpu& c, u32 m) {
 bool serve_phase_b_hook(Cpu& c) {
     if (!g_phase_b) return false;
     if (!phase_b_ok(c, c.gpr[3])) {
-        g_phase_b_hits[1].fetch_add(1, std::memory_order_relaxed);
+        bump(g_phase_b_hits[1]);
         return false;
     }
-    g_phase_b_hits[0].fetch_add(1, std::memory_order_relaxed);
+    bump(g_phase_b_hits[0]);
     phase_b(c, c.gpr[3]);
     return true;
 }
@@ -2253,7 +2459,7 @@ bool node_walk(Cpu& c, u32 motion, u32 node);
 
 // 0x80419094: the bone pass: the root matrix chain, the per-channel local matrices, the blended bank, the channel weights, then NodeWalk.
 bool bone_pass(Cpu& c, u32 m) {
-    g_tree_hits[2].fetch_add(1, std::memory_order_relaxed);
+    bump(g_tree_hits[2]);
     FrameScope fs(c, 0x160u);
     const u32 fr = fs.frame;
     translate_by(c, stack_top(c), m + 0xF0u);
@@ -2406,26 +2612,26 @@ bool motion_update(Cpu& c, u32 m) {
     }
     if (!call(c, kPhaseA, kLinkPhaseA, {m})) return false;
     if (g_phase_b && phase_b_ok(c, m)) {
-        g_phase_b_hits[0].fetch_add(1, std::memory_order_relaxed);
+        bump(g_phase_b_hits[0]);
         if (!phase_b(c, m)) return false;
     } else {
-        if (g_phase_b) g_phase_b_hits[1].fetch_add(1, std::memory_order_relaxed);
+        if (g_phase_b) bump(g_phase_b_hits[1]);
         if (!call(c, kPhaseB, kLinkPhaseB, {m})) return false;
     }
     if (g_phase_c && phase_c_ok(c, m)) {
-        g_phase_c_hits[0].fetch_add(1, std::memory_order_relaxed);
+        bump(g_phase_c_hits[0]);
         if (!phase_c(c, m)) return false;
     } else {
-        if (g_phase_c) g_phase_c_hits[1].fetch_add(1, std::memory_order_relaxed);
+        if (g_phase_c) bump(g_phase_c_hits[1]);
         if (!call(c, kPhaseC, kLinkPhaseC, {m})) return false;
     }
     if (!sampler_pick(c, m)) return false;
     if (!bone_pass(c, m)) return false;
     if (g_phase_d && phase_d_ok(c, m)) {
-        g_phase_d_hits[0].fetch_add(1, std::memory_order_relaxed);
+        bump(g_phase_d_hits[0]);
         if (!phase_d(c, m)) return false;
     } else {
-        if (g_phase_d) g_phase_d_hits[1].fetch_add(1, std::memory_order_relaxed);
+        if (g_phase_d) bump(g_phase_d_hits[1]);
         if (!call(c, kPhaseD, kLinkPhaseD, {m})) return false;
     }
     stack_pop(c);
@@ -2434,10 +2640,10 @@ bool motion_update(Cpu& c, u32 m) {
 
 bool serve_motion_update_hook(Cpu& c) {
     if (!g_tree) {
-        g_tree_hits[3].fetch_add(1, std::memory_order_relaxed);
+        bump(g_tree_hits[3]);
         return false;
     }
-    g_tree_hits[0].fetch_add(1, std::memory_order_relaxed);
+    bump(g_tree_hits[0]);
     motion_update(c, c.gpr[3]);
     return true;
 }

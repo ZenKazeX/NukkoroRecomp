@@ -128,8 +128,23 @@ public:
     // Savestate (version 17): every region (bounds, kind, name, committed
     // bytes). A load restores the saved regions in place where they exist,
     // maps the ones that do not and unmaps the ones the file does not name.
-    void save_state(std::vector<u8>& out) const;
-    bool load_state(const u8*& cursor, const u8* end, std::string& why);
+    // FORMAT BOUNDARY (2026-11-21): the native arenas left the window, but
+    // their checkpoint records keep the region record's format and place
+    // (version 34 unchanged): `others` are written after the regions under
+    // the same count, and on load a record `claim` takes (1; -1 refuses the
+    // file, 0 leaves it to the window) goes to its owner instead of being
+    // mapped. Such a record's base is a label, never mapped (savestate.cpp).
+    struct Record {
+        u32 base = 0;
+        u32 size = 0;
+        u32 committed = 0;
+        RegionKind kind = RegionKind::Arena;
+        std::string name;
+        const u8* bytes = nullptr;
+    };
+    using ClaimRecord = std::function<int(const Record& record, std::string& why)>;
+    void save_state(std::vector<u8>& out, const std::vector<Record>& others = {}) const;
+    bool load_state(const u8*& cursor, const u8* end, std::string& why, const ClaimRecord& claim = {});
 
     // ---- guest addresses -----------------------------------------------------
     // Bytes of a committed range inside one region, or nullptr. span() is a
@@ -158,6 +173,24 @@ public:
     // The window's addressable range for that convention.
     static constexpr u32 kConventionBase = 0x80000000u;
     static constexpr u32 kConventionEnd = 0xC0000000u;
+
+    // The native arenas' former range (the motion clip pool 0x90000000, the GCAX sound banks 0x94000000, CRI's
+    // stream ring 0x95000000; regions of this window until 2026-11-21). Their bytes are native storage owned by their
+    // components and the pool's addresses are handles only NativeMotionStore resolves, so nothing is ever mapped here
+    // again: map() refuses the range, a CPU access stops the machine (Cpu::unmapped_access names it), and a host read
+    // or write through read* / write* / *_block is reported to the installed stop (the production Cpu installs its
+    // own with set_unmapped_access_stops) instead of reading 0 or dropping the store. (peek* and window_bytes stay
+    // host-side looks: an unmapped byte reads 0 there, as everywhere.)
+    static constexpr u32 kRetiredArenaBase = 0x90000000u;
+    static constexpr u32 kRetiredArenaEnd = 0xA0000000u;
+    static constexpr bool in_retired_arenas(u32 address) noexcept {
+        return address - kRetiredArenaBase < kRetiredArenaEnd - kRetiredArenaBase;
+    }
+    using RetiredAccessStop = void (*)(void* context, u32 address, u32 size, bool write, u64 value);
+    void set_retired_access_stop(RetiredAccessStop stop, void* context) noexcept {
+        retired_stop_ = stop;
+        retired_stop_context_ = context;
+    }
 
     // The page table the CPU's inline accessors read: one host pointer per
     // 16 KiB page of the window, nullptr where nothing is committed.
@@ -296,6 +329,8 @@ private:
     static constexpr u32 kFixtureSize = 0x00010000u;
     std::vector<MmioDevice*> fixture_pages_;
     GuestMemoryDiagnostics diagnostics_;
+    RetiredAccessStop retired_stop_ = nullptr;
+    void* retired_stop_context_ = nullptr;
     bool trace_unmapped_ = true;
     bool journaling_ = false;
     bool journal_device_ = false;

@@ -27,12 +27,17 @@
 #include "gekko/hw/types.h"
 #include "gekko/guest_memory.h"
 #include "gekko/native_audio.h"
+#if defined(GEKKO_CARD_MODEL)
 #include "gekko/native_card.h"
+#endif
 #include "gekko/save_store.h"
+#include <chrono>
+#include <functional>
 #include "gekko/native_file_api.h"
 #include "gekko/native_frame_limiter.h"
 #include "gekko/native_attached_effects.h"
 #include "gekko/native_motion_store.h"
+#include "gekko/native_motion_bank_store.h"
 #include "gekko/native_sound_banks.h"
 #include "gekko/native_stream_ring.h"
 #include "gekko/native_object_range.h"
@@ -82,6 +87,7 @@
 #include "gekko/native_os_machine_check.h"
 #include "gekko/native_ax_mix_alloc.h"
 #include "gekko/native_math_affine.h"
+#include "gekko/native_math_mtx.h"
 #include "gekko/native_adx_decode.h"
 #include "gekko/native_rw_image.h"
 #include "gekko/native_rw_image.h"
@@ -178,6 +184,7 @@ public:
     NativeFrameLimiter& frame_limiter() noexcept { return *frame_limiter_; }
     NativeObjectRange& object_range() noexcept { return *object_range_; }
     NativeMotionStore& motion_store() noexcept { return *motion_store_; }
+    MotionBankStore& motion_banks() noexcept { return *motion_banks_; }
     NativeSoundBanks& sound_banks() noexcept { return *sound_banks_; }
     NativeStreamRing& stream_ring() noexcept { return *stream_ring_; }
     NativeAttachedEffects& attached_effects() noexcept { return *attached_effects_; }
@@ -185,8 +192,19 @@ public:
     const NativeGxSync& gx_sync() const noexcept { return *gx_sync_; }
     // The memory card and the OS's other external-interface clients (stage 5,
     // docs/native-time-20261005/STAGE5_EXI.md).
+    // Only with the card model (GEKKO_CARD_MODEL, the tests tree): the game's image has no memory card.
+#if defined(GEKKO_CARD_MODEL)
     NativeCard& card() noexcept { return *card_; }
     const NativeCard& card() const noexcept { return *card_; }
+#else
+    // FORMAT BOUNDARY: the memory-card record of a checkpoint / boot-contract capture when the image has no card
+    // model - the bytes an idle NativeCard::save_state writes (u8 channel count 2, then per channel u8 kind 0 and
+    // s32 result 0), so files stay readable across both configurations.
+    static void save_idle_card_state(std::vector<u8>& out) {
+        out.push_back(u8{2});
+        out.insert(out.end(), 10u, u8{0});
+    }
+#endif
     // The game's background loaders as native jobs (docs/NATIVE_THREADS.md stage A).
     NativeJobs& native_jobs() noexcept { return *native_jobs_; }
     const NativeExpandJobs* native_expand_jobs() const noexcept { return native_expand_jobs_.get(); }
@@ -251,10 +269,12 @@ public:
     // patched by the host. The card model is the contract ORACLE of the save store (the original CARD library runs
     // on it in the reference tests); the game itself always saves through the store (the CARD library's bodies are
     // not compiled), so the shipped program never calls this.
+#if defined(GEKKO_CARD_MODEL)
     void set_memory_card_path(std::filesystem::path path,
                               std::filesystem::path gci_working_path = {});
     bool memory_card_present() const noexcept;
     const std::filesystem::path& memory_card_backing_path() const noexcept;
+#endif
     const std::filesystem::path& memory_card_sram_path() const noexcept;
 
     // The native save store instead of the memory card (gekko/save_store.h, docs/SAVE_REROUTE_PLAN.md): the game's
@@ -329,6 +349,13 @@ public:
     // OSSleepThread bounds its own wait in game time (native_os_threads.h).
     bool advance_game_time(u64 target);
     u64 game_ticks() const noexcept { return cpu_.game_clock().now(); }
+    // The frames the game has handed to its renderer on this TIMELINE: the renderer's own count (which starts at 0 in
+    // every process) plus what a restored checkpoint had counted before it (savestate version 34). Reports use this,
+    // so a run continued from a checkpoint reports what the straight run reports. Frame numbers given TO the renderer
+    // (screenshot targets, run-for-N-frames) stay the renderer's own.
+    void set_render_frame_counter(std::function<u64()> counter) { render_frame_counter_ = std::move(counter); }
+    u64 render_frames_total() const { return render_frames_base_ + (render_frame_counter_ ? render_frame_counter_() : 0u); }
+    void rebase_render_frames(u64 total) { render_frames_base_ = total - (render_frame_counter_ ? render_frame_counter_() : 0u); }
     u64 idle_waits() const noexcept { return idle_waits_; }
     u64 host_services() const noexcept { return host_services_; }
 
@@ -634,7 +661,7 @@ public:
     void set_verify_chara_colli(bool enabled) noexcept { chara_colli_.set_verify(enabled); }
     void set_chara_colli_loops(bool enabled) noexcept { chara_colli_loops_ = enabled; }
     void set_chara_colli_manage(bool enabled) noexcept { chara_colli_manage_ = enabled; }
-    void set_chara_colli_pass(bool enabled) noexcept { chara_colli_pass_ = enabled; }
+    void set_chara_colli_pass(bool enabled) noexcept { chara_colli_pass_ = enabled ? 1 : 0; }
     void set_trace_stale_contacts(bool enabled) noexcept { trace_stale_contacts_ = enabled; }
     void set_chara_colli_bone_native(bool enabled) noexcept { chara_colli_bone_native_ = enabled; }
     void set_chara_colli_bone_memo(bool enabled) noexcept { chara_colli_bone_memo_ = enabled; }
@@ -692,6 +719,16 @@ public:
         // "should audio move to a worker?" can be answered with a number.
         u64 advance_ns = 0;      // voice position advance
         u64 mix_ns = 0;          // ADPCM decode + resample + mix
+        // The audio frame as a whole (native/win, 2026-11-17): the native part of ax_frame::frame_advance over all of its
+        // steps (sync, mix, list building; mix_ns is inside it), and the guest calls the frame makes between steps
+        // (drop callbacks, the aux callback, the game's frame callback), by wall clock on the game thread.
+        u64 frame_native_ns = 0;
+        u64 frame_calls_ns = 0;          // all guest calls of the frame
+        u64 frame_callback_ns = 0;       // ... of which the game's frame callback (sda 0x5D58)
+        u64 frame_steps = 0;             // frame_advance invocations (one per step)
+        u64 output_native_frames = 0;    // mixed frames written to the native output passes (no guest memory)
+        u64 output_guest_frames = 0;     // ... written into guest memory (an output address outside the two passes)
+        u64 frame_callbacks = 0;         // frame callback calls made
         // The room effect (gekko/native_reverb_owner.h): blocks whose list scheduled its send/return, and what each
         // call of the game's callback did; effect_ns is the callback's wall time (it runs on the game thread too).
         u64 effect_scheduled = 0;
@@ -707,6 +744,23 @@ public:
     void reset_host_audio_state() noexcept;
     void import_ax_pb_image_from_guest();
     void import_ax_lists_from_guest();
+    // The AX engine's two output passes (2 x 640 bytes of big-endian s16 stereo at ax_frame::kOutBase) are NATIVE
+    // storage (native/win N8): the mixer writes them here and the AI pass reads them here; no guest code reads the
+    // guest range (guest watch, Westopolis start-up and a 30 s steady window, 2026-11-17). Guest memory is their
+    // serialisation format only: a checkpoint and the state report publish them into the guest range first, and a
+    // restored checkpoint is read back from it, so neither format changes.
+    static constexpr u32 kAxOutputBytes = 2u * 0x280u;
+    void publish_ax_output_to_guest();
+    void import_ax_output_from_guest();
+    // The voices' sync bookkeeping words are native storage (ax_voice_words.h): the same two boundaries.
+    void publish_ax_voice_words_to_guest() { ax_voice_words_.publish_to_guest(memory_); }
+    void import_ax_voice_words_from_guest() { ax_voice_words_.import_from_guest(memory_); }
+    // The motion bank registry is native storage (B003, native_motion_bank_store.h): its state block 0x805F2458..77 is
+    // published for a checkpoint or a state report and the registry rebuilt from a restored image.
+    void publish_motion_banks_to_guest();
+    bool import_motion_banks_from_guest();
+    // Diagnostic: every AX frame checks that no code but the AX owners wrote the guest copy of those words.
+    void set_verify_ax_voice_words(bool on) noexcept { ax_voice_words_.verify_guest_untouched = on; }
     // Mixes one frame list (a command-list slot address) into the output pass: what the AX frame does after its sync; public for the tests.
     void mix_ax_list(u32 list) { run_ax_mix(list); }
     // Checkpoint continuation at an audio-job boundary; transient source windows
@@ -742,6 +796,13 @@ public:
         u32 expert_index = 0;         // PlayHard: the save block's run position (0x80577A18 + 0x9C), stage 0..22
         bool cutscene_handed = false;
         bool story_stage_play_handed = false;  // --boot-story-stage: the second query (play) answered
+        // --boot-story-stage answers the first query with the stage as the loop's current stage: one load, straight
+        // to the play branch. false = the earlier two-answer hand-off (load, release, load), kept for comparison.
+        bool single_story_load = true;
+        // --boot-scene: the in-stage event scene (files/event/eventNNNN_scene?.one) the booted stage's first scene
+        // start plays instead of its own; 0 = none.
+        u32 scene = 0;
+        u32 scene_replaced = 0;  // the event id the stage asked for, once the scene was handed
         bool fired = false;
         u64 fired_at_ticks = 0;  // game time
         u32 hz_choice = 0;  // 0 = no PAL screen seen, 60 = PAL60 accepted
@@ -817,6 +878,10 @@ public:
         boot_stage_.kind = 7u;
         boot_stage_.id = 0u;
     }
+    // --boot-scene: with one of the stage hand-offs above. Stage actions start an in-stage event scene through
+    // 0x801746F0(holder, event id) (ShowAction, GoalAction, Result2PAction, FlashbackAction, the trigger task); the
+    // first such start of the run gets this id instead of its own.
+    void set_boot_scene(u32 id) noexcept { boot_stage_.scene = id; }
     const BootStageReport& boot_stage_report() const noexcept { return boot_stage_; }
     // ---- native renderer capture (docs/native-runtime-2026-09-16) -----------
     //
@@ -853,6 +918,7 @@ private:
     std::unique_ptr<NativeFrameLimiter> frame_limiter_;
     std::unique_ptr<NativeObjectRange> object_range_;
     std::unique_ptr<NativeMotionStore> motion_store_;
+    std::unique_ptr<MotionBankStore> motion_banks_;
     std::unique_ptr<NativeSoundBanks> sound_banks_;
     std::unique_ptr<NativeStreamRing> stream_ring_;
     std::unique_ptr<NativeAttachedEffects> attached_effects_;
@@ -860,8 +926,12 @@ private:
 #if !defined(SHADOW_RENDER_LIFTED)  // G5
     std::unique_ptr<NativeImmediate> immediate_;
 #endif
+#if defined(GEKKO_CARD_MODEL)
     std::unique_ptr<NativeCard> card_;
+#endif
     std::unique_ptr<SaveStore> save_store_;
+    std::function<u64()> render_frame_counter_;  // the renderer's own frame count (set by the program)
+    u64 render_frames_base_ = 0;                 // frames counted before this process's renderer (a restored checkpoint)
     bool save_store_active_ = false;  // set_save_file: the game's save service; without it the card model (the oracle)
     std::unique_ptr<NativeIpl> ipl_;
     os_report::DebugConsole debug_console_;
@@ -997,11 +1067,15 @@ private:
     bool chara_colli_loops_ = true;
     bool chara_colli_manage_ = true;
     bool trace_stale_contacts_ = false;
-    bool chara_colli_pass_ = false;  // not exact yet: docs/CPU_FINAL_HAUNT.md, the pair pass
+    int chara_colli_pass_ = -1;  // the pair pass: -1 CharaColliIntrinsic::pass_default(), 0 / 1 forced (--[no-]chara-colli-pass)
     bool chara_colli_bone_native_ = true;
     bool chara_colli_bone_memo_ = true;
     CharaColliIntrinsic chara_colli_;
     AxMixerReport ax_report_;
+    // The audio frame's guest call in flight, for AxMixerReport::frame_calls_ns (host timing only, not saved).
+    bool ax_frame_call_pending_ = false;
+    bool ax_frame_call_is_callback_ = false;
+    std::chrono::steady_clock::time_point ax_frame_call_start_{};
     // DSP-published PB list, not a game-link-address-derived array. Decoder
     // slots are keyed by PB address so a reordered chain retains voice history.
     std::array<u32, 64> ax_voice_pb_{};
@@ -1009,8 +1083,19 @@ private:
     u32 ax_pb_count_ = 0;
     // The DSP side's lagging copy of the voice parameter blocks and update rings (ax_pb_image.h): written by the native sync, read by the mixer.
     AxPbImage ax_pb_image_;
+    AxVoiceWords ax_voice_words_;  // the voices' sync bookkeeping words (ax_voice_words.h)
     AxLists ax_lists_;  // the next frame mix's settings (native_ax_frame.h)
     ax_frame::Engine ax_engine_;  // the AX frame sequencing (native_ax_frame.h)
+    // The two output passes: interleaved left / right samples in host byte order (the guest range held the same
+    // samples big-endian; publish_ax_output_to_guest / import_ax_output_from_guest convert).
+    std::array<s16, kAxOutputBytes / 2u> ax_output_{};
+    // The native samples of [address, address + bytes) when that lies inside the two passes, else null.
+    s16* ax_output_native(u32 address, u32 bytes) noexcept {
+        if (address < ax_frame::kOutBase || bytes > kAxOutputBytes || address - ax_frame::kOutBase > kAxOutputBytes - bytes ||
+            ((address - ax_frame::kOutBase) & 1u) != 0u)
+            return nullptr;
+        return ax_output_.data() + (address - ax_frame::kOutBase) / 2u;
+    }
     void ax_pb_write16(u32 pb, u32 offset, u16 value);
     u32 ax_pb_peek32(u32 pb, u32 offset) const;
     bool parse_ax_list(u32 list, u32& head, u32& output, shadow::audio::FrameSettings& settings, bool quiet = false);

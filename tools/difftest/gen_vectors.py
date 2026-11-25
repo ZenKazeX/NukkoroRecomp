@@ -1056,6 +1056,83 @@ class Gen:
             st2 = json.loads(json.dumps(st))
             self.add("leafi", [leaf], leaf, st2, f"enter leaf kind {kind}", mem=mem, mnemonic="leaf")
 
+    def fam_hvalue(self, count):
+        """cpu/opt2: the hot-body value pass (ppcrecomp --hot-value): single words through lfs / stfs (NaNs,
+        denormals, infinities among them), compares whose CR field is written again, FPR halves written again,
+        with labels, a call that reads CR, lfd and fmr between them. The generated tree is built with
+        --hot-value 63; native and interpreter must agree on every register, both FPR halves, CR and every
+        memory access. Labels are entered directly too (the dispatcher's way into the middle of a body)."""
+        rng = self.rng
+        lfs = lambda f, a, d: E.d_form(48, f, a, d)       # noqa: E731
+        stfs = lambda f, a, d: E.d_form(52, f, a, d)      # noqa: E731
+        lfd = lambda f, a, d: E.d_form(50, f, a, d)       # noqa: E731
+        fadds = lambda d, a, b: (59 << 26) | (d << 21) | (a << 16) | (b << 11) | (21 << 1)   # noqa: E731
+        fmr = lambda d, b: (63 << 26) | (d << 21) | (b << 11) | (72 << 1)                    # noqa: E731
+        fcmpu = lambda crf, a, b: (63 << 26) | (crf << 23) | (a << 16) | (b << 11)           # noqa: E731
+        cmpwi = lambda crf, a, imm: E.cmp_imm(11, crf, a, imm)    # noqa: E731
+        cmplwi = lambda crf, a, imm: E.cmp_imm(10, crf, a, imm)   # noqa: E731
+        specials = (0x00000000, 0x80000000, 0x3F800000, 0xBF800000, 0x7F800000, 0xFF800000, 0x7FC00000,
+                    0x7F800001, 0xFFC12345, 0x00000001, 0x007FFFFF, 0x80000123, 0x00800000, 0x7F7FFFFF)
+        reason = "floating-point load/store: outside the integer spec model"
+        mfcr_leaf = self.row_pic([E.mfcr(9), E.BLR], "hvalue_mfcr_leaf")
+        for i in range(count):
+            st = self.base_state()
+            src = DATA_BASE + 0x100 + 0x40 * (i % 64)
+            dst = src + 0x20
+            st["gpr"][3] = dst
+            st["gpr"][4] = src
+            st["gpr"][6] = rng.choice((0, 0, 1, 5, 0xFFFFFFFF, self.v32()))
+            st["gpr"][7] = rng.choice((0, 1, 1, 5, 0x80000000, self.v32()))
+            words = [rng.choice(specials) if rng.random() < 0.6 else rng.getrandbits(32) for _ in range(8)]
+            mem = [[src, b"".join(w.to_bytes(4, "big") for w in words).hex() + self.random_bytes(0x20).hex()]]
+            kind = i % 10
+            rows, entries = None, []
+            if kind == 0:    # the Vec3 copy: the first f0 is dead after its forwarded store
+                body = [lfs(0, 4, 0), lfs(1, 4, 4), stfs(0, 3, 0), lfs(0, 4, 8), stfs(1, 3, 4), stfs(0, 3, 8), E.BLR]
+            elif kind == 1:  # a label between the load and a store: the store converts the register
+                body = None
+                row = self.alloc(6)
+                self.put_row(row, [cmpwi(0, 6, 0), E.bc(12, 2, row + 4, row + 16), lfs(1, 4, 0), stfs(1, 3, 0),
+                                   stfs(1, 3, 4), E.BLR], "hvalue_label")
+                rows, entries = [row], [row, row + 16]
+            elif kind == 2:  # a compare written again before anything reads it; other fields untouched
+                body = [cmpwi(0, 6, 0), cmpwi(1, 7, 1), cmplwi(0, 7, 5), cmpwi(1, 6, 0), E.mfcr(10), E.BLR]
+            elif kind == 3:  # live on the taken path only
+                body = None
+                row = self.alloc(6)
+                self.put_row(row, [cmpwi(0, 6, 0), E.bc(12, 2, row + 4, row + 12), cmpwi(0, 7, 1), E.mfcr(10),
+                                   E.BLR], "hvalue_cr_edge")
+                rows, entries = [row], [row, row + 12]
+            elif kind == 4:  # written again on both paths
+                body = None
+                row = self.alloc(7)
+                self.put_row(row, [cmpwi(0, 6, 0), E.bc(12, 2, row + 4, row + 12), cmpwi(0, 7, 1), cmplwi(0, 6, 3),
+                                   E.mfcr(10), E.BLR], "hvalue_cr_both")
+                rows, entries = [row], [row, row + 12]
+            elif kind == 5:  # a call reads CR between two compares
+                body = None
+                row = self.alloc(8)
+                self.put_row(row, [E.MFLR(30), cmpwi(0, 6, 0), E.b(row + 8, mfcr_leaf, lk=1), cmpwi(0, 7, 1),
+                                   E.mfcr(10), E.MTLR(30), E.BLR], "hvalue_call")
+                rows, entries = [row, mfcr_leaf], [row]
+            elif kind == 6:  # a single result overwritten by a load
+                body = [lfs(1, 4, 0), fadds(2, 1, 1), lfs(2, 4, 4), stfs(2, 3, 0), fadds(5, 1, 2), stfs(5, 3, 4), E.BLR]
+            elif kind == 7:  # fmr moves the value: the target's own word is stale
+                body = [lfs(1, 4, 0), lfs(3, 4, 8), fmr(3, 1), stfs(3, 3, 0), lfs(3, 4, 4), fmr(1, 3), stfs(1, 3, 4),
+                        stfs(3, 3, 8), E.BLR]
+            elif kind == 8:  # lfd replaces the loaded single: the store narrows a double
+                body = [lfs(1, 4, 0), lfd(1, 4, 8), stfs(1, 3, 0), lfs(2, 4, 4), stfs(2, 3, 4), lfd(2, 4, 16),
+                        stfs(2, 3, 8), E.BLR]
+            else:            # fcmpu between integer compares on the same field
+                body = [lfs(1, 4, 0), lfs(2, 4, 4), cmpwi(0, 6, 0), fcmpu(0, 1, 2), cmpwi(1, 7, 1), fcmpu(1, 2, 1),
+                        stfs(1, 3, 0), E.mfcr(10), E.BLR]
+            if body is not None:
+                row = self.row_pic(body, f"hvalue_{kind}")
+                rows, entries = [row], [row]
+            for entry in entries:
+                self.add("hvalue", rows, entry, json.loads(json.dumps(st)), f"hot value kind {kind} entry +{entry - rows[0]:#x}",
+                         mem=mem, spec="engine-only", reason=reason, mnemonic="hvalue")
+
 
 # ------------------------------------------------------------------------------------
 # outputs
@@ -1139,6 +1216,9 @@ def main() -> int:
     parser.add_argument("--families", default="", help="comma-separated families to generate (default: all)")
     parser.add_argument("--inline-leaves", type=int, default=0, help="run ppcrecomp with --inline-leaves N (no runtime hooks)")
     parser.add_argument("--inline-leaves-mutant", type=int, default=0, help="negative control: ppcrecomp --inline-leaves-mutant K")
+    parser.add_argument("--hot-value", type=int, default=0, help="run ppcrecomp with --hot-value MASK")
+    parser.add_argument("--hot-value-mutant", type=int, default=0, help="negative control: ppcrecomp --hot-value-mutant K")
+    parser.add_argument("--hot-layout", action="store_true", help="run ppcrecomp with --hot-layout")
     args = parser.parse_args()
 
     out = args.out
@@ -1193,6 +1273,12 @@ def main() -> int:
         command += ["--inline-leaves", str(args.inline_leaves), "--inline-no-hooks"]
         if args.inline_leaves_mutant:
             command += ["--inline-leaves-mutant", str(args.inline_leaves_mutant)]
+    if args.hot_value:
+        command += ["--hot-value", str(args.hot_value)]
+        if args.hot_value_mutant:
+            command += ["--hot-value-mutant", str(args.hot_value_mutant)]
+    if args.hot_layout:
+        command += ["--hot-layout"]
     result = subprocess.run(command, capture_output=True, text=True)
     (out / "ppcrecomp.log").write_text(result.stdout + result.stderr, encoding="utf-8")
     if result.returncode != 0:

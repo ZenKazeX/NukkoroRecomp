@@ -1,13 +1,90 @@
-// A native store of sound samples (include/gekko/sound_arena.h, docs/ARAM.md).
+// A native store of sound samples (include/gekko/sound_arena.h, docs/ARAM.md), and the native arenas' storage
+// (include/gekko/native_arena_storage.h).
 
 #include "gekko/sound_arena.h"
 
 #include <cstring>
 #include <string>
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <sys/mman.h>
+#endif
+
 #include "gekko/guest_memory.h"
 
 namespace gekko {
+
+// ---- NativeArenaStorage ------------------------------------------------------------------------------------------
+
+bool NativeArenaStorage::reserve(u32 size) noexcept {
+    if (bytes_ != nullptr || size == 0u || (size % kGranule) != 0u) return false;
+#if defined(_WIN32)
+    bytes_ = static_cast<u8*>(VirtualAlloc(nullptr, size, MEM_RESERVE, PAGE_NOACCESS));
+#else
+    void* p = mmap(nullptr, size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    bytes_ = p == MAP_FAILED ? nullptr : static_cast<u8*>(p);
+#endif
+    if (bytes_ == nullptr) return false;
+    size_ = size;
+    committed_ = 0u;
+    return true;
+}
+
+bool NativeArenaStorage::commit_through(u32 end) noexcept {
+    if (bytes_ == nullptr) return false;
+    const u64 needed = (u64{end} + kGranule - 1u) & ~u64{kGranule - 1u};
+    if (needed > size_) return false;
+    if (needed <= committed_) return true;
+#if defined(_WIN32)
+    if (VirtualAlloc(bytes_ + committed_, static_cast<SIZE_T>(needed - committed_), MEM_COMMIT, PAGE_READWRITE) !=
+        bytes_ + committed_)
+        return false;
+#else
+    if (mprotect(bytes_ + committed_, static_cast<std::size_t>(needed - committed_), PROT_READ | PROT_WRITE) != 0)
+        return false;
+#endif
+    committed_ = static_cast<u32>(needed);
+    return true;
+}
+
+void NativeArenaStorage::release() noexcept {
+    if (bytes_ == nullptr) return;
+#if defined(_WIN32)
+    VirtualFree(bytes_, 0, MEM_RELEASE);
+#else
+    munmap(bytes_, size_);
+#endif
+    bytes_ = nullptr;
+    size_ = 0u;
+    committed_ = 0u;
+}
+
+// In place when the storage has the record's size and commits no more than it (a pointer a reader holds stays valid,
+// as a restored guest region's did); otherwise reserved again at the record's size, so bytes committed past the saved
+// prefix do not survive the restore.
+bool NativeArenaStorage::restore(u32 size, u32 committed, const u8* image) noexcept {
+    if (committed > size || (committed % kGranule) != 0u) return false;
+    if (bytes_ == nullptr || size_ != size || committed_ > committed) {
+        release();
+        if (!reserve(size)) return false;
+    }
+    if (!commit_through(committed)) {
+        release();
+        return false;
+    }
+    if (committed != 0u) std::memcpy(bytes_, image, committed);
+    return true;
+}
+
+// ---- SoundArena ------------------------------------------------------------------------------------------------------
 
 namespace {
 
@@ -27,24 +104,18 @@ bool get32(const u8*& cursor, const u8* end, u32& value) {
 }  // namespace
 
 SoundArena::Source SoundArena::source() const noexcept {
-    const GuestMemory::Region* region = reserve_ != 0u ? memory_.region_at(arena_base_) : nullptr;
-    if (region == nullptr)
+    if (reserve_ == 0u || !storage_.present())
         return {};
-    return {region->host, reserve_ - 1u, window_ + region->committed};
+    return {storage_.data(), reserve_ - 1u, window_ + storage_.committed()};
 }
 
-u32 SoundArena::committed() const noexcept {
-    const GuestMemory::Region* region = reserve_ != 0u ? memory_.region_at(arena_base_) : nullptr;
-    return region != nullptr ? region->committed : 0u;
-}
-
-bool SoundArena::map_window(u32 window, u32 size, std::string& why) {
-    if (reserve_ != 0u) {
+bool SoundArena::reserve_window(u32 window, u32 size, std::string& why) {
+    if (reserve_ != 0u || storage_.present()) {
         why = "reserved twice without a release";
         return false;
     }
-    if (!memory_.map(arena_base_, size, 0u, GuestMemory::RegionKind::Arena, name_)) {
-        why = "the arena could not be mapped";
+    if (!storage_.reserve(size)) {
+        why = "the store's storage could not be reserved";
         return false;
     }
     window_ = window;
@@ -53,25 +124,23 @@ bool SoundArena::map_window(u32 window, u32 size, std::string& why) {
 }
 
 bool SoundArena::commit_through(u32 offset_end, std::string& why) {
-    const GuestMemory::Region* region = memory_.region_at(arena_base_);
-    const u32 needed = (offset_end + GuestMemory::kGranule - 1u) & ~(GuestMemory::kGranule - 1u);
-    if (region == nullptr || needed > reserve_ ||
-        (region->committed < needed && !memory_.commit(arena_base_, needed))) {
-        why = "the arena could not commit " + std::to_string(needed) + " bytes";
+    if (offset_end > reserve_ || !storage_.commit_through(offset_end)) {
+        const u32 needed = (offset_end + NativeArenaStorage::kGranule - 1u) & ~(NativeArenaStorage::kGranule - 1u);
+        why = "the store could not commit " + std::to_string(needed) + " bytes";
         return false;
     }
     return true;
 }
 
 bool SoundArena::reserve(u32 bytes, std::string& why) {
-    u32 size = GuestMemory::kGranule;
+    u32 size = NativeArenaStorage::kGranule;
     while (size < bytes && size < span_)
         size <<= 1;
     if (bytes == 0u || size < bytes || (default_base_ % size) != 0u) {
         why = "a request of " + std::to_string(bytes) + " bytes does not fit the sound address span";
         return false;
     }
-    if (!map_window(default_base_, size, why))
+    if (!reserve_window(default_base_, size, why))
         return false;
     base_ = default_base_;
     held_ = span_;
@@ -85,19 +154,24 @@ bool SoundArena::adopt(u32 base, u32 bytes, const u8* image, std::string& why) {
         return false;
     }
     // The smallest power of two whose aligned window holds the whole block.
-    u32 size = GuestMemory::kGranule;
+    u32 size = NativeArenaStorage::kGranule;
     while (size < 0x80000000u && (size < bytes || (base & ~(size - 1u)) != ((base + bytes - 1u) & ~(size - 1u))))
         size <<= 1;
     const u32 window = base & ~(size - 1u);
-    if (!map_window(window, size, why))
+    if (!reserve_window(window, size, why))
         return false;
     base_ = base;
     held_ = bytes;
     requested_ = bytes;
     if (!commit_through(base - window + bytes, why))
         return false;
-    std::memcpy(memory_.region_at(arena_base_)->host + (base - window), image, bytes);
+    std::memcpy(storage_.at(base - window, bytes), image, bytes);
     return true;
+}
+
+void SoundArena::discard() noexcept {
+    storage_.release();
+    forget();
 }
 
 void SoundArena::forget() noexcept {
@@ -109,22 +183,21 @@ void SoundArena::forget() noexcept {
 }
 
 bool SoundArena::resume(u32 requested, std::string& why) {
-    const GuestMemory::Region* region = memory_.region_at(arena_base_);
-    if (region == nullptr || region->base != arena_base_ || (default_base_ % region->size) != 0u) {
-        why = std::string(name_) + ": no region to resume";
+    if (!storage_.present() || (default_base_ % storage_.size()) != 0u) {
+        why = std::string(name_) + ": no stored bytes to resume";
         return false;
     }
     base_ = default_base_;
     held_ = span_;
     window_ = default_base_;
-    reserve_ = region->size;
+    reserve_ = storage_.size();
     requested_ = requested;
     return true;
 }
 
 bool SoundArena::commit_reserve(std::string& why) {
     if (reserve_ == 0u) {
-        why = "the arena could not commit its reserve";
+        why = "the store could not commit its reserve";
         return false;
     }
     return commit_through(reserve_, why);
@@ -135,11 +208,7 @@ bool SoundArena::release(std::string& why) {
         why = "released while nothing is reserved";
         return false;
     }
-    if (!memory_.unmap(arena_base_)) {
-        why = "the arena could not be unmapped";
-        return false;
-    }
-    forget();
+    discard();
     return true;
 }
 
@@ -156,7 +225,7 @@ bool SoundArena::copy_in(u32 to, u32 from, u32 bytes, std::string& why) {
         return false;
     }
     if (bytes != 0u)
-        std::memcpy(memory_.region_at(arena_base_)->host + (to - window_), data, bytes);
+        std::memcpy(storage_.at(to - window_, bytes), data, bytes);
     return true;
 }
 
@@ -175,13 +244,12 @@ bool SoundArena::load_state(const u8*& cursor, const u8* end, std::string& why) 
         why = std::string(name_) + ": truncated";
         return false;
     }
-    const GuestMemory::Region* region = memory_.region_at(arena_base_);
-    if (reserve != 0u && (region == nullptr || region->base != arena_base_ || region->size != reserve)) {
-        why = std::string(name_) + ": the state's region is missing or has another size";
+    if (reserve != 0u && (!storage_.present() || storage_.size() != reserve)) {
+        why = std::string(name_) + ": the state's stored bytes are missing or have another size";
         return false;
     }
-    if (reserve == 0u && region != nullptr) {
-        why = std::string(name_) + ": the state maps a region it does not reserve";
+    if (reserve == 0u && storage_.present()) {
+        why = std::string(name_) + ": the state stores bytes it does not reserve";
         return false;
     }
     base_ = base;
@@ -189,6 +257,21 @@ bool SoundArena::load_state(const u8*& cursor, const u8* end, std::string& why) 
     window_ = window;
     reserve_ = reserve;
     requested_ = requested;
+    return true;
+}
+
+bool SoundArena::image(NativeArenaImage& out) const noexcept {
+    if (!storage_.present())
+        return false;
+    out = NativeArenaImage{name_, record_label_, storage_.size(), storage_.committed(), storage_.data()};
+    return true;
+}
+
+bool SoundArena::restore_image(u32 size, u32 committed, const u8* bytes, std::string& why) {
+    if (!storage_.restore(size, committed, bytes)) {
+        why = std::string(name_) + ": the record's bytes could not be restored";
+        return false;
+    }
     return true;
 }
 

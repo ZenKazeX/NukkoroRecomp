@@ -23,6 +23,7 @@ void FrameBuilder::begin_frame(std::uint64_t tick, const Float4& background) {
             take(packet_.bones, recycled_.bones);
             take(packet_.morph_weights, recycled_.morph_weights);
             take(packet_.particles, recycled_.particles);
+            take(packet_.particle_tags, recycled_.particle_tags);
             take(packet_.particle_batches, recycled_.particle_batches);
             take(packet_.immediate_vertices, recycled_.immediate_vertices);
             take(packet_.immediate_indices, recycled_.immediate_indices);
@@ -35,6 +36,7 @@ void FrameBuilder::begin_frame(std::uint64_t tick, const Float4& background) {
     pass_open_ = false;
     snapshots_ = 0;
     layer_ = EffectLayer::None;
+    key_ = 0;
 }
 
 ViewId FrameBuilder::view(const Camera& camera, const ViewRect& rect, const Canvas& canvas, bool over_views) {
@@ -94,7 +96,8 @@ void FrameBuilder::draw(MeshHandle mesh, std::uint32_t submesh, const Material& 
     if (!pass_open_)
         return;  // a draw outside a pass has nowhere to go
     packet_.draws.push_back(
-        DrawRecord{mesh, submesh, material, world, recipe, lights, bones, kNoParticles, kNoImmediate, morph, layer_});
+        DrawRecord{mesh, submesh, material, world, recipe, lights, bones, kNoParticles, kNoImmediate, morph, layer_,
+                   key_});
     ++packet_.passes.back().draw_count;
 }
 
@@ -116,23 +119,32 @@ void FrameBuilder::immediate(const ImmediateDraw& draw, const ImmediateVertex* v
     record.recipe = recipe;
     record.immediate = static_cast<std::uint32_t>(packet_.immediates.size());
     record.layer = layer_;
+    record.key = d.space == Space::World ? key_ : 0u;  // canvas geometry (the HUD, screen passes) carries none
     packet_.immediates.push_back(d);
     packet_.draws.push_back(record);
     ++packet_.passes.back().draw_count;
 }
 
 void FrameBuilder::particles(const ParticleBatch& batch, const Particle* records, std::uint32_t count,
-                             const Recipe& recipe) {
+                             const Recipe& recipe, const ParticleTag* tags) {
     if (!pass_open_ || count == 0)
         return;
     ParticleBatch b = batch;
     b.first = static_cast<std::uint32_t>(packet_.particles.size());
     b.count = count;
     packet_.particles.insert(packet_.particles.end(), records, records + count);
+    // In step with the records from the first tagged batch on; a packet nobody tagged carries none.
+    if (tags != nullptr) {
+        packet_.particle_tags.resize(b.first);
+        packet_.particle_tags.insert(packet_.particle_tags.end(), tags, tags + count);
+    } else if (!packet_.particle_tags.empty()) {
+        packet_.particle_tags.resize(packet_.particles.size());
+    }
     DrawRecord draw;
     draw.recipe = recipe;
     draw.particles = static_cast<std::uint32_t>(packet_.particle_batches.size());
     draw.layer = layer_;
+    draw.key = key_;
     packet_.particle_batches.push_back(b);
     packet_.draws.push_back(draw);
     ++packet_.passes.back().draw_count;

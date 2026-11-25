@@ -424,7 +424,11 @@ u32 RwDriver::im3d_render(Cpu& c, u32 pipeline, u32 stash) {
         world = frame_matrix(c, matrix);
     render::Recipe r = recipe();
     r.alpha_cutoff = states_.alpha_test_off == 0u ? alpha_cutoff() : 0.0f;
+    // Independent frame: the client's array is the effect's identity (a trail draws from its own sample array every
+    // frame; producers that draw from one stack buffer are told apart by the order they draw in).
+    builder_.set_key((static_cast<std::uint64_t>(primitive + 1u) << 32) | vertex_array);
     imm_.draw3d(immediate_vertices_.data(), count, topology, immediate_indices_, listed, world, binding, r);
+    builder_.set_key(0u);
     if (stats_.frames == trace_frame_) {
         std::fprintf(stderr,
                      "[r2-trace] im3d prim %u vertices %u indices %u flags %X matrix %08X texture %08X (alpha %d) "

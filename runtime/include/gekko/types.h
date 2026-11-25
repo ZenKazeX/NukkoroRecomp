@@ -32,6 +32,21 @@
 #define GEKKO_NOINLINE
 #endif
 
+// cpu/opt2: `if (rare) GEKKO_UNLIKELY { ... }`. The C++20 attribute where the language level has it (the runtime
+// and the generated shards), nothing otherwise (C++17 test trees). Block placement only: MSVC lays the block of
+// `if (rare) { call; return; }` in line and makes the usual path jump over it unless it is told.
+#if (defined(_MSVC_LANG) && _MSVC_LANG >= 202002L) || (!defined(_MSVC_LANG) && __cplusplus >= 202002L)
+#define GEKKO_UNLIKELY [[unlikely]]
+#define GEKKO_LIKELY [[likely]]
+#else
+#define GEKKO_UNLIKELY
+#define GEKKO_LIKELY
+#endif
+// cpu/opt4: MSVC 19.52 does not place blocks by these attributes (measured: a hinted and an unhinted body compile
+// to the same code). What it does place out of line is the `else` of `if (usual) GEKKO_LIKELY {} else { ...;
+// return; }` when that block never rejoins. Rare checks in hot code are written that way; the attribute stays
+// for the compilers that use it.
+
 // L0r0-01: one host code-generation model per image.
 //
 // The inline guest-semantics helpers in these headers are not the same function
@@ -218,13 +233,17 @@ GEKKO_ALWAYS_INLINE u64 double_to_bits(double value) noexcept {
 // same value (denormals are normalised by shifting, which is the value-exact
 // widening); a NaN keeps its sign and moves its 23 fraction bits up, so a
 // signalling NaN stays signalling.
+//
+// cpu/opt4: without a branch. The host conversion already gives D.6's result for everything but a signalling NaN,
+// where it sets the quiet bit (bit 51 of the double) and D.6 leaves the fraction as it is; a quiet NaN's widened
+// fraction is the same either way. So the result is the host's bits with bit 51 flipped back for a signalling NaN
+// (magnitude 0x7F800001..0x7FBFFFFF). Equal to the branching definition for all 2^32 words
+// (fp_single_round_trip_tests). The branching form put a slow block that never runs in the path of every lfs:
+// MSVC 19.52 places such a block in line whatever the attribute says (see GEKKO_LIKELY above).
 GEKKO_ALWAYS_INLINE u64 single_to_double_bits(u32 word) noexcept {
-    const double value = static_cast<double>(bits_to_float(word));
-    if (value != value) {
-        return (static_cast<u64>(word & 0x80000000u) << 32) | 0x7ff0000000000000ull |
-               (static_cast<u64>(word & 0x007fffffu) << 29);
-    }
-    return double_to_bits(value);
+    const u64 bits = double_to_bits(static_cast<double>(bits_to_float(word)));
+    const u64 signalling = static_cast<u64>(((word & 0x7fffffffu) - 0x7f800001u) < 0x003fffffu);
+    return bits ^ (signalling << 51);
 }
 
 // The D.7 store conversion for everything the host cast cannot reproduce.
@@ -252,14 +271,28 @@ GEKKO_NOINLINE inline u32 double_to_single_bits_slow(u64 bits) noexcept {
 // single-precision instruction, lfs or frsp produces) is already the bit
 // selection D.7 defines; anything else - a NaN, an inexact or out-of-range
 // double, a double below the single range - takes the literal conversion.
+#if defined(__clang__)
+// clang images (2026-11-24): the literal conversion's own first case inline, in integer arithmetic. ((bits << 1) - 1)
+// >> 53 is the biased exponent with +-0 wrapped to 2047, and one lower for an exact power of two, so `> 896` holds for
+// +-0 and for every value above the single denormal range except 2^-126 itself, which takes the literal conversion
+// like everything below it. Same word for every input: the fast case IS double_to_single_bits_slow's bit selection.
+GEKKO_ALWAYS_INLINE bool store_bits_selectable(u64 bits) noexcept { return (((bits << 1) - 1u) >> 53) > 896u; }
+GEKKO_ALWAYS_INLINE u32 double_to_single_bits(u64 bits) noexcept {
+    if (!store_bits_selectable(bits)) GEKKO_UNLIKELY {
+        return double_to_single_bits_slow(bits);
+    }
+    return static_cast<u32>(((bits >> 32) & 0xc0000000u) | ((bits >> 29) & 0x3fffffffu));
+}
+#else
 GEKKO_ALWAYS_INLINE u32 double_to_single_bits(u64 bits) noexcept {
     const double value = bits_to_double(bits);
     const float narrowed = static_cast<float>(value);
-    if (static_cast<double>(narrowed) == value) {
-        return float_to_bits(narrowed);
+    if (!(static_cast<double>(narrowed) == value)) GEKKO_UNLIKELY {
+        return double_to_single_bits_slow(bits);
     }
-    return double_to_single_bits_slow(bits);
+    return float_to_bits(narrowed);
 }
+#endif
 
 // psq_st to a type-0 GQR: "the value from the FPR is passed directly to the L1
 // cache without any conversion, except when this operand is a denorm. In the
@@ -277,14 +310,24 @@ GEKKO_NOINLINE inline u32 double_to_single_bits_flush_slow(u64 bits) noexcept {
 
 // Fast path: an exactly narrowed value that is not a nonzero single denormal
 // ((word << 1) - 1 wraps +-0 above the bound) is its own bit selection.
+#if defined(__clang__)
+// clang images: as double_to_single_bits above (the same test selects the flush form's bit selection).
+GEKKO_ALWAYS_INLINE u32 double_to_single_bits_flush(u64 bits) noexcept {
+    if (!store_bits_selectable(bits)) GEKKO_UNLIKELY {
+        return double_to_single_bits_flush_slow(bits);
+    }
+    return static_cast<u32>(((bits >> 32) & 0xc0000000u) | ((bits >> 29) & 0x3fffffffu));
+}
+#else
 GEKKO_ALWAYS_INLINE u32 double_to_single_bits_flush(u64 bits) noexcept {
     const double value = bits_to_double(bits);
     const float narrowed = static_cast<float>(value);
     const u32 word = float_to_bits(narrowed);
-    if (static_cast<double>(narrowed) == value && ((word << 1) - 1u) >= 0x00ffffffu) {
-        return word;
+    if (!(static_cast<double>(narrowed) == value && ((word << 1) - 1u) >= 0x00ffffffu)) GEKKO_UNLIKELY {
+        return double_to_single_bits_flush_slow(bits);
     }
-    return double_to_single_bits_flush_slow(bits);
+    return word;
 }
+#endif
 
 }  // namespace gekko

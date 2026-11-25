@@ -152,10 +152,30 @@ void NativeAudio::on_pass_end(u64 now) {
         return;
     }
     const u32 bytes = pass_blocks_ * 32u;
-    const hw::HostAudioPointer64 host = memory_.host_pointer(pass_start_, bytes);
-    if (host == nullptr) ++stats_.silent_passes;
     audio_audit::event(audio_audit::Lane::Guest, "ai-pass", pass_start_, bytes, stats_.passes, now);
-    if (sink_) sink_(host, bytes);
+    if (const s16* const native = source_ ? source_(pass_start_, bytes) : nullptr) {
+        // The engine's own pass: host-order samples, handed on as they are. Only a consumer that asked for the guest's
+        // bytes (no host sink) gets them converted.
+        if (host_sink_) {
+            host_sink_(native, bytes / 4u);
+        } else if (sink_) {
+            u8 guest_order[2048];
+            for (u32 done = 0; done < bytes;) {
+                const u32 chunk = std::min<u32>(bytes - done, sizeof(guest_order));
+                for (u32 i = 0; i + 1u < chunk; i += 2u) {
+                    const u16 sample = static_cast<u16>(native[(done + i) / 2u]);
+                    guest_order[i] = static_cast<u8>(sample >> 8);
+                    guest_order[i + 1u] = static_cast<u8>(sample);
+                }
+                sink_(guest_order, chunk);
+                done += chunk;
+            }
+        }
+    } else {
+        const hw::HostAudioPointer64 host = memory_.host_pointer(pass_start_, bytes);
+        if (host == nullptr) ++stats_.silent_passes;
+        if (sink_) sink_(host, bytes);
+    }
     ++stats_.passes;
     stats_.pass_bytes += bytes;
     // The engine reloads from the programmed buffer and raises AIDINT: the

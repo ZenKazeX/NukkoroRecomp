@@ -523,6 +523,7 @@ void owner_list_matches(const char* owners_path) {
     add_owner_addresses<NativeFrameLimiter>(installed, total);
     add_owner_addresses<NativeObjectRange>(installed, total);
     add_owner_addresses<NativeMotionStore>(installed, total);
+    add_owner_addresses<MotionBankStore>(installed, total);
     add_owner_addresses<NativeSoundBanks>(installed, total);
     add_owner_addresses<NativeGxSync>(installed, total);
     add_owner_addresses<gx_state::Owners>(installed, total);
@@ -558,6 +559,7 @@ void owner_list_matches(const char* owners_path) {
     add_owner_addresses<os_machine_check::Owners>(installed, total);
     add_owner_addresses<ax_mix_alloc::Owners>(installed, total);
     add_owner_addresses<math_affine::Owners>(installed, total);
+    add_owner_addresses<math_mtx::Owners>(installed, total);
     add_owner_addresses<adx_decode::Owners>(installed, total);
     add_owner_addresses<rw_image::Owners>(installed, total);
     add_owner_addresses<rw_pixel::Owners>(installed, total);

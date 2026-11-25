@@ -3738,7 +3738,8 @@ void Renderer::make_uploads_visible() {
 // The swap chain belongs to the render thread alone. Nothing here holds the table lock across a wait: the back
 // buffer wait, the frame slot's fence wait (frames_.begin) and the recording hold only the render lock, which the
 // game thread never takes (D11).
-bool Renderer::render(const FramePacket& packet, PresentMode mode, std::string* error, std::int64_t* credit_ns) {
+bool Renderer::render(const FramePacket& packet, PresentMode mode, std::string* error, std::int64_t* credit_ns,
+                      bool commit_history) {
     GEKKO_PROFILE_ZONE("gpu/render");
     // Eager start (render/burst_ahead.h): credit_ns given - record and submit now, take the credit only before the
     // present (credit_ns: when it came, steady ns). The back buffer recorded into is the one neither shown nor queued.
@@ -3847,7 +3848,7 @@ bool Renderer::render(const FramePacket& packet, PresentMode mode, std::string* 
         bool ok = false;
         {
             init_trace::Scope trace("record", L"frame", packet.tick);
-            ok = record(frame.list, frame.slot, packet, output, &after, nullptr, nullptr, error);
+            ok = record(frame.list, frame.slot, packet, output, &after, nullptr, nullptr, error, commit_history);
         }
         GEKKO_PROFILE_PLOT("gpu/upload-bytes", static_cast<std::int64_t>(frames_.ring().used()));
         if (gpu_timer_ != nullptr)

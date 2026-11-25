@@ -72,6 +72,11 @@ public:
     // error text and everything after the creation are start()'s own, at start()'s place. A creation never taken over
     // ends with the process.
     static void start_early(const LiftedRenderOptions& options);
+    // Waits for the creation start_early() began, if it is still running. For the caller's early error returns:
+    // the creation thread must end while the program is still inside main. Left to the static's destructor, the join
+    // runs under the C runtime's exit lock, and a creation thread that reaches a function-local static at that moment
+    // (its atexit registration needs the same lock) never finishes: the process stays alive after its error message.
+    static void settle_early();
     // After the game thread has stopped: uninstalls the scaffolding and releases the device.
     void stop();
     // The listener for System's 2D identity announcements (the scaffolding lays the 2D out with them); null before
@@ -98,6 +103,43 @@ public:
     // UI thread: V-Sync from the next present (the swap chain allows tearing whenever the system does, so either mode
     // presents without recreating it).
     void set_vsync(bool on) noexcept;
+    // Independent frame (docs/re/independent-frame/; UI thread). Off - the default, and the reference every exact gate
+    // runs: one picture per game frame, the newest (present_newest as it always was). On: the UI thread draws
+    // pictures at its own rate - the display's with V-Sync, `rate_hz` when above 0, else as fast as the GPU takes
+    // them - each showing the game between its last two frames (render/frame_interp.h, render/frame_timeline.h), one
+    // game frame behind. The game thread, its clock, its input and its audio are not touched by the choice: the game
+    // makes the same packets at the same game ticks either way. The phase lock rests while it is on (the game clock
+    // is not steered by the display).
+    void set_independent(bool on, double rate_hz) noexcept;
+    bool independent() const noexcept;
+    struct IndependentStats {
+        std::uint64_t game_frames = 0;       // packets taken from the game
+        std::uint64_t game_frames_skipped = 0;  // ... game frames never taken (the renderer was slower than the game)
+        std::uint64_t iterations = 0;        // calls of present_newest in this mode
+        std::uint64_t idle = 0;              // ... that drew nothing (no new frame and the newest already shown as it is)
+        std::uint64_t pictures = 0;          // pictures recorded, submitted and presented
+        std::uint64_t between = 0;           // ... of them, states strictly between two game frames
+        std::uint64_t at_frame = 0;          // ... states that are a game frame as the game made it
+        std::uint64_t repeats = 0;           // ... the same game frame drawn again (SHADOW_IF_REPEAT only)
+        std::uint64_t history_commits = 0;   // pictures that advanced the views' histories (one per game frame)
+        std::uint64_t cuts = 0;              // pairs shown as B: a camera cut, a black or re-boxed frame
+        std::uint64_t breaks = 0;            // pairs shown as B: the timeline was not continuous (a stall, a load)
+        std::uint64_t keyed = 0, followed = 0, still = 0, snapped = 0, bones = 0, cameras = 0;  // sums over the pairs
+        double alpha_sum = 0.0;              // over the pictures
+        double age_sum_ms = 0.0;             // newest game frame's age when a picture was started, over the pictures
+        double build_sum_ms = 0.0;           // CPU time making the pictures' packets (copy + placement)
+        double pair_sum_ms = 0.0;            // CPU time pairing packets (once per game frame)
+        float largest_object_step = 0.0f, largest_camera_step = 0.0f, smallest_camera_turn_cos = 1.0f;
+        // Particles, over the pairs (render/frame_interp.h InterpStats).
+        std::uint64_t particles = 0, particles_tagged = 0, particles_followed = 0, particles_still = 0;
+        std::uint64_t particles_born = 0, particles_reused = 0, particles_placed = 0, particle_batches = 0;
+        float largest_particle_step = 0.0f;
+        // World-space immediate draws with a key (trails, beams), over the pairs.
+        std::uint64_t immediates = 0, immediates_followed = 0, immediates_still = 0, immediates_snapped = 0;
+        std::uint64_t immediate_vertices = 0;
+        float largest_immediate_step = 0.0f;
+    };
+    IndependentStats independent_stats() const;
     // MSAA and anisotropic filtering, live (any thread; the renderer takes them at its next frame, render/renderer.h).
     void set_msaa(std::uint32_t samples) noexcept;
     void set_anisotropy(std::uint32_t level) noexcept;
@@ -197,6 +239,7 @@ public:
     bool frame_open() const;
 
 private:
+    bool present_independent(std::chrono::milliseconds wait, std::string* error, PresentationSample* sample);
     struct Impl;
     struct Early;
     static Early& early();

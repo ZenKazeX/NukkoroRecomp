@@ -174,6 +174,10 @@ struct Engine {
     AxPbImage* image = nullptr;
     AxLists* lists = nullptr;
     std::function<void(u32 list)> mix;  // System::run_ax_mix: mixes the list (a slot address) into the output pass
+    // System::ax_output_: the two output passes are native storage (native/win N8). AXInit zeroes them as it zeroes
+    // the guest range.
+    std::function<void()> clear_output;
+    AxVoiceWords* words = nullptr;  // the voices' sync bookkeeping words (ax_voice_words.h); null = in guest memory
 };
 
 namespace detail {
@@ -210,6 +214,7 @@ inline void write_buffers(Cpu& c, u32 p, bool fourth) {
 // game's frame callback wakes threads, and the delivery's end reschedules, which a call nested inside native code could not do.
 struct Call {
     u32 target = 0, r3 = 0, r4 = 0;
+    bool frame_callback = false;  // the game's frame callback (sda 0x5D58): for the host's timing only
 };
 
 // What the frame does next once a requested call has returned; kept in the first of the four scratch words of the delivery (guest
@@ -240,7 +245,8 @@ inline bool frame_advance(Cpu& c, Engine& e, u32 scratch, u32 step, Call& call) 
         }
         c.mem_write32(sda + kSdaState, 0u);
         c.gpr[3] = 0u;  // the cycles the time between the two interrupts added: always 0 (see above)
-        ax_sync::sync_pbs(c, *e.image);
+        ax_sync::sync_pbs(c, *e.image, e.words);
+        if (c.stopped()) return false;
         // 0x80385070: the list the previous frame built is mixed now; the builder writes the other slot.
         const u32 index = c.mem_read32(sda + kSdaListIndex) & 1u;
         const u32 next = (index + 1u) & 1u;
@@ -309,7 +315,7 @@ inline bool frame_advance(Cpu& c, Engine& e, u32 scratch, u32 step, Call& call) 
         c.mem_write32(sda + kSdaAuxBuffer, (k + 1u) % 3u);
         if (const u32 callback = c.mem_read32(sda + kSdaFrameCallback); callback != 0u) {
             c.mem_write32(scratch, kAfterFrameCallback);
-            call = {callback, 0u, 0u};
+            call = {callback, 0u, 0u, true};
             return true;
         }
     }
@@ -341,23 +347,28 @@ inline void zero(Cpu& c, u32 address, u32 bytes) {
 
 // 0x80384680 AXInit: the AX SDK's state, native. The DSP task, its INIT handshake (a spin on sda 0x5D5C) and the version banner of
 // the original are not performed.
-inline void init(Cpu& c, AxPbImage& image, AxLists& lists) {
+inline void init(Cpu& c, AxPbImage& image, AxLists& lists, AxVoiceWords* words = nullptr) {
     const u32 sda = c.gpr[13];
+    const AxVoiceWordAccess word{c, words};
     clear_stacks(c);
     // 0x80386E88: the budget, the voice records and the DSP side's parameter blocks.
     c.mem_write32(sda + ax_sync::kSdaBudget, static_cast<u32>((u64{c.mem_read32(0x800000F8u)} * 0x51EB851Full) >> 39));
     c.mem_write32(sda + ax_sync::kSdaTotalCost, 0u);
     image.clear();
     zero(c, 0x805989A0u, 0x8B00u);            // the AXVPB array
+    if (words != nullptr) {
+        words->voice = {};
+        words->note_guest_zeroed();
+    }
     for (u32 i = 0; i < AxPbImage::kCount; ++i) {
         const u32 vpb = 0x805989A0u + i * 0x22Cu;
         const u32 pb = AxPbImage::kBase + i * AxPbImage::kStride;
         const u32 blob = 0x8058FCA0u + 0x3D00u + i * 0x40u;
         const u32 ring = AxPbImage::kRingBase + i * AxPbImage::kRingStride;
         c.mem_write32(vpb + 0x18u, i);
-        c.mem_write32(vpb + 0x30u, vpb + 0x34u);
+        word.set(vpb, AxVoiceWords::kRingPointer, vpb + 0x34u);
         c.mem_write32(vpb + 0x134u, blob);
-        c.mem_write32(vpb + 0x1Cu, 0x2000A4u);
+        word.set(vpb, AxVoiceWords::kFlags, 0x2000A4u);
         const u32 next = i == AxPbImage::kCount - 1u ? 0u : pb + AxPbImage::kStride;
         c.mem_write16(vpb + 0x138u, static_cast<u16>(next >> 16));
         c.mem_write16(vpb + 0x13Au, static_cast<u16>(next));
@@ -421,7 +432,8 @@ inline void quit(Cpu& c) {
 
 inline void install_engine(Cpu& cpu, Engine& engine) {
     cpu.install_hle(kInit, [&engine](Cpu& c) {
-        init(c, *engine.image, *engine.lists);
+        init(c, *engine.image, *engine.lists, engine.words);
+        if (engine.clear_output) engine.clear_output();
         return true;
     }, std::string("AX frame: AXInit"));
     cpu.install_hle(kQuit, [](Cpu& c) {

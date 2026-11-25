@@ -1,0 +1,44 @@
+{
+  "comment": [
+    "Component classes for tools/native/verify_native_runtime.py. First match wins; patterns are fnmatch globs on the",
+    "map's 'library:object.obj' names, case-insensitive. guest_machine = the class exists because of the GameCube",
+    "execution environment (translated code, the emulated CPU / memory, console OS and hardware models, and native",
+    "bodies that serve translated callers on guest registers and guest memory). The classification of an object is a",
+    "reading aid; the tool's Cpu& signature count is measured per object independently of it.",
+    "Classified 2026-11-17 from the link map of cpu/opt4 (object names only); refine when an object is read."
+  ],
+  "classes": [
+    { "name": "translated_guest_code", "guest_machine": true, "objects": ["shadow_recomp:*"] },
+    { "name": "guest_cpu_and_dispatch", "guest_machine": true, "objects": [
+        "shadow_runtime:cpu.obj", "shadow_runtime:native_guest_call.obj", "shadow_runtime:os_exception_entry.obj",
+        "shadow_runtime:indirect_call_trace.obj", "shadow_runtime:code_engine.obj", "shadow_native_execution:*",
+        "shadow_runtime:native_link_groups.obj", "shadow_runtime:measure_probes.obj", "shadow_runtime:savestate.obj" ] },
+    { "name": "guest_memory", "guest_machine": true, "objects": [
+        "shadow_runtime:flat_memory.obj", "shadow_runtime:guest_memory.obj", "shadow_runtime:guest_watch.obj",
+        "shadow_runtime:game_memory.obj", "shadow_runtime:heap_census.obj", "shadow_native_memory:*" ] },
+    { "name": "console_os_and_hardware", "guest_machine": true, "objects": [
+        "shadow_runtime:native_boot.obj", "shadow_runtime:native_bootstrap.obj", "shadow_runtime:native_ipl.obj",
+        "shadow_runtime:native_reset.obj", "shadow_runtime:native_trk.obj", "shadow_runtime:native_interrupts.obj",
+        "shadow_runtime:native_os_*.obj", "shadow_runtime:native_card.obj", "shadow_runtime:native_disc_error.obj",
+        "shadow_runtime:native_video.obj", "shadow_runtime:native_vi_wait.obj", "shadow_runtime:native_display.obj",
+        "shadow_runtime:native_gx_*.obj", "shadow_runtime:gx_texture_decode.obj",
+        "shadow_runtime:native_audio.obj", "shadow_runtime:native_audio_mixer.obj",
+        "shadow_runtime:native_ax_mix_alloc.obj", "shadow_runtime:native_axfx_effects.obj",
+        "shadow_runtime:native_mix_entries.obj", "shadow_runtime:native_driver_callbacks.obj" ] },
+    { "name": "native_owners_on_guest_state", "guest_machine": true, "objects": [
+        "shadow_runtime:native_*.obj", "shadow_runtime:*_intrinsic.obj", "shadow_runtime:chara_colli_bone.obj",
+        "shadow_runtime:system.obj", "shadow_runtime:gameplay_scheduler.obj", "shadow_runtime:gameplay_camera.obj",
+        "shadow_runtime:camera.obj", "shadow_runtime:game_errata.obj", "shadow_runtime:prs_ahead.obj",
+        "shadow_runtime:sound_arena.obj", "shadow_runtime:health_bar.obj", "shadow_runtime:menu_backgrounds.obj" ] },
+    { "name": "converted_waves_on_guest_state", "guest_machine": true, "objects": [
+        "shadow_runtime:wave_*.obj", "shadow_runtime:converted_install.obj" ] },
+    { "name": "renderer_lifted_from_rw", "guest_machine": false, "objects": ["shadow_render_lifted:*", "shadow_rwim:*"] },
+    { "name": "renderer_d3d12", "guest_machine": false, "objects": ["shadow_render:*", "shadow_d3d12ma:*", "shadow_runtime:plume_present.obj"] },
+    { "name": "native_game_libraries", "guest_machine": false, "objects": [
+        "shadow_lift:*", "shadow_motion:*", "shadow_msl:*", "shadow_assets:*", "shadow_mods:*" ] },
+    { "name": "host_platform_and_app", "guest_machine": false, "objects": [
+        "shadow_runtime:*", "shadow_main.obj", "host_isa_gate.obj" ] },
+    { "name": "toolchain_and_system", "guest_machine": false, "objects": [
+        "libcmt:*", "libcpmt:*", "libucrt:*", "libvcruntime:*", "*.dll", "*:*.dll" ] }
+  ]
+}
