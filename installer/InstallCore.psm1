@@ -47,7 +47,12 @@ function Find-Python3 {
 function Find-VisualStudio {
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
     if (-not (Test-Path -LiteralPath $vswhere)) { return $null }
-    return (& $vswhere -version '[18.0,19.0)' -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null | Select-Object -First 1)
+    # A released Visual Studio first; then the preview ("Insiders") channel, which vswhere leaves out unless asked.
+    foreach ($channel in @(@(), @('-prerelease'))) {
+        $path = & $vswhere -version '[18.0,19.0)' @channel -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null | Select-Object -First 1
+        if ($path) { return $path }
+    }
+    return $null
 }
 
 # The generator the release preset names (CMakePresets.json). Only a CMake that knows it can configure the build:
@@ -305,6 +310,14 @@ function Test-InstallFolder([string]$path, [string]$discRoot, [double]$assetByte
     if ($full -ieq $repo) { $r.Message = 'Install somewhere else than the source folder.'; return $r }
 
     $r.Existing = Test-Path -LiteralPath (Join-Path $full $script:GameExe) -PathType Leaf
+    # An update replaces these programs: one that is running cannot be replaced (the copy step would fail much later).
+    foreach ($program in $script:InstalledPrograms) {
+        $file = Join-Path $full $program
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
+        try { [System.IO.File]::Open($file, 'Open', 'ReadWrite', 'None').Dispose() }
+        catch [System.IO.IOException] { $r.Message = "$program is running from this folder. Close it, then check again."; return $r }
+        catch { $r.Message = "Cannot write to $program in this folder: $($_.Exception.Message)"; return $r }
+    }
     $r.NeededBytes = $assetBytes + 150MB
     if ($r.Existing -and (Test-Path -LiteralPath (Join-Path $full 'files'))) { $r.NeededBytes = 150MB }
 
@@ -398,6 +411,33 @@ function Read-LogTail([string]$log, [long]$offset) {
         $text = $reader.ReadToEnd()
         return @{ Text = $text; Offset = $stream.Length }
     } finally { $stream.Dispose() }
+}
+
+# What a failed step's log says went wrong, for the error message (the log has thousands of lines): the first error
+# line the step wrote from $offset on, the line after a "CMake Error at" (its text), and a hint for the known causes.
+function Get-StepFailureCause([string]$log, [long]$offset) {
+    $text = (Read-LogTail $log $offset).Text
+    if (-not $text) { return '' }
+    $lines = @($text -split "`r?`n")
+    $cause = ''
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -notmatch 'CMake Error|\b(?:fatal )?error\s+[A-Z]+\d+\s*:|^ERROR[ :]|Traceback \(most recent call last\)') { continue }
+        $cause = $lines[$i].Trim()
+        if ($cause -match '^CMake Error at ' -or $cause -match '^CMake Error:?$') {
+            $next = @($lines | Select-Object -Skip ($i + 1) | Where-Object { $_.Trim() } | Select-Object -First 1)
+            if ($next) { $cause = "$cause $($next[0].Trim())" }
+        }
+        break
+    }
+    $hint = ''
+    if ($text -match 'Could not create named generator') { $hint = 'This CMake does not know Visual Studio 2026: install CMake 4.2 or newer.' }
+    elseif ($text -match 'could not find any instance of Visual Studio|No CMAKE_CXX_COMPILER could be found') { $hint = "Visual Studio 2026 needs the 'Desktop development with C++' workload (Visual Studio Installer, Modify)." }
+    elseif ($text -match 'MSB8036|Windows SDK version .* was not found|No Windows SDK') { $hint = 'A Windows 10/11 SDK is missing: add one to Visual Studio 2026 in the Visual Studio Installer.' }
+    elseif ($text -match '\bC1060\b|\bC1076\b|\bC3859\b|out of memory|MemoryError') { $hint = 'The compiler ran out of memory: close other programs and select Retry.' }
+    elseif ($text -match 'There is not enough space on the disk|No space left|\bC1085\b|\bLNK1102\b|\bLNK1318\b') { $hint = "The drive of $($script:RepoRoot) is full: free some space and select Retry." }
+    elseif ($text -match 'ModuleNotFoundError|No module named') { $hint = 'This Python lacks a standard module: install Python 3 from python.org.' }
+    if ($cause.Length -gt 400) { $cause = $cause.Substring(0, 400) + '...' }
+    return (@($cause, $hint) | Where-Object { $_ }) -join ' '
 }
 
 # Build progress counts every source file the compiler reports, so the bar moves from the first second. A recompiled
@@ -603,6 +643,19 @@ function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$j
     try { New-Item -ItemType Directory -Force -Path $targetPath | Out-Null }
     catch { & $fail -1 "Cannot create $($targetPath): $($_.Exception.Message)"; return $false }
 
+    # The build writes about 1.5 GB next to this setup (measured: a full build tree), often on another drive than the
+    # install folder. Nothing to build again (the game is there from an earlier run of this package): no demand.
+    $buildNeeds = 2.5GB
+    if (-not (Test-Path -LiteralPath (Get-BuiltExe) -PathType Leaf)) {
+        try {
+            $buildDrive = New-Object System.IO.DriveInfo ([System.IO.Path]::GetPathRoot($script:RepoRoot))
+            if ($buildDrive.IsReady -and $buildDrive.AvailableFreeSpace -lt $buildNeeds) {
+                & $fail -1 "Not enough space to build the game: drive $($buildDrive.Name) needs $(Format-Size $buildNeeds) free for the build files in $($script:RepoRoot), $(Format-Size $buildDrive.AvailableFreeSpace) free."
+                return $false
+            }
+        } catch {}
+    }
+
     $assetBytes = Get-FolderSize (Join-Path $disc.Root 'files')
     if ($jobs -lt 1) { $jobs = Get-InstallJobs }
     $steps = @(Get-BuildSteps $disc.Root $python $jobs) + @(Get-InstallSteps $disc.Root $targetPath)
@@ -611,6 +664,7 @@ function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$j
         $step = $steps[$i]
         & $OnEvent @{ type = 'stage'; index = $i; name = $script:StageNames[$i]; state = 'run' }
         $offset = (Get-Item -LiteralPath $log).Length
+        $stepStart = $offset
         $process = Start-Step $step $log
         $ticks = 0
         while ($true) {
@@ -633,7 +687,9 @@ function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$j
             if ($exited) { break }
         }
         if (-not (Test-StepSucceeded $step $process)) {
-            & $fail $i "$($script:StageNames[$i]) failed (exit code $($process.ExitCode))."
+            $cause = ''
+            try { $cause = Get-StepFailureCause $log $stepStart } catch {}
+            & $fail $i ("$($script:StageNames[$i]) failed (exit code $($process.ExitCode))." + $(if ($cause) { " $cause" } else { '' }))
             return $false
         }
         & $OnEvent @{ type = 'stage'; index = $i; name = $script:StageNames[$i]; state = 'ok' }
@@ -676,7 +732,7 @@ function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$j
 Export-ModuleMember -Function Get-RepoRoot, Get-BuiltExe, Get-DefaultInstallFolder, Format-Size, Test-Prerequisites,
     Resolve-DiscFolder, Test-DiscFolder, Get-JapaneseVoiceNames, Test-JapaneseDiscFolder, Copy-JapaneseVoices,
     Set-SpokenLanguage, Get-FolderSize, Test-InstallFolder, Get-InstallJobs, Get-PrebuiltFolder,
-    Get-BuildSteps, Get-InstallSteps, Start-Step, Test-StepSucceeded, Stop-Step, Read-LogTail, New-BuildProgress,
+    Get-BuildSteps, Get-InstallSteps, Start-Step, Test-StepSucceeded, Stop-Step, Read-LogTail, Get-StepFailureCause, New-BuildProgress,
     Update-BuildProgress, Get-PrebuiltUsed, Write-InstallInfo, Write-InstallManifest,
     Get-SourceRevision, Get-BuildConfiguration, New-GameShortcuts,
     Invoke-GameInstall

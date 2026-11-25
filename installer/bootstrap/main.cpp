@@ -118,7 +118,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     std::error_code ec;
     const fs::path marker = target / L".unpacked";
     const fs::path setup = target / L"NukkoroSetup.exe";
-    const bool ready = fs::exists(marker, ec) && fs::exists(setup, ec) && fs::exists(target / L"installer" / L"Backend.ps1", ec);
+    // The marker names the build of this setup exe: a folder unpacked by another build of the same version (an earlier
+    // download) is unpacked again over itself, instead of running that build's files.
+    const std::string stamp = "unpacked " __DATE__ " " __TIME__;
+    std::string found;
+    { std::ifstream in(marker); std::getline(in, found); }
+    const bool ready = found == stamp && fs::exists(setup, ec) && fs::exists(target / L"installer" / L"Backend.ps1", ec);
     if (!ready) {
         HWND progress = show_progress();
         fs::create_directories(target, ec);
@@ -131,7 +136,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
         if (!run_hidden(quoted(tar) + L" -xf package.zip --strip-components=1", target))
             return fail(L"Could not unpack the setup. This Windows may be too old: Windows 10 version 1803 or newer is needed.");
         fs::remove(package, ec);
-        std::ofstream(marker) << "unpacked\n";
+        std::ofstream(marker) << stamp << "\n";
         DestroyWindow(progress);
     }
     if (extract_only) return 0;
