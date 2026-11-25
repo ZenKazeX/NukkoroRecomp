@@ -4687,7 +4687,8 @@ if(SHADOW_BUILD_TESTS)
     endif()
 endif()
 
-# The button mapping configurator: a small program installed beside the game, writing the pad.cfg the game reads.
+# The settings program (ShadowPadConfig.exe, "Settings" in the Start menu): installed beside the game, it edits the
+# display.cfg, options.cfg, pad.cfg and controls.cfg the game reads at start (docs/PC_SETTINGS_FILES.md).
 if(WIN32 AND TARGET ShadowTheHedgehog AND SHADOW_PREBUILT_USED)
     # The prebuilt configurator, put where the build would have written it.
     add_custom_target(ShadowPadConfig ALL
@@ -4698,9 +4699,13 @@ if(WIN32 AND TARGET ShadowTheHedgehog AND SHADOW_PREBUILT_USED)
         COMMENT "Using the prebuilt ShadowPadConfig.exe"
         VERBATIM)
 elseif(WIN32 AND (TARGET ShadowTheHedgehog OR SHADOW_PREBUILT_EXPORT))
+    # The game's own parsers and line-preserving writer are compiled in, so the program reads and writes the files as
+    # the game does.
     add_executable(ShadowPadConfig WIN32 tools/padconfig/main.cpp tools/padconfig/pad_config.cpp tools/padconfig/controller_view.cpp tools/padconfig/padconfig.rc
-                   runtime/lift/peripheral/gamepad_binding.cpp)
-    target_include_directories(ShadowPadConfig PRIVATE runtime/lift tools/padconfig)
+                   tools/padconfig/settings_model.cpp runtime/src/gekko/config_file.cpp
+                   runtime/lift/peripheral/gamepad_binding.cpp runtime/lift/peripheral/action_map.cpp
+                   runtime/lift/peripheral/controls.cpp)
+    target_include_directories(ShadowPadConfig PRIVATE runtime/include runtime/lift tools/padconfig)
     target_compile_features(ShadowPadConfig PRIVATE cxx_std_20)
     target_link_libraries(ShadowPadConfig PRIVATE comctl32 gdiplus)
     set_source_files_properties(tools/padconfig/padconfig.rc PROPERTIES OBJECT_DEPENDS
@@ -4713,8 +4718,8 @@ elseif(WIN32 AND (TARGET ShadowTheHedgehog OR SHADOW_PREBUILT_EXPORT))
     endif()
     if(SHADOW_BUILD_TESTS)
         add_executable(pad_config_tests runtime/tests/pad_config_tests.cpp tools/padconfig/pad_config.cpp
-                       runtime/lift/peripheral/gamepad_binding.cpp)
-        target_include_directories(pad_config_tests PRIVATE runtime/lift runtime/tests tools/padconfig)
+                       runtime/src/gekko/config_file.cpp runtime/lift/peripheral/gamepad_binding.cpp)
+        target_include_directories(pad_config_tests PRIVATE runtime/include runtime/lift runtime/tests tools/padconfig)
         target_compile_features(pad_config_tests PRIVATE cxx_std_20)
         if(MSVC)
             target_compile_options(pad_config_tests PRIVATE /W4 /permissive-)
@@ -4722,6 +4727,22 @@ elseif(WIN32 AND (TARGET ShadowTheHedgehog OR SHADOW_PREBUILT_EXPORT))
         endif()
         add_test(NAME pad_config_tests COMMAND pad_config_tests)
         set_tests_properties(pad_config_tests PROPERTIES TIMEOUT 60 LABELS "menu")
+        # The settings program's files against the game's own loaders (display.cpp's parse_display_file,
+        # pc_settings.cpp, action_map.cpp, gamepad_binding.cpp from shadow_lift): round trips keep other lines, only
+        # changed keys are written, ranges are enforced, the defaults are the game's.
+        add_executable(configurator_settings_tests runtime/tests/configurator_settings_tests.cpp
+                       tools/padconfig/settings_model.cpp tools/padconfig/pad_config.cpp
+                       runtime/src/gekko/config_file.cpp runtime/src/gekko/pc_settings.cpp
+                       runtime/src/gekko/display.cpp runtime/src/gekko/camera.cpp runtime/src/gekko/host_jobs.cpp)
+        target_include_directories(configurator_settings_tests PRIVATE runtime/include runtime/lift runtime/tests tools/padconfig)
+        target_link_libraries(configurator_settings_tests PRIVATE shadow_lift)
+        target_compile_features(configurator_settings_tests PRIVATE cxx_std_20)
+        if(MSVC)
+            target_compile_options(configurator_settings_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET configurator_settings_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME configurator_settings_tests COMMAND configurator_settings_tests)
+        set_tests_properties(configurator_settings_tests PROPERTIES TIMEOUT 60 LABELS "menu")
     endif()
 endif()
 

@@ -1,9 +1,13 @@
 #include "pad_config.h"
 
+#include <cctype>
 #include <cstdio>
 #include <fstream>
 #include <iterator>
 #include <system_error>
+#include <vector>
+
+#include "gekko/config_file.h"
 
 namespace padconfig {
 
@@ -97,8 +101,66 @@ LoadResult load_binding(const std::filesystem::path& path, GamepadBinding& bindi
     return LoadResult::Loaded;
 }
 
+std::string update_binding_text(const std::string& text, const GamepadBinding& old, const GamepadBinding& now) {
+    std::vector<gekko::config_file::KeyValue> values;
+    char value[16];
+    for (const Control& c : kControls) {
+        if (old.*c.field == now.*c.field) continue;
+        std::snprintf(value, sizeof(value), "0x%04X", static_cast<unsigned>(now.*c.field));
+        values.push_back({{c.key}, value});
+    }
+    if (old.trigger_threshold != now.trigger_threshold)
+        values.push_back({{"trigger_threshold"}, std::to_string(static_cast<unsigned>(now.trigger_threshold))});
+    if (old.swap_sticks != now.swap_sticks) values.push_back({{"swap_sticks"}, now.swap_sticks ? "1" : "0"});
+    if (old.button_style != now.button_style) values.push_back({{"button_style"}, sp::button_style_name(now.button_style)});
+    if (values.empty()) return text;
+    const std::string written = gekko::config_file::rewrite(text, values);
+    // A changed button's line keeps its comment; when that comment is the old button's name (as this program writes
+    // it), it names the new one instead.
+    std::string out;
+    std::size_t begin = 0;
+    while (begin < written.size()) {
+        std::size_t end = written.find('\n', begin);
+        const std::size_t next = end == std::string::npos ? written.size() : end + 1;
+        if (end == std::string::npos) end = written.size();
+        std::string line = written.substr(begin, end - begin);
+        const std::size_t hash = line.find('#'), eq = line.find('=');
+        if (hash != std::string::npos && eq != std::string::npos && eq < hash) {
+            std::string key = line.substr(0, eq);
+            key.erase(0, key.find_first_not_of(" \t"));
+            key.erase(key.find_last_not_of(" \t") + 1);
+            for (char& ch : key) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+            for (const Control& c : kControls) {
+                if (key != c.key || old.*c.field == now.*c.field) continue;
+                std::size_t body_end = line.size();
+                if (body_end > hash && line[body_end - 1] == '\r') --body_end;
+                std::string comment = line.substr(hash + 1, body_end - hash - 1);
+                comment.erase(0, comment.find_first_not_of(" \t"));
+                comment.erase(comment.find_last_not_of(" \t") + 1);
+                if (comment == button_names(old.*c.field))
+                    line = line.substr(0, hash) + "# " + button_names(now.*c.field) + line.substr(body_end);
+            }
+        }
+        out += line;
+        out.append(written, end, next - end);
+        begin = next;
+    }
+    return out;
+}
+
 bool save_binding(const std::filesystem::path& path, const GamepadBinding& binding, std::string* error) {
-    const std::string text = format_binding(binding);
+    // An existing file the game reads keeps its comments and other lines: only the keys whose value changes are
+    // written. A missing file, or one the game refuses (it would not start with it), is written whole.
+    std::string text = format_binding(binding);
+    {
+        std::error_code ec;
+        if (std::filesystem::exists(path, ec)) {
+            std::ifstream in(path, std::ios::binary);
+            const std::string current{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+            GamepadBinding old;
+            if (in && sp::parse_gamepad_binding(current, old, nullptr)) text = update_binding_text(current, old, binding);
+        }
+    }
     GamepadBinding check;
     std::string parse_error;
     if (!sp::parse_gamepad_binding(text, check, &parse_error) || !same(check, binding)) {

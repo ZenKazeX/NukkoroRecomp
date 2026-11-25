@@ -56,8 +56,13 @@ enum class LoadResult { Loaded, Absent, Invalid };
 // defaults are returned and the file is left alone.
 LoadResult load_binding(const std::filesystem::path& path, GamepadBinding& binding, std::string* error);
 
-// Writes beside the target and renames over it, so a failed save leaves the old file whole. Refuses anything the
-// game's parser would not read back as exactly this binding.
+// `text` (a pad.cfg the game reads as `old`) with the keys whose value differs in `now` written in place; every other
+// line and comment stays. A changed button's comment naming its old button (as format_binding writes it) is updated.
+std::string update_binding_text(const std::string& text, const GamepadBinding& old, const GamepadBinding& now);
+
+// Writes beside the target and renames over it, so a failed save leaves the old file whole. An existing file the game
+// reads keeps its other lines and comments (update_binding_text); a missing or unreadable one is written whole.
+// Refuses anything the game's parser would not read back as exactly this binding.
 bool save_binding(const std::filesystem::path& path, const GamepadBinding& binding, std::string* error);
 
 }  // namespace padconfig
