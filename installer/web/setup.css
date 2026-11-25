@@ -104,11 +104,13 @@ body:not(.has-logo) #text-logo { display: block; }
 .tools .mark { width: 18px; text-align: center; }
 .tools .ok { color: var(--ok); } .tools .bad { color: var(--bad); }
 .tools a { color: var(--accent); cursor: pointer; }
+.tools .busy { color: var(--muted); }
+.tools .tool-detail { margin: 0 0 3px 26px; font-size: 13px; line-height: 17px; color: var(--muted); display: block; }
 .card { border-left: 2px solid #ba422f; background: #25161488; padding: 8px 14px; margin-top: 12px; font-size: 15px; line-height: 21px; }
 .card strong { color: var(--text-strong); }
 .card.caution { border-left-color: var(--accent); }
 /* Components: the tools list and the space line share the last 6 px of the content area. */
-.tools.compact { margin-top: 7px; } .card.compact { margin-top: 9px; }
+.tools.compact { margin-top: 7px; max-height: 158px; overflow-y: auto; } .card.compact { margin-top: 9px; }
 h1 small.optional { color: var(--muted); font-size: 16px; font-weight: normal; margin-left: 8px; }
 
 .summary { display: grid; grid-template-columns: 120px 1fr; gap: 6px 14px; margin-top: 10px; font-size: 16px; line-height: 22px; }

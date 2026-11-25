@@ -1,4 +1,4 @@
-# Checks of the installer's own logic that need no build: run  powershell -File installer\tests\Test-InstallCore.ps1
+﻿# Checks of the installer's own logic that need no build: run  powershell -File installer\tests\Test-InstallCore.ps1
 # Exit code 0 when every check passes. Works in a scratch folder under %TEMP% and removes it.
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'InstallCore.psm1') -Force
@@ -61,6 +61,42 @@ try {
     $b = Invoke-Backend prereqs
     $parsed = $null; try { $parsed = $b.Out[-1] | ConvertFrom-Json } catch {}
     Check 'backend: prereqs lists three tools' ($b.Exit -eq 0 -and @($parsed).Count -eq 3) "exit $($b.Exit): $($b.Out -join ' ')"
+    # --- fetching a missing tool: download, signature check, start, wait (a local server stands in for the vendor) ---
+    $plans = @('vs', 'cmake', 'python', 'webview2' | ForEach-Object { Get-ToolPlan $_ })
+    Check 'tools: every tool has a plan with an https address or an installer on this PC' (@($plans | Where-Object { $_ -and $_.Text -and ($_.Modify -or $_.Url -like 'https://*') }).Count -eq 4)
+    Check 'tools: an unknown tool has none' ($null -eq (Get-ToolPlan 'other'))
+    $signed = Join-Path $env:SystemRoot 'System32\whoami.exe'        # signed by Microsoft, harmless to run
+    $unsigned = Join-Path $scratch 'unsigned.exe'; [System.IO.File]::WriteAllBytes($unsigned, [System.IO.File]::ReadAllBytes($signed)[0..4095])
+    $port = 0
+    $listener = $null
+    foreach ($candidate in 47811..47830) { try { $listener = New-Object System.Net.HttpListener; $listener.Prefixes.Add("http://127.0.0.1:$candidate/"); $listener.Start(); $port = $candidate; break } catch { $listener = $null } }
+    if ($listener) {
+        $server = [powershell]::Create().AddScript({ param($listener, $signed, $unsigned)
+            while ($listener.IsListening) {
+                try { $context = $listener.GetContext() } catch { break }
+                $file = if ($context.Request.Url.AbsolutePath -eq '/signed.exe') { $signed } elseif ($context.Request.Url.AbsolutePath -eq '/unsigned.exe') { $unsigned } else { $null }
+                if ($file) { $bytes = [System.IO.File]::ReadAllBytes($file); $context.Response.OutputStream.Write($bytes, 0, $bytes.Length) } else { $context.Response.StatusCode = 404 }
+                $context.Response.Close()
+            } }).AddArgument($listener).AddArgument($signed).AddArgument($unsigned)
+        $pending = $server.BeginInvoke()
+        try {
+            $plan = [pscustomobject]@{ Key = 't'; Name = 'Test tool'; Url = "http://127.0.0.1:$port/signed.exe"; File = 'nukkoro-test-signed.exe'; Signer = 'Microsoft Corporation'; Arguments = '/?'; Modify = $null; Text = 't' }
+            $r = Install-Tool 't' $plan
+            Check 'tools: a file signed by the named vendor is started and waited for' ($r.Ok -and $null -ne $r.ExitCode) $r.Message
+            $plan.Signer = 'Python Software Foundation'
+            $r = Install-Tool 't' $plan
+            Check 'tools: a file signed by somebody else is refused and deleted' (-not $r.Ok -and $r.Message -match 'not signed by Python Software Foundation' -and -not (Test-Path (Join-Path $env:TEMP 'NukkoroSetup\nukkoro-test-signed.exe'))) $r.Message
+            $plan.Signer = 'Microsoft Corporation'; $plan.Url = "http://127.0.0.1:$port/unsigned.exe"; $plan.File = 'nukkoro-test-unsigned.exe'
+            $r = Install-Tool 't' $plan
+            Check 'tools: an unsigned file is refused and deleted' (-not $r.Ok -and $r.Message -match 'not signed' -and -not (Test-Path (Join-Path $env:TEMP 'NukkoroSetup\nukkoro-test-unsigned.exe'))) $r.Message
+            $plan.Url = "http://127.0.0.1:$port/missing.exe"
+            $r = Install-Tool 't' $plan
+            Check 'tools: a failed download is reported' (-not $r.Ok -and $r.Message -match 'download of Test tool failed') $r.Message
+        } finally { $listener.Stop(); $server.Dispose(); Remove-Item (Join-Path $env:TEMP 'NukkoroSetup\nukkoro-test-*.exe') -Force -ErrorAction SilentlyContinue }
+    } else { Check 'tools: a local test server could be started' $false }
+    $b = Invoke-Backend get-tool other
+    $parsed = $null; try { $parsed = $b.Out[-1] | ConvertFrom-Json } catch {}
+    Check 'backend: get-tool refuses an unknown tool' ($parsed -and -not $parsed.ok -and $parsed.message -match 'Unknown tool') "exit $($b.Exit): $($b.Out -join ' ')"
 } finally {
     Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
 }

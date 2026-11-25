@@ -1,5 +1,6 @@
 # The setup window's backend (called by NukkoroSetup.exe). Every command prints JSON on stdout:
-#   prereqs                         -> [ {name, ok, detail, url} ... ]
+#   prereqs                         -> [ {name, ok, detail, url, key, fix} ... ]
+#   get-tool <vs|cmake|python|webview2> -> {ok, message, exitCode}  (downloads the vendor's installer, opens it, waits)
 #   defaults                        -> {target}
 #   check-disc <path>               -> {ok, message, root, gameId, sha1, assetBytes}
 #   check-target <path> <discRoot>  -> {ok, message, path, existing, neededBytes, freeBytes}
@@ -28,8 +29,14 @@ function Out-Json($value) { [Console]::Out.WriteLine(($value | ConvertTo-Json -C
 try {
     switch ($Command) {
         'prereqs' {
-            $list = @(Test-Prerequisites | ForEach-Object { [ordered]@{ name = $_.Name; ok = [bool]$_.Ok; detail = [string]$_.Detail; url = $_.Url } })
+            $list = @(Test-Prerequisites | ForEach-Object { $plan = if ($_.Ok) { $null } else { Get-ToolPlan $_.Key }
+                [ordered]@{ name = $_.Name; ok = [bool]$_.Ok; detail = [string]$_.Detail; url = $_.Url; key = $_.Key; fix = $(if ($plan) { $plan.Text } else { '' }) } })
             [Console]::Out.WriteLine((ConvertTo-Json -InputObject $list -Compress))
+        }
+        'get-tool' {
+            # Opens the vendor's installer for a missing tool (InstallCore.psm1 "getting a missing tool") and waits for it.
+            $result = Install-Tool $A
+            Out-Json ([ordered]@{ ok = [bool]$result.Ok; message = $result.Message; exitCode = $result.ExitCode })
         }
         'defaults' { Out-Json ([ordered]@{ target = Get-DefaultInstallFolder }) }
         'check-disc' {

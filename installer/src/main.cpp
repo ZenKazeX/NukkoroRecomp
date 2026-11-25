@@ -536,7 +536,8 @@ public:
         } else if (command == L"backend") {
             const auto fields = Split(payload, L'\t');
             const auto& name = fields[0];
-            const size_t expected = name == L"prereqs" || name == L"defaults" ? 1 : name == L"check-disc" ? 2 : name == L"check-target" || name == L"check-jpdisc" ? 3 : 0;
+            const bool tool = name == L"get-tool" && fields.size() == 2 && (fields[1] == L"vs" || fields[1] == L"cmake" || fields[1] == L"python");
+            const size_t expected = name == L"prereqs" || name == L"defaults" ? 1 : name == L"check-disc" || tool ? 2 : name == L"check-target" || name == L"check-jpdisc" ? 3 : 0;
             if (expected == 0 || fields.size() != expected) { Reply(id, L"\"error\":\"Unknown backend request.\""); return; }
             RunBackend(id, fields);
         } else if (command == L"install") {
@@ -573,14 +574,35 @@ public:
         HRESULT hr = GetAvailableCoreWebView2BrowserVersionString(nullptr, &version);
         if (version) CoTaskMemFree(version);
         if (FAILED(hr) || !version) {
+            // The setup can fetch it: the backend downloads Microsoft's own installer, checks its signature and runs it.
             const int answer = MessageBoxW(window,
                 L"This setup needs the Microsoft Edge WebView2 Runtime, which is missing.\n\n"
-                L"Open Microsoft's download page now? You can also install from the console:\n"
+                L"Download it from Microsoft (about 2 MB) and install it now?\n\n"
+                L"You can also install from the console:\n"
                 L"Install.cmd -DiscPath <disc folder> -InstallPath <install folder>", Title, MB_YESNO | MB_ICONWARNING);
-            if (answer == IDYES) ShellExecuteW(window, L"open", L"https://developer.microsoft.com/microsoft-edge/webview2/", nullptr, nullptr, SW_SHOWNORMAL);
-            exitCode = 3;
-            PostMessageW(window, CloseWindowMessage, 0, 0);
-            return;
+            bool installed = false;
+            if (answer == IDYES) {
+                PROCESS_INFORMATION process{};
+                HANDLE readPipe = nullptr;
+                if (StartPiped(PowerShellLine(installer, {L"get-tool", L"webview2"}), installer, nullptr, process, readPipe)) {
+                    char buffer[4096];
+                    DWORD read = 0;
+                    while (ReadFile(readPipe, buffer, sizeof(buffer), &read, nullptr) && read) {}
+                    WaitForSingleObject(process.hProcess, INFINITE);
+                    CloseHandle(process.hProcess); CloseHandle(process.hThread); CloseHandle(readPipe);
+                }
+                LPWSTR now = nullptr;
+                installed = SUCCEEDED(GetAvailableCoreWebView2BrowserVersionString(nullptr, &now)) && now;
+                if (now) CoTaskMemFree(now);
+                if (!installed && MessageBoxW(window, L"The WebView2 Runtime could not be installed from here.\n\nOpen Microsoft's download page?",
+                                              Title, MB_YESNO | MB_ICONWARNING) == IDYES)
+                    ShellExecuteW(window, L"open", L"https://developer.microsoft.com/microsoft-edge/webview2/", nullptr, nullptr, SW_SHOWNORMAL);
+            }
+            if (!installed) {
+                exitCode = 3;
+                PostMessageW(window, CloseWindowMessage, 0, 0);
+                return;
+            }
         }
         PWSTR appData = nullptr;
         fs::path userData;

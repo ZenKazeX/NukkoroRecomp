@@ -33,7 +33,9 @@ your disc, so please keep it to yourself.
 - [Visual Studio 2026](https://visualstudio.microsoft.com/downloads/) with the *Desktop development with C++* workload
 - CMake 4.2 or newer (older versions do not know Visual Studio 2026). The Visual Studio workload above installs one (*C++ CMake tools for Windows*) and the setup uses it; a separate [CMake](https://cmake.org/download/) install works too
 - [Python 3](https://www.python.org/downloads/)
-- The Microsoft Edge WebView2 Runtime (included in Windows 11; on Windows 10 the setup offers the download)
+- The Microsoft Edge WebView2 Runtime (included in Windows 11; on Windows 10 the setup offers to download and install it)
+
+You do not have to install the tools first: when Visual Studio, CMake or Python is missing, the setup's Components page shows *Install it for me* beside it. That downloads the vendor's own installer from the vendor's address (Microsoft, python.org), checks that the file is signed by that vendor and opens it with the needed parts selected; you confirm in that installer. From the console, `Install.cmd -DiscPath ... -InstallPath ... -GetTools` does the same.
 
 ## Install
 

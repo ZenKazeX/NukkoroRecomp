@@ -42,7 +42,7 @@ const state = {
   speakJapanese: true,
   target: { path: '', result: null, checking: false },
   launch: true, desktop: true, startMenu: true,
-  prereqs: null,
+  prereqs: null, toolBusy: '',
   phase: 'review',            // review | running | complete | failed | cancelled
   progress: 0, stageIndex: 0, stageName: '', log: '', error: '', logPath: '', cancelling: false,
 };
@@ -272,7 +272,10 @@ function renderComponents() {
   const tools = state.prereqs === null
     ? '<div class="busy">Checking the build tools...</div>'
     : state.prereqs.map(p => `<div><span class="mark ${p.ok ? 'ok' : 'bad'}">${p.ok ? '✔' : '✖'}</span><span>${escapeText(p.name)}</span>` +
-        (p.ok ? '' : ` <a data-url="${escapeText(p.url)}">Get it</a>`) + '</div>').join('');
+        (p.ok ? '' : (state.toolBusy === p.key ? ' <span class="busy">its installer is open: finish there...</span>'
+          : (p.fix && !state.toolBusy ? ` <a data-tool="${escapeText(p.key)}">Install it for me</a>` : '') +
+            (p.url ? ` <a data-url="${escapeText(p.url)}">Website</a>` : ''))) + '</div>' +
+        (p.ok || !p.detail ? '' : `<div class="tool-detail">${escapeText(p.detail)}</div>`)).join('');
   const assets = (discOk() ? state.disc.result.assetBytes : 0) + (jpUsed() && state.jp.result ? state.jp.result.bytes || 0 : 0);
   content.innerHTML = `
     <h1>Components</h1>
@@ -280,11 +283,32 @@ function renderComponents() {
     ${check('desktop', 'Desktop shortcut')}
     ${check('startMenu', 'Start menu shortcut')}
     <div class="tools compact"><strong>Build tools</strong> ${prereqsOk() ? '' : '<a id="recheck">Check again</a>'}${tools}</div>
-    <div class="card compact"><strong>Space:</strong> ${assets ? size(assets + 150 * 1024 ** 2) : '-'} in the install folder, plus about 1.3 GB of build files next to this setup.</div>`;
+    ${prereqsOk() || state.prereqs === null ? `<div class="card compact"><strong>Space:</strong> ${assets ? size(assets + 150 * 1024 ** 2) : '-'} in the install folder, plus about 1.3 GB of build files next to this setup.</div>` : ''}`;
   bindChecks();
   content.querySelectorAll('a[data-url]').forEach(a => a.addEventListener('click', () => native.request('open-url', a.dataset.url).catch(() => {})));
+  content.querySelectorAll('a[data-tool]').forEach(a => a.addEventListener('click', () => getTool(a.dataset.tool)));
   const recheck = $('#recheck');
   if (recheck) recheck.addEventListener('click', checkPrereqs);
+}
+// "Install it for me": says what will be downloaded and opened, then the backend fetches the vendor's installer,
+// checks its signature and opens it; the tools are checked again when that installer closes.
+async function getTool(key) {
+  const tool = (state.prereqs || []).find(p => p.key === key);
+  if (!tool || !tool.fix || state.toolBusy) return;
+  const go = await showDialog(`Install ${tool.name}?`, tool.fix, [{ label: 'Not now', value: false }, { label: 'Download and open', value: true }]);
+  if (!go) return;
+  state.toolBusy = key;
+  if (state.step === 4) render();
+  let failure = '';
+  try {
+    const result = await native.backend('get-tool', key);
+    if (!result.ok) failure = result.message;
+  } catch (e) { failure = e.message; }
+  state.toolBusy = '';
+  await checkPrereqs();
+  if (failure) showDialog(tool.name, failure, [{ label: 'OK' }]);
+  else if (!prereqsOk() && (state.prereqs || []).some(p => p.key === key && !p.ok))
+    showDialog(tool.name, 'The installer has closed, but the tool is still not found. If the installation is still running, wait for it and select Check again.', [{ label: 'OK' }]);
 }
 function renderReview() {
   const options = [state.desktop && 'Desktop shortcut', state.startMenu && 'Start menu shortcut', state.launch && 'Launch after installation'].filter(Boolean);

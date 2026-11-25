@@ -40,7 +40,106 @@ function Find-Python3 {
             if ($answer -match '^3 (.+)$') { return $Matches[1].Trim() }
         } catch {}
     }
+    # A Python that is installed but not on this process's PATH: one installed a moment ago (the PATH of a running
+    # program does not change), or one installed without "Add python.exe to PATH". The registry names them.
+    $installed = @()
+    foreach ($hive in 'HKCU:\Software\Python\PythonCore', 'HKLM:\Software\Python\PythonCore') {
+        foreach ($key in @(Get-ChildItem -Path $hive -ErrorAction SilentlyContinue)) {
+            if ($key.PSChildName -notmatch '^3\.(\d+)') { continue }
+            $minor = [int]$Matches[1]
+            $path = (Get-ItemProperty -Path (Join-Path $key.PSPath 'InstallPath') -ErrorAction SilentlyContinue).'(default)'
+            if ($path) { $installed += [pscustomobject]@{ Minor = $minor; Exe = Join-Path $path 'python.exe' } }
+        }
+    }
+    foreach ($candidate in ($installed | Sort-Object Minor -Descending)) {
+        if (-not (Test-Path -LiteralPath $candidate.Exe -PathType Leaf)) { continue }
+        try {
+            $answer = & $candidate.Exe -c 'import sys; print(sys.version_info[0], sys.executable)' 2>$null | Select-Object -First 1
+            if ($answer -match '^3 (.+)$') { return $Matches[1].Trim() }
+        } catch {}
+    }
     return $null
+}
+
+# Any Visual Studio 2026 on this PC, with or without the C++ tools: its install folder, or $null.
+function Find-AnyVisualStudio {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (-not (Test-Path -LiteralPath $vswhere)) { return $null }
+    return (& $vswhere -version '[18.0,19.0)' -prerelease -products * -property installationPath 2>$null | Select-Object -First 1)
+}
+
+# ---- getting a missing tool ------------------------------------------------------
+#
+# The setup can fetch a missing tool for the player: it downloads the vendor's own installer from the vendor's own
+# address, checks that the file is signed by that vendor, and opens it. The vendor's installer shows its own window
+# and licence; nothing is installed silently.
+
+$script:CppWorkload = 'Microsoft.VisualStudio.Workload.NativeDesktop'
+$script:Tools = @{
+    'vs'       = @{ Name = 'Visual Studio 2026 Community'; Url = 'https://aka.ms/vs/18/stable/vs_community.exe'; File = 'vs_community.exe'
+                    Signer = 'Microsoft Corporation'; Arguments = "--add $script:CppWorkload --includeRecommended --wait" }
+    'python'   = @{ Name = 'Python 3.13'; Url = 'https://www.python.org/ftp/python/3.13.9/python-3.13.9-amd64.exe'; File = 'python-3.13.9-amd64.exe'
+                    Signer = 'Python Software Foundation'; Arguments = 'PrependPath=1 Include_launcher=1' }
+    'webview2' = @{ Name = 'Microsoft Edge WebView2 Runtime'; Url = 'https://go.microsoft.com/fwlink/p/?LinkId=2124703'; File = 'MicrosoftEdgeWebview2Setup.exe'
+                    Signer = 'Microsoft Corporation'; Arguments = '/install' }
+}
+
+# What "Install it for me" does for a tool, in words the setup window shows before it starts.
+function Get-ToolPlan([string]$key) {
+    if ($key -eq 'cmake') { $key = 'vs' }   # CMake comes with Visual Studio's C++ workload
+    if (-not $script:Tools.ContainsKey($key)) { return $null }
+    $tool = $script:Tools[$key]
+    $plan = [pscustomobject]@{ Key = $key; Name = $tool.Name; Url = $tool.Url; File = $tool.File; Signer = $tool.Signer
+                               Arguments = $tool.Arguments; Modify = $null; Text = '' }
+    if ($key -eq 'vs') {
+        $existing = Find-AnyVisualStudio
+        $installer = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\setup.exe'
+        if ($existing -and (Test-Path -LiteralPath $installer -PathType Leaf)) {
+            $plan.Modify = $installer
+            $plan.Arguments = "modify --installPath `"$existing`" --add $script:CppWorkload --includeRecommended"
+            $plan.Text = "Opens the Visual Studio Installer to add 'Desktop development with C++' (it brings CMake) to the Visual Studio 2026 in $existing. Confirm there with Modify."
+            return $plan
+        }
+        $plan.Text = "Downloads Microsoft's Visual Studio 2026 Community installer (about 6 MB, from aka.ms) and opens it with 'Desktop development with C++' selected (it brings CMake). The installer then downloads several GB. Microsoft's licence terms apply; confirm there with Install."
+    } elseif ($key -eq 'python') {
+        $plan.Text = "Downloads Python 3.13 (about 27 MB, from python.org) and opens its installer with 'Add python.exe to PATH' selected. Confirm there with Install Now."
+    } else {
+        $plan.Text = "Downloads Microsoft's WebView2 Runtime installer (about 2 MB) and runs it."
+    }
+    return $plan
+}
+
+# Downloads (unless the tool's own installer is already on this PC), checks the signature, opens the installer and
+# waits for it. Returns Ok / Message; whether the tool is there afterwards is the prerequisite check's job.
+function Install-Tool([string]$key, $plan = $null) {
+    $r = [pscustomobject]@{ Ok = $false; Message = ''; ExitCode = $null }
+    if (-not $plan) { $plan = Get-ToolPlan $key }   # a test passes its own plan
+    if (-not $plan) { $r.Message = "Unknown tool: $key"; return $r }
+    $program = $plan.Modify
+    if (-not $program) {
+        $folder = Join-Path $env:TEMP 'NukkoroSetup'
+        New-Item -ItemType Directory -Force -Path $folder | Out-Null
+        $program = Join-Path $folder $plan.File
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+            $previous = $ProgressPreference; $ProgressPreference = 'SilentlyContinue'
+            try { Invoke-WebRequest -Uri $plan.Url -OutFile $program -UseBasicParsing } finally { $ProgressPreference = $previous }
+        } catch { $r.Message = "The download of $($plan.Name) failed: $($_.Exception.Message) Check the internet connection, or get it from the website."; return $r }
+        $signature = Get-AuthenticodeSignature -LiteralPath $program
+        $subject = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { '' }
+        if ($signature.Status -ne 'Valid' -or $subject -notmatch ('(^|,\s*)O=' + [regex]::Escape($plan.Signer) + '(,|$)')) {
+            Remove-Item -LiteralPath $program -Force -ErrorAction SilentlyContinue
+            $r.Message = "The downloaded file is not signed by $($plan.Signer) ($($signature.Status)); it was deleted and not started."; return $r
+        }
+    }
+    try {
+        $process = Start-Process -FilePath $program -ArgumentList $plan.Arguments -PassThru
+        $process.WaitForExit()
+        $r.ExitCode = $process.ExitCode
+    } catch { $r.Message = "Could not start the installer of $($plan.Name): $($_.Exception.Message)"; return $r }
+    $r.Ok = $true
+    $r.Message = "The installer of $($plan.Name) has closed (code $($r.ExitCode))."
+    return $r
 }
 
 # Visual Studio 2026 with the C++ tools: its install folder, or $null.
@@ -100,13 +199,17 @@ function Test-Prerequisites {
     } else {
         $cmakeDetail = "not found. Add 'C++ CMake tools for Windows' to Visual Studio 2026 in the Visual Studio Installer, or install CMake 4.2 or newer"
     }
-    $results += [pscustomobject]@{ Name = 'CMake 4.2+'; Ok = [bool]$cmake; Detail = $cmakeDetail; Url = 'https://cmake.org/download/'; Value = $(if ($cmake) { $cmake.Path }) }
+    $results += [pscustomobject]@{ Name = 'CMake 4.2+'; Ok = [bool]$cmake; Detail = $cmakeDetail; Url = 'https://cmake.org/download/'; Value = $(if ($cmake) { $cmake.Path }); Key = 'cmake' }
     $python = Find-Python3
-    $results += [pscustomobject]@{ Name = 'Python 3'; Ok = [bool]$python; Detail = $(if ($python) { $python } else { 'not found on PATH' }); Url = 'https://www.python.org/downloads/'; Value = $python }
+    $results += [pscustomobject]@{ Name = 'Python 3'; Ok = [bool]$python; Detail = $(if ($python) { $python } else { 'not found (PATH and the registry were searched)' }); Url = 'https://www.python.org/downloads/'; Value = $python; Key = 'python' }
 
 
-    $results += [pscustomobject]@{ Name = 'Visual Studio 2026 C++ tools'; Ok = [bool]$vsPath; Detail = $(if ($vsPath) { $vsPath } else { "'Desktop development with C++' workload not found" }); Url = 'https://visualstudio.microsoft.com/downloads/'; Value = $vsPath }
+    $results += [pscustomobject]@{ Name = 'Visual Studio 2026 C++ tools'; Ok = [bool]$vsPath; Detail = $(if ($vsPath) { $vsPath } else { "'Desktop development with C++' workload not found" }); Url = 'https://visualstudio.microsoft.com/downloads/'; Value = $vsPath; Key = 'vs' }
 
+    # Test hook (the setup window's self-test): NUKKORO_TEST_MISSING=python,vs reports those tools as missing.
+    if ($env:NUKKORO_TEST_MISSING) {
+        foreach ($entry in $results) { if (($env:NUKKORO_TEST_MISSING -split ',') -contains $entry.Key) { $entry.Ok = $false; $entry.Detail = 'reported missing for a test (NUKKORO_TEST_MISSING)' } }
+    }
     return $results
 }
 
@@ -729,7 +832,7 @@ function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$j
     return $true
 }
 
-Export-ModuleMember -Function Get-RepoRoot, Get-BuiltExe, Get-DefaultInstallFolder, Format-Size, Test-Prerequisites,
+Export-ModuleMember -Function Get-ToolPlan, Install-Tool, Find-AnyVisualStudio, Get-RepoRoot, Get-BuiltExe, Get-DefaultInstallFolder, Format-Size, Test-Prerequisites,
     Resolve-DiscFolder, Test-DiscFolder, Get-JapaneseVoiceNames, Test-JapaneseDiscFolder, Copy-JapaneseVoices,
     Set-SpokenLanguage, Get-FolderSize, Test-InstallFolder, Get-InstallJobs, Get-PrebuiltFolder,
     Get-BuildSteps, Get-InstallSteps, Start-Step, Test-StepSucceeded, Stop-Step, Read-LogTail, Get-StepFailureCause, New-BuildProgress,
