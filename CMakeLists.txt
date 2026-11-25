@@ -1920,12 +1920,23 @@ if(WIN32 AND NOT SHADOW_RECOMP_DOL STREQUAL "")
         if(NOT EXISTS "${${required}}")
             message(FATAL_ERROR "Cannot embed missing game-system input: ${${required}}")
         endif()
-        file(TO_CMAKE_PATH "${${required}}" ${required})
+    endforeach()
+    # The resource compiler reads its script in the system's ANSI code page: a disc folder with letters outside it
+    # (or outside ASCII, the script being UTF-8) ends in "RC2135: file not found". The inputs are copied into the
+    # build tree, whose path the setup keeps plain, and embedded from there; the bytes are the same.
+    set(SHADOW_EMBED_COPY_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/embed")
+    file(MAKE_DIRECTORY "${SHADOW_EMBED_COPY_DIR}")
+    foreach(required IN ITEMS SHADOW_EMBED_BOOT SHADOW_EMBED_DOL)
+        get_filename_component(embed_name "${${required}}" NAME)
+        file(COPY_FILE "${${required}}" "${SHADOW_EMBED_COPY_DIR}/${embed_name}" ONLY_IF_DIFFERENT)
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${${required}}")
+        file(TO_CMAKE_PATH "${SHADOW_EMBED_COPY_DIR}/${embed_name}" ${required})
     endforeach()
 
     set(SHADOW_EMBED_BI2_LINE "")
     if(EXISTS "${SHADOW_EMBED_SYS_DIR}/bi2.bin")
-        file(TO_CMAKE_PATH "${SHADOW_EMBED_SYS_DIR}/bi2.bin" SHADOW_EMBED_BI2)
+        file(COPY_FILE "${SHADOW_EMBED_SYS_DIR}/bi2.bin" "${SHADOW_EMBED_COPY_DIR}/bi2.bin" ONLY_IF_DIFFERENT)
+        file(TO_CMAKE_PATH "${SHADOW_EMBED_COPY_DIR}/bi2.bin" SHADOW_EMBED_BI2)
         set(SHADOW_EMBED_BI2_LINE "102 RCDATA \"${SHADOW_EMBED_BI2}\"")
     endif()
 

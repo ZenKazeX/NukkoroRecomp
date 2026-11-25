@@ -30,7 +30,7 @@ try {
 
     # --- the install folder ---------------------------------------------------------------------------
     $disc = Join-Path $scratch 'disc'; New-Item -ItemType Directory -Force -Path $disc | Out-Null
-    $target = Join-Path $scratch 'Játék (új) & more\Shadow'
+    $target = Join-Path $scratch ("Caf" + [char]0xE9 + " (na" + [char]0xEF + "ve) & more\Shadow")
     $r = Test-InstallFolder $target $disc 1MB
     Check 'target: a new folder with spaces, accents, brackets and an ampersand' ($r.Ok -and -not $r.Existing) $r.Message
     New-Item -ItemType Directory -Force -Path $target | Out-Null
