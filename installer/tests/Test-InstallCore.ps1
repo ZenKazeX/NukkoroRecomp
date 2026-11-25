@@ -43,6 +43,11 @@ try {
     Check 'target: a running game is refused, by name' (-not $r.Ok -and $r.Message -match 'ShadowTheHedgehog\.exe is running') $r.Message
     $r = Test-InstallFolder $target $disc 1MB
     Check 'target: accepted again once it is closed' $r.Ok $r.Message
+    # a program really running from the folder (Windows still lets its file be opened for writing)
+    Copy-Item (Join-Path $env:SystemRoot 'System32\timeout.exe') $exe -Force
+    $live = Start-Process -FilePath $exe -ArgumentList '/t', '30', '/nobreak' -PassThru -WindowStyle Hidden; Start-Sleep -Milliseconds 800
+    try { $r = Test-InstallFolder $target $disc 1MB } finally { try { $live.Kill() } catch {}; $null = $live.WaitForExit(5000) }
+    Check 'target: a game that is really running is refused, by name' (-not $r.Ok -and $r.Message -match 'ShadowTheHedgehog\.exe is running') $r.Message
     Check 'target: the disc folder itself is refused' (-not (Test-InstallFolder (Join-Path $disc 'in') $disc 1MB).Ok)
     Check 'target: a drive root is refused' (-not (Test-InstallFolder 'C:\' $disc 1MB).Ok)
 

@@ -541,6 +541,11 @@ function Test-InstallFolder([string]$path, [string]$discRoot, [double]$assetByte
     foreach ($program in $script:InstalledPrograms) {
         $file = Join-Path $full $program
         if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
+        # A running program: Windows lets its file be opened for writing (the open below succeeds) and refuses only
+        # the write itself, so the processes are asked by name and path.
+        $name = [System.IO.Path]::GetFileNameWithoutExtension($program)
+        $running = @(Get-Process -Name $name -ErrorAction SilentlyContinue | Where-Object { try { $_.Path -ieq $file } catch { $false } })
+        if ($running.Count) { $r.Message = "$program is running from this folder. Close it, then check again."; return $r }
         try { [System.IO.File]::Open($file, 'Open', 'ReadWrite', 'None').Dispose() }
         catch [System.IO.IOException] { $r.Message = "$program is running from this folder. Close it, then check again."; return $r }
         catch { $r.Message = "Cannot write to $program in this folder: $($_.Exception.Message)"; return $r }
