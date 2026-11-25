@@ -111,6 +111,7 @@ function fit() {
 let discTimer = null, targetTimer = null, discSerial = 0, targetSerial = 0, jpTimer = null, jpSerial = 0;
 function checkJapanese(delay = 400) {
   clearTimeout(jpTimer);
+  const serial = ++jpSerial;   // at the edit, not when the timer fires: an answer for the old text is dropped
   state.jp.result = null;
   const path = state.jp.path.trim();
   if (!path) { state.jp.checking = false; updateStatus(); return; }
@@ -118,8 +119,8 @@ function checkJapanese(delay = 400) {
   state.jp.checking = true;
   updateStatus();
   jpTimer = setTimeout(async () => {
-    const serial = ++jpSerial;
     let result;
+    if (serial !== jpSerial || !discOk()) return;
     try { result = await native.backend('check-jpdisc', path, state.disc.result.root); }
     catch (e) { result = { ok: false, message: e.message }; }
     if (serial !== jpSerial) return;
@@ -137,6 +138,7 @@ function checkJapanese(delay = 400) {
 }
 function checkDisc(delay = 400) {
   clearTimeout(discTimer);
+  const serial = ++discSerial;   // at the edit, not when the timer fires: an answer for the old text is dropped
   state.disc.result = null;
   state.target.result = null;
   const path = state.disc.path.trim();
@@ -144,7 +146,6 @@ function checkDisc(delay = 400) {
   state.disc.checking = true;
   updateStatus();
   discTimer = setTimeout(async () => {
-    const serial = ++discSerial;
     let result;
     try { result = await native.backend('check-disc', path); }
     catch (e) { result = { ok: false, message: e.message }; }
@@ -164,14 +165,15 @@ function checkDisc(delay = 400) {
 }
 function checkTarget(delay = 300) {
   clearTimeout(targetTimer);
+  const serial = ++targetSerial;   // at the edit, not when the timer fires: an answer for the old text is dropped
   state.target.result = null;
   const path = state.target.path.trim();
   if (!path || !discOk()) { state.target.checking = false; updateStatus(); return; }
   state.target.checking = true;
   updateStatus();
   targetTimer = setTimeout(async () => {
-    const serial = ++targetSerial;
     let result;
+    if (serial !== targetSerial || !discOk()) return;
     try { result = await native.backend('check-target', path, state.disc.result.root); }
     catch (e) { result = { ok: false, message: e.message }; }
     if (serial !== targetSerial) return;

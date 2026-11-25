@@ -56,6 +56,26 @@ try {
     $older = $null; $py = Find-Python3 ([ref]$older)
     Check 'tools: the Python found is 3.10 or newer' ($py -and ((& $py -c 'import sys; print(sys.version_info >= (3, 10))') -eq 'True')) "$py"
 
+    # --- a Python under a folder with letters outside ASCII (C:\Users\<such a name>): its path must arrive whole ----
+    $venv = Join-Path $scratch ("J" + [char]0xF6 + "rg " + [char]0x151 + "\venv")
+    & $py -m venv --without-pip $venv 2>$null | Out-Null
+    $vexe = Join-Path $venv 'Scripts\python.exe'
+    if (Test-Path -LiteralPath $vexe) {
+        $info = Get-PythonInfo $vexe
+        Check 'tools: the path of a Python in a non-ASCII folder is read back exactly' ($info -and $info.Exe -ieq $vexe -and (Test-Path -LiteralPath $info.Exe)) "$($info.Exe)"
+        $asWindow = & powershell.exe -NoProfile -Command "[Console]::OutputEncoding = [Text.UTF8Encoding]::new(`$false); Import-Module '$((Join-Path (Split-Path -Parent $PSScriptRoot) 'InstallCore.psm1'))' -Force; (Get-PythonInfo '$vexe').Exe -ieq '$vexe'"
+        Check 'tools: the same when read as the setup window reads it (UTF-8)' ("$asWindow" -eq 'True') "$asWindow"
+        $env:NUKKORO_PYTHON = $vexe
+        try { Check 'tools: NUKKORO_PYTHON names the interpreter to use' ((Find-Python3) -ieq $vexe) } finally { $env:NUKKORO_PYTHON = $null }
+    } else { Check 'tools: a test Python could be made in a non-ASCII folder' $false }
+    Check 'tools: something that is not Python is not taken for one' ($null -eq (Get-PythonInfo (Join-Path $env:SystemRoot 'System32\whoami.exe')))
+    Check 'tools: no Visual Studio installer is running, so nothing is waited for' ((Wait-VisualStudioInstaller) -le 1)
+    $semi = Join-Path $scratch 'disc; copy'; New-Item -ItemType Directory -Force -Path $semi | Out-Null
+    Check 'disc: a folder with a semicolon is refused, with the reason' ((Test-DiscFolder $semi).Message -match 'semicolon')
+    $unc = Test-InstallFolder '\\nukkoro-test-server\share\Shadow' $disc 1MB
+    Check 'target: a network folder that cannot be reached is refused in plain words, without an error' (-not $unc.Ok -and $unc.Message -match 'Cannot reach') $unc.Message
+    $share = Test-InstallFolder ('\\localhost\' + $scratch.Substring(0,1) + '$' + $scratch.Substring(2) + '\net target') $disc 1MB
+    Check 'target: a network folder that can be reached is accepted (free space not checked)' ($share.Ok -and $share.Message -match 'network folder') $share.Message
     # --- the temporary build files: removed only in a folder the setup exe unpacked ------------------------
     $pkg = Join-Path $scratch 'NukkoroRecomp\9.9.9'
     New-Item -ItemType Directory -Force -Path "$pkg\installer", "$pkg\.build\release\sub", "$pkg\.build\setup" | Out-Null

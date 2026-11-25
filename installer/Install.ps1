@@ -20,8 +20,8 @@
     .\installer\Install.ps1 -DiscPath "D:\Dumps\Shadow PAL" -JapaneseDiscPath "D:\Dumps\Shadow JP" -InstallPath "D:\Games\Shadow the Hedgehog Recompiled"
 #>
 param(
-    [Parameter(Mandatory = $true)][string]$DiscPath,
-    [Parameter(Mandatory = $true)][string]$InstallPath,
+    [string]$DiscPath = '',
+    [string]$InstallPath = '',
     [string]$JapaneseDiscPath = '',
     [ValidateSet('', 'Japanese', 'English')][string]$SpokenLanguage = '',
     [switch]$NoShortcuts,
@@ -34,6 +34,19 @@ param(
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'InstallCore.psm1') -Force
 
+# A quoted path that ends in a backslash ("D:\Dumps\Shadow PAL\", what tab completion writes) reaches this script with
+# its closing quote and everything after it glued on: -DiscPath becomes  D:\Dumps\Shadow PAL" -InstallPath D:\Games\X.
+# The pieces are put back where they belong.
+$given = @{ DiscPath = $DiscPath; InstallPath = $InstallPath; JapaneseDiscPath = $JapaneseDiscPath }
+for ($pass = 0; $pass -lt 3; $pass++) {
+    foreach ($name in @($given.Keys)) {
+        if ($given[$name] -match '^(?<own>[^"]*)"\s+-(?<other>DiscPath|InstallPath|JapaneseDiscPath)\s+(?<rest>.*)$') {
+            $given[$name] = $Matches['own']; $given[$Matches['other']] = $Matches['rest']
+        }
+    }
+}
+foreach ($name in @($given.Keys)) { $given[$name] = $given[$name].Trim().Trim('"') }
+$DiscPath = $given.DiscPath; $InstallPath = $given.InstallPath; $JapaneseDiscPath = $given.JapaneseDiscPath
 function Fail([string]$message) {
     Write-Host "ERROR: $message" -ForegroundColor Red
     exit 1
@@ -50,6 +63,7 @@ if ($missing -and $GetTools) {
 if ($missing) { Fail $(if ($GetTools) { 'Still missing. If an installer is still running, wait for it and run this again.' } else { 'Install the missing tools and run the installer again, or add -GetTools to have this script fetch them.' }) }
 $python = ($prereqs | Where-Object { $_.Name -eq 'Python 3' }).Value
 
+if (-not $DiscPath -or -not $InstallPath) { Fail 'Give both folders: Install.cmd -DiscPath "<extracted disc folder>" -InstallPath "<where to install>"' }
 $disc = Test-DiscFolder $DiscPath
 if (-not $disc.Ok) { Fail $disc.Message }
 Write-Host "Disc: $($disc.Root) - $($disc.Message)"

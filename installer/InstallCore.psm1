@@ -35,18 +35,41 @@ $script:PythonMinor = 10
 
 # The path of a python.exe that is Python 3.$script:PythonMinor or newer, or $null. $older gets the version of an
 # older Python 3 that was found and passed over, for the message.
+# Asks one interpreter what it is: @{ Minor; Exe } for a Python 3, else $null. The path comes back as the hex of its
+# UTF-8 bytes: Python writes text to a pipe in the ANSI code page, this process reads it as UTF-8 (the setup window)
+# or OEM (a console), so a path with a letter outside ASCII - every Python under C:\Users\<a name like Jörg> - would
+# arrive mangled, pass the check, and fail the build's first step.
+function Get-PythonInfo([string]$program, [string[]]$before = @()) {
+    $ErrorActionPreference = 'Continue'
+    $probe = 'import sys; print(sys.version_info[0], sys.version_info[1], sys.executable.encode().hex())'   # no quotes inside: Windows PowerShell drops them on the way
+    try {
+        $arguments = @($before) + @('-c', $probe)
+        $answer = & $program @arguments 2>$null | Select-Object -First 1
+        if ("$answer" -match '^3 (\d+) ((?:[0-9a-f]{2})+)\s*$') {
+            $minor = [int]$Matches[1]; $hex = $Matches[2]
+            $bytes = New-Object byte[] ($hex.Length / 2)
+            for ($i = 0; $i -lt $bytes.Length; $i++) { $bytes[$i] = [Convert]::ToByte($hex.Substring(2 * $i, 2), 16) }
+            return [pscustomobject]@{ Minor = $minor; Exe = [System.Text.Encoding]::UTF8.GetString($bytes) }
+        }
+    } catch {}
+    return $null
+}
+
+# The path of a python.exe that is Python 3.$script:PythonMinor or newer, or $null. $older gets the version of an
+# older Python 3 that was found and passed over, for the message.
 function Find-Python3([ref]$older = ([ref]$null)) {
-    $probe = 'import sys; print(sys.version_info[0], sys.version_info[1], sys.executable)'
     $found = @()
+    # NUKKORO_PYTHON=<python.exe>: use this interpreter (for a PC with several, and for tests).
+    if ($env:NUKKORO_PYTHON) {
+        $info = Get-PythonInfo $env:NUKKORO_PYTHON
+        if ($info -and $info.Minor -ge $script:PythonMinor) { return $info.Exe }
+    }
     foreach ($candidate in @(@('py', '-3'), @('python'), @('python3'))) {
         $command = Get-Command $candidate[0] -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($null -eq $command) { continue }
         # The real interpreter path (py.exe is only a launcher), for CMake's FindPython3.
-        $arguments = @($candidate | Select-Object -Skip 1) + @('-c', $probe)
-        try {
-            $answer = & $command.Source @arguments 2>$null | Select-Object -First 1
-            if ($answer -match '^3 (\d+) (.+)$') { $found += [pscustomobject]@{ Minor = [int]$Matches[1]; Exe = $Matches[2].Trim() } }
-        } catch {}
+        $info = Get-PythonInfo $command.Source @($candidate | Select-Object -Skip 1)
+        if ($info) { $found += $info }
     }
     # A Python that is installed but not on this process's PATH: one installed a moment ago (the PATH of a running
     # program does not change), or one installed without "Add python.exe to PATH". The registry names them.
@@ -57,20 +80,17 @@ function Find-Python3([ref]$older = ([ref]$null)) {
             if (-not $path) { continue }
             $exe = Join-Path $path 'python.exe'
             if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { continue }
-            try {
-                $answer = & $exe -c $probe 2>$null | Select-Object -First 1
-                if ($answer -match '^3 (\d+) (.+)$') { $found += [pscustomobject]@{ Minor = [int]$Matches[1]; Exe = $Matches[2].Trim() } }
-            } catch {}
+            $info = Get-PythonInfo $exe
+            if ($info) { $found += $info }
         }
     }
     # The first one found that is new enough (PATH order first, as before); else report the newest older one.
-    $good = $found | Where-Object { $_.Minor -ge $script:PythonMinor } | Select-Object -First 1
+    $good = $found | Where-Object { $_.Minor -ge $script:PythonMinor -and (Test-Path -LiteralPath $_.Exe -PathType Leaf) } | Select-Object -First 1
     if ($good) { return $good.Exe }
     $old = $found | Sort-Object Minor -Descending | Select-Object -First 1
     if ($old) { $older.Value = "3.$($old.Minor)" }
     return $null
 }
-
 # Whether a Windows 10/11 SDK is installed (its headers): Visual Studio's C++ tools cannot build without one, and
 # the Visual Studio Installer lets a player untick it.
 function Test-WindowsSdk {
@@ -85,6 +105,7 @@ function Test-WindowsSdk {
 }
 # Any Visual Studio 2026 on this PC, with or without the C++ tools: its install folder, or $null.
 function Find-AnyVisualStudio {
+    $ErrorActionPreference = 'Continue'   # a line on vswhere's stderr must not end the caller (it runs with Stop)
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
     if (-not (Test-Path -LiteralPath $vswhere)) { return $null }
     return (& $vswhere -version '[18.0,19.0)' -prerelease -products * -property installationPath 2>$null | Select-Object -First 1)
@@ -136,6 +157,21 @@ function Get-ToolPlan([string]$key) {
         $plan.Arguments = '/?'; $plan.OkCodes = @(0, 1); $plan.Text = 'a self-test stand-in'; $plan.Marker = $script:SelfTestToolDone
     }
     return $plan
+}
+
+# Waits while a Visual Studio installer works (its processes have names nothing else uses). The installer runs
+# elevated, outside the setup's reach: a cancelled setup leaves it running, and "modify" may hand over to an elevated
+# copy and return at once. Without this wait a Retry would start a second installer against the first, and the check
+# after a modify would run before the tools are there. Returns the seconds waited.
+function Wait-VisualStudioInstaller([scriptblock]$OnEvent = { param($e) }, [int]$limitSeconds = 7200) {
+    $names = 'vs_installer', 'vs_installershell', 'vs_installerservice', 'vs_setup_bootstrapper', 'vs_community', 'vs_BuildTools'
+    $start = Get-Date; $told = $false
+    while (@(Get-Process -Name $names -ErrorAction SilentlyContinue).Count -gt 0) {
+        if (-not $told) { & $OnEvent @{ type = 'log'; text = "A Visual Studio installation is running; waiting for it to finish.`n" }; $told = $true }
+        if (((Get-Date) - $start).TotalSeconds -gt $limitSeconds) { break }
+        Start-Sleep -Seconds 3
+    }
+    return [int]((Get-Date) - $start).TotalSeconds
 }
 
 # Downloads (unless the tool's own installer is already on this PC), checks the signature, runs the installer
@@ -191,9 +227,11 @@ function Install-MissingTools([scriptblock]$OnEvent = { param($e) }) {
     foreach ($key in $keys) {
         $plan = Get-ToolPlan $key
         if (-not $plan) { $r.Message = "$key is missing and the setup cannot install it."; return $r }
+        if ($key -eq 'vs') { [void](Wait-VisualStudioInstaller $OnEvent) }   # one left running by a cancelled setup
         & $OnEvent @{ type = 'log'; text = "Installing $($plan.Text).`n" }
         if ($key -eq 'vs') { & $OnEvent @{ type = 'log'; text = "Windows asks for permission once: choose Yes. A Microsoft window shows the progress; nothing else needs to be done.`n" } }
         $result = Install-Tool $key $plan
+        if ($key -eq 'vs') { Start-Sleep -Seconds 2; [void](Wait-VisualStudioInstaller $OnEvent) }   # a modify that handed over and returned
         & $OnEvent @{ type = 'log'; text = "$($result.Message)`n" }
         if (-not $result.Ok) { $r.Message = $result.Message; return $r }
     }
@@ -208,6 +246,7 @@ function Install-MissingTools([scriptblock]$OnEvent = { param($e) }) {
 }
 # Visual Studio 2026 with the C++ tools: its install folder, or $null.
 function Find-VisualStudio {
+    $ErrorActionPreference = 'Continue'   # a line on vswhere's stderr must not end the caller (it runs with Stop)
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
     if (-not (Test-Path -LiteralPath $vswhere)) { return $null }
     # A released Visual Studio first; then the preview ("Insiders") channel, which vswhere leaves out unless asked.
@@ -224,6 +263,7 @@ $script:Generator = 'Visual Studio 18 2026'
 
 # The first line of `cmake --version` and whether this cmake.exe knows $script:Generator.
 function Test-CMake([string]$path) {
+    $ErrorActionPreference = 'Continue'   # a warning on cmake's stderr must not read as "too old"
     $version = ''; $knows = $false
     try {
         $version = [string](& $path --version 2>$null | Select-Object -First 1)
@@ -302,6 +342,8 @@ function Test-DiscFolder([string]$path) {
     $root = Resolve-DiscFolder $path
     if (-not $root) { return New-Result $false 'Choose the folder of the extracted disc.' }
     if (-not (Test-Path -LiteralPath $root -PathType Container)) { return New-Result $false "Folder not found: $root" }
+    # The build tools read a semicolon in a path as a separator between two paths.
+    if ($root.Contains(';')) { return New-Result $false 'The folder path contains a semicolon (;), which the build tools cannot handle. Rename the folder or move the disc files.' }
 
     $dol = Join-Path $root 'sys\main.dol'
     $boot = Join-Path $root 'sys\boot.bin'
@@ -469,6 +511,10 @@ function Test-InstallFolder([string]$path, [string]$discRoot, [double]$assetByte
     try { $full = [System.IO.Path]::GetFullPath($path).TrimEnd('\') } catch { $r.Message = "Not a valid folder path: $path"; return $r }
     $r.Path = $full
     if ($full.Length -le 3) { $r.Message = 'Choose a folder, not the root of a drive.'; return $r }
+    # A network folder whose server cannot be reached makes every later look at it throw.
+    if ($full.StartsWith('\\')) {
+        if (-not [System.IO.Directory]::Exists([System.IO.Path]::GetPathRoot($full))) { $r.Message = "Cannot reach $([System.IO.Path]::GetPathRoot($full)). Check the network folder, or choose a folder on this PC."; return $r }
+    }
 
     if ($discRoot) {
         $disc = [System.IO.Path]::GetFullPath($discRoot).TrimEnd('\')
@@ -503,6 +549,13 @@ function Test-InstallFolder([string]$path, [string]$discRoot, [double]$assetByte
     if ($r.Existing -and (Test-Path -LiteralPath (Join-Path $full 'files'))) { $r.NeededBytes = 150MB }
 
     $qualifier = [System.IO.Path]::GetPathRoot($full)
+    if ($qualifier.StartsWith('\\')) {
+        # A network folder (\\server\share): Windows gives no drive to ask for the free space. Not checked.
+        $r.Ok = $true
+        $r.Message = "Needs $(Format-Size $r.NeededBytes). The free space of a network folder is not checked."
+        if ($r.Existing) { $r.Message += ' An existing install will be updated; saves and settings are kept.' }
+        return $r
+    }
     try {
         $drive = New-Object System.IO.DriveInfo $qualifier
         if (-not $drive.IsReady) { $r.Message = "Drive $qualifier is not ready."; return $r }
@@ -918,7 +971,8 @@ function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$j
         foreach ($source in $script:InstalledFolders.Keys) {
             $destination = Join-Path $targetPath $script:InstalledFolders[$source]
             New-Item -ItemType Directory -Force -Path $destination | Out-Null
-            Copy-Item -Path (Join-Path (Join-Path $script:RepoRoot $source) '*') -Destination $destination -Recurse -Force
+            # -LiteralPath per item: a wildcard path matches nothing, without an error, when the package's folder has [ ] in its name
+            foreach ($item in @(Get-ChildItem -LiteralPath (Join-Path $script:RepoRoot $source) -Force)) { Copy-Item -LiteralPath $item.FullName -Destination $destination -Recurse -Force }
         }
         $japaneseFiles = @()
         if ($japanese -and $japanese.Given -and $japanese.Ok) {
@@ -947,7 +1001,7 @@ function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$j
     return $true
 }
 
-Export-ModuleMember -Function Remove-BuildFiles, Test-WindowsSdk, Find-Python3, Get-ToolPlan, Install-Tool, Install-MissingTools, Find-AnyVisualStudio, Get-RepoRoot, Get-BuiltExe, Get-DefaultInstallFolder, Format-Size, Test-Prerequisites,
+Export-ModuleMember -Function Get-PythonInfo, Wait-VisualStudioInstaller, Remove-BuildFiles, Test-WindowsSdk, Find-Python3, Get-ToolPlan, Install-Tool, Install-MissingTools, Find-AnyVisualStudio, Get-RepoRoot, Get-BuiltExe, Get-DefaultInstallFolder, Format-Size, Test-Prerequisites,
     Resolve-DiscFolder, Test-DiscFolder, Get-JapaneseVoiceNames, Test-JapaneseDiscFolder, Copy-JapaneseVoices,
     Set-SpokenLanguage, Get-FolderSize, Test-InstallFolder, Get-InstallJobs, Get-PrebuiltFolder,
     Get-BuildSteps, Get-InstallSteps, Start-Step, Test-StepSucceeded, Stop-Step, Read-LogTail, Get-StepFailureCause, New-BuildProgress,
