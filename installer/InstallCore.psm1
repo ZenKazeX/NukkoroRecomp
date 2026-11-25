@@ -833,11 +833,11 @@ function New-GameShortcuts([string]$target, [bool]$desktop, [bool]$startMenu,
     }
     if ($startMenu) {
         New-Item -ItemType Directory -Force -Path $startMenuDir | Out-Null
-        $link = $shell.CreateShortcut((Join-Path $startMenuDir 'Controller Buttons.lnk'))
+        $link = $shell.CreateShortcut((Join-Path $startMenuDir 'Settings.lnk'))
         $link.TargetPath = Join-Path $target $script:ConfigExe
         $link.WorkingDirectory = $target
         $link.IconLocation = (Join-Path $target $script:ConfigExe) + ',0'
-        $link.Description = 'Choose which controller buttons do what in the game.'
+        $link.Description = 'Change the game''s screen, frame rate, sound, language and control settings.'
         $link.Save()
         $made += $link.FullName
         $link = $shell.CreateShortcut((Join-Path $startMenuDir 'Mod Manager.lnk'))
