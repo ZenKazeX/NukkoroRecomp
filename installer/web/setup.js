@@ -321,21 +321,61 @@ function renderReview() {
       <dt>Space</dt><dd>${size((target.neededBytes || 0) + (jpUsed() ? state.jp.result.bytes || 0 : 0))}${target.existing ? ' (updates the existing install; saves are kept)' : ''}</dd>
     </dl>`;
 }
+// While installing, a spinner and a self-running clock show the install is alive even when no event
+// arrives for minutes (one very large compile can keep step 2 silent for a long time).
+const activity = { startedAt: 0, movedAt: 0, timer: 0 };
+const STALL_MS = 20000;
+const stalledText = 'The largest part of the game is still compiling. This can take several minutes; the bar will move again when it is done.';
+const clock = ms => { const s = Math.floor(ms / 1000); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+function activityTick() {
+  const elapsed = $('#elapsed');
+  if (elapsed) elapsed.textContent = `${state.cancelling ? 'Stopping...' : 'Working...'} ${clock(Date.now() - activity.startedAt)}`;
+  const description = $('#progress-page .description');
+  if (description && state.phase === 'running') description.textContent = progressDescription();
+}
+function syncActivityTimer() {
+  const running = state.phase === 'running';
+  if (running && !activity.timer) activity.timer = setInterval(activityTick, 1000);
+  else if (!running && activity.timer) { clearInterval(activity.timer); activity.timer = 0; }
+}
+function progressDescription() {
+  if (state.stageIndex < 0) return 'Installing the build tools your PC lacks. If Windows asks for permission, choose Yes. This can take a while; you can keep using your computer.';
+  if (state.stageIndex === 1 && !state.cancelling && Date.now() - activity.movedAt > STALL_MS) return stalledText;
+  return 'Building the game from your disc and copying it. You can keep using your computer.';
+}
 function renderProgress() {
   const titles = { running: state.cancelling ? 'Cancelling...' : 'Installing...', complete: 'Installation Complete', failed: 'Installation Failed', cancelled: 'Installation Cancelled' };
   const descriptions = {
-    running: state.stageIndex < 0 ? 'Installing the build tools your PC lacks. If Windows asks for permission, choose Yes. This can take a while; you can keep using your computer.' : 'Building the game from your disc and copying it. You can keep using your computer.',
+    running: escapeText(progressDescription()),
     complete: `Shadow the Hedgehog Recompiled is installed in ${escapeText(state.target.result.path)}.`,
     failed: `${escapeText(state.error)} Select Retry to try again.`,
     cancelled: 'The installation was stopped. Select Retry to start again.',
   };
   const percent = Math.round(state.progress * 100);
-  content.innerHTML = `
+  const operation = state.stageName ? (state.stageIndex < 0 ? `Before the build · ${state.stageName}` : `Part ${state.stageIndex + 1} of 5 · ${state.stageName}`) : 'Starting...';
+  const logText = state.log.slice(-20000) + (state.logPath && state.phase === 'failed' ? `\nFull log: ${state.logPath}` : '');
+  const page = $('#progress-page');
+  if (page && page.dataset.phase === state.phase) {
+    // Same page already showing: update it in place so the spinner keeps turning smoothly.
+    $('#progress-page h1').textContent = titles[state.phase];
+    $('#progress-page .progress-track').setAttribute('aria-valuenow', percent);
+    $('#progress-page .progress-fill').style.width = `${percent}%`;
+    $('#operation-text').textContent = operation;
+    $('#percent').textContent = `${percent}%`;
+    const log = $('#log');
+    if (log.textContent !== logText) { log.textContent = logText; log.scrollTop = log.scrollHeight; }
+    if (state.phase === 'running') activityTick();
+    else $('#progress-page .description').innerHTML = descriptions[state.phase];
+    return;
+  }
+  const running = state.phase === 'running';
+  content.innerHTML = `<div id="progress-page" data-phase="${state.phase}">
     <h1>${titles[state.phase]}</h1>
     <p class="description">${descriptions[state.phase]}</p>
     <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${percent}"><div class="progress-fill" style="width:${percent}%"></div></div>
-    <div class="progress-details"><span id="operation">${escapeText(state.stageName ? (state.stageIndex < 0 ? `Before the build · ${state.stageName}` : `Step ${state.stageIndex + 1} of 5 · ${state.stageName}`) : 'Starting...')}</span><span>${percent}%</span></div>
-    <div class="log" id="log">${escapeText(state.log.slice(-20000))}${state.logPath && state.phase === 'failed' ? `\nFull log: ${escapeText(state.logPath)}` : ''}</div>`;
+    <div class="progress-details"><span id="operation">${running ? '<span class="spinner" aria-hidden="true"></span>' : ''}<span id="operation-text">${escapeText(operation)}</span></span><span class="progress-right">${running ? '<span id="elapsed"></span>' : ''}<span id="percent">${percent}%</span></span></div>
+    <div class="log" id="log">${escapeText(logText)}</div></div>`;
+  if (running) activityTick();
   const log = $('#log');
   log.scrollTop = log.scrollHeight;
 }
@@ -355,6 +395,7 @@ function render() {
   else if (state.step === 4) renderComponents();
   else if (state.phase === 'review') renderReview();
   else renderProgress();
+  syncActivityTimer();
   updateButtons();
 }
 function updateButtons() {
@@ -386,6 +427,7 @@ function go(step) {
 // ---- install ----------------------------------------------------------------------------------
 async function startInstall() {
   Object.assign(state, { phase: 'running', progress: 0, stageIndex: 0, stageName: '', log: '', error: '', logPath: '', cancelling: false });
+  activity.startedAt = activity.movedAt = Date.now();
   render();
   const japanese = jpUsed() ? state.jp.result.root : '-';
   const voice = jpUsed() ? (state.speakJapanese ? '0' : '1') : '-';
@@ -398,8 +440,11 @@ function queueRender() { if (!renderQueued) { renderQueued = true; requestAnimat
 native.on(message => {
   if (message.type === 'install') {
     const e = message.event || {};
-    if (e.type === 'stage') { state.stageIndex = e.index; state.stageName = e.name; }
-    else if (e.type === 'progress') state.progress = Math.max(state.progress, e.value);
+    if (e.type === 'stage') { state.stageIndex = e.index; state.stageName = e.name; activity.movedAt = Date.now(); }
+    else if (e.type === 'progress') {
+      if (Math.round(e.value * 100) > Math.round(state.progress * 100)) activity.movedAt = Date.now();
+      state.progress = Math.max(state.progress, e.value);
+    }
     else if (e.type === 'log') state.log = (state.log + e.text).slice(-60000);
     else if (e.type === 'error') { state.error = e.message; state.logPath = e.log || ''; }
     else if (e.type === 'done') state.progress = 1;
@@ -467,6 +512,7 @@ next.addEventListener('click', () => {
 });
 document.querySelectorAll('.step').forEach(button => button.addEventListener('click', () => go(Number(button.dataset.step))));
 window.addEventListener('resize', fit);
+window.addEventListener('pagehide', () => { clearInterval(activity.timer); activity.timer = 0; });
 
 // ---- self-test (NukkoroSetup.exe --selftest): drive every page and snapshot it -----------------
 const selftestHooks = {};
@@ -515,10 +561,24 @@ async function selftest() {
     state.desktop = false; state.startMenu = false; state.launch = false;
     next.click(); await wait(100);
     await snap('5-ready');
+    // Preview of the install page during a long silent compile (no install runs): the spinner must
+    // survive re-renders, and it and its timer must go away once the install has ended.
+    Object.assign(state, { phase: 'running', stageIndex: 1, stageName: 'Translate and compile the game', progress: 0.84,
+                           log: 'Building the game...\n' });
+    activity.startedAt = Date.now() - 222000; activity.movedAt = Date.now() - STALL_MS - 5000;
+    render();
+    const spinner = $('.spinner');
+    state.log += 'still compiling\n'; render(); await wait(1200);
+    report.spinnerStable = !!spinner && $('.spinner') === spinner && !!activity.timer;
+    report.stalledNoteShown = $('#progress-page .description').textContent === stalledText;
+    await snap('5-installing-preview');
+    state.phase = 'cancelled'; render();
+    report.spinnerGone = !$('.spinner') && !activity.timer;
+    Object.assign(state, { phase: 'review', progress: 0, stageIndex: 0, stageName: '', log: '' }); render();
     report.musicLoops = (await musicState()).loops;
     report.passed = report.badDiscRejected && report.discAccepted && report.palAsJapaneseRefused &&
                     (!config.jpdisc || report.japaneseAccepted) && report.targetAccepted && report.toolsReady &&
-                    (!musicExpected || report.musicPlaying);
+                    (!musicExpected || report.musicPlaying) && report.spinnerStable && report.stalledNoteShown && report.spinnerGone;
     if (config.install && report.passed) {
       const exited = new Promise(resolve => { selftestHooks.onExit = resolve; });
       next.click();

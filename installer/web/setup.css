@@ -122,7 +122,15 @@ h1 small.optional { color: var(--muted); font-size: 16px; font-weight: normal; m
 .progress-track { height: 14px; margin-top: 12px; border: 1px solid #7b3b31; border-radius: 3px; background: #120c0c; overflow: hidden; }
 .progress-fill { height: 100%; width: 0; background: linear-gradient(90deg, #8d2117, #e0473a); box-shadow: 0 0 10px #e0473a88; transition: width .3s; }
 .progress-details { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; font-size: 15px; }
-.progress-details #operation { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.progress-details #operation { display: flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; }
+#operation-text { overflow: hidden; text-overflow: ellipsis; }
+.progress-right { display: flex; gap: 14px; flex-shrink: 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
+#elapsed { color: var(--muted); }
+/* Activity spinner shown while installing (pure CSS). */
+.spinner { width: 14px; height: 14px; flex-shrink: 0; border-radius: 50%; border: 2px solid #7b3b3188; border-top-color: var(--accent);
+  box-shadow: 0 0 6px #e0473a55; animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
 .log { margin-top: 8px; height: 112px; overflow: auto; padding: 6px 8px; background: #0b0809d9; border: 1px solid #3f2723; border-radius: 3px;
   font: 12px/16px Consolas, monospace; color: #b9aca7; white-space: pre-wrap; word-break: break-all; user-select: text; }
 
