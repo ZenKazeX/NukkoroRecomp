@@ -34,7 +34,7 @@ copy. The script refuses to build while that exe is running, because the linker 
 
 ## Commands
 
-From the repository root (Visual Studio 2026, CMake 3.25+, Python 3):
+From the repository root (Visual Studio 2026, a CMake that knows it: 4.2 or newer, Python 3):
 
 ```powershell
 cmake --preset release -DSHADOW_RECOMP_DOL=D:/Dumps/Shadow-PAL/sys/main.dol

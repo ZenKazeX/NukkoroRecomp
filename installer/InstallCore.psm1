@@ -50,36 +50,52 @@ function Find-VisualStudio {
     return (& $vswhere -version '[18.0,19.0)' -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null | Select-Object -First 1)
 }
 
-# cmake.exe: the one on PATH, else the one Visual Studio installs with its C++ tools ("C++ CMake tools for Windows"),
-# else a default CMake install. Visual Studio's is not on PATH outside its own command prompt, and many PCs have no other.
-function Find-CMake([string]$vsPath) {
-    $onPath = Get-Command cmake -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($onPath) { return $onPath.Source }
+# The generator the release preset names (CMakePresets.json). Only a CMake that knows it can configure the build:
+# CMake 4.2 was the first. An older CMake fails at the first step with "Could not create named generator".
+$script:Generator = 'Visual Studio 18 2026'
+
+# The first line of `cmake --version` and whether this cmake.exe knows $script:Generator.
+function Test-CMake([string]$path) {
+    $version = ''; $knows = $false
+    try {
+        $version = [string](& $path --version 2>$null | Select-Object -First 1)
+        $knows = [bool](& $path --help 2>$null | Select-String -SimpleMatch $script:Generator -Quiet)
+    } catch {}
+    return [pscustomobject]@{ Path = $path; Version = $version; Knows = $knows }
+}
+
+# Every cmake.exe the setup can use, in the order it tries them: the one Visual Studio installs with its C++ tools
+# ("C++ CMake tools for Windows": it always knows its own Visual Studio and is on PATH only inside Visual Studio's
+# command prompt), the ones on PATH, a default CMake install.
+function Find-CMakeCandidates([string]$vsPath) {
     $candidates = @()
     if ($vsPath) { $candidates += Join-Path $vsPath 'Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe' }
+    $candidates += @(Get-Command cmake -CommandType Application -All -ErrorAction SilentlyContinue | ForEach-Object Source)
     foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) { if ($root) { $candidates += Join-Path $root 'CMake\bin\cmake.exe' } }
-    foreach ($candidate in $candidates) { if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate } }
-    return $null
+    $seen = @{}
+    return @($candidates | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) -and -not $seen.ContainsKey($_.ToLowerInvariant()) } |
+        ForEach-Object { $seen[$_.ToLowerInvariant()] = $true; $_ })
 }
 
 function Test-Prerequisites {
     $results = @()
 
     $vsPath = Find-VisualStudio
-    $cmake = Find-CMake $vsPath
-    $cmakeOk = $false; $cmakeDetail = 'not found (on PATH, in Visual Studio, or in Program Files\CMake)'
+    $found = @(Find-CMakeCandidates $vsPath | ForEach-Object { Test-CMake $_ })
+    $cmake = $found | Where-Object { $_.Knows } | Select-Object -First 1
     if ($cmake) {
-        $line = (& $cmake --version 2>$null | Select-Object -First 1)
-        if ($line -match '(\d+)\.(\d+)') {
-            $cmakeOk = ([int]$Matches[1] -gt 3) -or ([int]$Matches[1] -eq 3 -and [int]$Matches[2] -ge 25)
-            $cmakeDetail = if ($cmakeOk) { "$line ($cmake)" } else { "$line (3.25 or newer needed)" }
-        }
-        # The build steps start `cmake` by name: a cmake found off PATH is put on this process's PATH (and its children's).
-        $folder = Split-Path -Parent $cmake
-        if ($cmakeOk -and (($env:PATH -split ';') -notcontains $folder)) { $env:PATH = "$folder;$env:PATH" }
+        $cmakeDetail = "$($cmake.Version) ($($cmake.Path))"
+        # The build steps start `cmake` by name: the chosen one goes first on this process's PATH (and its children's),
+        # in front of an older CMake that may be there.
+        $folder = Split-Path -Parent $cmake.Path
+        if ((($env:PATH -split ';') | Select-Object -First 1) -ne $folder) { $env:PATH = "$folder;$env:PATH" }
+    } elseif ($found.Count -gt 0) {
+        $cmakeDetail = "$($found[0].Version) at $($found[0].Path) is too old: it does not know $script:Generator. Install CMake 4.2 or newer, " +
+                       "or add 'C++ CMake tools for Windows' to Visual Studio 2026 in the Visual Studio Installer"
+    } else {
+        $cmakeDetail = "not found. Add 'C++ CMake tools for Windows' to Visual Studio 2026 in the Visual Studio Installer, or install CMake 4.2 or newer"
     }
-    $results += [pscustomobject]@{ Name = 'CMake 3.25+'; Ok = $cmakeOk; Detail = $cmakeDetail; Url = 'https://cmake.org/download/'; Value = $cmake }
-
+    $results += [pscustomobject]@{ Name = 'CMake 4.2+'; Ok = [bool]$cmake; Detail = $cmakeDetail; Url = 'https://cmake.org/download/'; Value = $(if ($cmake) { $cmake.Path }) }
     $python = Find-Python3
     $results += [pscustomobject]@{ Name = 'Python 3'; Ok = [bool]$python; Detail = $(if ($python) { $python } else { 'not found on PATH' }); Url = 'https://www.python.org/downloads/'; Value = $python }
 
