@@ -101,22 +101,27 @@ Follow the red numbers in each picture. Right-click means the right mouse button
 
 ## Controller
 
-Run `ShadowPadConfig.exe` in the install folder, or use the *Controller Buttons* shortcut in the Start menu. Click a
-button on the picture, press the button you want on your controller, then Save. The game uses the new mapping the next
-time it starts.
+Run `ShadowPadConfig.exe` in the install folder, or use the *Settings* shortcut in the Start menu, and open the
+*Controller buttons* page. Click a button on the picture, press the button you want on your controller, then Save. The
+game uses the new mapping the next time it starts.
 
 By default the face buttons follow their position on a modern controller. The GameCube pad's B is on the left button
 (X on an Xbox controller) and its X is on the right button (B).
 
-The game can also be played with keyboard and mouse. The keys and the mouse are set in `controls.cfg` in the install
-folder; [docs/controls/KEYBOARD_MOUSE_BINDINGS.md](docs/controls/KEYBOARD_MOUSE_BINDINGS.md) lists the defaults and
-every setting.
+The game can also be played with keyboard and mouse. The keys and the mouse are set on the Settings program's
+*Keyboard and mouse* page (or in `controls.cfg` in the install folder;
+[docs/controls/KEYBOARD_MOUSE_BINDINGS.md](docs/controls/KEYBOARD_MOUSE_BINDINGS.md) lists the defaults and every
+setting).
 
 ## Settings
 
-The Options screen is the game's own. The window, the picture and the volumes are set in `display.cfg` and
-`options.cfg` in the install folder; [docs/PC_SETTINGS_FILES.md](docs/PC_SETTINGS_FILES.md) describes every line.
-Alt+Enter switches between a window and fullscreen.
+The Options screen is the game's own. Everything a PC adds - the window and full screen, resolution, picture shape,
+frame rate and V-Sync, volumes, spoken language and subtitles, rumble, camera inversion, controller buttons, keyboard
+and mouse, autosave - is in the *Settings* program (`ShadowPadConfig.exe` in the install folder, *Settings* in the
+Start menu). The game reads the settings when it starts, so a change takes effect the next time you start it. The
+program writes `display.cfg`, `options.cfg`, `pad.cfg` and `controls.cfg` in the install folder;
+[docs/PC_SETTINGS_FILES.md](docs/PC_SETTINGS_FILES.md) describes every line. Alt+Enter switches between a window and
+fullscreen.
 
 ## Mods
 

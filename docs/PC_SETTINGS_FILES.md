@@ -3,20 +3,29 @@
 Shadow the Hedgehog on PC is a static recompilation of the PAL GameCube game made with GekkoForge. Its Options
 screen is the game's own (retail): Sound (the music player), Vibration, System (speaker output: Stereo, Monaural,
 Dolby Pro Logic II), Subtitle (the text language) and Load. Everything a PC adds on top - the window, the picture,
-the volumes, the controller mapping - is set in three plain-text files. A page in the game for these settings is a
-later decision; until then the files are the way to change them.
+the volumes, the controller mapping, the keyboard - is set in four plain-text files.
+
+**The Settings program** (`ShadowPadConfig.exe` beside the game, *Settings* in the Start menu) sets them for players
+who would rather not edit files: pages for Display, Frame rate, Sound, Language, Controller buttons, Controller
+options, Keyboard and mouse, and Saving. It shows what the files hold, writes only the keys the player changes (every
+other line, comment and line ending stays, as when the game writes), creates a file only when something in it is
+saved, refuses values the game would not accept, and has a Restore defaults button per page. It reads the files again
+before it writes, so a key the game wrote meanwhile (a window resized, Alt+Enter) is kept. `--folder <dir>` makes it
+edit the files of another folder. Which control writes which key is listed in the last section of this page.
 
 | File | Where | Read | Written by the game |
 |---|---|---|---|
 | `display.cfg` | beside the executable (`--display-cfg <file>` picks another) | at start | Alt+Enter and a window you resize: only the keys they change |
 | `options.cfg` | beside `display.cfg` | at start | the Options screen's Vibration / System / Subtitle choices (the keys below marked "game option") and the first start's import from your save |
-| `pad.cfg` | beside the executable (`--pad-cfg <file>` picks another) | at start | never (tools/launcher.py writes it) |
+| `pad.cfg` | beside the executable (`--pad-cfg <file>` picks another) | at start | never (the Settings program writes it) |
+| `controls.cfg` | beside the executable (`--controls-cfg <file>` picks another) | at start, and again when the game window comes back to the front | never (the Settings program writes it) |
 
-All three are `key = value` lines; `#` starts a comment. Edit them while the game is closed: a value changed in a
+All four are `key = value` lines; `#` starts a comment. Edit them while the game is closed: a value changed in a
 file takes effect at the next start. When the game writes a file it changes only the lines of the keys it sets and
 keeps every other line, comment and line ending as it was. Remove a key (or the whole file) to go back to its
-default. The command line's display flags (`--width`, `--fullscreen`, `--msaa`, ...) override `display.cfg` for one
-run and are never saved.
+default. The command line's display flags (`--width`, `--fullscreen`, `--msaa`, `--vsync` / `--no-vsync`,
+`--render-rate`, `--frame-interpolation` / `--no-frame-interpolation`, `--draw-distance`, `--fps-counter`, ...) override
+`display.cfg` for one run and are never saved.
 
 ## display.cfg
 
@@ -85,7 +94,13 @@ not wholly a number, out of range, or an unknown key stops the game at start wit
 | `swap_sticks` | `0` / `1` | `0` | Movement on the right stick, camera on the left. |
 | `button_style` | `auto`, `original`, `xbox`, `playstation`, `switch` | `auto` | Which controller's buttons the game's prompts show (`auto` follows the connected controller). `--button-style` overrides it. |
 
-The keyboard layout is fixed (no file).
+When the Settings program changes a button whose line ends in the button's name as a comment (`a = 0x1000   # A`, as
+it writes a new file), the comment names the new button.
+
+## controls.cfg
+
+The keyboard and mouse: every action, the mouse speed and inversion, the pointer capture and the walk speed.
+[controls/KEYBOARD_MOUSE_BINDINGS.md](controls/KEYBOARD_MOUSE_BINDINGS.md) lists every key and the defaults.
 
 ## What the removed PC Options menu could do that the files cannot
 
@@ -100,7 +115,43 @@ gone:
 - **The 15-second confirmation of a display change.** It existed because the menu could pick a mode the monitor might
   not show. A file edit is not tried out; if a `display.cfg` makes the screen unusable, close the game and fix or
   delete the file. Alt+Enter into an exclusive mode is still checked and rolled back as described above.
-- **Restore defaults / Restore all defaults.** Remove the keys (or the files) instead.
+- **Restore defaults / Restore all defaults.** The Settings program has Restore defaults on each page; in the files,
+  remove the keys (or the files) instead.
 - **The build information row.** The session report and the console output carry the build.
 - **Hungarian text (language 6).** Withdrawn with the menu (the user's decision of 2026-11-14); `language=6` reads
   as English.
+
+## What the Settings program writes
+
+| Page | Control | File | Key | Values written |
+|---|---|---|---|---|
+| Display | Screen mode: Window / Full screen / Exclusive full screen | `display.cfg` | `fullscreen`, `exclusive` | `false` / `true`+`false` / `true`+`true` |
+| Display | Window size (a list, or typed as `W x H`, at least 320 x 240) | `display.cfg` | `width`, `height` (also `window_width`, `window_height` where the file spells them so) | pixels |
+| Display | Full screen resolution (exclusive only; the monitor's own modes) | `display.cfg` | `fullscreen_width`, `fullscreen_height` | pixels; `0` = the desktop's |
+| Display | Picture shape | `display.cfg` | `aspect` (an older `aspect_ratio` / `custom_aspect` line is replaced) | `auto`, `4:3`, `5:4`, `16:10`, `16:9`, `21:9`, `32:10`, `32:9` |
+| Display | Resolution scale | `display.cfg` | `render_scale` | 25 .. 200 |
+| Display | Edge smoothing (anti-aliasing) | `display.cfg` | `msaa` | `off`, 2, 4, 8, 16, 32 |
+| Display | Texture sharpness (anisotropic filtering) | `display.cfg` | `anisotropy` | `off`, 2, 4, 8, 16 |
+| Display | Draw distance | `display.cfg` | `draw_distance` | 1 .. 8 |
+| Frame rate | V-Sync | `display.cfg` | `vsync` | `true` / `false` |
+| Frame rate | Frame rate | `display.cfg` | `render_rate` | 30, 60, 75, 90, 120, 144, 165, 240, 360, `unlocked` |
+| Frame rate | Smooth motion (frame interpolation) | `display.cfg` | `frame_interpolation` | `true` / `false` |
+| Frame rate | Frame counter | `display.cfg` | `fps_counter` | `true` / `false` |
+| Sound | Master volume, Music, Sound effects, Voices | `options.cfg` | `master_volume`, `music_volume`, `sfx_volume`, `voice_volume` | 0 .. 100 |
+| Sound | Speaker output | `options.cfg` | `speaker` | 0, 1, 2; "Not chosen yet" removes the line |
+| Language | Spoken language | `options.cfg` | `voice` | 0 Japanese, 1 English; "Not chosen yet" removes the line |
+| Language | Subtitles | `options.cfg` | `subtitles` | `true` / `false` |
+| Language | Text language | `options.cfg` | `language` | 0 .. 5; "Not chosen yet" removes the line |
+| Controller buttons | the twelve game buttons, trigger press, button prompts, stick swap | `pad.cfg` | every key of pad.cfg | as above |
+| Controller options | Vibration | `options.cfg` | `vibration` | `true` / `false`; "Not chosen yet" removes the line |
+| Controller options | Rumble strength | `options.cfg` | `rumble_strength` | 25 .. 100 |
+| Controller options | Invert camera left and right / up and down | `options.cfg` | `invert_camera_x`, `invert_camera_y` | `true` / `false` |
+| Keyboard and mouse | the 22 actions, three keys or mouse buttons each | `controls.cfg` | the action keys | binds, or `none` |
+| Keyboard and mouse | Mouse speed, left and right / up and down | `controls.cfg` | `mouse_sensitivity_x`, `mouse_sensitivity_y` | 0.01 .. 50 |
+| Keyboard and mouse | Invert mouse, Keep the pointer in the game, Walk speed | `controls.cfg` | `mouse_invert_x`, `mouse_invert_y`, `mouse_capture`, `walk_deflection` | 0 / 1; 1 .. 100 |
+| Saving | Autosave | `options.cfg` | `autosave` | `true` / `false`; "Not chosen yet" removes the line |
+
+Not offered, on purpose: `gameplay_aspect` (a test setting for the game logic, not a picture setting), `hud_scale` /
+`hud_inset` (accepted but they change nothing in this renderer) and the retired render-size keys. A value the file
+holds that is not in a list (a frame rate of 100, a ratio of 2.37) is shown as "(set in the file)" and kept unless
+the player picks another.
