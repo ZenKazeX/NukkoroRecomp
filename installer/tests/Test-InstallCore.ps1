@@ -46,6 +46,39 @@ try {
     Check 'target: the disc folder itself is refused' (-not (Test-InstallFolder (Join-Path $disc 'in') $disc 1MB).Ok)
     Check 'target: a drive root is refused' (-not (Test-InstallFolder 'C:\' $disc 1MB).Ok)
 
+    $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if (-not $admin) {
+        $r = Test-InstallFolder (Join-Path $env:ProgramFiles 'Nukkoro Write Test\Shadow') $disc 1MB
+        Check 'target: a folder Windows does not let this user write in is refused, in plain words' (-not $r.Ok -and $r.Message -match 'does not let you write') $r.Message
+    }
+    Check 'target: no probe file is left behind' (@(Get-ChildItem -LiteralPath $scratch -Recurse -Force -Filter '.nukkoro-write-test-*').Count -eq 0)
+    Check 'tools: a Windows SDK is seen on this PC' (Test-WindowsSdk)
+    $older = $null; $py = Find-Python3 ([ref]$older)
+    Check 'tools: the Python found is 3.10 or newer' ($py -and ((& $py -c 'import sys; print(sys.version_info >= (3, 10))') -eq 'True')) "$py"
+
+    # --- the temporary build files: removed only in a folder the setup exe unpacked ------------------------
+    $pkg = Join-Path $scratch 'NukkoroRecomp\9.9.9'
+    New-Item -ItemType Directory -Force -Path "$pkg\installer", "$pkg\.build\release\sub", "$pkg\.build\setup" | Out-Null
+    Copy-Item (Join-Path (Split-Path -Parent $PSScriptRoot) 'InstallCore.psm1') "$pkg\installer\InstallCore.psm1"
+    Set-Content "$pkg\.build\release\sub\big.bin" ('x' * 5000) -Encoding ASCII; Set-Content "$pkg\.build\install.log" 'log' -Encoding ASCII
+    $old1 = Join-Path $scratch 'NukkoroRecomp\0.0.1'; $old2 = Join-Path $scratch 'NukkoroRecomp\0.0.2'; $other = Join-Path $scratch 'NukkoroRecomp\notes'
+    New-Item -ItemType Directory -Force -Path $old1, $old2, $other | Out-Null
+    Set-Content "$old1\.unpacked" 'unpacked' -Encoding ASCII; Set-Content "$old1\file.bin" 'x' -Encoding ASCII; Set-Content "$old2\mine.txt" 'x' -Encoding ASCII; Set-Content "$other\.unpacked" 'x' -Encoding ASCII
+    $clean = { param($module, $keep) $env:NUKKORO_KEEP_BUILD = $keep; Import-Module $module -Force; Remove-BuildFiles }
+    $run = { param($keep) $ps = [powershell]::Create().AddScript($clean).AddArgument("$pkg\installer\InstallCore.psm1").AddArgument($keep); try { [double]($ps.Invoke() | Select-Object -Last 1) } finally { $ps.Dispose() } }
+    $freed = & $run ''
+    Check 'build files: nothing is removed in a folder the setup exe did not unpack (no marker)' ($freed -eq 0 -and (Test-Path "$pkg\.build\release\sub\big.bin") -and (Test-Path $old1))
+    Set-Content "$pkg\.unpacked" 'unpacked x' -Encoding ASCII
+    $freed = & $run ''
+    Check 'build files: nothing is removed without a packaged revision (a clone)' ($freed -eq 0 -and (Test-Path "$pkg\.build\release\sub\big.bin"))
+    Set-Content "$pkg\installer\revision.txt" ('a' * 40) -Encoding ASCII
+    $freed = & $run '1'
+    Check 'build files: NUKKORO_KEEP_BUILD=1 keeps them' ($freed -eq 0 -and (Test-Path "$pkg\.build\release\sub\big.bin"))
+    $freed = & $run ''
+    Check 'build files: removed after an install from an unpacked package, the log stays' ($freed -gt 5000 -and -not (Test-Path "$pkg\.build\release") -and -not (Test-Path "$pkg\.build\setup") -and (Test-Path "$pkg\.build\install.log") -and (Test-Path "$pkg\installer\InstallCore.psm1"))
+    Check 'build files: an earlier version the setup exe unpacked is removed' (-not (Test-Path $old1))
+    Check 'build files: other folders beside it are left alone' ((Test-Path "$old2\mine.txt") -and (Test-Path "$other\.unpacked"))
+    Import-Module (Join-Path (Split-Path -Parent $PSScriptRoot) 'InstallCore.psm1') -Force
     # --- the backend, started the way the setup window starts it ---------------------------------------
     function Invoke-Backend { $out = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $backend @args 2>$null; [pscustomobject]@{ Exit = $LASTEXITCODE; Out = @($out) } }
     $missing = Join-Path $scratch 'no such disc'

@@ -291,7 +291,7 @@ function renderComponents() {
         <a data-url="https://visualstudio.microsoft.com/license-terms/">Microsoft</a>, <a data-url="https://www.python.org/about/legal/">Python</a>.</div>`
     : `<div class="tools compact"><strong>What the build needs</strong> ${toolsReady() ? '' : '<a id="recheck">Check again</a>'}${tools}</div>` +
       (prereqsOk() || state.prereqs === null
-        ? `<div class="card compact"><strong>Space:</strong> ${assets ? size(assets + 150 * 1024 ** 2) : '-'} in the install folder, plus about 1.3 GB of build files next to this setup.</div>` : '');
+        ? `<div class="card compact"><strong>Space:</strong> ${assets ? size(assets + 150 * 1024 ** 2) : '-'} in the install folder. While it builds, setup uses about 1.5 GB more and frees it again when it is done.</div>` : '');
   content.innerHTML = `
     <h1>Components</h1>
     ${check('game', 'Game, built from your disc', '(required)', true)}

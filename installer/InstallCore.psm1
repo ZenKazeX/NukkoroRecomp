@@ -29,38 +29,60 @@ function Format-Size([double]$bytes) {
 
 # ---- prerequisites -----------------------------------------------------------
 
-function Find-Python3 {
+# The build's scripts need Python 3.10 or newer (zip(strict=...), X | None at run time). An older Python 3 fails in
+# the middle of the build with a syntax or type error, so it counts as missing and the setup installs a current one.
+$script:PythonMinor = 10
+
+# The path of a python.exe that is Python 3.$script:PythonMinor or newer, or $null. $older gets the version of an
+# older Python 3 that was found and passed over, for the message.
+function Find-Python3([ref]$older = ([ref]$null)) {
+    $probe = 'import sys; print(sys.version_info[0], sys.version_info[1], sys.executable)'
+    $found = @()
     foreach ($candidate in @(@('py', '-3'), @('python'), @('python3'))) {
         $command = Get-Command $candidate[0] -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($null -eq $command) { continue }
         # The real interpreter path (py.exe is only a launcher), for CMake's FindPython3.
-        $arguments = @($candidate | Select-Object -Skip 1) + @('-c', 'import sys; print(sys.version_info[0], sys.executable)')
+        $arguments = @($candidate | Select-Object -Skip 1) + @('-c', $probe)
         try {
             $answer = & $command.Source @arguments 2>$null | Select-Object -First 1
-            if ($answer -match '^3 (.+)$') { return $Matches[1].Trim() }
+            if ($answer -match '^3 (\d+) (.+)$') { $found += [pscustomobject]@{ Minor = [int]$Matches[1]; Exe = $Matches[2].Trim() } }
         } catch {}
     }
     # A Python that is installed but not on this process's PATH: one installed a moment ago (the PATH of a running
     # program does not change), or one installed without "Add python.exe to PATH". The registry names them.
-    $installed = @()
     foreach ($hive in 'HKCU:\Software\Python\PythonCore', 'HKLM:\Software\Python\PythonCore') {
         foreach ($key in @(Get-ChildItem -Path $hive -ErrorAction SilentlyContinue)) {
             if ($key.PSChildName -notmatch '^3\.(\d+)') { continue }
-            $minor = [int]$Matches[1]
             $path = (Get-ItemProperty -Path (Join-Path $key.PSPath 'InstallPath') -ErrorAction SilentlyContinue).'(default)'
-            if ($path) { $installed += [pscustomobject]@{ Minor = $minor; Exe = Join-Path $path 'python.exe' } }
+            if (-not $path) { continue }
+            $exe = Join-Path $path 'python.exe'
+            if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { continue }
+            try {
+                $answer = & $exe -c $probe 2>$null | Select-Object -First 1
+                if ($answer -match '^3 (\d+) (.+)$') { $found += [pscustomobject]@{ Minor = [int]$Matches[1]; Exe = $Matches[2].Trim() } }
+            } catch {}
         }
     }
-    foreach ($candidate in ($installed | Sort-Object Minor -Descending)) {
-        if (-not (Test-Path -LiteralPath $candidate.Exe -PathType Leaf)) { continue }
-        try {
-            $answer = & $candidate.Exe -c 'import sys; print(sys.version_info[0], sys.executable)' 2>$null | Select-Object -First 1
-            if ($answer -match '^3 (.+)$') { return $Matches[1].Trim() }
-        } catch {}
-    }
+    # The first one found that is new enough (PATH order first, as before); else report the newest older one.
+    $good = $found | Where-Object { $_.Minor -ge $script:PythonMinor } | Select-Object -First 1
+    if ($good) { return $good.Exe }
+    $old = $found | Sort-Object Minor -Descending | Select-Object -First 1
+    if ($old) { $older.Value = "3.$($old.Minor)" }
     return $null
 }
 
+# Whether a Windows 10/11 SDK is installed (its headers): Visual Studio's C++ tools cannot build without one, and
+# the Visual Studio Installer lets a player untick it.
+function Test-WindowsSdk {
+    foreach ($key in 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Microsoft SDKs\Windows\v10.0', 'HKLM:\SOFTWARE\Microsoft\Microsoft SDKs\Windows\v10.0') {
+        $root = (Get-ItemProperty -Path $key -ErrorAction SilentlyContinue).InstallationFolder
+        if (-not $root) { continue }
+        $include = Join-Path $root 'Include'
+        if (@(Get-ChildItem -LiteralPath $include -Directory -Filter '10.*' -ErrorAction SilentlyContinue |
+              Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'um\Windows.h') -PathType Leaf }).Count) { return $true }
+    }
+    return $false
+}
 # Any Visual Studio 2026 on this PC, with or without the C++ tools: its install folder, or $null.
 function Find-AnyVisualStudio {
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
@@ -242,11 +264,14 @@ function Test-Prerequisites {
         $cmakeDetail = "not found. Add 'C++ CMake tools for Windows' to Visual Studio 2026 in the Visual Studio Installer, or install CMake 4.2 or newer"
     }
     $results += [pscustomobject]@{ Name = 'CMake 4.2+'; Ok = [bool]$cmake; Detail = $cmakeDetail; Url = 'https://cmake.org/download/'; Value = $(if ($cmake) { $cmake.Path }); Key = 'cmake' }
-    $python = Find-Python3
-    $results += [pscustomobject]@{ Name = 'Python 3'; Ok = [bool]$python; Detail = $(if ($python) { $python } else { 'not found (PATH and the registry were searched)' }); Url = 'https://www.python.org/downloads/'; Value = $python; Key = 'python' }
+    $olderPython = $null
+    $python = Find-Python3 ([ref]$olderPython)
+    $results += [pscustomobject]@{ Name = 'Python 3'; Ok = [bool]$python; Detail = $(if ($python) { $python } elseif ($olderPython) { "Python $olderPython is too old: 3.$script:PythonMinor or newer is needed" } else { 'not found (PATH and the registry were searched)' }); Url = 'https://www.python.org/downloads/'; Value = $python; Key = 'python' }
 
 
-    $results += [pscustomobject]@{ Name = 'Visual Studio 2026 C++ tools'; Ok = [bool]$vsPath; Detail = $(if ($vsPath) { $vsPath } else { "'Desktop development with C++' workload not found" }); Url = 'https://visualstudio.microsoft.com/downloads/'; Value = $vsPath; Key = 'vs' }
+    # With the C++ tools but without any Windows SDK the build cannot start: the same fix (the installer adds the SDK).
+    $sdk = -not $vsPath -or (Test-WindowsSdk)
+    $results += [pscustomobject]@{ Name = 'Visual Studio 2026 C++ tools'; Ok = ([bool]$vsPath -and $sdk); Detail = $(if (-not $vsPath) { "'Desktop development with C++' workload not found" } elseif (-not $sdk) { "$vsPath has no Windows SDK" } else { $vsPath }); Url = 'https://visualstudio.microsoft.com/downloads/'; Value = $vsPath; Key = 'vs' }
 
     # Test hook (the setup window's self-test): NUKKORO_TEST_MISSING=python,vs reports those tools as missing.
     if ($env:NUKKORO_TEST_MISSING) {
@@ -452,7 +477,18 @@ function Test-InstallFolder([string]$path, [string]$discRoot, [double]$assetByte
         }
     }
     $repo = $script:RepoRoot.TrimEnd('\')
-    if ($full -ieq $repo) { $r.Message = 'Install somewhere else than the source folder.'; return $r }
+    if ($full -ieq $repo -or $full.StartsWith($repo + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $r.Message = 'Install somewhere else than the setup''s own folder.'; return $r
+    }
+    # Can this user write there? (Program Files and other protected places: the install would fail when it starts.)
+    # Tried in the folder itself, or in the nearest folder above it that exists, with a file that is removed again.
+    $probeDir = $full
+    while ($probeDir -and -not (Test-Path -LiteralPath $probeDir -PathType Container)) { $probeDir = Split-Path -Parent $probeDir }
+    if ($probeDir) {
+        $probe = Join-Path $probeDir (".nukkoro-write-test-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
+        try { [System.IO.File]::WriteAllBytes($probe, [byte[]]@()); Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue }
+        catch { $r.Message = "Windows does not let you write in $probeDir. Choose another folder, for example the suggested one in your user folder."; return $r }
+    }
 
     $r.Existing = Test-Path -LiteralPath (Join-Path $full $script:GameExe) -PathType Leaf
     # An update replaces these programs: one that is running cannot be replaced (the copy step would fail much later).
@@ -763,6 +799,40 @@ function New-GameShortcuts([string]$target, [bool]$desktop, [bool]$startMenu,
     return $made
 }
 
+# ---- the build files ------------------------------------------------------------
+#
+# The build leaves about 1.3 GB under .build of the unpacked package (%PUBLIC%\NukkoroRecomp\<version>), a place no
+# player looks. After a successful install they are removed, and so are the folders earlier versions of the setup
+# unpacked themselves into. Only in a folder the setup exe unpacked (its .unpacked marker and a packaged revision):
+# never in a clone or a hand-extracted zip, whose owner sees and manages the folder. NUKKORO_KEEP_BUILD=1 keeps them
+# (tests, and anyone who reinstalls often). Returns the bytes freed.
+function Remove-BuildFiles {
+    if ($env:NUKKORO_KEEP_BUILD -eq '1') { return 0.0 }
+    $root = $script:RepoRoot
+    if (-not (Test-Path -LiteralPath (Join-Path $root '.unpacked') -PathType Leaf)) { return 0.0 }
+    $stamp = Join-Path $PSScriptRoot 'revision.txt'
+    if (-not (Test-Path -LiteralPath $stamp) -or ((Get-Content -LiteralPath $stamp -Raw).Trim() -notmatch '^[0-9a-f]{40}$')) { return 0.0 }
+    $freed = 0.0
+    $build = Join-Path $root '.build'
+    foreach ($name in 'release', 'setup') {
+        $folder = Join-Path $build $name
+        if (-not (Test-Path -LiteralPath $folder -PathType Container)) { continue }
+        $freed += Get-FolderSize $folder
+        Remove-Item -LiteralPath $folder -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    # Earlier versions: siblings of this folder that the setup exe unpacked (same marker), nothing else.
+    $parent = Split-Path -Parent $root
+    if ((Split-Path -Leaf $parent) -eq 'NukkoroRecomp') {
+        foreach ($sibling in @(Get-ChildItem -LiteralPath $parent -Directory -ErrorAction SilentlyContinue)) {
+            if ($sibling.FullName -ieq $root -or $sibling.Name -notmatch '^\d+\.\d+\.\d+') { continue }
+            if (-not (Test-Path -LiteralPath (Join-Path $sibling.FullName '.unpacked') -PathType Leaf)) { continue }
+            $freed += Get-FolderSize $sibling.FullName
+            Remove-Item -LiteralPath $sibling.FullName -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    return $freed
+}
+
 # ---- the whole install ----------------------------------------------------------
 
 $script:ToolStageName = 'Install the build tools'
@@ -865,6 +935,8 @@ function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$j
         foreach ($made in $shortcuts) { & $OnEvent @{ type = 'log'; text = "Shortcut: $made`n" } }
         Write-InstallManifest $targetPath $disc.Root $shortcuts $(if ($startMenu) { @($startMenuDir) } else { @() }) $japaneseFiles
         Copy-Item -LiteralPath $log -Destination (Join-Path $targetPath 'install.log') -Force
+        $freed = Remove-BuildFiles
+        if ($freed -gt 0) { & $OnEvent @{ type = 'log'; text = "Removed the temporary build files ($(Format-Size $freed)).`n" } }
     } catch {
         & $fail $last "Finishing failed: $($_.Exception.Message)"
         return $false
@@ -875,7 +947,7 @@ function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$j
     return $true
 }
 
-Export-ModuleMember -Function Get-ToolPlan, Install-Tool, Install-MissingTools, Find-AnyVisualStudio, Get-RepoRoot, Get-BuiltExe, Get-DefaultInstallFolder, Format-Size, Test-Prerequisites,
+Export-ModuleMember -Function Remove-BuildFiles, Test-WindowsSdk, Find-Python3, Get-ToolPlan, Install-Tool, Install-MissingTools, Find-AnyVisualStudio, Get-RepoRoot, Get-BuiltExe, Get-DefaultInstallFolder, Format-Size, Test-Prerequisites,
     Resolve-DiscFolder, Test-DiscFolder, Get-JapaneseVoiceNames, Test-JapaneseDiscFolder, Copy-JapaneseVoices,
     Set-SpokenLanguage, Get-FolderSize, Test-InstallFolder, Get-InstallJobs, Get-PrebuiltFolder,
     Get-BuildSteps, Get-InstallSteps, Start-Step, Test-StepSucceeded, Stop-Step, Read-LogTail, Get-StepFailureCause, New-BuildProgress,

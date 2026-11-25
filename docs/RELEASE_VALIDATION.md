@@ -54,6 +54,62 @@ of its 08d2c0a7 placed correctly (that commit's own copy does not compile; repai
 - Play by a person: nobody has played from this build. The picture-rate mode was checked as numbers in the development
   tree, not looked at.
 - Mods and the Japanese voices with this source (unchanged code paths, validated in the section below).
+## Later the same day: the setup, tested the way a player uses it
+
+The results above went through `installer/Install.ps1`. Installing through the call the setup window makes, from
+folders with awkward names, and with tools reported missing found more; each was fixed and the rounds repeated.
+Measured and tested on the same PC. The numbers are from the packages of commits `2c00a2c` .. `a91adc2`; the package
+of the last commit of this branch is checked again by the same scripts and its results are in the release notes.
+
+**Fixed**
+
+| Failure | Cause | Now |
+|---|---|---|
+| The setup window's install never started without a Japanese disc | the window passed a lone `-` as "none"; `powershell.exe -File` ends with exit code 2 and no output on that argument | `none` |
+| The build failed at its very end for a disc folder with non-ASCII letters (`RC2135: file not found`) | the resource script named the disc's system files by their path; `rc.exe` reads the script in the ANSI code page | the three files are copied into the build tree and embedded from there (same bytes) |
+| Visual Studio 2026 from the preview channel was not found | `vswhere` leaves prereleases out unless asked | asked for |
+| `Install.cmd` (the zip) wanted a CMake on PATH and took any | the same cause as issue #7 | it uses the CMake the installer picks |
+| Updating while the game runs failed at the copy step | the running program cannot be replaced | the folder check names the program to close |
+| A folder the player cannot write in (Program Files) failed when the install started | not checked | refused at the folder check, in plain words |
+| The build drive running full failed somewhere in the build | not checked | checked before the build |
+| An older Python 3 failed in the middle of the build | any Python 3 was accepted | 3.10 or newer, else a current one is installed |
+| Visual Studio's C++ tools without a Windows SDK failed at configure | not checked | counts as missing, the installer adds the SDK |
+| A failed step said only its exit code | - | the first error line of that step and a hint for the known causes |
+| A folder unpacked by another build of the same version was reused | the marker had no build identity | it names the build |
+| About 1.3 GB of build files stayed under `%PUBLIC%\NukkoroRecomp` for good, and so did earlier versions' folders | never removed | removed after a successful install (only in a folder the setup exe unpacked) |
+
+**New: the setup installs what the PC lacks.** With Visual Studio's C++ tools, CMake or Python missing, the Components
+page says so in one card, Next stays open, and the install starts with a step that downloads the vendor's installer
+(Microsoft, python.org), refuses a file not signed by that vendor, and runs it unattended (Visual Studio `--passive`
+with the compiler, the Windows SDK 10.0.26100 and CMake named; Python `/passive` for the current user). Windows asks
+once for permission. The WebView2 Runtime is installed the same way before the window opens.
+
+**Shorter install.** From nothing unpacked to the finished install: 435 s -> 360 s (unpack 0.9, configure 10.8,
+translate and compile 345.9, copies and finish 3.0). Three shards hold one very large function each; they compile
+first now, and `verify_native_math.py` reads its inputs once instead of once per contract (53 s -> 2.2 s, same output,
+same refusal of five broken inputs). The length is now set by `fn_803E1D58` alone: 164 s in the compiler by itself,
+about 290 s beside eleven other compilers. More parallel compilers (20 instead of 12) changed nothing.
+
+**Results**
+
+| Check | Result |
+|---|---|
+| The setup exe unpacks itself (`--extract-only`) | exit 0; the tree equals the zip plus the setup window program |
+| Install through the window's backend call, no CMake on PATH, disc folder and install folder with spaces, accented letters, brackets and an ampersand | exit 0 in about 355 s |
+| Tape gate on that install | 12 of 12 |
+| The installed game started in a window from its own folder, no arguments | window open and responding; it reaches the game's first screen (the 60 Hz question) |
+| The packaged setup window's self-test with `--install`: every page, then Install, to "Installation Complete" | passed |
+| The same with Python reported missing and a signed stand-in program served locally as "the Python installer" | the window lets the player go on, installs the stand-in as the step before the build, checks again, builds; passed |
+| Tape gate on the game the window installed | 12 of 12 |
+| The three real downloads (`vs_community.exe`, `python-3.13.9-amd64.exe`, `MicrosoftEdgeWebview2Setup.exe`), downloaded and signature-checked, not run | all valid, signed by Microsoft Corporation / Python Software Foundation |
+| `installer/tests/Test-InstallCore.ps1` | all checks pass (failure causes, folder checks, the backend's command line, the tool step with a stand-in, the removal of build files) |
+| `installer/tests/Test-Uninstall.ps1` | all checks pass |
+| All of ctest except `mtn_pose_contract_tests`, one run | 299 of 303; the four others need Python `pefile` (3) or the reference executable (1), as above |
+
+**Not tested.** The real unattended installs of Visual Studio and Python (this PC has both; the step is proven with
+the stand-in, the component names are the ones installed here); the WebView2 install on a Windows that lacks it; an
+older Python or a missing Windows SDK on a real PC (the checks are exercised only where this PC allows); a second PC;
+the setup window driven by a person; play by a person.
 # Mod loader update (branch `release-modloader`, 2026-11-15)
 
 Not released yet. The game source is the development tree's `release/integrate` at 1c9ac0be (510 commits after the
