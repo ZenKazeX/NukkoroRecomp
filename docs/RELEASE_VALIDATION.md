@@ -1,3 +1,59 @@
+# Version 0.0.4 (branch `release-0.0.4`, 2026-11-25)
+
+Built on the mod loader update below (never published on its own), with the development tree's source brought from
+1c9ac0be to 217f71b9 and two setup fixes. Checked on one PC: MSVC 19.52.37029, Windows SDK 10.0.26100, the CMake that
+Visual Studio 2026 installs (4.3.1), Python 3.12, the PAL disc GUPP8P as the player's disc.
+
+## What changed for the player
+
+- **The setup no longer fails at step 1 of 5 with an older CMake** (issue #7: `Could not create named generator Visual
+  Studio 18 2026`). The prerequisite check accepted any CMake from 3.25 on, but only CMake 4.2 and newer know Visual
+  Studio 2026. The setup now asks each CMake it finds whether it knows that generator: the one Visual Studio 2026
+  installs first, then those on PATH, then a default CMake install. When none does, it says which CMake it found and
+  what to install, before anything is built.
+- **A separate CMake install is no longer needed.** Visual Studio's own CMake is not on PATH outside its command
+  prompt; the setup finds it in the Visual Studio it detected.
+- **The game needs less processor time.** The same recorded input through the release executable of the mod loader
+  update and through this one, interleaved, 4 rounds (8 runs each), headless, whole-process CPU time: Westopolis
+  24.41 s -> 20.44 s (-16.3 %; ranges 24.20..24.58 and 20.39..20.61), Final Haunt 9.33 s -> 8.08 s (-13.4 %;
+  9.22..9.42 and 7.95..8.30). The v0.0.3 executable needed 33.36 s for the Westopolis input on the same PC.
+- From the development tree, besides the speed work: the fourth shoe jet (the original fills three of four), and a
+  picture rate independent of the game's 60 Hz (`--frame-interpolation`, off unless asked for).
+- Everything of the mod loader update: the mod loader and manager, the optional Japanese voices, the prebuilt parts.
+
+## Source
+
+`f42192b` takes the development tree's 430 commits after 1c9ac0be for `runtime/`, `extract/`, `tools/`, `test_data/`
+and the CMake files (applied as one three-way patch: no conflict). Left out on purpose: the conversion waves (held out
+of the development image too), the "fast owners" and the lifted sweep closure (no gain measured there, off by default,
+and they need source trees this repository does not carry), research tools, the recovered and lifted trees, session
+notes. The fast exact sine / cosine header lives in `runtime/lift/math/fast_trig.h` here. The liveness roots are
+regenerated for this source. `lifted_render.{h,cpp}` are the development tree's 0458bae4 with the trail-cause counters
+of its 08d2c0a7 placed correctly (that commit's own copy does not compile; repaired there as 9c124756).
+
+## Results
+
+| Check | Result |
+|---|---|
+| `tests` preset, all of ctest except `mtn_pose_contract_tests` (303 tests) | 296 passed in the full run; three more were fixed and pass (`lift_purity`: a guest address in the new header's comment; `native_host_isa_gate`: `fp_single_round_trip_tests` now links the host gate; `native_runtime_ratchet`: needed the game image's map in the configuration). The suite was not run again as a whole after those three fixes. Not passed, as before and not from this change: `shipping_platform_selection` (needs the reference executable, not built in this configuration), `f1c_host_stack_integrity`, `f1c_host_stack_integrity_notail`, `f1c_host_stack_game` (need the Python module `pefile`, not installed on this PC) |
+| The development tree's tape gate on this repository's `release` executable (Shipping, MSVC) | 12 of 12 equal its references: Westopolis state `6d9d956eec70`, audio `c64ee7883f980f73`, behaviour trace, ten screenshots; Final Haunt state `46e94ea3142c`, audio `fa2abc800651039e` |
+| Against the mod loader update's executable, run as that section ran it | final states and audio differ, as they must: the development tree changed behaviour on purpose in between (the fourth shoe jet among others; its gate pins the retail jets with `SHADOW_RETAIL_SHOE_JETS=1`). The gate row above is the comparison that counts |
+| `dev/Package-Release.ps1 -Version 0.0.4` | package 54.3 MB, one prebuilt set `msvc-19.52.37029.0-sdk10.0.26100.0` (15 parts) |
+| Scan of the prebuilt files and mod data against the disc | passed: no shared run of 64 bytes or more (longest real run 52), no translated function defined or referenced, no personal path |
+| Install from the package: unpacked where the setup unpacks it, `installer/Install.ps1` in a shell with **no CMake on PATH**, fresh target folder | exit 0 in 433 s (438 s in an earlier run of the same kind); the prebuilt set was used; `install-info.json` records the package's commit with 0 modified files |
+| The development tree's tape gate on the **installed** executable | 12 of 12 |
+| The prerequisite check, three cases (a stand-in for a CMake 3.31 that lists Visual Studio 2022 as its newest generator) | old CMake first on PATH and Visual Studio's present: Visual Studio's is used and put first on PATH; only the old one: refused, with its version, its path and what to install; none on PATH: Visual Studio's is used |
+| `installer/tests/Test-Uninstall.ps1` | 29 checks, 0 failed |
+
+## Not tested
+
+- The setup window driven by hand with this package (the install above went through `Install.ps1`, the same module
+  the window's backend calls); another PC, another compiler or a clean Windows install. The player of issue #7 has not
+  confirmed the fix: it was reproduced only with the stand-in CMake.
+- `mtn_pose_contract_tests`, the `shipping-tests` preset, the strict comparison against the original code.
+- Play by a person: nobody has played from this build. The picture-rate mode was checked as numbers in the development
+  tree, not looked at.
+- Mods and the Japanese voices with this source (unchanged code paths, validated in the section below).
 # Mod loader update (branch `release-modloader`, 2026-11-15)
 
 Not released yet. The game source is the development tree's `release/integrate` at 1c9ac0be (510 commits after the
