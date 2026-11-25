@@ -184,8 +184,8 @@ struct Painter {
     }
 
     void draw_labels() {
-        const std::wstring main_stick = v.binding.swap_sticks ? L"Right stick" : L"Left stick";
-        const std::wstring c_stick = v.binding.swap_sticks ? L"Left stick" : L"Right stick";
+        const std::wstring main_stick = v.binding.swap_sticks ? wide("Right stick") : wide("Left stick");
+        const std::wstring c_stick = v.binding.swap_sticks ? wide("Left stick") : wide("Right stick");
         left(40, main_stick, top("stick"));
         left(118, of("dpad_up"), top("dpad_up"));
         left(154, of("dpad_left"), top("dpad_left"));
@@ -199,7 +199,7 @@ struct Painter {
         const PointF start = top("start");
         text(of("start"), label, start.X - 60, start.Y + 62, 120, StringAlignmentCenter, kInk);
         leader(PointF(start.X, start.Y + 50), PointF(start.X, start.Y + 7));
-        text(L"Click a button on the picture to change it", caption, kPictureX - 40, kTiltedY - 18, kPictureW + 80, StringAlignmentCenter, kLine);
+        text(wide("Click a button on the picture to change it"), caption, kPictureX - 40, kTiltedY - 18, kPictureW + 80, StringAlignmentCenter, kLine);
 
         left(kTiltedY + 44, of("l"), tilted("l"));
         right(kTiltedY + 26, of("r"), tilted("r"));

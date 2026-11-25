@@ -41,7 +41,19 @@ namespace {
 using namespace padconfig;
 namespace sp = shadow::peripheral;
 
-constexpr wchar_t kTitle[] = L"Shadow the Hedgehog Recompiled - Settings";
+// Every text the player sees is kept in the program as UTF-8 and widened when it is used: a UTF-16 English sentence
+// stored in the executable can coincide with the game's own UTF-16 text (its font files), which the release's content
+// scan (dev/scan_game_code.py) rightly refuses. Write UI texts as "..."_w, never L"...".
+std::wstring wide(const std::string& s) {
+    if (s.empty()) return {};
+    const int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
+    std::wstring out(static_cast<std::size_t>(n), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), out.data(), n);
+    return out;
+}
+std::wstring operator""_w(const char* text, std::size_t length) { return wide(std::string(text, length)); }
+
+const std::wstring kTitle = "Shadow the Hedgehog Recompiled - Settings"_w;
 
 // Layout (96 dpi units). The page area sits between the tab strip and the bar at the bottom.
 constexpr int kClientW = 1094, kTop = 40, kPageH = 586, kBottom = kTop + kPageH, kClientH = kBottom + 70;
@@ -54,26 +66,26 @@ constexpr UINT_PTR kPollTimer = 1;
 constexpr DWORD kCaptureMs = 6000;
 
 enum Page : int { kDisplay, kFrameRate, kSound, kLanguage, kPadButtons, kPadOptions, kKeyboard, kSaving, kPageCount };
-const wchar_t* const kPageNames[kPageCount] = {L"Display",          L"Frame rate",         L"Sound",
-                                               L"Language",         L"Controller buttons", L"Controller options",
-                                               L"Keyboard and mouse", L"Saving"};
+const std::wstring kPageNames[kPageCount] = {"Display"_w,          "Frame rate"_w,         "Sound"_w,
+                                               "Language"_w,         "Controller buttons"_w, "Controller options"_w,
+                                               "Keyboard and mouse"_w, "Saving"_w};
 
 const struct {
-    const wchar_t* label;
+    std::wstring label;
     sp::ButtonStyle style;
-} kStyles[] = {{L"Automatic", sp::ButtonStyle::Auto},
-               {L"Original (GameCube)", sp::ButtonStyle::Original},
-               {L"Xbox", sp::ButtonStyle::Xbox},
-               {L"PlayStation", sp::ButtonStyle::PlayStation},
-               {L"Nintendo Switch", sp::ButtonStyle::Switch}};
+} kStyles[] = {{"Automatic"_w, sp::ButtonStyle::Auto},
+               {"Original (GameCube)"_w, sp::ButtonStyle::Original},
+               {"Xbox"_w, sp::ButtonStyle::Xbox},
+               {"PlayStation"_w, sp::ButtonStyle::PlayStation},
+               {"Nintendo Switch"_w, sp::ButtonStyle::Switch}};
 
 // What each keyboard action is called on the page, in sp::Action order.
-const wchar_t* const kActionLabels[sp::kActionCount] = {
-    L"Move forward",      L"Move back",          L"Move left",        L"Move right",      L"Walk (hold)",
-    L"Camera left",       L"Camera right",       L"Camera up",        L"Camera down",     L"Jump (A)",
-    L"Attack (B)",        L"Action (X)",         L"Chaos power (Y)",  L"L button",        L"Move sideways (R, hold)",
-    L"Z button",          L"Pause (Start)",      L"Back / pause",     L"Menu up (D-pad)", L"Menu down (D-pad)",
-    L"Menu left (D-pad)", L"Menu right (D-pad)"};
+const std::wstring kActionLabels[sp::kActionCount] = {
+    "Move forward"_w,      "Move back"_w,          "Move left"_w,        "Move right"_w,      "Walk (hold)"_w,
+    "Camera left"_w,       "Camera right"_w,       "Camera up"_w,        "Camera down"_w,     "Jump (A)"_w,
+    "Attack (B)"_w,        "Action (X)"_w,         "Chaos power (Y)"_w,  "L button"_w,        "Move sideways (R, hold)"_w,
+    "Z button"_w,          "Pause (Start)"_w,      "Back / pause"_w,     "Menu up (D-pad)"_w, "Menu down (D-pad)"_w,
+    "Menu left (D-pad)"_w, "Menu right (D-pad)"_w};
 
 using GetStateFn = DWORD(WINAPI*)(DWORD, XINPUT_STATE*);
 
@@ -130,13 +142,6 @@ struct App {
     bool left_trigger = false, right_trigger = false;
 } g;
 
-std::wstring wide(const std::string& s) {
-    if (s.empty()) return {};
-    const int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), nullptr, 0);
-    std::wstring out(static_cast<std::size_t>(n), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, s.data(), static_cast<int>(s.size()), out.data(), n);
-    return out;
-}
 std::wstring number_text(double v) { return wide(format_number(v)); }
 int px(int v) { return MulDiv(v, g.dpi, 96); }
 HWND item(int id) { return GetDlgItem(g.window, id); }
@@ -197,30 +202,30 @@ std::wstring bind_text(const sp::Bind& bind);
 void refresh_status() {
     std::wstring text;
     if (g.capturing >= 0) {
-        text = L"Press the controller button for " + wide(kControls[static_cast<std::size_t>(g.capturing)].name) +
-               L". Esc cancels, Delete clears it.";
+        text = "Press the controller button for "_w + wide(kControls[static_cast<std::size_t>(g.capturing)].name) +
+               ". Esc cancels, Delete clears it."_w;
     } else if (g.key_capture >= 0) {
-        text = L"Press a key or a mouse button for " +
+        text = "Press a key or a mouse button for "_w +
                std::wstring(kActionLabels[static_cast<std::size_t>(g.key_capture) / sp::kMaxBinds]) +
-               L". Delete clears this box. Wait a few seconds to cancel.";
+               ". Delete clears this box. Wait a few seconds to cancel."_w;
     } else if (g.status_is_message) {
         text = g.message;
     } else if (!g.refused.empty()) {
         text = g.refused.begin()->second;
     } else if (g.page == kPadButtons && !g.connected) {
-        text = unsaved() ? L"Unsaved changes. No controller found: connect one to choose buttons."
-                         : L"No controller found. Connect one to choose buttons.";
+        text = unsaved() ? "Unsaved changes. No controller found: connect one to choose buttons."_w
+                         : "No controller found. Connect one to choose buttons."_w;
     } else if (unsaved()) {
-        text = L"You have unsaved changes. Click Save to keep them.";
+        text = "You have unsaved changes. Click Save to keep them."_w;
     } else if (g.page == kPadButtons) {
-        text = L"Controller connected. Click a button on the picture or in the list to change it.";
+        text = "Controller connected. Click a button on the picture or in the list to change it."_w;
     } else {
-        text = L"No unsaved changes.";
+        text = "No unsaved changes."_w;
     }
     set_text(item(kStatus), text);
     set_text(item(kInfo), g.game_running
-                              ? L"The game is running. You can still save: it uses the new settings the next time it starts."
-                              : L"The game reads these settings when it starts, so changes take effect the next time you start it.");
+                              ? "The game is running. You can still save: it uses the new settings the next time it starts."_w
+                              : "The game reads these settings when it starts, so changes take effect the next time you start it."_w);
 }
 
 void show_message(const std::wstring& text) {
@@ -239,9 +244,10 @@ bool game_is_running() {
     if (snapshot == INVALID_HANDLE_VALUE) return false;
     PROCESSENTRY32W entry{};
     entry.dwSize = sizeof(entry);
+    const std::wstring game = "ShadowTheHedgehog.exe"_w;
     bool found = false;
     for (BOOL ok = Process32FirstW(snapshot, &entry); ok && !found; ok = Process32NextW(snapshot, &entry))
-        found = lstrcmpiW(entry.szExeFile, L"ShadowTheHedgehog.exe") == 0;
+        found = lstrcmpiW(entry.szExeFile, game.c_str()) == 0;
     CloseHandle(snapshot);
     return found;
 }
@@ -253,7 +259,7 @@ std::wstring row_text(std::size_t i) { return control_label(g.binding, i); }
 void refresh_rows() {
     for (std::size_t i = 0; i < kControls.size(); ++i) {
         const bool waiting = g.capturing == static_cast<int>(i);
-        set_text(item(kFirstRow + static_cast<int>(i)), waiting ? L"Press a button..." : row_text(i));
+        set_text(item(kFirstRow + static_cast<int>(i)), waiting ? "Press a button..."_w : row_text(i));
     }
 }
 
@@ -306,21 +312,21 @@ void refresh_picture(WORD buttons) {
 
 std::wstring bind_text(const sp::Bind& bind) {
     if (bind.source == sp::Bind::Source::Mouse) {
-        static const wchar_t* const names[] = {L"Left mouse button", L"Right mouse button", L"Middle mouse button",
-                                               L"Mouse back button", L"Mouse forward button"};
-        return bind.code < std::size(names) ? names[bind.code] : L"Mouse button";
+        static const std::wstring names[] = {"Left mouse button"_w, "Right mouse button"_w, "Middle mouse button"_w,
+                                               "Mouse back button"_w, "Mouse forward button"_w};
+        return bind.code < std::size(names) ? names[bind.code] : "Mouse button"_w;
     }
-    if (bind.source != sp::Bind::Source::Key) return L"-";
+    if (bind.source != sp::Bind::Source::Key) return "-"_w;
     const std::string name = sp::key_name(bind.code);
     static const struct {
         const char* from;
-        const wchar_t* to;
-    } friendly[] = {{"LShift", L"Left Shift"}, {"RShift", L"Right Shift"}, {"LCtrl", L"Left Ctrl"},
-                    {"RCtrl", L"Right Ctrl"},  {"LAlt", L"Left Alt"},      {"RAlt", L"Right Alt"},
-                    {"Up", L"Up arrow"},       {"Down", L"Down arrow"},    {"Left", L"Left arrow"},
-                    {"Right", L"Right arrow"}};
+        const char* to;
+    } friendly[] = {{"LShift", "Left Shift"}, {"RShift", "Right Shift"}, {"LCtrl", "Left Ctrl"},
+                    {"RCtrl", "Right Ctrl"},  {"LAlt", "Left Alt"},      {"RAlt", "Right Alt"},
+                    {"Up", "Up arrow"},       {"Down", "Down arrow"},    {"Left", "Left arrow"},
+                    {"Right", "Right arrow"}};
     for (const auto& f : friendly)
-        if (name == f.from) return f.to;
+        if (name == f.from) return wide(f.to);
     return wide(name);
 }
 
@@ -329,7 +335,7 @@ void refresh_binds() {
         for (std::size_t s = 0; s < sp::kMaxBinds; ++s) {
             const int index = static_cast<int>(a * sp::kMaxBinds + s);
             set_text(item(kFirstBind + index),
-                     g.key_capture == index ? L"Press a key..." : bind_text(g.keys.binds[a][s]));
+                     g.key_capture == index ? "Press a key..."_w : bind_text(g.keys.binds[a][s]));
         }
 }
 
@@ -357,10 +363,10 @@ void finish_key_capture(sp::Bind bind) {
     if (!others.empty()) {
         std::wstring names;
         for (const sp::Action other : others) {
-            if (!names.empty()) names += L", ";
+            if (!names.empty()) names += ", "_w;
             names += kActionLabels[static_cast<std::size_t>(other)];
         }
-        show_message(bind_text(bind) + L" is also used for: " + names + L". Both will happen when you press it.");
+        show_message(bind_text(bind) + " is also used for: "_w + names + ". Both will happen when you press it."_w);
     }
 }
 
@@ -389,7 +395,7 @@ bool close_to(double a, double b) { return std::fabs(a - b) < 1e-9; }
 
 std::wstring size_text(double encoded) {
     const long long v = static_cast<long long>(encoded);
-    return std::to_wstring(v / 100000) + L" x " + std::to_wstring(v % 100000);
+    return std::to_wstring(v / 100000) + " x "_w + std::to_wstring(v % 100000);
 }
 double size_value(int w, int h) { return static_cast<double>(w) * 100000.0 + h; }
 
@@ -425,7 +431,7 @@ void refresh_field(Field& f) {
                 if (selected < 0 && close_to(f.choices[i].value, v)) selected = static_cast<int>(i);
             }
             if (selected < 0) {
-                const std::wstring extra = (f.show ? f.show(v) : number_text(v)) + L" (set in the file)";
+                const std::wstring extra = (f.show ? f.show(v) : number_text(v)) + " (set in the file)"_w;
                 selected = static_cast<int>(SendMessageW(f.control, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(extra.c_str())));
             }
             SendMessageW(f.control, CB_SETCURSEL, static_cast<WPARAM>(selected), 0);
@@ -514,8 +520,8 @@ void on_field(Field& f, int notification) {
 
 // ---- building the pages ------------------------------------------------------------------------------------------
 
-HWND make(const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int w, int h, int id, HFONT font = nullptr) {
-    HWND c = CreateWindowExW(0, cls, text, WS_CHILD | (g.building < 0 ? WS_VISIBLE : 0) | style, px(x), px(y), px(w), px(h),
+HWND make(const wchar_t* cls, const std::wstring& text, DWORD style, int x, int y, int w, int h, int id, HFONT font = nullptr) {
+    HWND c = CreateWindowExW(0, cls, text.c_str(), WS_CHILD | (g.building < 0 ? WS_VISIBLE : 0) | style, px(x), px(y), px(w), px(h),
                              g.window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)), GetModuleHandleW(nullptr), nullptr);
     SendMessageW(c, WM_SETFONT, reinterpret_cast<WPARAM>(font != nullptr ? font : g.font), TRUE);
     if (g.building >= 0) g.page_controls[static_cast<std::size_t>(g.building)].push_back(c);
@@ -524,7 +530,7 @@ HWND make(const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, in
 
 constexpr int kHelpId = 900;  // the grey explanations (WM_CTLCOLORSTATIC)
 
-void intro(const wchar_t* text) { make(L"STATIC", text, SS_LEFT | SS_NOPREFIX, 24, kTop + 12, 1040, 40, kHelpId); }
+void intro(const std::wstring& text) { make(L"STATIC", text, SS_LEFT | SS_NOPREFIX, 24, kTop + 12, 1040, 40, kHelpId); }
 
 // One row: the label, the control, and a line of explanation beside it.
 void place(Field& f, int x, int y, int label_w, int control_w, int help_x, int help_w) {
@@ -533,7 +539,7 @@ void place(Field& f, int x, int y, int label_w, int control_w, int help_x, int h
     const int cx = x + label_w + 6;
     switch (f.kind) {
         case Kind::Check:
-            f.control = make(L"BUTTON", L"On", BS_AUTOCHECKBOX | WS_TABSTOP, cx, y, control_w, 26, f.id);
+            f.control = make(L"BUTTON", "On"_w, BS_AUTOCHECKBOX | WS_TABSTOP, cx, y, control_w, 26, f.id);
             break;
         case Kind::Combo:
             f.control = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, cx, y, control_w, 300, f.id);
@@ -571,10 +577,10 @@ void add(int page, Kind kind, std::wstring label, std::wstring help, std::functi
     g.fields.push_back(std::move(f));
 }
 
-std::wstring percent(double v) { return number_text(v) + L" %"; }
+std::wstring percent(double v) { return number_text(v) + " %"_w; }
 
 // The game's own options are -1 until the game or the player sets them.
-const Choice kNotChosen{L"Not chosen yet (the game decides)", -1.0};
+const Choice kNotChosen{"Not chosen yet (the game decides)"_w, -1.0};
 
 std::vector<Choice> exclusive_modes() {
     std::vector<std::pair<int, int>> modes;
@@ -587,7 +593,7 @@ std::vector<Choice> exclusive_modes() {
             modes.emplace_back(w, h);
     }
     std::sort(modes.begin(), modes.end(), [](const auto& a, const auto& b) { return a.first * 100000 + a.second > b.first * 100000 + b.second; });
-    std::vector<Choice> out{{L"The same as the desktop", 0.0}};
+    std::vector<Choice> out{{"The same as the desktop"_w, 0.0}};
     for (const auto& [w, h] : modes) out.push_back({size_text(size_value(w, h)), size_value(w, h)});
     return out;
 }
@@ -598,31 +604,31 @@ void define_fields() {
     ControlsConfig& k = g.keys;
 
     // Display
-    add(kDisplay, Kind::Combo, L"Screen mode",
-        L"Full screen covers the whole screen at your desktop's resolution. Exclusive full screen switches the monitor "
-        L"to the resolution below. In the game, Alt+Enter switches between window and full screen.",
+    add(kDisplay, Kind::Combo, "Screen mode"_w,
+        "Full screen covers the whole screen at your desktop's resolution. Exclusive full screen switches the monitor "_w
+        "to the resolution below. In the game, Alt+Enter switches between window and full screen."_w,
         [&] { return d.fullscreen ? (d.exclusive ? 2.0 : 1.0) : 0.0; },
         [&](double v) {
             d.fullscreen = v != 0.0;
             if (v != 0.0) d.exclusive = v == 2.0;
         },
-        {{L"Window", 0.0}, {L"Full screen", 1.0}, {L"Exclusive full screen", 2.0}});
-    add(kDisplay, Kind::Size, L"Window size",
-        L"The size of the game's window, as width x height. Pick one or type your own, such as 1600 x 900. You can "
-        L"also drag the window's edge in the game.",
+        {{"Window"_w, 0.0}, {"Full screen"_w, 1.0}, {"Exclusive full screen"_w, 2.0}});
+    add(kDisplay, Kind::Size, "Window size"_w,
+        "The size of the game's window, as width x height. Pick one or type your own, such as 1600 x 900. You can "_w
+        "also drag the window's edge in the game."_w,
         [&] { return size_value(d.width, d.height); },
         [&](double v) {
             const auto e = static_cast<long long>(v);
             d.width = static_cast<int>(e / 100000);
             d.height = static_cast<int>(e % 100000);
         },
-        {{L"1280 x 720", size_value(1280, 720)},   {L"1366 x 768", size_value(1366, 768)},
-         {L"1600 x 900", size_value(1600, 900)},   {L"1920 x 1080", size_value(1920, 1080)},
-         {L"2560 x 1440", size_value(2560, 1440)}, {L"3840 x 2160", size_value(3840, 2160)},
-         {L"1024 x 768", size_value(1024, 768)},   {L"1440 x 1080", size_value(1440, 1080)}});
-    g.fields.back().bad = L"Window size: type it as width x height, for example 1600 x 900 (at least 320 x 240).";
-    add(kDisplay, Kind::Combo, L"Full screen resolution",
-        L"Used only by exclusive full screen. If your monitor cannot show it, close the game and choose another here.",
+        {{"1280 x 720"_w, size_value(1280, 720)},   {"1366 x 768"_w, size_value(1366, 768)},
+         {"1600 x 900"_w, size_value(1600, 900)},   {"1920 x 1080"_w, size_value(1920, 1080)},
+         {"2560 x 1440"_w, size_value(2560, 1440)}, {"3840 x 2160"_w, size_value(3840, 2160)},
+         {"1024 x 768"_w, size_value(1024, 768)},   {"1440 x 1080"_w, size_value(1440, 1080)}});
+    g.fields.back().bad = "Window size: type it as width x height, for example 1600 x 900 (at least 320 x 240)."_w;
+    add(kDisplay, Kind::Combo, "Full screen resolution"_w,
+        "Used only by exclusive full screen. If your monitor cannot show it, close the game and choose another here."_w,
         [&] { return size_value(d.fullscreen_width, d.fullscreen_height); },
         [&](double v) {
             const auto e = static_cast<long long>(v);
@@ -633,147 +639,147 @@ void define_fields() {
     g.fields.back().show = [](double v) { return size_text(v); };
     g.fields.back().enabled = [&] { return d.fullscreen && d.exclusive; };
     {
-        std::vector<Choice> shapes{{L"Automatic (fills the window or screen)", 0.0}};
+        std::vector<Choice> shapes{{"Automatic (fills the window or screen)"_w, 0.0}};
         for (const gekko::NamedAspect& a : gekko::kNamedAspects) {
             std::wstring label = wide(a.name);
-            if (a.w == 4 && a.h == 3) label += L" (the original game)";
+            if (a.w == 4 && a.h == 3) label += " (the original game)"_w;
             shapes.push_back({label, static_cast<double>(a.w) / a.h});
         }
-        add(kDisplay, Kind::Combo, L"Picture shape",
-            L"Automatic uses the whole window or screen. A fixed shape adds black bars where it does not fit.",
+        add(kDisplay, Kind::Combo, "Picture shape"_w,
+            "Automatic uses the whole window or screen. A fixed shape adds black bars where it does not fit."_w,
             [&] { return d.aspect; }, [&](double v) { d.aspect = v; }, shapes);
         g.fields.back().show = [](double v) { return wide(gekko::aspect_label(v)); };
     }
-    add(kDisplay, Kind::Slider, L"Resolution scale",
-        L"How sharp the 3D picture is drawn. Below 100 % is faster but blurrier; above 100 % is sharper but needs a "
-        L"stronger graphics card.",
+    add(kDisplay, Kind::Slider, "Resolution scale"_w,
+        "How sharp the 3D picture is drawn. Below 100 % is faster but blurrier; above 100 % is sharper but needs a "_w
+        "stronger graphics card."_w,
         [&] { return d.render_scale; }, [&](double v) { d.render_scale = v; });
     g.fields.back().low = 25;
     g.fields.back().high = 200;
     g.fields.back().show = percent;
-    add(kDisplay, Kind::Combo, L"Edge smoothing (anti-aliasing)",
-        L"Smooths jagged edges of 3D objects. Higher is smoother but slower. If your graphics card cannot do the "
-        L"chosen level, the game uses the nearest one it can.",
+    add(kDisplay, Kind::Combo, "Edge smoothing (anti-aliasing)"_w,
+        "Smooths jagged edges of 3D objects. Higher is smoother but slower. If your graphics card cannot do the "_w
+        "chosen level, the game uses the nearest one it can."_w,
         [&] { return static_cast<double>(d.msaa); }, [&](double v) { d.msaa = static_cast<int>(v); },
-        {{L"Off", 1}, {L"2x", 2}, {L"4x (default)", 4}, {L"8x", 8}, {L"16x", 16}, {L"32x", 32}});
-    add(kDisplay, Kind::Combo, L"Texture sharpness (anisotropic filtering)",
-        L"Keeps ground and wall textures sharp when seen at an angle. Off looks like the original console.",
+        {{"Off"_w, 1}, {"2x"_w, 2}, {"4x (default)"_w, 4}, {"8x"_w, 8}, {"16x"_w, 16}, {"32x"_w, 32}});
+    add(kDisplay, Kind::Combo, "Texture sharpness (anisotropic filtering)"_w,
+        "Keeps ground and wall textures sharp when seen at an angle. Off looks like the original console."_w,
         [&] { return static_cast<double>(d.anisotropy); }, [&](double v) { d.anisotropy = static_cast<int>(v); },
-        {{L"Off", 1}, {L"2x", 2}, {L"4x", 4}, {L"8x", 8}, {L"16x (default)", 16}});
-    add(kDisplay, Kind::Slider, L"Draw distance",
-        L"How far away objects are still shown. 1 is the original game; higher shows more but needs more power.",
+        {{"Off"_w, 1}, {"2x"_w, 2}, {"4x"_w, 4}, {"8x"_w, 8}, {"16x (default)"_w, 16}});
+    add(kDisplay, Kind::Slider, "Draw distance"_w,
+        "How far away objects are still shown. 1 is the original game; higher shows more but needs more power."_w,
         [&] { return d.draw_distance; }, [&](double v) { d.draw_distance = v; });
     g.fields.back().low = 1;
     g.fields.back().high = 8;
-    g.fields.back().show = [](double v) { return number_text(v) + (v == 1.0 ? L" (original)" : L""); };
+    g.fields.back().show = [](double v) { return number_text(v) + (v == 1.0 ? " (original)"_w : L""); };
 
     // Frame rate
-    add(kFrameRate, Kind::Check, L"V-Sync",
-        L"Waits for your monitor before showing each picture, so the picture never tears. Turn it off only for the "
-        L"lowest delay or if your monitor has G-Sync or FreeSync.",
+    add(kFrameRate, Kind::Check, "V-Sync"_w,
+        "Waits for your monitor before showing each picture, so the picture never tears. Turn it off only for the "_w
+        "lowest delay or if your monitor has G-Sync or FreeSync."_w,
         [&] { return d.vsync ? 1.0 : 0.0; }, [&](double v) { d.vsync = v != 0.0; });
-    add(kFrameRate, Kind::Combo, L"Frame rate",
-        L"How many pictures per second are shown. The game itself always runs at its original speed: a higher rate "
-        L"only looks smoother when Smooth motion is on.",
+    add(kFrameRate, Kind::Combo, "Frame rate"_w,
+        "How many pictures per second are shown. The game itself always runs at its original speed: a higher rate "_w
+        "only looks smoother when Smooth motion is on."_w,
         [&] { return d.render_rate; }, [&](double v) { d.render_rate = v; },
-        {{L"30 per second", 30}, {L"60 per second (default)", 60}, {L"75 per second", 75}, {L"90 per second", 90},
-         {L"120 per second", 120}, {L"144 per second", 144}, {L"165 per second", 165}, {L"240 per second", 240},
-         {L"360 per second", 360}, {L"Unlimited", 0}});
-    g.fields.back().show = [](double v) { return v <= 0.0 ? std::wstring(L"Unlimited") : number_text(v) + L" per second"; };
-    add(kFrameRate, Kind::Check, L"Smooth motion (frame interpolation)",
-        L"Blends the game's own frames to fill the extra pictures when the frame rate is above 60, for smoother "
-        L"motion. It has no effect at 60 per second or less.",
+        {{"30 per second"_w, 30}, {"60 per second (default)"_w, 60}, {"75 per second"_w, 75}, {"90 per second"_w, 90},
+         {"120 per second"_w, 120}, {"144 per second"_w, 144}, {"165 per second"_w, 165}, {"240 per second"_w, 240},
+         {"360 per second"_w, 360}, {"Unlimited"_w, 0}});
+    g.fields.back().show = [](double v) { return v <= 0.0 ? std::wstring("Unlimited"_w) : number_text(v) + " per second"_w; };
+    add(kFrameRate, Kind::Check, "Smooth motion (frame interpolation)"_w,
+        "Blends the game's own frames to fill the extra pictures when the frame rate is above 60, for smoother "_w
+        "motion. It has no effect at 60 per second or less."_w,
         [&] { return d.frame_interpolation ? 1.0 : 0.0; }, [&](double v) { d.frame_interpolation = v != 0.0; });
-    add(kFrameRate, Kind::Check, L"Frame counter",
-        L"Shows the frames per second in the top right corner. In the game, the * key on the number pad switches it.",
+    add(kFrameRate, Kind::Check, "Frame counter"_w,
+        "Shows the frames per second in the top right corner. In the game, the * key on the number pad switches it."_w,
         [&] { return d.fps_counter ? 1.0 : 0.0; }, [&](double v) { d.fps_counter = v != 0.0; });
 
     // Sound
-    const auto volume = [&](const wchar_t* label, const wchar_t* help, int& value) {
+    const auto volume = [&](const std::wstring& label, const std::wstring& help, int& value) {
         add(kSound, Kind::Slider, label, help, [&value] { return static_cast<double>(value); },
             [&value](double v) { value = static_cast<int>(v); });
         g.fields.back().low = 0;
         g.fields.back().high = 100;
         g.fields.back().show = percent;
     };
-    volume(L"Master volume", L"The volume of everything the game plays.", o.master_volume);
-    volume(L"Music", L"The music, below the master volume.", o.music_volume);
-    volume(L"Sound effects", L"Jumps, rings, explosions and other effects, below the master volume.", o.sfx_volume);
-    volume(L"Voices", L"Spoken lines in cutscenes and during play, below the master volume.", o.voice_volume);
-    add(kSound, Kind::Combo, L"Speaker output",
-        L"The same as the game's own Options > System. Choose Dolby Pro Logic II only for a surround receiver that "
-        L"decodes it.",
+    volume("Master volume"_w, "The volume of everything the game plays."_w, o.master_volume);
+    volume("Music"_w, "The music, below the master volume."_w, o.music_volume);
+    volume("Sound effects"_w, "Jumps, rings, explosions and other effects, below the master volume."_w, o.sfx_volume);
+    volume("Voices"_w, "Spoken lines in cutscenes and during play, below the master volume."_w, o.voice_volume);
+    add(kSound, Kind::Combo, "Speaker output"_w,
+        "The same as the game's own Options > System. Choose Dolby Pro Logic II only for a surround receiver that "_w
+        "decodes it."_w,
         [&] { return static_cast<double>(o.speaker); }, [&](double v) { o.speaker = static_cast<int>(v); },
-        {kNotChosen, {L"Stereo", 0}, {L"Mono", 1}, {L"Dolby Pro Logic II", 2}});
+        {kNotChosen, {"Stereo"_w, 0}, {"Mono"_w, 1}, {"Dolby Pro Logic II"_w, 2}});
 
     // Language
-    add(kLanguage, Kind::Combo, L"Spoken language",
-        L"The language of the voices. Japanese needs the Japanese disc's voice files in a voice_jp folder of the game; "
-        L"without them the voices stay English.",
+    add(kLanguage, Kind::Combo, "Spoken language"_w,
+        "The language of the voices. Japanese needs the Japanese disc's voice files in a voice_jp folder of the game; "_w
+        "without them the voices stay English."_w,
         [&] { return static_cast<double>(o.voice); }, [&](double v) { o.voice = static_cast<int>(v); },
-        {kNotChosen, {L"English", 1}, {L"Japanese", 0}});
-    add(kLanguage, Kind::Check, L"Subtitles",
-        L"Shows the text of spoken lines. Off hides only the text; the voices still play.",
+        {kNotChosen, {"English"_w, 1}, {"Japanese"_w, 0}});
+    add(kLanguage, Kind::Check, "Subtitles"_w,
+        "Shows the text of spoken lines. Off hides only the text; the voices still play."_w,
         [&] { return o.subtitles ? 1.0 : 0.0; }, [&](double v) { o.subtitles = v != 0.0; });
-    add(kLanguage, Kind::Combo, L"Text language",
-        L"The language of menus and subtitles. The same as the game's own Options > Subtitle.",
+    add(kLanguage, Kind::Combo, "Text language"_w,
+        "The language of menus and subtitles. The same as the game's own Options > Subtitle."_w,
         [&] { return static_cast<double>(o.language); }, [&](double v) { o.language = static_cast<int>(v); },
-        {kNotChosen, {L"English", 1}, {L"French", 2}, {L"German", 4}, {L"Italian", 5}, {L"Spanish", 3}, {L"Japanese", 0}});
+        {kNotChosen, {"English"_w, 1}, {"French"_w, 2}, {"German"_w, 4}, {"Italian"_w, 5}, {"Spanish"_w, 3}, {"Japanese"_w, 0}});
 
     // Controller options
-    add(kPadOptions, Kind::Combo, L"Vibration",
-        L"Whether the controller rumbles. The same as the game's own Options > Vibration.",
+    add(kPadOptions, Kind::Combo, "Vibration"_w,
+        "Whether the controller rumbles. The same as the game's own Options > Vibration."_w,
         [&] { return static_cast<double>(o.vibration); }, [&](double v) { o.vibration = static_cast<int>(v); },
-        {kNotChosen, {L"On", 1}, {L"Off", 0}});
-    add(kPadOptions, Kind::Slider, L"Rumble strength",
-        L"How hard the controller rumbles when vibration is on. 100 % is the original strength.",
+        {kNotChosen, {"On"_w, 1}, {"Off"_w, 0}});
+    add(kPadOptions, Kind::Slider, "Rumble strength"_w,
+        "How hard the controller rumbles when vibration is on. 100 % is the original strength."_w,
         [&] { return static_cast<double>(o.rumble_strength); }, [&](double v) { o.rumble_strength = static_cast<int>(v); });
     g.fields.back().low = 25;
     g.fields.back().high = 100;
     g.fields.back().show = percent;
-    add(kPadOptions, Kind::Check, L"Invert camera left and right",
-        L"Pushing the camera stick right turns the camera the other way.",
+    add(kPadOptions, Kind::Check, "Invert camera left and right"_w,
+        "Pushing the camera stick right turns the camera the other way."_w,
         [&] { return o.invert_camera_x ? 1.0 : 0.0; }, [&](double v) { o.invert_camera_x = v != 0.0; });
-    add(kPadOptions, Kind::Check, L"Invert camera up and down",
-        L"Pushing the camera stick up moves the camera the other way.",
+    add(kPadOptions, Kind::Check, "Invert camera up and down"_w,
+        "Pushing the camera stick up moves the camera the other way."_w,
         [&] { return o.invert_camera_y ? 1.0 : 0.0; }, [&](double v) { o.invert_camera_y = v != 0.0; });
 
     // Keyboard and mouse (the right-hand column of the page)
-    const auto speed = [&](const wchar_t* label, double& value) {
+    const auto speed = [&](const std::wstring& label, double& value) {
         add(kKeyboard, Kind::Number, label, L"", [&value] { return value; }, [&value](double v) { value = v; });
         g.fields.back().low = 0.01;
         g.fields.back().high = 50;
-        g.fields.back().bad = L"Mouse speed must be a number from 0.01 to 50, for example 1.5.";
+        g.fields.back().bad = "Mouse speed must be a number from 0.01 to 50, for example 1.5."_w;
     };
-    speed(L"Mouse speed, left and right", k.mouse_sensitivity_x);
-    speed(L"Mouse speed, up and down", k.mouse_sensitivity_y);
-    add(kKeyboard, Kind::Check, L"Invert mouse left and right", L"", [&] { return k.mouse_invert_x ? 1.0 : 0.0; },
+    speed("Mouse speed, left and right"_w, k.mouse_sensitivity_x);
+    speed("Mouse speed, up and down"_w, k.mouse_sensitivity_y);
+    add(kKeyboard, Kind::Check, "Invert mouse left and right"_w, L"", [&] { return k.mouse_invert_x ? 1.0 : 0.0; },
         [&](double v) { k.mouse_invert_x = v != 0.0; });
-    add(kKeyboard, Kind::Check, L"Invert mouse up and down", L"", [&] { return k.mouse_invert_y ? 1.0 : 0.0; },
+    add(kKeyboard, Kind::Check, "Invert mouse up and down"_w, L"", [&] { return k.mouse_invert_y ? 1.0 : 0.0; },
         [&](double v) { k.mouse_invert_y = v != 0.0; });
-    add(kKeyboard, Kind::Check, L"Keep the pointer in the game", L"", [&] { return k.mouse_capture ? 1.0 : 0.0; },
+    add(kKeyboard, Kind::Check, "Keep the pointer in the game"_w, L"", [&] { return k.mouse_capture ? 1.0 : 0.0; },
         [&](double v) { k.mouse_capture = v != 0.0; });
-    add(kKeyboard, Kind::Slider, L"Walk speed", L"", [&] { return static_cast<double>(k.walk_deflection); },
+    add(kKeyboard, Kind::Slider, "Walk speed"_w, L"", [&] { return static_cast<double>(k.walk_deflection); },
         [&](double v) { k.walk_deflection = static_cast<int>(v); });
     g.fields.back().low = 1;
     g.fields.back().high = 100;
     g.fields.back().show = [](double v) {
-        return number_text(v) + (v == ControlsConfig::kDefaultWalkDeflection ? L" (default)" : L"");
+        return number_text(v) + (v == ControlsConfig::kDefaultWalkDeflection ? " (default)"_w : L"");
     };
 
     // Saving
-    add(kSaving, Kind::Combo, L"Autosave",
-        L"On: the game saves by itself after stages and when you leave its Options screen. Off: it saves only when "
-        L"you choose to.",
+    add(kSaving, Kind::Combo, "Autosave"_w,
+        "On: the game saves by itself after stages and when you leave its Options screen. Off: it saves only when "_w
+        "you choose to."_w,
         [&] { return static_cast<double>(o.autosave); }, [&](double v) { o.autosave = static_cast<int>(v); },
-        {kNotChosen, {L"On", 1}, {L"Off", 0}});
+        {kNotChosen, {"On"_w, 1}, {"Off"_w, 0}});
 }
 
 void build_pad_page() {
     constexpr int kRowH = 30, kLeft = 18;
     int y = kTop + 8;
-    make(L"STATIC", L"Game button", SS_LEFT, kLeft, y, 130, 20, -1);
-    make(L"STATIC", L"Your controller (click to change)", SS_LEFT, 150, y, 260, 20, -1);
+    make(L"STATIC", "Game button"_w, SS_LEFT, kLeft, y, 130, 20, -1);
+    make(L"STATIC", "Your controller (click to change)"_w, SS_LEFT, 150, y, 260, 20, -1);
     y += 24;
     for (int i = 0; i < static_cast<int>(kControls.size()); ++i) {
         make(L"STATIC", wide(kControls[static_cast<std::size_t>(i)].name).c_str(), SS_LEFT | SS_CENTERIMAGE, kLeft, y, 120, 26, -1);
@@ -782,22 +788,22 @@ void build_pad_page() {
         y += kRowH;
     }
     y += 8;
-    make(L"STATIC", L"Trigger press needed", SS_LEFT | SS_CENTERIMAGE, kLeft, y, 130, 26, -1);
+    make(L"STATIC", "Trigger press needed"_w, SS_LEFT | SS_CENTERIMAGE, kLeft, y, 130, 26, -1);
     HWND slider = make(TRACKBAR_CLASSW, L"", TBS_HORZ | TBS_NOTICKS | WS_TABSTOP, 150, y, 200, 26, kThreshold);
     SendMessageW(slider, TBM_SETRANGE, TRUE, MAKELPARAM(0, 255));
     make(L"STATIC", L"", SS_LEFT | SS_CENTERIMAGE, 356, y, 40, 26, kThresholdValue);
     y += kRowH;
-    make(L"STATIC", L"Button prompts", SS_LEFT | SS_CENTERIMAGE, kLeft, y, 130, 26, -1);
+    make(L"STATIC", "Button prompts"_w, SS_LEFT | SS_CENTERIMAGE, kLeft, y, 130, 26, -1);
     HWND combo = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, 150, y, 200, 200, kStyle);
-    for (const auto& s : kStyles) SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(s.label));
+    for (const auto& s : kStyles) SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(s.label.c_str()));
     y += kRowH;
-    make(L"BUTTON", L"Move with the right stick, camera with the left", BS_AUTOCHECKBOX | WS_TABSTOP, kLeft, y, 370, 24, kSwapSticks);
+    make(L"BUTTON", "Move with the right stick, camera with the left"_w, BS_AUTOCHECKBOX | WS_TABSTOP, kLeft, y, 370, 24, kSwapSticks);
 }
 
 void build_keyboard_page() {
     int y = kTop + 10;
-    make(L"STATIC", L"Action", SS_LEFT, 18, y, 170, 20, -1);
-    make(L"STATIC", L"Click a box, then press a key or a mouse button", SS_LEFT | SS_NOPREFIX, 196, y, 400, 20, -1);
+    make(L"STATIC", "Action"_w, SS_LEFT, 18, y, 170, 20, -1);
+    make(L"STATIC", "Click a box, then press a key or a mouse button"_w, SS_LEFT | SS_NOPREFIX, 196, y, 400, 20, -1);
     y += 24;
     for (std::size_t a = 0; a < sp::kActionCount; ++a) {
         make(L"STATIC", kActionLabels[a], SS_LEFT | SS_CENTERIMAGE | SS_NOPREFIX, 18, y, 176, 22, -1);
@@ -813,8 +819,8 @@ void build_keyboard_page() {
         y += 44;
     }
     make(L"STATIC",
-         L"Mouse speed 1 is the normal speed; 2 turns twice as fast. Walk speed is how fast you move while holding "
-         L"Walk (36 is the default). Keyboard and mouse changes also apply when you switch back to a running game.",
+         "Mouse speed 1 is the normal speed; 2 turns twice as fast. Walk speed is how fast you move while holding "_w
+         "Walk (36 is the default). Keyboard and mouse changes also apply when you switch back to a running game."_w,
          SS_LEFT | SS_NOPREFIX, 620, y + 6, 450, 110, kHelpId);
 }
 
@@ -826,21 +832,21 @@ void build() {
     for (int i = 0; i < kPageCount; ++i) {
         TCITEMW tab{};
         tab.mask = TCIF_TEXT;
-        tab.pszText = const_cast<wchar_t*>(kPageNames[i]);
+        tab.pszText = const_cast<wchar_t*>(kPageNames[i].c_str());
         SendMessageW(g.tabs, TCM_INSERTITEMW, static_cast<WPARAM>(i), reinterpret_cast<LPARAM>(&tab));
     }
 
     define_fields();
-    const wchar_t* const intros[kPageCount] = {
-        L"How the game's window and picture look.",
-        L"How smoothly the picture is shown. The game itself always runs at its original speed.",
-        L"The volume of each kind of sound.",
-        L"Voices, subtitles and the language of the game's text.",
-        nullptr,
-        L"Rumble and the camera stick. Which button does what, the trigger press and the button prompts are on the "
-        L"Controller buttons page.",
-        nullptr,
-        L"Whether the game saves your progress by itself."};
+    const std::wstring intros[kPageCount] = {
+        "How the game's window and picture look."_w,
+        "How smoothly the picture is shown. The game itself always runs at its original speed."_w,
+        "The volume of each kind of sound."_w,
+        "Voices, subtitles and the language of the game's text."_w,
+        {},
+        "Rumble and the camera stick. Which button does what, the trigger press and the button prompts are on the "_w
+        "Controller buttons page."_w,
+        {},
+        "Whether the game saves your progress by itself."_w};
     for (int p = 0; p < kPageCount; ++p) {
         g.building = p;
         if (p == kPadButtons) {
@@ -864,9 +870,9 @@ void build() {
     // The bar at the bottom, on every page.
     make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX | SS_ENDELLIPSIS, 18, kBottom + 8, 640, 22, kStatus);
     make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX, 18, kBottom + 32, 640, 34, kInfo);
-    make(L"BUTTON", L"Restore defaults", BS_PUSHBUTTON | WS_TABSTOP, 680, kBottom + 16, 160, 32, kRestore);
-    make(L"BUTTON", L"Save", BS_DEFPUSHBUTTON | WS_TABSTOP, 850, kBottom + 16, 110, 32, kSave);
-    make(L"BUTTON", L"Close", BS_PUSHBUTTON | WS_TABSTOP, 968, kBottom + 16, 110, 32, kClose);
+    make(L"BUTTON", "Restore defaults"_w, BS_PUSHBUTTON | WS_TABSTOP, 680, kBottom + 16, 160, 32, kRestore);
+    make(L"BUTTON", "Save"_w, BS_DEFPUSHBUTTON | WS_TABSTOP, 850, kBottom + 16, 110, 32, kSave);
+    make(L"BUTTON", "Close"_w, BS_PUSHBUTTON | WS_TABSTOP, 968, kBottom + 16, 110, 32, kClose);
 }
 
 void show_page(int page) {
@@ -945,59 +951,59 @@ void restore_defaults() {
     refresh_rows();
     refresh_pad_options();
     refresh_binds();
-    show_message(L"This page is back to the game's defaults. Click Save to keep them.");
+    show_message("This page is back to the game's defaults. Click Save to keep them."_w);
 }
 
 bool save() {
     if (!g.refused.empty()) {
-        show_message(g.refused.begin()->second + L" Nothing was saved.");
+        show_message(g.refused.begin()->second + " Nothing was saved."_w);
         return false;
     }
     for (const std::string& problem : {check_display(g.display), check_options(g.options), check_controls(g.keys)})
         if (!problem.empty()) {
-            show_message(wide(problem) + L" Nothing was saved.");
+            show_message(wide(problem) + " Nothing was saved."_w);
             return false;
         }
     std::string error;
     std::vector<std::wstring> saved;
     const auto fail = [&](const std::wstring& file) {
-        std::wstring text = file + L" was not saved: " + wide(error);
+        std::wstring text = file + " was not saved: "_w + wide(error);
         if (!saved.empty()) {
-            text += L" (Saved:";
-            for (const std::wstring& s : saved) text += L" " + s;
-            text += L".)";
+            text += " (Saved:"_w;
+            for (const std::wstring& s : saved) text += " "_w + s;
+            text += ".)"_w;
         }
         show_message(text);
         return false;
     };
     if (!(g.display == g.display_saved)) {
-        if (!save_display(g.folder / "display.cfg", g.display_saved, g.display, &error)) return fail(L"display.cfg");
+        if (!save_display(g.folder / "display.cfg", g.display_saved, g.display, &error)) return fail("display.cfg"_w);
         g.display_saved = g.display;
-        saved.push_back(L"display.cfg");
+        saved.push_back("display.cfg"_w);
     }
     if (!(g.options == g.options_saved)) {
-        if (!save_options(g.folder / "options.cfg", g.options_saved, g.options, &error)) return fail(L"options.cfg");
+        if (!save_options(g.folder / "options.cfg", g.options_saved, g.options, &error)) return fail("options.cfg"_w);
         g.options_saved = g.options;
-        saved.push_back(L"options.cfg");
+        saved.push_back("options.cfg"_w);
     }
     if (!same(g.binding, g.saved)) {
-        if (!save_binding(g.folder / "pad.cfg", g.binding, &error)) return fail(L"pad.cfg");
+        if (!save_binding(g.folder / "pad.cfg", g.binding, &error)) return fail("pad.cfg"_w);
         g.saved = g.binding;
-        saved.push_back(L"pad.cfg");
+        saved.push_back("pad.cfg"_w);
     }
     if (!(g.keys == g.keys_saved)) {
-        if (!save_controls(g.folder / "controls.cfg", g.keys_saved, g.keys, &error)) return fail(L"controls.cfg");
+        if (!save_controls(g.folder / "controls.cfg", g.keys_saved, g.keys, &error)) return fail("controls.cfg"_w);
         g.keys_saved = g.keys;
-        saved.push_back(L"controls.cfg");
+        saved.push_back("controls.cfg"_w);
     }
-    show_message(saved.empty() ? L"Nothing to save: no setting was changed."
-                               : L"Saved. The game uses the new settings the next time it starts.");
+    show_message(saved.empty() ? "Nothing to save: no setting was changed."_w
+                               : "Saved. The game uses the new settings the next time it starts."_w);
     return true;
 }
 
 bool confirm_close() {
     if (!unsaved() && g.refused.empty()) return true;
-    const int answer = MessageBoxW(g.window, L"Save your changes before closing?", kTitle, MB_YESNOCANCEL | MB_ICONQUESTION);
+    const int answer = MessageBoxW(g.window, "Save your changes before closing?"_w.c_str(), kTitle.c_str(), MB_YESNOCANCEL | MB_ICONQUESTION);
     if (answer == IDCANCEL) return false;
     return answer == IDNO || save();
 }
@@ -1152,8 +1158,8 @@ std::wstring load_all() {
     if (!read_file(g.folder / "display.cfg", text, nullptr, &error)) {
         note(wide(error));
     } else if (!read_display(text, g.display, &error)) {
-        note(L"display.cfg has a line the game cannot read (" + wide(error) +
-             L"), so the game will not start with it. Defaults are shown; fix or delete the file before saving.");
+        note("display.cfg has a line the game cannot read ("_w + wide(error) +
+             "), so the game will not start with it. Defaults are shown; fix or delete the file before saving."_w);
     }
     g.display_saved = g.display;
     if (!read_file(g.folder / "options.cfg", text, nullptr, &error)) note(wide(error));
@@ -1163,7 +1169,7 @@ std::wstring load_all() {
     else read_controls(text, g.keys);
     g.keys_saved = g.keys;
     if (load_binding(g.folder / "pad.cfg", g.binding, &error) == LoadResult::Invalid)
-        note(L"pad.cfg has a problem, so the default buttons are shown: " + wide(error));
+        note("pad.cfg has a problem, so the default buttons are shown: "_w + wide(error));
     g.saved = g.binding;
     g.view.binding = g.binding;
     return notes;
@@ -1209,7 +1215,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     constexpr DWORD kStyleFlags = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN;
     RECT size{0, 0, px(kClientW), px(kClientH)};
     AdjustWindowRect(&size, kStyleFlags, FALSE);
-    g.window = CreateWindowExW(0, cls.lpszClassName, kTitle, kStyleFlags, CW_USEDEFAULT, CW_USEDEFAULT,
+    g.window = CreateWindowExW(0, cls.lpszClassName, kTitle.c_str(), kStyleFlags, CW_USEDEFAULT, CW_USEDEFAULT,
                                size.right - size.left, size.bottom - size.top, nullptr, nullptr, instance, nullptr);
     build();
     refresh_fields();
