@@ -107,8 +107,36 @@ const Marks& marks(int id) {
     return cache.emplace(id, m).first->second;
 }
 
-RectF top_rect() { return RectF(kPictureX, kTopY, kPictureW, kPictureW / kTopAspect); }
-RectF tilted_rect() { return RectF(kPictureX, kTiltedY, kPictureW, kPictureW / kTiltedAspect); }
+// Where things are, in view units: the label columns `f` times their normal width (and the labels f times their normal
+// size) on both sides of the pictures, the whole scaled by `scale` to the area and centred across it.
+struct Geometry {
+    REAL f = 1.0f;
+    REAL column = kColumnW;
+    REAL picture_x = kPictureX;
+    REAL view_w = kViewW;
+    REAL scale = 1.0f;
+    REAL offset_x = 0.0f;  // pixels
+};
+constexpr REAL kLabelSize = 14.5f, kCaptionSize = 12.5f;
+constexpr REAL kMostLabelGrowth = 1.8f;  // beyond this the stacked D-pad labels would touch
+
+Geometry geometry_of(const RECT& area, REAL min_label) {
+    const REAL aw = static_cast<REAL>(area.right - area.left), ah = static_cast<REAL>(area.bottom - area.top);
+    Geometry m;
+    for (int pass = 0; pass < 8; ++pass) {
+        m.column = kColumnW * m.f;
+        m.picture_x = m.column + (kPictureX - kColumnW);
+        m.view_w = 2.0f * m.picture_x + kPictureW;
+        m.scale = std::min(aw / m.view_w, ah / kViewH);
+        if (min_label <= 0.0f || kLabelSize * m.f * m.scale >= min_label * 0.98f || m.f >= kMostLabelGrowth) break;
+        m.f = std::min(kMostLabelGrowth, min_label / (kLabelSize * m.scale));
+    }
+    m.offset_x = std::max(0.0f, (aw - m.view_w * m.scale) / 2.0f);
+    return m;
+}
+
+RectF top_rect(const Geometry& m) { return RectF(m.picture_x, kTopY, kPictureW, kPictureW / kTopAspect); }
+RectF tilted_rect(const Geometry& m) { return RectF(m.picture_x, kTiltedY, kPictureW, kPictureW / kTiltedAspect); }
 PointF at(const RectF& r, REAL x, REAL y) { return PointF(r.X + r.Width * x, r.Y + r.Height * y); }
 
 template <std::size_t N>
@@ -121,17 +149,18 @@ const Hotspot* find(const Hotspot (&list)[N], const char* key) {
 struct Painter {
     Graphics& g;
     const ControllerView& v;
+    const Geometry& m;
     FontFamily family{L"Segoe UI"};
-    Font label{&family, 14.5f, FontStyleBold, UnitPixel};
-    Font caption{&family, 12.5f, FontStyleRegular, UnitPixel};
+    Font label{&family, kLabelSize * m.f, FontStyleBold, UnitPixel};
+    Font caption{&family, kCaptionSize * m.f, FontStyleRegular, UnitPixel};
     Color ink = kInk, line = kLine;
 
-    void text(const std::wstring& s, const Font& f, REAL x, REAL y, REAL w, StringAlignment align, const Color& c) {
+    void text(const std::wstring& s, const Font& font, REAL x, REAL y, REAL w, StringAlignment align, const Color& c) {
         StringFormat fmt;
         fmt.SetAlignment(align);
         fmt.SetLineAlignment(StringAlignmentCenter);
         SolidBrush b(c);
-        g.DrawString(s.c_str(), -1, &f, RectF(x, y - 12, w, 24), &fmt, &b);
+        g.DrawString(s.c_str(), -1, &font, RectF(x, y - 12 * m.f, w, 24 * m.f), &fmt, &b);
     }
 
     void leader(PointF from, PointF to) {
@@ -142,12 +171,12 @@ struct Painter {
     }
 
     void left(REAL y, const std::wstring& s, PointF to) {
-        text(s, label, 0, y, kColumnW, StringAlignmentFar, ink);
-        leader(PointF(kColumnW + 3, y), to);
+        text(s, label, 0, y, m.column, StringAlignmentFar, ink);
+        leader(PointF(m.column + 3, y), to);
     }
     void right(REAL y, const std::wstring& s, PointF to) {
-        text(s, label, kViewW - kColumnW, y, kColumnW, StringAlignmentNear, ink);
-        leader(PointF(kViewW - kColumnW - 3, y), to);
+        text(s, label, m.view_w - m.column, y, m.column, StringAlignmentNear, ink);
+        leader(PointF(m.view_w - m.column - 3, y), to);
     }
 
     bool pressed(int control) const {
@@ -161,28 +190,28 @@ struct Painter {
         if (control < 0) return;
         const bool lit = pressed(control), picked = control == v.selected;
         if (!lit && !picked) return;
-        const Marks& m = marks(h.id);
-        if (Bitmap* b = lit ? m.pressed : m.picked)
+        const Marks& tint = marks(h.id);
+        if (Bitmap* b = lit ? tint.pressed : tint.picked)
             g.DrawImage(b, RectF(r.X + r.Width * h.x, r.Y + r.Height * h.y, r.Width * h.w, r.Height * h.h));
     }
 
     std::wstring of(const char* key) { return control_label(v.binding, static_cast<std::size_t>(control_of(key))); }
     PointF top(const char* key) {
         const Hotspot* h = find(kTopHotspots, key);
-        return at(top_rect(), h->cx, h->cy);
+        return at(top_rect(m), h->cx, h->cy);
     }
     PointF tilted(const char* key) {
         const Hotspot* h = find(kTiltedHotspots, key);
-        return at(tilted_rect(), h->cx, h->cy);
+        return at(tilted_rect(m), h->cx, h->cy);
     }
 
     void draw_pictures() {
         g.SetInterpolationMode(InterpolationModeHighQualityBicubic);
         g.SetPixelOffsetMode(PixelOffsetModeHalf);
-        if (Bitmap* b = art(101)) g.DrawImage(b, top_rect());
-        if (Bitmap* b = art(102)) g.DrawImage(b, tilted_rect());
-        for (const Hotspot& h : kTopHotspots) mark(top_rect(), h);
-        for (const Hotspot& h : kTiltedHotspots) mark(tilted_rect(), h);
+        if (Bitmap* b = art(101)) g.DrawImage(b, top_rect(m));
+        if (Bitmap* b = art(102)) g.DrawImage(b, tilted_rect(m));
+        for (const Hotspot& h : kTopHotspots) mark(top_rect(m), h);
+        for (const Hotspot& h : kTiltedHotspots) mark(tilted_rect(m), h);
         g.SetPixelOffsetMode(PixelOffsetModeDefault);
     }
 
@@ -200,9 +229,9 @@ struct Painter {
         right(160, of("b"), top("b"));
         right(226, c_stick, top("cstick"));
         const PointF start = top("start");
-        text(of("start"), label, start.X - 60, start.Y + 62, 120, StringAlignmentCenter, ink);
+        text(of("start"), label, start.X - 60 * m.f, start.Y + 62, 120 * m.f, StringAlignmentCenter, ink);
         leader(PointF(start.X, start.Y + 50), PointF(start.X, start.Y + 7));
-        text(wide("Click a button on the picture to change it"), caption, kPictureX - 40, kTiltedY - 18, kPictureW + 80, StringAlignmentCenter, line);
+        text(wide("Click a button on the picture to change it"), caption, 0, kTiltedY - 18, m.view_w, StringAlignmentCenter, line);
 
         left(kTiltedY + 44, of("l"), tilted("l"));
         right(kTiltedY + 26, of("r"), tilted("r"));
@@ -232,9 +261,6 @@ int hit(const Hotspot (&list)[N], const RectF& r, PointF p) {
     return -1;
 }
 
-REAL scale_of(const RECT& area) {
-    return std::min(static_cast<REAL>(area.right - area.left) / kViewW, static_cast<REAL>(area.bottom - area.top) / kViewH);
-}
 
 }  // namespace
 
@@ -251,15 +277,15 @@ std::wstring control_label(const GamepadBinding& binding, std::size_t index) {
     return mask == 0u ? trigger : wide(button_names(mask)) + L" or " + trigger;
 }
 
-void paint_controller(HDC dc, const RECT& area, const ControllerView& view, bool dark) {
+void paint_controller(HDC dc, const RECT& area, const ControllerView& view, bool dark, float min_label) {
     if (area.right <= area.left || area.bottom <= area.top) return;
     Graphics g(dc);
     g.SetSmoothingMode(SmoothingModeAntiAlias);
     g.SetTextRenderingHint(TextRenderingHintClearTypeGridFit);
-    const REAL scale = scale_of(area);
-    g.TranslateTransform(static_cast<REAL>(area.left), static_cast<REAL>(area.top));
-    g.ScaleTransform(scale, scale);
-    Painter painter{g, view};
+    const Geometry m = geometry_of(area, min_label);
+    g.TranslateTransform(static_cast<REAL>(area.left) + m.offset_x, static_cast<REAL>(area.top));
+    g.ScaleTransform(m.scale, m.scale);
+    Painter painter{g, view, m};
     if (dark) {
         painter.ink = kDarkInk;
         painter.line = kDarkLine;
@@ -268,11 +294,12 @@ void paint_controller(HDC dc, const RECT& area, const ControllerView& view, bool
     painter.draw_labels();
 }
 
-int control_at(const RECT& area, POINT point) {
-    const REAL scale = scale_of(area);
-    const PointF p(static_cast<REAL>(point.x - area.left) / scale, static_cast<REAL>(point.y - area.top) / scale);
-    if (const int c = hit(kTopHotspots, top_rect(), p); c >= 0) return c;
-    return hit(kTiltedHotspots, tilted_rect(), p);
+int control_at(const RECT& area, POINT point, float min_label) {
+    if (area.right <= area.left || area.bottom <= area.top) return -1;
+    const Geometry m = geometry_of(area, min_label);
+    const PointF p((static_cast<REAL>(point.x - area.left) - m.offset_x) / m.scale, static_cast<REAL>(point.y - area.top) / m.scale);
+    if (const int c = hit(kTopHotspots, top_rect(m), p); c >= 0) return c;
+    return hit(kTiltedHotspots, tilted_rect(m), p);
 }
 
 }  // namespace padconfig

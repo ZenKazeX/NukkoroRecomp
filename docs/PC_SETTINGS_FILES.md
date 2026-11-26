@@ -176,10 +176,10 @@ With Windows' high contrast mode on, both programs use the high contrast colours
 Zoom never changes a window's size: both programs lay everything out again for the room the window has (and again
 when the window is resized). Words wrap instead of being cut off, and nothing scrolls sideways. In the Settings
 program a setting's control moves under its name when the page is narrow, the navigation list shows only its icons,
-the keyboard page's two cards go one under the other, and the page scrolls up and down. The Controller buttons page
-has a scale of its own: its list and the controller pictures stay side by side and grow with the zoom or shrink to
-fit the window together, like a picture (in a window too narrow for that, the pictures go under the list at the
-zoom's size). In the Mod Manager the buttons wrap into more rows and show only their icons (their names as tooltips)
+the keyboard page's two cards go one under the other, and the page scrolls up and down. On the Controller buttons page the list of buttons
+follows the zoom and the controller pictures take the room that is left, always whole on screen: beside the list,
+as tall as the window shows, or above it (at most half the window's height) when the window is too narrow. Their
+labels never get smaller than at zoom 100 %. In the Mod Manager the buttons wrap into more rows and show only their icons (their names as tooltips)
 when their words would take more than two rows, the selected mod's card goes under the list in a narrow window and
 scrolls when it is taller than its room, and the bottom bar wraps. Both programs check this with `--check-layout
 <report.txt>` (Settings also takes `--folder <dir>`): every zoom in the start-up, smallest and a wide window size, each

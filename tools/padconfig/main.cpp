@@ -141,13 +141,7 @@ struct App {
     int page_x = kNavW - 8, page_w = 1094;  // where a page's x = 0 is, and its width
     int top = 72;         // where a page's content starts, below its title
     RECT picture{};       // the controller pictures, in pixels (before scrolling)
-    // The controller buttons page has a scale of its own: the list and the pictures stay side by side and grow or
-    // shrink together to fit the window, apart from the text zoom (build_pad_page()). While it is built, px() and
-    // units() use its scale (unit_zoom), and its controls its font.
-    int unit_zoom = 0;    // 0: the text zoom
-    HFONT pad_font = nullptr;
-    int pad_font_zoom = 0;
-    int layout_h = 0;     // the client height laid out for (the controller page fits it)
+    int layout_h = 0;     // the client height laid out for (the controller pictures fit it)
     int status_w = 0, status_h = 0, info_h = 0;  // the status lines in the bottom bar
 
     // Laying out again for a new width moves the controls build() made instead of making them again: build() runs
@@ -194,9 +188,7 @@ struct App {
 } g;
 
 std::wstring number_text(double v) { return wide(format_number(v)); }
-// The scale in use: the text zoom, or the controller page's own while it is built.
-int zoom_now() { return g.unit_zoom > 0 ? g.unit_zoom : g.look.text_size; }
-int px(int v) { return MulDiv(v, g.dpi * zoom_now(), 96 * 100); }
+int px(int v) { return MulDiv(v, g.dpi * g.look.text_size, 96 * 100); }
 HWND item(int id) { return GetDlgItem(g.window, id); }
 
 // ---- scrolling (when the content is taller than the window) ----------------------------------------------------------
@@ -204,7 +196,7 @@ HWND item(int id) { return GetDlgItem(g.window, id); }
 int content_h() { return px(g.bottom + g.bar_h); }
 bool on_card(HWND h) { return std::find(g.on_card.begin(), g.on_card.end(), h) != g.on_card.end(); }
 // Pixels to units, at the present screen and zoom.
-int units(int pixels) { return MulDiv(pixels, 96 * 100, g.dpi * zoom_now()); }
+int units(int pixels) { return MulDiv(pixels, 96 * 100, g.dpi * g.look.text_size); }
 
 // Moves the content so that y of it is at the window's top. Every control is moved by hand: the window may have
 // controls outside its visible part, which ScrollWindowEx leaves where they are.
@@ -693,9 +685,6 @@ void on_field(Field& f, int notification) {
 
 // ---- building the pages ------------------------------------------------------------------------------------------
 
-// The font of the controls being made: the controller page's at its own scale, the text font elsewhere.
-HFONT page_font() { return g.unit_zoom > 0 && g.pad_font != nullptr ? g.pad_font : g.font; }
-
 // A control of the page being built at (x, y), w x h, in units. With g.relayout the control made there before is moved
 // instead: build() makes its controls in the same order every time, whatever the width.
 HWND make(const wchar_t* cls, const std::wstring& text, DWORD style, int x, int y, int w, int h, int id, HFONT font = nullptr) {
@@ -703,16 +692,13 @@ HWND make(const wchar_t* cls, const std::wstring& text, DWORD style, int x, int 
         if (g.next_made >= g.made.size()) return nullptr;
         HWND c = g.made[g.next_made++];
         SetWindowPos(c, nullptr, px(g.origin_x + x), px(y) - g.scroll_y, px(w), px(h), SWP_NOZORDER | SWP_NOACTIVATE);
-        if (g.building == kPadButtons) {  // the controller page's scale may have changed with the window
-            SendMessageW(c, WM_SETFONT, reinterpret_cast<WPARAM>(font != nullptr ? font : page_font()), FALSE);
-            ui::apply_to_control(c);  // a drop-down list's heights and a slider's knob follow the new scale
-        }
+
         return c;
     }
     HWND c = CreateWindowExW(0, cls, text.c_str(), WS_CHILD | (g.building < 0 ? WS_VISIBLE : 0) | style, px(g.origin_x + x),
                              px(y) - g.scroll_y, px(w), px(h), g.window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
                              GetModuleHandleW(nullptr), nullptr);
-    SendMessageW(c, WM_SETFONT, reinterpret_cast<WPARAM>(font != nullptr ? font : page_font()), TRUE);
+    SendMessageW(c, WM_SETFONT, reinterpret_cast<WPARAM>(font != nullptr ? font : g.font), TRUE);
     g.made.push_back(c);
     if (g.building >= 0) g.page_controls[static_cast<std::size_t>(g.building)].push_back(c);
     if (g.card_open) g.on_card.push_back(c);
@@ -725,7 +711,7 @@ void move(HWND c, int x, int y, int w, int h) {
         SetWindowPos(c, nullptr, px(g.origin_x + x), px(y) - g.scroll_y, px(w), px(h), SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
-// A card behind controls of the page being built, in page units (kept in pixels: the controller page has its own scale).
+// A card behind controls of the page being built, in page units (kept in pixels).
 void add_card(int left, int top, int right, int bottom) {
     g.cards[static_cast<std::size_t>(g.building)].push_back(RECT{px(g.origin_x + left), px(top), px(g.origin_x + right), px(bottom)});
 }
@@ -1044,26 +1030,46 @@ void define_fields() {
         {kNotChosen, {"On"_w, 1}, {"Off"_w, 0}});
 }
 
-// The controller buttons page at a width and from a top in its own units: the list of buttons on a card, and the
-// pictures right of it, or under it when the page is too narrow for both. Returns where the page ends.
-int lay_out_pad_page(int page_w, int top, HFONT font) {
-    const bool beside = page_w >= 414 + 360 + 12;
-    const int card_r = beside ? 400 : page_w - 12;
+// The controller buttons page. The list of buttons is at the text zoom like every page; the controller pictures take
+// the room that is left, always whole on screen without scrolling: right of the list, as tall as the window shows,
+// or, when there is too little room beside the list, above it, at most half the window's height. Their labels never
+// get smaller than at zoom 100 % (paint_controller's min_label). Returns where the page ends.
+constexpr int kSmallestPictureW = 260;  // units: narrower than this beside the list, the pictures go above it
+int build_pad_page() {
+    RECT client;
+    GetClientRect(g.window, &client);
+    const int window_h = units(static_cast<int>(client.bottom));
+    const int beside_room = g.page_w - 12 - 414;
+    const bool beside = beside_room >= kSmallestPictureW;
+    // The pictures' box, in units, keeping their shape; at most their full size at this zoom.
+    int picture_w, picture_h, list_top = g.top;
+    if (beside) {
+        picture_w = std::min(kPictureW, beside_room);
+        picture_h = std::min(picture_w * kPictureH / kPictureW, std::max(160, window_h - g.top - 20));
+    } else {
+        picture_w = std::min(kPictureW, g.page_w - 24);
+        picture_h = std::min(picture_w * kPictureH / kPictureW, std::max(160, window_h / 2));
+        list_top = g.top + picture_h + 12;
+    }
+    const int picture_x = beside ? 414 : 12, picture_y = beside ? g.top + 4 : g.top;
+    g.picture = RECT{px(g.origin_x + picture_x), px(picture_y), px(g.origin_x + picture_x + picture_w), px(picture_y + picture_h)};
+
+    const int card_r = beside ? 400 : g.page_w - 12;
     constexpr int kLeft = 28, kNameW = 120, kDotW = 24;
     const int inner_w = card_r - 16 - kLeft;
     const bool name_beside = inner_w >= 352;  // each row's name beside its button
     const int button_w = name_beside ? std::min(200, inner_w - kNameW - 2 - 6 - kDotW) : inner_w - 6 - kDotW;
-    int y = top + 12;
+    int y = list_top + 12;
     g.card_open = true;
     const std::wstring head = "Game button"_w, column = "Your controller (click to change)"_w;
     if (name_beside) {
-        const int column_h = std::max(20, text_height(column, font, inner_w - kNameW - 2));
+        const int column_h = std::max(20, text_height(column, g.font, inner_w - kNameW - 2));
         make(L"STATIC", head, SS_LEFT, kLeft, y, kNameW, 20, -1);
         make(L"STATIC", column, SS_LEFT, kLeft + kNameW + 2, y, inner_w - kNameW - 2, column_h, -1);
         y += column_h + 6;
     } else {
-        const int head_h = std::max(20, text_height(head, font, inner_w));
-        const int column_h = std::max(20, text_height(column, font, inner_w));
+        const int head_h = std::max(20, text_height(head, g.font, inner_w));
+        const int column_h = std::max(20, text_height(column, g.font, inner_w));
         make(L"STATIC", head, SS_LEFT, kLeft, y, inner_w, head_h, -1);
         make(L"STATIC", column, SS_LEFT, kLeft, y + head_h + 2, inner_w, column_h, -1);
         y += head_h + 2 + column_h + 6;
@@ -1109,50 +1115,16 @@ int lay_out_pad_page(int page_w, int top, HFONT font) {
     }
     y += 34;
     const std::wstring swap = "Move with the right stick, camera with the left"_w;
-    const int swap_h = std::max(26, text_height(swap, font, inner_w - 26) + 6);
+    const int swap_h = std::max(26, text_height(swap, g.font, inner_w - 26) + 6);
     make(L"BUTTON", swap, BS_AUTOCHECKBOX | BS_MULTILINE | WS_TABSTOP, kLeft, y, inner_w, swap_h, kSwapSticks);
     y += swap_h;
     g.card_open = false;
-    add_card(12, top, card_r, y + 14);
-    // The pictures keep their shape: as wide as the room allows, up to their full size.
-    const int picture_x = beside ? 414 : 12;
-    const int picture_w = std::max(1, std::min(kPictureW, page_w - 12 - picture_x));
-    const int picture_y = beside ? top + 4 : y + 14 + 16;
-    g.picture = RECT{px(g.origin_x + picture_x), px(picture_y), px(g.origin_x + picture_x + picture_w), px(picture_y + picture_w * kPictureH / kPictureW)};
-    return std::max(y + 14, picture_y + picture_w * kPictureH / kPictureW);
+    add_card(12, list_top, card_r, y + 14);
+    return std::max(y + 14, picture_y + picture_h);
 }
 
-// The controller buttons page has a scale of its own: laid out as at zoom 100 % (the list and the pictures side by side,
-// kPadPageW x kPadPageH units), it grows with the zoom and shrinks to fit the window, the list and the pictures together,
-// like a picture. Only when that would make it smaller than kSmallestPadZoom does it use the text zoom and put the
-// pictures under the list. Returns where the page ends, in the text zoom's units.
-constexpr int kPadPageW = 1094, kPadPageH = 600, kSmallestPadZoom = 75;
-int build_pad_page() {
-    RECT client;
-    GetClientRect(g.window, &client);
-    const int width_fit = MulDiv(px(g.page_w), 96 * 100, g.dpi * kPadPageW);
-    // The height above the bottom bar (as last laid out), so that the page and the Save button fit when the window can.
-    const int height_fit = MulDiv(std::max(1, static_cast<int>(client.bottom) - px(g.top) - px(g.bar_h) - px(16)), 96 * 100,
-                                  g.dpi * kPadPageH);
-    const int text = g.look.text_size;
-    if (width_fit < kSmallestPadZoom) return lay_out_pad_page(g.page_w, g.top, g.font);
-    const int zoom = std::max(kSmallestPadZoom, std::min({text, width_fit, std::max(height_fit, kSmallestPadZoom)}));
-    HFONT old_font = nullptr;
-    if (g.pad_font == nullptr || g.pad_font_zoom != zoom) {
-        old_font = g.pad_font;
-        g.pad_font = CreateFontW(ui::font_height(10, g.dpi, zoom), 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0,
-                                 CLEARTYPE_QUALITY, 0, ui::text_face());
-        g.pad_font_zoom = zoom;
-    }
-    // In the page's own units: the same pixels as the text zoom's page_x, top and page_w.
-    g.unit_zoom = zoom;
-    g.origin_x = MulDiv(g.page_x, text, zoom);
-    const int end = lay_out_pad_page(MulDiv(g.page_w, text, zoom), MulDiv(g.top, text, zoom), g.pad_font);
-    g.unit_zoom = 0;
-    g.origin_x = g.page_x;
-    if (old_font != nullptr) DeleteObject(old_font);  // its controls have the new one now
-    return MulDiv(end, zoom, text) + 1;
-}
+// The pictures' labels at least as tall as at zoom 100 %, in pixels.
+float picture_label_px() { return 14.5f * static_cast<float>(g.dpi) / 96.0f; }
 
 // The keyboard page: the actions and their keys on one card, the mouse settings on another, beside it or under it.
 // Returns where the page ends.
@@ -1544,9 +1516,6 @@ void make_font() {
     g.caption = font(9, FW_NORMAL, ui::text_face());
     g.title = font(20, FW_SEMIBOLD, ui::title_face());
     g.icons = *ui::icon_face() != L'\0' ? font(12, FW_NORMAL, ui::icon_face()) : nullptr;
-    if (g.pad_font != nullptr) DeleteObject(g.pad_font);  // the controller page makes its own again (build_pad_page())
-    g.pad_font = nullptr;
-    g.pad_font_zoom = 0;
 }
 
 void refresh_look() {
@@ -1734,7 +1703,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpar
             HGDIOBJ old = SelectObject(buffer, bitmap);
             const RECT inside{0, 0, w, h};
             FillRect(buffer, &inside, ui::window_brush());
-            paint_controller(buffer, inside, g.view, ui::colors().dark);
+            paint_controller(buffer, inside, g.view, ui::colors().dark, picture_label_px());
             BitBlt(dc, area.left, area.top, w, h, buffer, 0, 0, SRCCOPY);
             SelectObject(buffer, old);
             DeleteObject(bitmap);
@@ -1820,7 +1789,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpar
         return DefWindowProcW(hwnd, message, wparam, lparam);
     case WM_LBUTTONDOWN: {
         if (g.page != kPadButtons) return 0;
-        const int control = control_at(picture_area(), POINT{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
+        const int control = control_at(picture_area(), POINT{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)}, picture_label_px());
         if (control >= 0) start_capture(control);
         return 0;
     }
@@ -1829,7 +1798,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpar
             POINT point;
             GetCursorPos(&point);
             ScreenToClient(hwnd, &point);
-            if (control_at(picture_area(), point) >= 0) {
+            if (control_at(picture_area(), point, picture_label_px()) >= 0) {
                 SetCursor(LoadCursorW(nullptr, MAKEINTRESOURCEW(32649)));
                 return TRUE;
             }
