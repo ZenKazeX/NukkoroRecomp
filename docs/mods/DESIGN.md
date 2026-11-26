@@ -152,8 +152,10 @@ Window:
 - Failed saves are reported (after ~0.6 s of retries); a damaged `mods.json` answered No makes the window read only.
 - The window's size and place are remembered in `mods/.manager.json` (ignored when that screen is gone).
 - Bottom bar, right: Zoom (also Ctrl and + / -, Ctrl and 0, Ctrl and the mouse wheel) and Theme, used at once
-  and kept in `appearance.cfg` beside the manager.
-- `--snapshot <png> [--select <id>]` writes a picture of the window (documentation).
+  and kept in `appearance.cfg` beside the manager. Zoom keeps the window's size and lays it out again (see
+  [PC_SETTINGS_FILES.md](../PC_SETTINGS_FILES.md#appearancecfg-the-programs-zoom-and-theme)).
+- `--snapshot <png> [--select <id>]` writes a picture of the window (documentation); `--check-layout <report.txt>`
+  checks that every text fits at every zoom and window size (exit code 1 when one does not).
 
 Command line (`ModManager.exe help`): `list`, `info`, `install [--replace] [--name]`, `enable`, `disable`,
 `enable-all`, `disable-all`, `remove`, `move <id> <pos>`, `option <id> <option> <choice>`, `master on|off`,

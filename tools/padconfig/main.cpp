@@ -58,17 +58,20 @@ std::wstring operator""_w(const char* text, std::size_t length) { return wide(st
 const std::wstring kTitle = "Settings - Shadow the Hedgehog"_w;
 
 // Layout (96 dpi units at the normal text size; px() scales them by the screen and the chosen text size), in the
-// manner of Windows 11's own Settings: a navigation list on the left (with the text size and colour choices under it),
-// the chosen page's title, and each setting on a card. The pages are laid out in their own units, from x = 0; make()
-// moves them right of the navigation list. The bar at the bottom is below the tallest page. At a large text size the
-// window may not fit on the screen: it then scrolls.
-constexpr int kNavW = 232;                    // the navigation column
-constexpr int kPageX = kNavW - 8;             // where a page's x = 0 is
-constexpr int kPageW = 1094;                  // a page's width (its controls run from 18 to 1082)
-constexpr int kClientW = kPageX + kPageW;
-constexpr int kTop = 72;                      // below the page title
-constexpr int kPadBottom = kTop + 586;        // the controller page's pictures end here
+// manner of Windows 11's own Settings: a navigation list on the left (with the zoom and theme choices under it), the
+// chosen page's title, and each setting on a card. The pages are laid out in their own units, from x = 0; make() moves
+// them right of the navigation list. The bar at the bottom is below the tallest page.
+//
+// Zoom never changes the window's size: everything is laid out again for the room the window has, in units, so a
+// larger zoom is a narrower page. Words wrap, a setting's control goes under its name, the columns of the controller
+// and keyboard pages go one under the other, and the navigation list shows only its icons. The page scrolls up and
+// down, never sideways.
+constexpr int kNavW = 232;                    // the navigation column, with its words
+constexpr int kNarrowNavW = 64;               // the navigation column with only its icons
+constexpr int kClientW = kNavW - 8 + 1094;    // the window's width at the start, at zoom 100 %
 constexpr int kNavItemH = 40, kLookW = kNavW - 28;
+constexpr int kSmallestPage = 240;            // a page is laid out at least this wide
+constexpr int kPictureW = 668, kPictureH = 578;  // the controller pictures, at their largest
 
 constexpr int kFirstRow = 100, kFirstLive = 200;
 enum : int { kThreshold = 300, kThresholdValue, kSwapSticks, kStyle };
@@ -126,8 +129,32 @@ struct Field {
 struct App {
     HWND window = nullptr, tabs = nullptr;  // tabs: the navigation list
     HFONT font = nullptr, caption = nullptr, title = nullptr, icons = nullptr;
-    int origin_x = 0;     // what make() adds to x: kPageX for the pages and the bottom bar, 0 for the navigation
-    int bottom = kPadBottom;  // where the bar at the bottom starts (below the tallest page)
+    int origin_x = 0;     // what make() adds to x: page_x for the pages and the bottom bar, 0 for the navigation
+    int bottom = 0;       // where the bar at the bottom starts (below the tallest page)
+    int bar_h = 70;       // the bar's height
+
+    // The layout for the window's present width (choose_columns()), in units.
+    int layout_w = 0;     // the width laid out for
+    bool narrow_nav = false;  // the navigation list shows only its icons; the zoom and theme are in the bottom bar
+    int page_x = kNavW - 8, page_w = 1094;  // where a page's x = 0 is, and its width
+    int top = 72;         // where a page's content starts, below its title
+    RECT picture{};       // the controller pictures, in pixels (before scrolling)
+    // The controller buttons page has a scale of its own: the list and the pictures stay side by side and grow or
+    // shrink together to fit the window, apart from the text zoom (build_pad_page()). While it is built, px() and
+    // units() use its scale (unit_zoom), and its controls its font.
+    int unit_zoom = 0;    // 0: the text zoom
+    HFONT pad_font = nullptr;
+    int pad_font_zoom = 0;
+    int layout_h = 0;     // the client height laid out for (the controller page fits it)
+    int status_w = 0, status_h = 0, info_h = 0;  // the status lines in the bottom bar
+
+    // Laying out again for a new width moves the controls build() made instead of making them again: build() runs
+    // once more with `relayout` set, and make() hands back the controls in the order it made them.
+    bool relayout = false;
+    std::vector<HWND> made;
+    std::size_t next_made = 0;
+    bool checking = false;  // --check-layout: zoom changes are not stored
+    bool rebuilding = false;  // rebuild_view() is making the controls (no relayout until it is done)
     std::array<std::vector<RECT>, kPageCount> cards;  // each page's cards, in client units
     std::vector<HWND> on_card;  // controls drawn on a card (their background is the card's)
     bool card_open = false;     // make() is adding controls on a card
@@ -160,32 +187,32 @@ struct App {
     bool left_trigger = false, right_trigger = false;
 
     ui::Appearance look;           // the text size and colours (appearance.cfg)
-    int scroll_x = 0, scroll_y = 0;  // how far the window's content is scrolled
+    int scroll_y = 0;     // how far the window's content is scrolled (only up and down)
     HWND last_focus = nullptr;
 } g;
 
 std::wstring number_text(double v) { return wide(format_number(v)); }
-int px(int v) { return MulDiv(v, g.dpi * g.look.text_size, 96 * 100); }
+// The scale in use: the text zoom, or the controller page's own while it is built.
+int zoom_now() { return g.unit_zoom > 0 ? g.unit_zoom : g.look.text_size; }
+int px(int v) { return MulDiv(v, g.dpi * zoom_now(), 96 * 100); }
 HWND item(int id) { return GetDlgItem(g.window, id); }
 
-// ---- scrolling (only at a text size too large for the screen) ------------------------------------------------------
+// ---- scrolling (when the content is taller than the window) ----------------------------------------------------------
 
-int content_w() { return px(kClientW); }
-int content_h() { return px(g.bottom + 70); }
+int content_h() { return px(g.bottom + g.bar_h); }
 bool on_card(HWND h) { return std::find(g.on_card.begin(), g.on_card.end(), h) != g.on_card.end(); }
+// Pixels to units, at the present screen and zoom.
+int units(int pixels) { return MulDiv(pixels, 96 * 100, g.dpi * zoom_now()); }
 
-// Moves the content so that (x, y) of it is at the window's top left. Every control is moved by hand: the window may
-// have controls outside its visible part, which ScrollWindowEx leaves where they are.
-void scroll_to(int x, int y) {
+// Moves the content so that y of it is at the window's top. Every control is moved by hand: the window may have
+// controls outside its visible part, which ScrollWindowEx leaves where they are.
+void scroll_to(int y) {
     RECT client;
     GetClientRect(g.window, &client);
-    x = std::clamp(x, 0, std::max(0, content_w() - static_cast<int>(client.right)));
     y = std::clamp(y, 0, std::max(0, content_h() - static_cast<int>(client.bottom)));
-    const int dx = g.scroll_x - x, dy = g.scroll_y - y;
-    if (dx == 0 && dy == 0) return;
-    g.scroll_x = x;
+    const int dy = g.scroll_y - y;
+    if (dy == 0) return;
     g.scroll_y = y;
-    SetScrollPos(g.window, SB_HORZ, x, TRUE);
     SetScrollPos(g.window, SB_VERT, y, TRUE);
     int children = 0;
     for (HWND c = GetWindow(g.window, GW_CHILD); c != nullptr; c = GetWindow(c, GW_HWNDNEXT)) ++children;
@@ -194,40 +221,36 @@ void scroll_to(int x, int y) {
         RECT r;
         GetWindowRect(c, &r);
         MapWindowPoints(nullptr, g.window, reinterpret_cast<POINT*>(&r), 2);
-        moves = DeferWindowPos(moves, c, nullptr, r.left + dx, r.top + dy, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+        moves = DeferWindowPos(moves, c, nullptr, r.left, r.top + dy, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
     if (moves != nullptr) EndDeferWindowPos(moves);
     InvalidateRect(g.window, nullptr, TRUE);
 }
 
-// The scroll bars for the window's present size: none when everything fits.
+// The scroll bar for the window's present size: none when everything fits. The layout keeps the bar's room either
+// way (layout_units()), so showing or hiding it never lays the page out again.
 void update_scrollbars() {
-    static bool busy = false;  // showing a bar resizes the window, which comes back here
+    static bool busy = false;  // showing the bar resizes the window, which comes back here
     if (busy) return;
     busy = true;
-    for (int pass = 0; pass < 2; ++pass) {  // a bar for one direction can make the other one needed
-        RECT client;
-        GetClientRect(g.window, &client);
-        SCROLLINFO info{};
-        info.cbSize = sizeof(info);
-        info.fMask = SIF_RANGE | SIF_PAGE;
-        info.nMax = content_w() - 1;
-        info.nPage = static_cast<UINT>(client.right);
-        SetScrollInfo(g.window, SB_HORZ, &info, TRUE);
-        info.nMax = content_h() - 1;
-        info.nPage = static_cast<UINT>(client.bottom);
-        SetScrollInfo(g.window, SB_VERT, &info, TRUE);
-    }
-    scroll_to(g.scroll_x, g.scroll_y);
+    RECT client;
+    GetClientRect(g.window, &client);
+    SCROLLINFO info{};
+    info.cbSize = sizeof(info);
+    info.fMask = SIF_RANGE | SIF_PAGE;
+    info.nMax = content_h() - 1;
+    info.nPage = static_cast<UINT>(client.bottom);
+    SetScrollInfo(g.window, SB_VERT, &info, TRUE);
+    scroll_to(g.scroll_y);
     busy = false;
 }
 
-// A scroll bar was used: `bar` is SB_HORZ or SB_VERT, `code` the WM_xSCROLL request.
-void on_scrollbar(int bar, int code) {
+// The window's scroll bar was used: `code` is the WM_VSCROLL request.
+void on_scrollbar(int code) {
     SCROLLINFO info{};
     info.cbSize = sizeof(info);
     info.fMask = SIF_ALL;
-    GetScrollInfo(g.window, bar, &info);
+    GetScrollInfo(g.window, SB_VERT, &info);
     int pos = info.nPos;
     const int line = px(40), page = static_cast<int>(info.nPage) - line;
     switch (code) {
@@ -241,8 +264,7 @@ void on_scrollbar(int bar, int code) {
         case SB_BOTTOM: pos = info.nMax; break;
         default: return;
     }
-    if (bar == SB_HORZ) scroll_to(pos, g.scroll_y);
-    else scroll_to(g.scroll_x, pos);
+    scroll_to(pos);
 }
 
 // Brings the control with the keyboard focus into view (Tab may reach one outside the visible part).
@@ -257,20 +279,21 @@ void show_focus() {
     MapWindowPoints(nullptr, g.window, reinterpret_cast<POINT*>(&r), 2);
     GetClientRect(g.window, &client);
     const int margin = px(12);
-    int x = g.scroll_x, y = g.scroll_y;
-    if (r.left < 0) x += r.left - margin;
-    else if (r.right > client.right) x += std::min(r.left - margin, r.right - client.right + margin);
+    int y = g.scroll_y;
     if (r.top < 0) y += r.top - margin;
     else if (r.bottom > client.bottom) y += std::min(r.top - margin, r.bottom - client.bottom + margin);
-    scroll_to(x, y);
+    scroll_to(y);
 }
 
-void set_text(HWND h, const std::wstring& text) {
+// True when the text changed.
+bool set_text(HWND h, const std::wstring& text) {
     const int length = GetWindowTextLengthW(h);
     std::wstring now(static_cast<std::size_t>(length) + 1, L'\0');
     GetWindowTextW(h, now.data(), length + 1);
     now.resize(static_cast<std::size_t>(length));
-    if (text != now) SetWindowTextW(h, text.c_str());
+    if (text == now) return false;
+    SetWindowTextW(h, text.c_str());
+    return true;
 }
 
 std::wstring window_text(HWND h) {
@@ -317,6 +340,7 @@ bool unsaved() {
 }
 
 std::wstring bind_text(const sp::Bind& bind);
+void fit_status();
 
 void refresh_status() {
     std::wstring text;
@@ -341,10 +365,12 @@ void refresh_status() {
     } else {
         text = "No unsaved changes."_w;
     }
-    set_text(item(kStatus), text);
-    set_text(item(kInfo), g.game_running
-                              ? "The game is running. You can still save: it uses the new settings the next time it starts."_w
-                              : "The game reads these settings when it starts, so changes take effect the next time you start it."_w);
+    const bool status_changed = set_text(item(kStatus), text);
+    const bool info_changed =
+        set_text(item(kInfo), g.game_running
+                                  ? "The game is running. You can still save: it uses the new settings the next time it starts."_w
+                                  : "The game reads these settings when it starts, so changes take effect the next time you start it."_w);
+    if (status_changed || info_changed) fit_status();
 }
 
 void show_message(const std::wstring& text) {
@@ -412,8 +438,7 @@ void finish_capture(std::uint16_t mask) {
 }
 
 RECT picture_area() {
-    return RECT{px(kPageX + 414) - g.scroll_x, px(kTop + 4) - g.scroll_y, px(kPageX + 1082) - g.scroll_x,
-                px(kPadBottom - 4) - g.scroll_y};
+    return RECT{g.picture.left, g.picture.top - g.scroll_y, g.picture.right, g.picture.bottom - g.scroll_y};
 }
 
 // Repaints the pictures only when what they show changed.
@@ -538,6 +563,22 @@ bool parse_size(const std::wstring& text, int& w, int& h) {
     return true;
 }
 
+// A drop-down list as wide as its longest choice, so a narrow box still shows every choice whole when opened.
+void fit_drop_width(HWND combo) {
+    HFONT font = reinterpret_cast<HFONT>(SendMessageW(combo, WM_GETFONT, 0, 0));
+    int widest = 0;
+    const int count = static_cast<int>(SendMessageW(combo, CB_GETCOUNT, 0, 0));
+    for (int i = 0; i < count; ++i) {
+        const int n = static_cast<int>(SendMessageW(combo, CB_GETLBTEXTLEN, static_cast<WPARAM>(i), 0));
+        if (n <= 0) continue;
+        std::wstring text(static_cast<std::size_t>(n) + 1, L'\0');
+        SendMessageW(combo, CB_GETLBTEXT, static_cast<WPARAM>(i), reinterpret_cast<LPARAM>(text.data()));
+        text.resize(static_cast<std::size_t>(n));
+        widest = std::max(widest, static_cast<int>(ui::text_extent(font, text).cx));
+    }
+    SendMessageW(combo, CB_SETDROPPEDWIDTH, static_cast<WPARAM>(widest + px(16) + GetSystemMetrics(SM_CXVSCROLL)), 0);
+}
+
 void refresh_field(Field& f) {
     g.refreshing = true;
     const double v = f.get();
@@ -558,6 +599,7 @@ void refresh_field(Field& f) {
                 selected = static_cast<int>(SendMessageW(f.control, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(extra.c_str())));
             }
             SendMessageW(f.control, CB_SETCURSEL, static_cast<WPARAM>(selected), 0);
+            fit_drop_width(f.control);
             break;
         }
         case Kind::Slider:
@@ -644,65 +686,89 @@ void on_field(Field& f, int notification) {
 
 // ---- building the pages ------------------------------------------------------------------------------------------
 
+// The font of the controls being made: the controller page's at its own scale, the text font elsewhere.
+HFONT page_font() { return g.unit_zoom > 0 && g.pad_font != nullptr ? g.pad_font : g.font; }
+
+// A control of the page being built at (x, y), w x h, in units. With g.relayout the control made there before is moved
+// instead: build() makes its controls in the same order every time, whatever the width.
 HWND make(const wchar_t* cls, const std::wstring& text, DWORD style, int x, int y, int w, int h, int id, HFONT font = nullptr) {
+    if (g.relayout) {
+        if (g.next_made >= g.made.size()) return nullptr;
+        HWND c = g.made[g.next_made++];
+        SetWindowPos(c, nullptr, px(g.origin_x + x), px(y) - g.scroll_y, px(w), px(h), SWP_NOZORDER | SWP_NOACTIVATE);
+        if (g.building == kPadButtons)  // the controller page's scale may have changed with the window
+            SendMessageW(c, WM_SETFONT, reinterpret_cast<WPARAM>(font != nullptr ? font : page_font()), FALSE);
+        return c;
+    }
     HWND c = CreateWindowExW(0, cls, text.c_str(), WS_CHILD | (g.building < 0 ? WS_VISIBLE : 0) | style, px(g.origin_x + x),
-                             px(y), px(w), px(h), g.window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
+                             px(y) - g.scroll_y, px(w), px(h), g.window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
                              GetModuleHandleW(nullptr), nullptr);
-    SendMessageW(c, WM_SETFONT, reinterpret_cast<WPARAM>(font != nullptr ? font : g.font), TRUE);
+    SendMessageW(c, WM_SETFONT, reinterpret_cast<WPARAM>(font != nullptr ? font : page_font()), TRUE);
+    g.made.push_back(c);
     if (g.building >= 0) g.page_controls[static_cast<std::size_t>(g.building)].push_back(c);
     if (g.card_open) g.on_card.push_back(c);
     return c;
 }
 
-// A card behind controls of the page being built, in page units.
+// Moves a control already made, in units.
+void move(HWND c, int x, int y, int w, int h) {
+    if (c != nullptr)
+        SetWindowPos(c, nullptr, px(g.origin_x + x), px(y) - g.scroll_y, px(w), px(h), SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+// A card behind controls of the page being built, in page units (kept in pixels: the controller page has its own scale).
 void add_card(int left, int top, int right, int bottom) {
-    g.cards[static_cast<std::size_t>(g.building)].push_back(RECT{g.origin_x + left, top, g.origin_x + right, bottom});
+    g.cards[static_cast<std::size_t>(g.building)].push_back(RECT{px(g.origin_x + left), px(top), px(g.origin_x + right), px(bottom)});
 }
 
 // How tall `text` is in `font` when wrapped to `width` units, in units.
 int text_height(const std::wstring& text, HFONT font, int width) {
     if (text.empty()) return 0;
-    HDC dc = GetDC(g.window);
-    HGDIOBJ old = SelectObject(dc, font);
-    RECT r{0, 0, px(width), 0};
-    DrawTextW(dc, text.c_str(), static_cast<int>(text.size()), &r, DT_CALCRECT | DT_WORDBREAK | DT_NOPREFIX);
-    SelectObject(dc, old);
-    ReleaseDC(g.window, dc);
-    return MulDiv(r.bottom - r.top, 96 * 100, g.dpi * g.look.text_size) + 1;
+    return units(ui::text_extent(font, text, px(width)).cy) + 1;
 }
 
 constexpr int kHelpId = 900;  // the grey explanations (WM_CTLCOLORSTATIC)
 
-void intro(const std::wstring& text) {
-    make(L"STATIC", text, SS_LEFT | SS_NOPREFIX, 24, kTop, 1040, text_height(text, g.font, 1040) + 2, kHelpId);
+// The page's explanation under its title; its height.
+int intro(const std::wstring& text) {
+    const int w = g.page_w - 54, h = text_height(text, g.font, w);
+    make(L"STATIC", text, SS_LEFT | SS_NOPREFIX, 24, g.top, w, h + 2, kHelpId);
+    return h;
 }
 
 // One setting on its own card, as in Windows' Settings: the name and its explanation on the left, the control on the
-// right. Returns the card's height.
-constexpr int kCardLeft = 18, kCardRight = 1082;
+// right; or the control under them when the page is too narrow for both. Returns the card's height.
+constexpr int kCardLeft = 18;
 int place_card(Field& f, int y) {
     f.id = kFirstField + static_cast<int>(&f - g.fields.data());
-    const int control_w = f.kind == Kind::Check ? 120 : f.kind == Kind::Number ? 110 : 320;
-    const int control_x = kCardRight - 20 - control_w;
-    const int text_x = kCardLeft + 20, text_w = control_x - 32 - text_x;
+    const int right = g.page_w - 12;
+    const int inner_l = kCardLeft + 20, inner_r = right - 20, inner_w = inner_r - inner_l;
+    int control_w = f.kind == Kind::Check ? 120 : f.kind == Kind::Number ? 110 : 320;
+    const bool beside = inner_w - control_w - 32 >= 260;  // the words keep room for about 40 characters a line
+    if (!beside) control_w = std::min(control_w, inner_w);
+    const int text_w = beside ? inner_w - control_w - 32 : inner_w;
     const int label_h = text_height(f.label, g.font, text_w), help_h = text_height(f.help, g.caption, text_w);
-    const int h = std::max(64, 14 + label_h + (help_h > 0 ? 3 + help_h : 0) + 14);
+    const int words_h = label_h + (help_h > 0 ? 3 + help_h : 0);
+    const int h = beside ? std::max(64, 14 + words_h + 14) : 14 + words_h + 10 + 30 + 12;
+    const int control_x = beside ? inner_r - control_w : inner_l;
+    const int cy = beside ? y + (h - 30) / 2 : y + 14 + words_h + 10;
     g.card_open = true;
-    add_card(kCardLeft, y, kCardRight, y + h);
-    make(L"STATIC", f.label, SS_LEFT | SS_NOPREFIX, text_x, y + 14, text_w, label_h, -1);
-    if (help_h > 0) make(L"STATIC", f.help, SS_LEFT | SS_NOPREFIX, text_x, y + 14 + label_h + 3, text_w, help_h, kHelpId, g.caption);
-    const int cy = y + (h - 30) / 2;
+    add_card(kCardLeft, y, right, y + h);
+    make(L"STATIC", f.label, SS_LEFT | SS_NOPREFIX, inner_l, y + 14, text_w, label_h, -1);
+    if (help_h > 0) make(L"STATIC", f.help, SS_LEFT | SS_NOPREFIX, inner_l, y + 14 + label_h + 3, text_w, help_h, kHelpId, g.caption);
     switch (f.kind) {
         case Kind::Check:
-            f.control = make(L"BUTTON", "Off"_w, BS_AUTOCHECKBOX | WS_TABSTOP, control_x + 34, cy, control_w - 34, 30, f.id);
-            ui::set_switch(f.control);
+            f.control = make(L"BUTTON", "Off"_w, BS_AUTOCHECKBOX | WS_TABSTOP, beside ? control_x + 34 : control_x, cy,
+                             beside ? control_w - 34 : 86, 30, f.id);
+            if (!g.relayout) ui::set_switch(f.control);
             break;
         case Kind::Combo:
             f.control = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, control_x, cy + 1, control_w, 300, f.id);
             break;
         case Kind::Slider:
             f.control = make(TRACKBAR_CLASSW, L"", TBS_HORZ | TBS_NOTICKS | WS_TABSTOP, control_x, cy, control_w - 100, 30, f.id);
-            SendMessageW(f.control, TBM_SETRANGE, TRUE, MAKELPARAM(static_cast<int>(f.low), static_cast<int>(f.high)));
+            if (!g.relayout)
+                SendMessageW(f.control, TBM_SETRANGE, TRUE, MAKELPARAM(static_cast<int>(f.low), static_cast<int>(f.high)));
             f.value = make(L"STATIC", L"", SS_LEFT | SS_CENTERIMAGE, control_x + control_w - 94, cy, 94, 30, -1);
             break;
         case Kind::Number:
@@ -710,43 +776,50 @@ int place_card(Field& f, int y) {
             break;
         case Kind::Size:
             f.control = make(L"COMBOBOX", L"", CBS_DROPDOWN | WS_TABSTOP | WS_VSCROLL, control_x, cy + 1, control_w, 300, f.id);
-            for (const Choice& c : f.choices) SendMessageW(f.control, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(c.label.c_str()));
+            if (!g.relayout) {
+                for (const Choice& c : f.choices) SendMessageW(f.control, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(c.label.c_str()));
+                fit_drop_width(f.control);
+            }
             break;
     }
     g.card_open = false;
     return h;
 }
 
-// One row: the label, the control, and a line of explanation beside it.
-void place(Field& f, int x, int y, int label_w, int control_w, int help_x, int help_w) {
+// One setting of the keyboard page's right-hand column, `w` units wide: its name with its control beside it, or under
+// it when the column is narrow. Returns the height it takes.
+int place(Field& f, int x, int y, int w) {
     f.id = kFirstField + static_cast<int>(&f - g.fields.data());
-    make(L"STATIC", f.label.c_str(), SS_LEFT | SS_NOPREFIX, x, y + 4, label_w, 40, -1);
-    const int cx = x + label_w + 6;
+    const int control_w = std::min(f.kind == Kind::Number ? 90 : 220, w);
+    const bool beside = w >= 200 + 6 + control_w;
+    const int label_w = beside ? w - 6 - control_w : w;
+    const int label_h = std::max(20, text_height(f.label, g.font, label_w));
+    make(L"STATIC", f.label, SS_LEFT | SS_NOPREFIX, x, beside ? y + 4 : y, label_w, label_h, -1);
+    const int cx = beside ? x + w - control_w : x, cy = beside ? y : y + label_h + 4;
     switch (f.kind) {
         case Kind::Check:
-            f.control = make(L"BUTTON", "Off"_w, BS_AUTOCHECKBOX | WS_TABSTOP, cx, y, control_w, 26, f.id);
-            ui::set_switch(f.control);
+            f.control = make(L"BUTTON", "Off"_w, BS_AUTOCHECKBOX | WS_TABSTOP, cx, cy, std::min(120, control_w), 26, f.id);
+            if (!g.relayout) ui::set_switch(f.control);
             break;
         case Kind::Combo:
-            f.control = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, cx, y, control_w, 300, f.id);
+            f.control = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, cx, cy, control_w, 300, f.id);
             break;
-        case Kind::Slider: {
-            f.control = make(TRACKBAR_CLASSW, L"", TBS_HORZ | TBS_NOTICKS | WS_TABSTOP, cx, y, control_w - 96, 26, f.id);
-            SendMessageW(f.control, TBM_SETRANGE, TRUE, MAKELPARAM(static_cast<int>(f.low), static_cast<int>(f.high)));
-            f.value = make(L"STATIC", L"", SS_LEFT | SS_CENTERIMAGE, cx + control_w - 90, y, 90, 26, -1);
+        case Kind::Slider:
+            f.control = make(TRACKBAR_CLASSW, L"", TBS_HORZ | TBS_NOTICKS | WS_TABSTOP, cx, cy, control_w - 96, 26, f.id);
+            if (!g.relayout)
+                SendMessageW(f.control, TBM_SETRANGE, TRUE, MAKELPARAM(static_cast<int>(f.low), static_cast<int>(f.high)));
+            f.value = make(L"STATIC", L"", SS_LEFT | SS_CENTERIMAGE, cx + control_w - 90, cy, 90, 26, -1);
             break;
-        }
         case Kind::Number:
-            f.control = make(L"EDIT", L"", ES_AUTOHSCROLL | WS_BORDER | WS_TABSTOP, cx, y, 90, 26, f.id);
+            f.control = make(L"EDIT", L"", ES_AUTOHSCROLL | WS_BORDER | WS_TABSTOP, cx, cy, control_w, 26, f.id);
             break;
-        case Kind::Size: {
-            f.control = make(L"COMBOBOX", L"", CBS_DROPDOWN | WS_TABSTOP | WS_VSCROLL, cx, y, control_w, 300, f.id);
-            for (const Choice& c : f.choices)
-                SendMessageW(f.control, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(c.label.c_str()));
+        case Kind::Size:
+            f.control = make(L"COMBOBOX", L"", CBS_DROPDOWN | WS_TABSTOP | WS_VSCROLL, cx, cy, control_w, 300, f.id);
+            if (!g.relayout)
+                for (const Choice& c : f.choices) SendMessageW(f.control, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(c.label.c_str()));
             break;
-        }
     }
-    if (!f.help.empty()) make(L"STATIC", f.help.c_str(), SS_LEFT | SS_NOPREFIX, help_x, y + 2, help_w, 56, kHelpId);
+    return beside ? std::max(label_h + 4, 26) + 20 : label_h + 4 + 26 + 16;
 }
 
 // The pages' fields, in page order. Each reads and changes g's settings directly.
@@ -961,61 +1034,182 @@ void define_fields() {
         {kNotChosen, {"On"_w, 1}, {"Off"_w, 0}});
 }
 
-void build_pad_page() {
-    constexpr int kRowH = 30, kLeft = 28;
-    int y = kTop + 12;
+// The controller buttons page at a width and from a top in its own units: the list of buttons on a card, and the
+// pictures right of it, or under it when the page is too narrow for both. Returns where the page ends.
+int lay_out_pad_page(int page_w, int top, HFONT font) {
+    const bool beside = page_w >= 414 + 360 + 12;
+    const int card_r = beside ? 400 : page_w - 12;
+    constexpr int kLeft = 28, kNameW = 120, kDotW = 24;
+    const int inner_w = card_r - 16 - kLeft;
+    const bool name_beside = inner_w >= 352;  // each row's name beside its button
+    const int button_w = name_beside ? std::min(200, inner_w - kNameW - 2 - 6 - kDotW) : inner_w - 6 - kDotW;
+    int y = top + 12;
     g.card_open = true;
-    make(L"STATIC", "Game button"_w, SS_LEFT, kLeft, y, 120, 20, -1);
-    make(L"STATIC", "Your controller (click to change)"_w, SS_LEFT, 150, y, 240, 20, -1);
-    y += 26;
+    const std::wstring head = "Game button"_w, column = "Your controller (click to change)"_w;
+    if (name_beside) {
+        const int column_h = std::max(20, text_height(column, font, inner_w - kNameW - 2));
+        make(L"STATIC", head, SS_LEFT, kLeft, y, kNameW, 20, -1);
+        make(L"STATIC", column, SS_LEFT, kLeft + kNameW + 2, y, inner_w - kNameW - 2, column_h, -1);
+        y += column_h + 6;
+    } else {
+        const int head_h = std::max(20, text_height(head, font, inner_w));
+        const int column_h = std::max(20, text_height(column, font, inner_w));
+        make(L"STATIC", head, SS_LEFT, kLeft, y, inner_w, head_h, -1);
+        make(L"STATIC", column, SS_LEFT, kLeft, y + head_h + 2, inner_w, column_h, -1);
+        y += head_h + 2 + column_h + 6;
+    }
     for (int i = 0; i < static_cast<int>(kControls.size()); ++i) {
-        make(L"STATIC", wide(kControls[static_cast<std::size_t>(i)].name).c_str(), SS_LEFT | SS_CENTERIMAGE, kLeft, y, 120, 26, -1);
-        make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, 150, y, 200, 26, kFirstRow + i);
-        make(L"STATIC", L"", SS_CENTER | SS_CENTERIMAGE, 356, y, 24, 26, kFirstLive + i);
-        y += kRowH;
+        const std::wstring name = wide(kControls[static_cast<std::size_t>(i)].name);
+        if (name_beside) {
+            make(L"STATIC", name, SS_LEFT | SS_CENTERIMAGE, kLeft, y, kNameW, 26, -1);
+        } else {
+            make(L"STATIC", name, SS_LEFT | SS_CENTERIMAGE, kLeft, y, inner_w, 22, -1);
+            y += 22;
+        }
+        const int button_x = name_beside ? kLeft + kNameW + 2 : kLeft;
+        make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, button_x, y, button_w, 26, kFirstRow + i);
+        make(L"STATIC", L"", SS_CENTER | SS_CENTERIMAGE, button_x + button_w + 6, y, kDotW, 26, kFirstLive + i);
+        y += name_beside ? 30 : 34;
     }
     y += 8;
-    make(L"STATIC", "Trigger press needed"_w, SS_LEFT | SS_CENTERIMAGE, kLeft, y, 140, 30, -1);
-    HWND slider = make(TRACKBAR_CLASSW, L"", TBS_HORZ | TBS_NOTICKS | WS_TABSTOP, 170, y, 180, 30, kThreshold);
-    SendMessageW(slider, TBM_SETRANGE, TRUE, MAKELPARAM(0, 255));
-    make(L"STATIC", L"", SS_LEFT | SS_CENTERIMAGE, 356, y, 36, 30, kThresholdValue);
-    y += kRowH + 4;
-    make(L"STATIC", "Button prompts"_w, SS_LEFT | SS_CENTERIMAGE, kLeft, y, 120, 26, -1);
-    HWND combo = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, 150, y, 200, 200, kStyle);
-    for (const auto& s : kStyles) SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(s.label.c_str()));
-    y += kRowH + 4;
-    make(L"BUTTON", "Move with the right stick, camera with the left"_w, BS_AUTOCHECKBOX | WS_TABSTOP, kLeft, y, 360, 26, kSwapSticks);
+    const std::wstring trigger = "Trigger press needed"_w, prompts = "Button prompts"_w;
+    if (name_beside) {
+        make(L"STATIC", trigger, SS_LEFT | SS_CENTERIMAGE, kLeft, y, 140, 30, -1);
+    } else {
+        make(L"STATIC", trigger, SS_LEFT | SS_CENTERIMAGE, kLeft, y, inner_w, 22, -1);
+        y += 22;
+    }
+    const int slider_x = name_beside ? kLeft + 142 : kLeft;
+    const int slider_w = name_beside ? std::min(180, inner_w - 142 - 42) : inner_w - 42;
+    HWND slider = make(TRACKBAR_CLASSW, L"", TBS_HORZ | TBS_NOTICKS | WS_TABSTOP, slider_x, y, slider_w, 30, kThreshold);
+    if (!g.relayout) SendMessageW(slider, TBM_SETRANGE, TRUE, MAKELPARAM(0, 255));
+    make(L"STATIC", L"", SS_LEFT | SS_CENTERIMAGE, slider_x + slider_w + 6, y, 36, 30, kThresholdValue);
+    y += 34;
+    if (name_beside) {
+        make(L"STATIC", prompts, SS_LEFT | SS_CENTERIMAGE, kLeft, y, kNameW, 26, -1);
+    } else {
+        make(L"STATIC", prompts, SS_LEFT | SS_CENTERIMAGE, kLeft, y, inner_w, 22, -1);
+        y += 22;
+    }
+    HWND combo = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, name_beside ? kLeft + kNameW + 2 : kLeft, y,
+                      std::min(200, name_beside ? inner_w - kNameW - 2 : inner_w), 200, kStyle);
+    if (!g.relayout) {
+        for (const auto& s : kStyles) SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(s.label.c_str()));
+        fit_drop_width(combo);
+    }
+    y += 34;
+    const std::wstring swap = "Move with the right stick, camera with the left"_w;
+    const int swap_h = std::max(26, text_height(swap, font, inner_w - 26) + 6);
+    make(L"BUTTON", swap, BS_AUTOCHECKBOX | BS_MULTILINE | WS_TABSTOP, kLeft, y, inner_w, swap_h, kSwapSticks);
+    y += swap_h;
     g.card_open = false;
-    add_card(12, kTop, 400, y + 40);
+    add_card(12, top, card_r, y + 14);
+    // The pictures keep their shape: as wide as the room allows, up to their full size.
+    const int picture_x = beside ? 414 : 12;
+    const int picture_w = std::max(1, std::min(kPictureW, page_w - 12 - picture_x));
+    const int picture_y = beside ? top + 4 : y + 14 + 16;
+    g.picture = RECT{px(g.origin_x + picture_x), px(picture_y), px(g.origin_x + picture_x + picture_w), px(picture_y + picture_w * kPictureH / kPictureW)};
+    return std::max(y + 14, picture_y + picture_w * kPictureH / kPictureW);
 }
 
-void build_keyboard_page() {
-    int y = kTop + 12;
+// The controller buttons page has a scale of its own: laid out as at zoom 100 % (the list and the pictures side by side,
+// kPadPageW x kPadPageH units), it grows with the zoom and shrinks to fit the window, the list and the pictures together,
+// like a picture. Only when that would make it smaller than kSmallestPadZoom does it use the text zoom and put the
+// pictures under the list. Returns where the page ends, in the text zoom's units.
+constexpr int kPadPageW = 1094, kPadPageH = 600, kSmallestPadZoom = 75;
+int build_pad_page() {
+    RECT client;
+    GetClientRect(g.window, &client);
+    const int width_fit = MulDiv(px(g.page_w), 96 * 100, g.dpi * kPadPageW);
+    // The height above the bottom bar (as last laid out), so that the page and the Save button fit when the window can.
+    const int height_fit = MulDiv(std::max(1, static_cast<int>(client.bottom) - px(g.top) - px(g.bar_h) - px(16)), 96 * 100,
+                                  g.dpi * kPadPageH);
+    const int text = g.look.text_size;
+    if (width_fit < kSmallestPadZoom) return lay_out_pad_page(g.page_w, g.top, g.font);
+    const int zoom = std::max(kSmallestPadZoom, std::min({text, width_fit, std::max(height_fit, kSmallestPadZoom)}));
+    HFONT old_font = nullptr;
+    if (g.pad_font == nullptr || g.pad_font_zoom != zoom) {
+        old_font = g.pad_font;
+        g.pad_font = CreateFontW(ui::font_height(10, g.dpi, zoom), 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0,
+                                 CLEARTYPE_QUALITY, 0, ui::text_face());
+        g.pad_font_zoom = zoom;
+    }
+    // In the page's own units: the same pixels as the text zoom's page_x, top and page_w.
+    g.unit_zoom = zoom;
+    g.origin_x = MulDiv(g.page_x, text, zoom);
+    const int end = lay_out_pad_page(MulDiv(g.page_w, text, zoom), MulDiv(g.top, text, zoom), g.pad_font);
+    g.unit_zoom = 0;
+    g.origin_x = g.page_x;
+    if (old_font != nullptr) DeleteObject(old_font);  // its controls have the new one now
+    return MulDiv(end, zoom, text) + 1;
+}
+
+// The keyboard page: the actions and their keys on one card, the mouse settings on another, beside it or under it.
+// Returns where the page ends.
+int build_keyboard_page() {
+    constexpr int kLeft = 26;
+    const int slots = static_cast<int>(sp::kMaxBinds);
+    // The boxes as wide as the longest key name they can show, the names as wide as the longest action's.
+    int key_w = units(ui::text_extent(g.font, "Press a key..."_w).cx);
+    for (int b = 0; b < 5; ++b)
+        key_w = std::max(key_w, units(ui::text_extent(g.font, bind_text(sp::mouse_bind(static_cast<sp::MouseButton>(b)))).cx));
+    key_w += 28;  // the button's own edges
+    int label_w = 0;
+    for (const std::wstring& label : kActionLabels) label_w = std::max(label_w, units(ui::text_extent(g.font, label).cx) + 8);
+    const int full_table = kLeft + label_w + 2 + slots * (key_w + 4) + 12;  // from the card's left edge at 12
+    const bool beside = g.page_w >= 12 + full_table + 12 + 440 + 12;
+    const int table_r = beside ? 12 + full_table : g.page_w - 12;
+    const int inner_w = table_r - 12 - kLeft;
+    // Each action's name beside its boxes; or over them, in a row; or over them, one under another.
+    const bool label_beside = inner_w >= label_w + 2 + slots * (key_w + 4);
+    const bool one_row = label_beside || inner_w >= slots * (key_w + 4);
+    const int bind_w = label_beside ? std::min(key_w + 32, (inner_w - label_w - 2) / slots - 4)
+                       : one_row    ? std::min(key_w + 32, (inner_w - (slots - 1) * 4) / slots)
+                                    : inner_w;
+    const int kLabelW = label_w;
+    int y = g.top + 12;
     g.card_open = true;
-    make(L"STATIC", "Action"_w, SS_LEFT, 26, y, 160, 20, -1);
-    make(L"STATIC", "Click a box, then press a key or a mouse button"_w, SS_LEFT | SS_NOPREFIX, 196, y, 400, 20, -1);
-    y += 26;
+    const std::wstring head = "Action"_w, hint = "Click a box, then press a key or a mouse button"_w;
+    if (label_beside) {
+        const int hint_h = std::max(20, text_height(hint, g.font, inner_w - kLabelW - 2));
+        make(L"STATIC", head, SS_LEFT, kLeft, y, kLabelW - 8, 20, -1);
+        make(L"STATIC", hint, SS_LEFT | SS_NOPREFIX, kLeft + kLabelW + 2, y, inner_w - kLabelW - 2, hint_h, -1);
+        y += hint_h + 6;
+    } else {
+        const int hint_h = std::max(20, text_height(hint, g.font, inner_w));
+        make(L"STATIC", head, SS_LEFT, kLeft, y, inner_w, 20, -1);
+        make(L"STATIC", hint, SS_LEFT | SS_NOPREFIX, kLeft, y + 22, inner_w, hint_h, -1);
+        y += 22 + hint_h + 6;
+    }
     for (std::size_t a = 0; a < sp::kActionCount; ++a) {
-        make(L"STATIC", kActionLabels[a], SS_LEFT | SS_CENTERIMAGE | SS_NOPREFIX, 26, y, 168, 22, -1);
-        for (std::size_t s = 0; s < sp::kMaxBinds; ++s)
-            make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, 196 + static_cast<int>(s) * 132, y, 128, 22,
-                 kFirstBind + static_cast<int>(a * sp::kMaxBinds + s));
-        y += 24;
+        if (label_beside) {
+            make(L"STATIC", kActionLabels[a], SS_LEFT | SS_CENTERIMAGE | SS_NOPREFIX, kLeft, y, kLabelW, 22, -1);
+        } else {
+            make(L"STATIC", kActionLabels[a], SS_LEFT | SS_CENTERIMAGE | SS_NOPREFIX, kLeft, y, inner_w, 22, -1);
+            y += 23;
+        }
+        for (int s = 0; s < slots; ++s) {
+            const int x = label_beside ? kLeft + kLabelW + 2 + s * (bind_w + 4) : one_row ? kLeft + s * (bind_w + 4) : kLeft;
+            make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, x, y, bind_w, 22,
+                 kFirstBind + static_cast<int>(a * sp::kMaxBinds) + s);
+            if (!one_row && s + 1 < slots) y += 26;
+        }
+        y += label_beside ? 24 : 30;
     }
-    add_card(12, kTop, 606, y + 12);
-    y = kTop + 16;
-    for (Field& f : g.fields) {
-        if (f.page != kKeyboard) continue;
-        place(f, 636, y, 200, 220, 0, 0);
-        y += 46;
-    }
+    add_card(12, g.top, table_r, y + 12);
+    const int column_l = beside ? table_r + 12 : 12, column_top = beside ? g.top : y + 12 + 16, column_r = g.page_w - 12;
+    const int x = column_l + 18, w = column_r - 20 - x;
+    y = column_top + 16;
+    for (Field& f : g.fields)
+        if (f.page == kKeyboard) y += place(f, x, y, w);
     const std::wstring note =
         "Mouse speed 1 is the normal speed; 2 turns twice as fast. Walk speed is how fast you move while holding "_w
         "Walk (36 is the default). Keyboard and mouse changes also apply when you switch back to a running game."_w;
-    const int note_h = text_height(note, g.caption, 420);
-    make(L"STATIC", note, SS_LEFT | SS_NOPREFIX, 636, y + 6, 420, note_h, kHelpId, g.caption);
+    const int note_h = text_height(note, g.caption, w);
+    make(L"STATIC", note, SS_LEFT | SS_NOPREFIX, x, y + 6, w, note_h, kHelpId, g.caption);
     g.card_open = false;
-    add_card(618, kTop, kCardRight, y + 6 + note_h + 16);
+    add_card(column_l, column_top, column_r, y + 6 + note_h + 16);
+    return y + 6 + note_h + 16;
 }
 
 // The zoom and theme choices, as offered under the navigation list.
@@ -1032,28 +1226,125 @@ const struct {
 const wchar_t kPageIcons[kPageCount] = {0xE7F4 /*monitor*/, 0xE916 /*stopwatch*/, 0xE767 /*volume*/, 0xE774 /*globe*/,
                                         0xE7FC /*game*/,    0xE713 /*setting*/,   0xE765 /*keyboard*/, 0xE74E /*save*/};
 
+// The width the window gives the layout, in units. The scroll bar's room is kept whether it shows or not, so the bar
+// coming or going never changes the layout (which could make it come and go for ever).
+int layout_units() {
+    RECT client;
+    GetClientRect(g.window, &client);
+    int w = client.right;
+    if ((GetWindowLongW(g.window, GWL_STYLE) & WS_VSCROLL) == 0) w -= GetSystemMetrics(SM_CXVSCROLL);
+    return units(std::max(w, 1));
+}
+
+// The navigation column and the page's width, for the window's width.
+void choose_columns() {
+    g.layout_w = layout_units();
+    RECT client;
+    GetClientRect(g.window, &client);
+    g.layout_h = client.bottom;
+    const int total = std::max(g.layout_w, kNarrowNavW - 8 + kSmallestPage);
+    g.narrow_nav = *ui::icon_face() != L'\0' && total < kNavW - 8 + 520;
+    g.page_x = (g.narrow_nav ? kNarrowNavW : kNavW) - 8;
+    // Without an icon font the navigation keeps its words, and the page takes what is left, however narrow: it must
+    // never run past the window's side.
+    g.page_w = g.narrow_nav || *ui::icon_face() != L'\0' ? std::max(kSmallestPage, total - g.page_x) : std::max(120, total - g.page_x);
+}
+
+// The bar at the bottom, on every page: what is going on, on the left, and the buttons on the right; or the buttons
+// under it when the page is narrow (in as many rows as they need). With the narrow navigation list, the zoom and theme
+// are here too.
+void build_bar(HWND sizes, HWND themes) {
+    const int b = g.bottom, left = 22, avail = g.page_w - 44;
+    HWND status = make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX, left, b + 10, avail, 22, kStatus);
+    HWND info = make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX, left, b + 34, avail, 34, kInfo, g.caption);
+    HWND buttons[] = {make(L"BUTTON", "Restore defaults"_w, BS_PUSHBUTTON | WS_TABSTOP, left, b, 176, 34, kRestore),
+                      make(L"BUTTON", "Save"_w, BS_DEFPUSHBUTTON | WS_TABSTOP, left, b, 120, 34, kSave),
+                      make(L"BUTTON", "Close"_w, BS_PUSHBUTTON | WS_TABSTOP, left, b, 118, 34, kClose)};
+    if (!g.relayout) {
+        ui::set_icon(buttons[0], 0xE777 /*restore*/);
+        ui::set_icon(buttons[1], 0xE74E /*save*/);
+        ui::set_primary(buttons[1]);
+    }
+    int widths[std::size(buttons)] = {};
+    int all = 0;
+    for (std::size_t i = 0; i < std::size(buttons); ++i) {
+        widths[i] = std::min(avail, std::max(96, units(ui::button_width(buttons[i])) + 2));
+        all += widths[i] + (i > 0 ? 8 : 0);
+    }
+    const bool beside = avail - all - 24 >= 300;
+    g.status_w = beside ? avail - all - 24 : avail;
+    g.status_h = std::max(22, text_height(window_text(status), g.font, g.status_w));
+    g.info_h = std::max(18, text_height(window_text(info), g.caption, g.status_w));
+    move(status, left, b + 10, g.status_w, g.status_h);
+    move(info, left, b + 10 + g.status_h + 2, g.status_w, g.info_h);
+    int bottom = b + 10 + g.status_h + 2 + g.info_h;
+    // The buttons, right-aligned, a row at a time.
+    int y = beside ? b + 16 : bottom + 10;
+    for (std::size_t first = 0; first < std::size(buttons);) {
+        std::size_t end = first;
+        int row_w = 0;
+        while (end < std::size(buttons) && (end == first || row_w + 8 + widths[end] <= avail)) {
+            row_w += (end > first ? 8 : 0) + widths[end];
+            ++end;
+        }
+        int x = left + avail - row_w;
+        for (std::size_t i = first; i < end; ++i) {
+            move(buttons[i], x, y, widths[i], 34);
+            x += widths[i] + 8;
+        }
+        bottom = std::max(bottom, y + 34);
+        y += 42;
+        first = end;
+    }
+    if (g.narrow_nav) {
+        y = bottom + 12;
+        const int look_w = std::min(kLookW, avail);
+        if (2 * look_w + 8 <= avail) {
+            move(sizes, left, y, look_w, 300);
+            move(themes, left + look_w + 8, y, look_w, 300);
+            bottom = y + 30;
+        } else {
+            move(sizes, left, y, look_w, 300);
+            move(themes, left, y + 38, look_w, 300);
+            bottom = y + 38 + 30;
+        }
+    }
+    g.bar_h = bottom - b + 18;
+}
+
 void build() {
-    // The navigation column: the pages, then the text size and colours.
+    // The navigation column: the pages, then the zoom and theme.
     g.origin_x = 0;
+    for (auto& cards : g.cards) cards.clear();
+    const int nav_w = g.narrow_nav ? kNarrowNavW : kNavW;
     g.tabs = make(L"LISTBOX", L"", LBS_OWNERDRAWFIXED | LBS_HASSTRINGS | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT | WS_TABSTOP,
-                  12, 16, kNavW - 24, kPageCount * kNavItemH + 4, kTabs);
-    for (int i = 0; i < kPageCount; ++i) SendMessageW(g.tabs, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(kPageNames[i].c_str()));
-    SendMessageW(g.tabs, LB_SETITEMHEIGHT, 0, px(kNavItemH));
+                  12, 16, nav_w - 24, kPageCount * kNavItemH + 4, kTabs);
     const int look_y = 16 + kPageCount * kNavItemH + 24;
     HWND sizes = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, 16, look_y, kLookW, 300, kTextSize);
-    for (const int size : kTextSizes) {
-        const std::wstring label = "Zoom: "_w + std::to_wstring(size) + " %"_w;
-        SendMessageW(sizes, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
-    }
     HWND themes = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, 16, look_y + 40, kLookW, 300, kColours);
-    for (const auto& t : kThemes) SendMessageW(themes, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(t.label.c_str()));
+    if (!g.relayout) {
+        for (int i = 0; i < kPageCount; ++i) SendMessageW(g.tabs, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(kPageNames[i].c_str()));
+        SendMessageW(g.tabs, LB_SETITEMHEIGHT, 0, px(kNavItemH));
+        for (const int size : kTextSizes) {
+            const std::wstring label = "Zoom: "_w + std::to_wstring(size) + " %"_w;
+            SendMessageW(sizes, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
+        }
+        for (const auto& t : kThemes) SendMessageW(themes, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(t.label.c_str()));
+        fit_drop_width(sizes);
+        fit_drop_width(themes);
+    }
 
-    // The pages, right of it.
-    g.origin_x = kPageX;
-    make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX | SS_ENDELLIPSIS, 22, 14, 1040, 44, kPageTitle, g.title);
-    for (auto& cards : g.cards) cards.clear();
-    g.on_card.clear();
-    define_fields();
+    // The pages, right of it, under a title that wraps when the page is narrow.
+    g.origin_x = g.page_x;
+    const int title_w = g.page_w - 44;
+    int title_h = 0;
+    for (const std::wstring& name : kPageNames) title_h = std::max(title_h, text_height(name, g.title, title_w));
+    make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX, 22, 14, title_w, title_h, kPageTitle, g.title);
+    g.top = std::max(72, 14 + title_h + 16);
+    if (!g.relayout) {
+        g.on_card.clear();
+        define_fields();
+    }
     const std::wstring intros[kPageCount] = {
         "How the game's window and picture look."_w,
         "How smoothly the picture is shown. The game itself always runs at its original speed."_w,
@@ -1064,19 +1355,18 @@ void build() {
         "Controller buttons page."_w,
         {},
         "Whether the game saves your progress by itself."_w};
-    g.bottom = kPadBottom;
+    g.bottom = 0;
     for (int p = 0; p < kPageCount; ++p) {
         g.building = p;
         if (p == kPadButtons) {
-            build_pad_page();
+            g.bottom = std::max(g.bottom, build_pad_page() + 12);
             continue;
         }
         if (p == kKeyboard) {
-            build_keyboard_page();
+            g.bottom = std::max(g.bottom, build_keyboard_page() + 12);
             continue;
         }
-        intro(intros[p]);
-        int y = kTop + text_height(intros[p], g.font, 1040) + 14;
+        int y = g.top + intro(intros[p]) + 14;
         for (Field& f : g.fields) {
             if (f.page != p) continue;
             y += place_card(f, y) + 4;
@@ -1084,19 +1374,9 @@ void build() {
         g.bottom = std::max(g.bottom, y + 12);
     }
     for (const auto& cards : g.cards)
-        for (const RECT& r : cards) g.bottom = std::max(g.bottom, static_cast<int>(r.bottom) + 12);
+        for (const RECT& r : cards) g.bottom = std::max(g.bottom, units(r.bottom) + 12);
     g.building = -1;
-
-    // The bar at the bottom, on every page.
-    const int b = g.bottom;
-    make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX | SS_ENDELLIPSIS, 22, b + 10, 600, 22, kStatus);
-    make(L"STATIC", L"", SS_LEFT | SS_NOPREFIX, 22, b + 34, 600, 34, kInfo, g.caption);
-    HWND restore = make(L"BUTTON", "Restore defaults"_w, BS_PUSHBUTTON | WS_TABSTOP, 652, b + 16, 176, 34, kRestore);
-    HWND save_button = make(L"BUTTON", "Save"_w, BS_DEFPUSHBUTTON | WS_TABSTOP, 836, b + 16, 120, 34, kSave);
-    make(L"BUTTON", "Close"_w, BS_PUSHBUTTON | WS_TABSTOP, 964, b + 16, 118, 34, kClose);
-    ui::set_icon(restore, 0xE777 /*restore*/);
-    ui::set_icon(save_button, 0xE74E /*save*/);
-    ui::set_primary(save_button);
+    build_bar(sizes, themes);
     g.origin_x = 0;
 }
 
@@ -1248,6 +1528,9 @@ void make_font() {
     g.caption = font(9, FW_NORMAL, ui::text_face());
     g.title = font(20, FW_SEMIBOLD, ui::title_face());
     g.icons = *ui::icon_face() != L'\0' ? font(12, FW_NORMAL, ui::icon_face()) : nullptr;
+    if (g.pad_font != nullptr) DeleteObject(g.pad_font);  // the controller page makes its own again (build_pad_page())
+    g.pad_font = nullptr;
+    g.pad_font_zoom = 0;
 }
 
 void refresh_look() {
@@ -1257,11 +1540,19 @@ void refresh_look() {
         if (kThemes[i].theme == g.look.theme) SendMessageW(item(kColours), CB_SETCURSEL, static_cast<WPARAM>(i), 0);
 }
 
-// The window as large as its content, but no larger than the screen it is on (it scrolls then).
-void fit_window() {
-    constexpr DWORD kNoBars = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_THICKFRAME;
-    RECT want{0, 0, content_w(), content_h()};
-    AdjustWindowRect(&want, kNoBars, FALSE);
+constexpr DWORD kStyleFlags = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_THICKFRAME | WS_CLIPCHILDREN;
+
+// The window's smallest size: small enough for any screen, the same at every zoom (the page scrolls).
+SIZE smallest_window() {
+    // 760 pixels at 96 dpi: the longest drop-down choice still fits at zoom 200 %.
+    return SIZE{MulDiv(760, g.dpi, 96), MulDiv(480, g.dpi, 96)};
+}
+
+// The window at the start: as wide as the pages at zoom 100 % and as tall as the content was then (`content_h`
+// pixels), but no larger than the screen it is on. Zoom never changes it afterwards.
+void size_window_at_start(int content_h) {
+    RECT want{0, 0, MulDiv(kClientW, g.dpi, 96) + GetSystemMetrics(SM_CXVSCROLL), content_h};
+    AdjustWindowRect(&want, kStyleFlags & ~WS_CLIPCHILDREN, FALSE);
     int w = want.right - want.left, h = want.bottom - want.top;
     RECT now;
     GetWindowRect(g.window, &now);
@@ -1276,8 +1567,37 @@ void fit_window() {
     SetWindowPos(g.window, nullptr, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
-// Makes every control again at the chosen text size and in the chosen colours. The settings being edited are kept;
-// `focus` (a control id) gets the keyboard focus afterwards.
+void rebuild_view(int focus);
+
+// Lays the controls out again for the window's present width: they are moved, not made again.
+void relayout() {
+    if (g.window == nullptr || g.made.empty() || g.relayout || g.rebuilding) return;
+    choose_columns();
+    SendMessageW(g.window, WM_SETREDRAW, FALSE, 0);
+    g.relayout = true;
+    g.next_made = 0;
+    build();
+    g.relayout = false;
+    const bool whole = g.next_made == g.made.size();
+    SendMessageW(g.window, WM_SETREDRAW, TRUE, 0);
+    if (!whole) {  // build() made other controls than before (it must not): make them all again
+        rebuild_view(0);
+        return;
+    }
+    update_scrollbars();
+    RedrawWindow(g.window, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
+}
+
+// The status lines changed: laid out again when they need more or fewer lines than they have.
+void fit_status() {
+    if (g.window == nullptr || g.made.empty() || g.relayout || g.rebuilding || g.status_w <= 0) return;
+    const int status_h = std::max(22, text_height(window_text(item(kStatus)), g.font, g.status_w));
+    const int info_h = std::max(18, text_height(window_text(item(kInfo)), g.caption, g.status_w));
+    if (status_h != g.status_h || info_h != g.info_h) relayout();
+}
+
+// Makes every control again at the chosen text size and in the chosen colours, laid out for the window's width. The
+// settings being edited are kept; `focus` (a control id) gets the keyboard focus afterwards.
 void rebuild_view(int focus) {
     const int page = g.page;
     if (focus == 0) {  // the control that has the focus now
@@ -1286,15 +1606,18 @@ void rebuild_view(int focus) {
         if (f != nullptr) focus = GetDlgCtrlID(f);
     }
     SendMessageW(g.window, WM_SETREDRAW, FALSE, 0);
+    g.rebuilding = true;
     for (HWND c = GetWindow(g.window, GW_CHILD); c != nullptr; c = GetWindow(g.window, GW_CHILD)) DestroyWindow(c);
     for (auto& controls : g.page_controls) controls.clear();
     g.on_card.clear();
+    g.made.clear();
     g.fields.clear();
     g.refused.clear();
-    g.scroll_x = g.scroll_y = 0;
+    g.scroll_y = 0;
     g.last_focus = nullptr;
     ui::set_dark(ui::is_dark(g.look.theme), g.look.theme == ui::Theme::Shadow);
     make_font();
+    choose_columns();
     build();
     refresh_fields();
     refresh_rows();
@@ -1303,20 +1626,22 @@ void rebuild_view(int focus) {
     refresh_look();
     ui::apply_to_window(g.window);
     show_page(page);
+    g.rebuilding = false;
     SendMessageW(g.window, WM_SETREDRAW, TRUE, 0);
-    fit_window();
+    fit_status();  // the status lines' text came after the layout: laid out again if it needs other room
     update_scrollbars();
     if (focus > 0 && item(focus) != nullptr) SetFocus(item(focus));
     RedrawWindow(g.window, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_FRAME);
 }
 
-// A new text size or colour choice: kept in appearance.cfg (the Mod Manager uses it too) and shown at once.
+// A new text size or colour choice: kept in appearance.cfg (the Mod Manager uses it too) and shown at once, in the
+// window as it is (zoom lays the pages out again; it never resizes the window).
 void set_look(ui::Appearance next, int focus) {
     next.text_size = ui::step_text_size(next.text_size, 0);
     if (next == g.look) return;
     const bool size_changed = next.text_size != g.look.text_size;
     g.look = next;
-    const bool stored = ui::save_appearance(g.folder, g.look);
+    const bool stored = g.checking || ui::save_appearance(g.folder, g.look);
     rebuild_view(focus);
     if (!stored)
         show_message("The zoom and theme could not be stored in appearance.cfg, so they are used only until this "_w
@@ -1381,7 +1706,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpar
         PAINTSTRUCT paint;
         HDC dc = BeginPaint(hwnd, &paint);
         for (const RECT& c : g.cards[static_cast<std::size_t>(g.page)]) {
-            const RECT r{px(c.left) - g.scroll_x, px(c.top) - g.scroll_y, px(c.right) - g.scroll_x, px(c.bottom) - g.scroll_y};
+            const RECT r{c.left, c.top - g.scroll_y, c.right, c.bottom - g.scroll_y};
             ui::paint_card(dc, r, px(6));
         }
         if (g.page == kPadButtons) {
@@ -1400,8 +1725,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpar
             DeleteDC(buffer);
         }
         // A line above the bar at the bottom.
-        RECT line{px(kPageX + 12) - g.scroll_x, px(g.bottom) - g.scroll_y, px(kClientW - 12) - g.scroll_x,
-                  px(g.bottom) + 1 - g.scroll_y};
+        RECT line{px(g.page_x + 12), px(g.bottom) - g.scroll_y, px(g.page_x + g.page_w - 12), px(g.bottom) + 1 - g.scroll_y};
         SetDCBrushColor(dc, ui::colors().surface_stroke);
         FillRect(dc, &line, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
         EndPaint(hwnd, &paint);
@@ -1435,7 +1759,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpar
         const auto page = static_cast<std::size_t>(draw->itemID);
         if (page >= kPageCount) return TRUE;
         const bool focus = (draw->itemState & ODS_FOCUS) != 0 && (SendMessageW(g.tabs, WM_QUERYUISTATE, 0, 0) & UISF_HIDEFOCUS) == 0;
-        ui::paint_nav_item(draw->hDC, draw->rcItem, kPageNames[page].c_str(), kPageIcons[page],
+        ui::paint_nav_item(draw->hDC, draw->rcItem, g.narrow_nav ? L"" : kPageNames[page].c_str(), kPageIcons[page],
                            (draw->itemState & ODS_SELECTED) != 0, focus, g.font, g.icons);
         return TRUE;
     }
@@ -1449,23 +1773,21 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpar
         return 0;
     }
     case WM_SIZE:
-        update_scrollbars();
+        // A new width lays the pages out again; so does a new height (the controller page fits the window's height).
+        if (wparam != SIZE_MINIMIZED && !g.made.empty() && (layout_units() != g.layout_w || HIWORD(lparam) != g.layout_h)) relayout();
+        else update_scrollbars();
         return 0;
     case WM_GETMINMAXINFO: {
-        // No larger than the content; small enough to fit any screen (it scrolls).
         auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
-        RECT most{0, 0, content_w(), content_h()};
-        AdjustWindowRect(&most, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_THICKFRAME, FALSE);
-        info->ptMaxTrackSize = {most.right - most.left, most.bottom - most.top};
-        info->ptMinTrackSize = {std::min(static_cast<LONG>(MulDiv(480, g.dpi, 96)), most.right - most.left),
-                                std::min(static_cast<LONG>(MulDiv(360, g.dpi, 96)), most.bottom - most.top)};
+        const SIZE smallest = smallest_window();
+        info->ptMinTrackSize = {smallest.cx, smallest.cy};
         return 0;
     }
     case WM_VSCROLL:
-        on_scrollbar(SB_VERT, LOWORD(wparam));
+        on_scrollbar(LOWORD(wparam));
         return 0;
     case WM_MOUSEWHEEL:
-        scroll_to(g.scroll_x, g.scroll_y - GET_WHEEL_DELTA_WPARAM(wparam) * px(60) / WHEEL_DELTA);
+        scroll_to(g.scroll_y - GET_WHEEL_DELTA_WPARAM(wparam) * px(60) / WHEEL_DELTA);
         return 0;
     case kMsgLook:  // posted, so the list that was used is not remade while it is still telling about the choice
         set_look(ui::Appearance{static_cast<ui::Theme>(wparam), LOWORD(lparam)}, HIWORD(lparam));
@@ -1497,8 +1819,7 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpar
         return DefWindowProcW(hwnd, message, wparam, lparam);
     case WM_HSCROLL: {
         HWND from = reinterpret_cast<HWND>(lparam);
-        if (from == nullptr) {  // the window's own scroll bar
-            on_scrollbar(SB_HORZ, LOWORD(wparam));
+        if (from == nullptr) {  // the window has no sideways scroll bar
         } else if (from == item(kThreshold)) {
             g.binding.trigger_threshold = static_cast<std::uint8_t>(SendMessageW(item(kThreshold), TBM_GETPOS, 0, 0));
             set_text(item(kThresholdValue), std::to_wstring(g.binding.trigger_threshold));
@@ -1585,6 +1906,67 @@ std::wstring load_all() {
     return notes;
 }
 
+// --check-layout <report>: every page at every zoom, in the window's start-up size, its smallest size and a wide one,
+// with the window shown but not activated. Each control whose text does not fit, each control off the window's side,
+// any sideways scroll bar, and any zoom that changed the window's size is written to the report (UTF-8), one per line.
+// Zoom is not stored. Returns the number of problems.
+int check_layout(const std::filesystem::path& report_file) {
+    g.checking = true;
+    const ui::Appearance first = g.look;
+    std::wstring report;
+    int problems = 0;
+    const auto problem = [&](const std::wstring& line) {
+        report += line + L"\n";
+        ++problems;
+    };
+    RECT start;
+    GetWindowRect(g.window, &start);
+    const SIZE smallest = smallest_window();
+    MONITORINFO monitor{};
+    monitor.cbSize = sizeof(monitor);
+    GetMonitorInfoW(MonitorFromWindow(g.window, MONITOR_DEFAULTTONEAREST), &monitor);
+    const struct {
+        const wchar_t* name;
+        int w, h;
+    } sizes[] = {{L"start-up size", start.right - start.left, start.bottom - start.top},
+                 {L"smallest size", smallest.cx, smallest.cy},
+                 {L"wide", static_cast<int>(monitor.rcWork.right - monitor.rcWork.left),
+                  std::min(static_cast<int>(monitor.rcWork.bottom - monitor.rcWork.top), MulDiv(800, g.dpi, 96))}};
+    for (const auto& size : sizes) {
+        SetWindowPos(g.window, nullptr, monitor.rcWork.left, monitor.rcWork.top, size.w, size.h, SWP_NOZORDER | SWP_NOACTIVATE);
+        for (const int zoom : kTextSizes) {
+            RECT before, after;
+            GetWindowRect(g.window, &before);
+            set_look(ui::Appearance{g.look.theme, zoom}, 0);
+            GetWindowRect(g.window, &after);
+            const std::wstring when = std::wstring(size.name) + L" " + std::to_wstring(before.right - before.left) + L"x" +
+                                      std::to_wstring(before.bottom - before.top) + L", zoom " + std::to_wstring(zoom) + L" %";
+            report += L"# " + when + L": page " + std::to_wstring(g.page_w) + L" units, " +
+                      (g.narrow_nav ? L"icons-only navigation" : L"navigation with words") + L"\n";
+            if (!EqualRect(&before, &after)) problem(when + L": the window's size changed");
+            if ((GetWindowLongW(g.window, GWL_STYLE) & WS_HSCROLL) != 0) problem(when + L": a sideways scroll bar");
+            for (int p = 0; p < kPageCount; ++p) {
+                show_page(p);
+                for (const std::wstring& line : ui::find_clipped(g.window, false)) problem(when + L", " + kPageNames[p] + L": " + line);
+            }
+            show_page(kDisplay);
+        }
+    }
+    set_look(first, 0);
+    SetWindowPos(g.window, nullptr, start.left, start.top, start.right - start.left, start.bottom - start.top,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    report += L"problems: " + std::to_wstring(problems) + L"\n";
+    const int n = WideCharToMultiByte(CP_UTF8, 0, report.c_str(), static_cast<int>(report.size()), nullptr, 0, nullptr, nullptr);
+    std::string utf8(static_cast<std::size_t>(n), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, report.c_str(), static_cast<int>(report.size()), utf8.data(), n, nullptr, nullptr);
+    FILE* out = nullptr;
+    if (_wfopen_s(&out, report_file.c_str(), L"wb") == 0 && out != nullptr) {
+        fwrite(utf8.data(), 1, utf8.size(), out);
+        fclose(out);
+    }
+    return problems;
+}
+
 }  // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
@@ -1624,22 +2006,33 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     cls.hIconSm = cls.hIcon;
     RegisterClassExW(&cls);
 
-    // Resizable only so that a large text size can be scrolled on a small screen; never larger than the content.
-    constexpr DWORD kStyleFlags = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_THICKFRAME | WS_CLIPCHILDREN;
-    RECT size{0, 0, px(kClientW), px(kPadBottom + 70)};  // fit_window() sets the size once the pages are built
-    AdjustWindowRect(&size, kStyleFlags, FALSE);
+    // The window at the start: as wide as the pages at zoom 100 % and as tall as their content then, as far as the
+    // screen allows. Zoom never changes its size; the player may resize it, and the pages follow.
+    std::filesystem::path check_file;
+    if (LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc)) {
+        for (int i = 1; i + 1 < argc; ++i)
+            if (std::wstring(argv[i]) == L"--check-layout") check_file = argv[i + 1];
+        LocalFree(argv);
+    }
+    RECT size{0, 0, MulDiv(kClientW, g.dpi, 96) + GetSystemMetrics(SM_CXVSCROLL), MulDiv(760, g.dpi, 96)};
+    AdjustWindowRect(&size, kStyleFlags & ~WS_CLIPCHILDREN, FALSE);
     g.window = CreateWindowExW(0, cls.lpszClassName, kTitle.c_str(), kStyleFlags, CW_USEDEFAULT, CW_USEDEFAULT,
                                size.right - size.left, size.bottom - size.top, nullptr, nullptr, instance, nullptr);
-    build();
-    refresh_fields();
-    refresh_rows();
-    refresh_pad_options();
-    refresh_binds();
-    refresh_look();
-    ui::apply_to_window(g.window);
+    const int zoom = g.look.text_size;
+    g.look.text_size = ui::kSmallestText;  // the content's height at zoom 100 % sets the window's
+    rebuild_view(0);
+    size_window_at_start(content_h());
+    if (zoom != g.look.text_size) {
+        g.look.text_size = zoom;
+        rebuild_view(0);
+    }
     show_page(kDisplay);
-    fit_window();
-    update_scrollbars();
+    if (!check_file.empty()) {
+        const int problems = check_layout(check_file);
+        DestroyWindow(g.window);
+        Gdiplus::GdiplusShutdown(gdiplus_token);
+        return problems > 0 ? 1 : 0;
+    }
     if (!notes.empty()) show_message(notes);
     ShowWindow(g.window, show);
     SetTimer(g.window, kPollTimer, 16, nullptr);

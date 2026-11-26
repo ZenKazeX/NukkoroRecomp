@@ -128,7 +128,7 @@ fullscreen.
 The Settings program and the Mod Manager can be zoomed (up to 200 %) and themed (light, dark, or Shadow: black and red):
 use the *Zoom* and *Theme* lists (under the list of pages in Settings, bottom right in the Mod Manager), or hold Ctrl and
 press + or - to zoom. Both programs
-share the choice.
+share the choice. Zoom makes the text larger, never the window: the programs rearrange themselves to fit.
 
 ## Mods
 

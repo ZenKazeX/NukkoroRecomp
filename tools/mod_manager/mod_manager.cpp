@@ -1158,6 +1158,15 @@ struct Gui {
     HWND text_size = nullptr, colours = nullptr;
     bool look_pending = false;  // a colour change waits for a pop-up window to close
     RECT panel{};  // the card behind the selected mod's preview, options and details
+    HWND card = nullptr;   // the panel on the card that holds the preview, the options and the details; it scrolls
+    int card_scroll = 0;   // when they are taller than it (a short window at a large zoom)
+    int card_content_h = 0;
+    std::string card_mod;  // the mod the card shows (a new one opens at its top)
+    int columns_w = -1, columns_zoom = 0;  // the list's width and zoom its columns were last set for
+    int status_w = 0, status_h = 0;  // the summary's room in the bottom bar, in pixels (layout())
+    HWND tips = nullptr;             // the buttons' names, shown when they show only their icons
+    bool icons_only = false;
+    bool checking = false;           // --check-layout: zoom changes are not stored
 
     // At the screen's scale and the chosen text size.
     int px(int v) const { return MulDiv(v, static_cast<int>(dpi) * look.text_size, 96 * 100); }
@@ -1288,6 +1297,10 @@ void set_busy(bool busy) {
 
 void show_details() {
     const mods::InstalledMod* m = selected_mod();
+    if (g->selected != g->card_mod) {
+        g->card_mod = g->selected;
+        g->card_scroll = 0;
+    }
     if (g->preview_bitmap) {
         DeleteObject(g->preview_bitmap);
         g->preview_bitmap = nullptr;
@@ -1330,6 +1343,15 @@ void show_details() {
         EnableWindow(g->option_combos[i], m->usable);
     }
     g->filling = false;
+    layout();  // the options' names and number decide their rows
+}
+
+// The summary in the bottom bar; the bar is laid out again when the text needs more or fewer lines.
+void set_status(const std::wstring& text) {
+    SetWindowTextW(g->status, text.c_str());
+    if (g->status_w <= 0) return;
+    const HFONT font = reinterpret_cast<HFONT>(SendMessageW(g->status, WM_GETFONT, 0, 0));
+    if (std::max(ui::text_extent(font, L"").cy, ui::text_extent(font, text, g->status_w).cy) != g->status_h) layout();
 }
 
 std::string filter_text();
@@ -1384,7 +1406,7 @@ void fill_list() {
     if (!filter.empty())
         summary = "Filter: " + std::to_string(g->row_keys.size()) + " of " + std::to_string(g->model.installed.size()) +
                   " mods shown | " + summary;
-    SetWindowTextW(g->status, wide(summary).c_str());
+    set_status(wide(summary));
     g->filling = false;
     show_details();
 }
@@ -1448,7 +1470,7 @@ void refresh_all() {
     }
     fill_list();
     if (!g->model.state_error.empty())  // declined: nothing can be saved until the file is fixed or replaced
-        SetWindowTextW(g->status, L"mods.json is damaged - read only. Fix or delete it, then press Refresh.");
+        set_status(L"mods.json is damaged - read only. Fix or delete it, then press Refresh.");
 }
 
 // While mods.json cannot be read, edits are refused (they could not be saved). True when refused.
@@ -1460,7 +1482,7 @@ bool read_only_refused() {
                     .c_str(),
                 window_title(), MB_OK | MB_ICONWARNING);
     fill_list();  // put the controls back as stored
-    SetWindowTextW(g->status, L"mods.json is damaged - read only. Fix or delete it, then press Refresh.");
+    set_status(L"mods.json is damaged - read only. Fix or delete it, then press Refresh.");
     return true;
 }
 
@@ -1475,10 +1497,8 @@ void start_install(std::vector<fs::path> sources, bool replace = false) {
         return;
     }
     set_busy(true);
-    SetWindowTextW(g->status, (L"Installing " + sources.front().filename().wstring() +
-                               (sources.size() > 1 ? L" and " + std::to_wstring(sources.size() - 1) + L" more" : L"") +
-                               L"...")
-                                  .c_str());
+    set_status(L"Installing " + sources.front().filename().wstring() +
+               (sources.size() > 1 ? L" and " + std::to_wstring(sources.size() - 1) + L" more" : L"") + L"...");
     auto* job = new InstallJob{std::move(sources), {}, replace};
     const fs::path mods_dir = g->model.mods_dir;
     const mods::GameIndex* game = &g->model.game;
@@ -1747,7 +1767,7 @@ void start_code_build(HWND owner) {
     const fs::path log = g->model.mods_dir / ".variants" / "build-output.txt";
     fs::create_directories(log.parent_path(), ec);
     set_busy(true);
-    SetWindowTextW(g->status, L"Building the code mods (the first build takes about 12 minutes)...");
+    set_status(L"Building the code mods (the first build takes about 12 minutes)...");
     HWND window = g->window;
     std::thread([cmd, log, window] {
         SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
@@ -1867,7 +1887,13 @@ void code_window() {
     }
     CodeWindow cw;
     g_code = &cw;
-    const int W = g->px(760), H = g->px(520), pad = g->px(10);
+    // At a large zoom, no larger than the screen: the list and the text inside it scroll.
+    MONITORINFO monitor{};
+    monitor.cbSize = sizeof(monitor);
+    GetMonitorInfoW(MonitorFromWindow(g->window, MONITOR_DEFAULTTONEAREST), &monitor);
+    const int W = std::min(g->px(760), static_cast<int>(monitor.rcWork.right - monitor.rcWork.left) * 9 / 10);
+    const int H = std::min(g->px(520), static_cast<int>(monitor.rcWork.bottom - monitor.rcWork.top) * 9 / 10);
+    const int pad = g->px(10);
     RECT owner;
     GetWindowRect(g->window, &owner);
     cw.window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"ShadowModManagerCode", L"Code mods", WS_POPUP | WS_CAPTION | WS_SYSMENU,
@@ -2200,7 +2226,7 @@ void profiles_menu() {
             if (!mods::save_profile(g->model.mods_dir, name, g->model.state, error))
                 MessageBoxW(g->window, wide(error).c_str(), L"Save profile", MB_OK | MB_ICONERROR);
             else
-                SetWindowTextW(g->status, wide("Saved profile \"" + name + "\"").c_str());
+                set_status(wide("Saved profile \"" + name + "\""));
             return;
         }
         return;
@@ -2338,66 +2364,253 @@ bool restore_placement(int& show) {
     return true;
 }
 
+std::wstring text_in(HWND h) {
+    const int n = GetWindowTextLengthW(h);
+    std::wstring t(static_cast<std::size_t>(n) + 1, L'\0');
+    GetWindowTextW(h, t.data(), n + 1);
+    t.resize(static_cast<std::size_t>(n));
+    return t;
+}
+
+// The window's smallest size: the same at every zoom (the layout fits the room it has).
+SIZE smallest_window(UINT dpi) { return SIZE{MulDiv(760, static_cast<int>(dpi), 96), MulDiv(520, static_cast<int>(dpi), 96)}; }
+
+// The height of a drop-down list's box (its closed part), in the list's font.
+int combo_height(HWND combo) {
+    return static_cast<int>(SendMessageW(combo, CB_GETITEMHEIGHT, static_cast<WPARAM>(-1), 0)) + 2 * GetSystemMetricsForDpi(SM_CYEDGE, g->dpi) + 2;
+}
+
+// A drop-down list's width for its longest choice.
+int combo_width(HWND combo) {
+    const HFONT font = reinterpret_cast<HFONT>(SendMessageW(combo, WM_GETFONT, 0, 0));
+    int widest = 0;
+    const int count = static_cast<int>(SendMessageW(combo, CB_GETCOUNT, 0, 0));
+    for (int i = 0; i < count; ++i) {
+        const int n = static_cast<int>(SendMessageW(combo, CB_GETLBTEXTLEN, static_cast<WPARAM>(i), 0));
+        if (n <= 0) continue;
+        std::wstring text(static_cast<std::size_t>(n) + 1, L'\0');
+        SendMessageW(combo, CB_GETLBTEXT, static_cast<WPARAM>(i), reinterpret_cast<LPARAM>(text.data()));
+        text.resize(static_cast<std::size_t>(n));
+        widest = std::max(widest, static_cast<int>(ui::text_extent(font, text).cx));
+    }
+    return widest + GetSystemMetricsForDpi(SM_CXVSCROLL, g->dpi) + g->px(16);
+}
+
+// Zoom never changes the window's size: everything is placed for the room the window has. The buttons and the bars
+// wrap into more rows, the buttons show only their icons when their words would take more than two rows, the selected
+// mod's card goes under the list when the window is narrow, and long names wrap.
 void layout() {
+    if (g->list == nullptr || g->card == nullptr) return;
     RECT rc;
     GetClientRect(g->window, &rc);
     const int w = rc.right, h = rc.bottom;
-    const int pad = g->px(12), bh = g->px(32), bw = g->px(112);
-    int x = pad;
-    for (int i = 0; i < 6; ++i) {
-        MoveWindow(g->buttons[i], x, pad, bw, bh, TRUE);
-        x += bw + g->px(4);
-    }
-    // Code, Profiles, Load mods and Play on the right, the filter between. When they do not fit beside the six buttons
-    // (a large text size or a narrow window), they and the filter go on a second row.
-    const int group_w = g->px(120) + g->px(150) + g->px(100) + g->px(84);
-    const bool one_row = x + g->px(8) + g->px(160) + g->px(8) + group_w + pad <= w;
-    const int row = one_row ? pad : pad * 2 + bh;
-    MoveWindow(g->buttons[6], w - pad - g->px(120), row, g->px(120), bh, TRUE);  // Play
-    MoveWindow(g->master, w - pad - g->px(120) - g->px(150), row, g->px(144), bh, TRUE);
-    MoveWindow(g->profiles, w - pad - g->px(120) - g->px(150) - g->px(100), row, g->px(94), bh, TRUE);
-    MoveWindow(g->code, w - pad - group_w, row, g->px(80), bh, TRUE);
-    const int filter_x = one_row ? x + g->px(8) : pad;
-    const int filter_w = std::max(g->px(120), w - pad - group_w - g->px(8) - filter_x);
-    MoveWindow(g->filter, filter_x, row + g->px(3), filter_w, bh - g->px(6), TRUE);
-    // The bar at the bottom: the summary, the progress while installing, the text size and the colours.
-    const int status_h = g->px(36);
-    const int colours_w = g->px(220), size_w = g->px(120), look_w = size_w + g->px(6) + colours_w;
-    MoveWindow(g->colours, w - pad - colours_w, h - status_h + g->px(4), colours_w, g->px(200), TRUE);
-    MoveWindow(g->text_size, w - pad - look_w, h - status_h + g->px(4), size_w, g->px(200), TRUE);
-    const int top = row + bh + pad;
-    const int bottom = h - status_h - pad;
-    const int right_w = std::max(g->px(320), w * 38 / 100);
-    const int list_w = w - right_w - pad * 3;
-    MoveWindow(g->list_label, pad, top, list_w, g->px(18), TRUE);
-    MoveWindow(g->list, pad, top + g->px(20), list_w, bottom - top - g->px(20), TRUE);
-    // The selected mod's side: a card with the preview, the options and the details inside it.
-    g->panel = RECT{pad * 2 + list_w, top, pad * 2 + list_w + right_w, bottom};
-    const int inner = g->px(12);
-    const int rx = g->panel.left + inner;
-    const int inside_w = right_w - inner * 2;  // what is inside the card
-    {
-        const int preview_h = std::min(g->px(200), (bottom - top) / 3);
-        MoveWindow(g->preview, rx, top + inner, inside_w, preview_h, TRUE);
-        int y = top + inner + preview_h + pad;
-        const mods::InstalledMod* m = selected_mod();
-        const int options = m ? static_cast<int>(std::min<std::size_t>(m->manifest.options.size(), kMaxOptions)) : 0;
-        for (int i = 0; i < kMaxOptions; ++i) {
-            MoveWindow(g->option_labels[i], rx, y + g->px(4) + i * g->px(30), inside_w * 62 / 100 - pad, g->px(22), TRUE);
-            MoveWindow(g->option_combos[i], rx + inside_w * 62 / 100, y + i * g->px(30), inside_w * 38 / 100, g->px(200), TRUE);
+    if (w <= 0 || h <= 0) return;
+    const int pad = g->px(12), gap = g->px(6), bh = g->px(32);
+    const int left = pad, right = w - pad, inner = std::max(1, right - left);
+    const HFONT font = g->font;
+    const int line = ui::text_extent(font, L"").cy;
+
+    // ---- the top bar: six buttons, the filter, then Code, Profiles, Load mods and Play on the right
+    const int filter_min = g->px(160);
+    HWND right_group[] = {g->code, g->profiles, g->master, g->buttons[6]};
+    bool icons_only = false;  // measured both ways below; the buttons' look is changed only once it is chosen
+    const auto width_of = [&](HWND c) {
+        if (c == g->master) return ui::check_box_width(c) + g->px(8);
+        const bool six = std::find(g->buttons, g->buttons + 6, c) != g->buttons + 6;
+        return std::max(g->px(40), six ? ui::button_width(c, icons_only) : ui::button_width(c));
+    };
+    // Lays the bar out (or only measures it, place = false); returns its bottom.
+    const auto top_bar = [&](bool place) {
+        int x = left, y = pad;
+        const auto put = [&](HWND c, int cx, int cy, int cw, int ch) {
+            if (place) MoveWindow(c, cx, cy, cw, ch, TRUE);
+        };
+        for (int i = 0; i < 6; ++i) {
+            const int bw = width_of(g->buttons[i]);
+            if (x > left && x + bw > right) {
+                x = left;
+                y += bh + gap;
+            }
+            put(g->buttons[i], x, y, bw, bh);
+            x += bw + gap;
         }
-        y += options * g->px(30);
-        MoveWindow(g->details_label, rx, y, inside_w, g->px(18), TRUE);
-        y += g->px(20);
-        MoveWindow(g->details, rx, y, inside_w, bottom - inner - y, TRUE);
+        int group_w = 0;
+        for (HWND c : right_group) group_w += width_of(c) + (c != right_group[0] ? gap : 0);
+        const auto put_group_rows = [&](int from_y) {  // right-aligned, wrapping
+            int y2 = from_y;
+            std::size_t first = 0;
+            while (first < std::size(right_group)) {
+                std::size_t end = first;
+                int row_w = 0;
+                while (end < std::size(right_group) &&
+                       (end == first || row_w + gap + width_of(right_group[end]) <= inner)) {
+                    row_w += (end > first ? gap : 0) + width_of(right_group[end]);
+                    ++end;
+                }
+                int gx = right - row_w;
+                for (std::size_t i = first; i < end; ++i) {
+                    const int cw = std::min(width_of(right_group[i]), inner);
+                    put(right_group[i], std::max(left, gx), y2, cw, bh);
+                    gx += cw + gap;
+                }
+                first = end;
+                if (first < std::size(right_group)) y2 += bh + gap;
+            }
+            return y2;
+        };
+        if (right - x >= filter_min + gap + group_w) {  // all on this row
+            put(g->filter, x, y + g->px(3), right - group_w - gap - x, bh - g->px(6));
+            put_group_rows(y);
+            return y + bh;
+        }
+        if (inner >= filter_min + gap + group_w) {  // the filter and the group on a row of their own
+            y += bh + gap;
+            put(g->filter, left, y + g->px(3), inner - group_w - gap, bh - g->px(6));
+            put_group_rows(y);
+            return y + bh;
+        }
+        if (right - x >= filter_min) {  // the filter fills this row, the group goes under
+            put(g->filter, x, y + g->px(3), right - x, bh - g->px(6));
+        } else {
+            y += bh + gap;
+            put(g->filter, left, y + g->px(3), inner, bh - g->px(6));
+        }
+        return put_group_rows(y + bh + gap) + bh;
+    };
+    icons_only = top_bar(false) > pad + 2 * bh + gap && ui::can_show_icon_only(g->buttons[0]);
+    for (int i = 0; i < 6; ++i) ui::set_icon_only(g->buttons[i], icons_only);
+    if (g->tips != nullptr && icons_only != g->icons_only) SendMessageW(g->tips, TTM_ACTIVATE, icons_only ? TRUE : FALSE, 0);
+    g->icons_only = icons_only;
+    const int bar_bottom = top_bar(true);
+
+    // ---- the bottom bar: the summary, the progress while installing, the zoom and the theme
+    const int field_h = combo_height(g->text_size);
+    const int size_w = std::min(combo_width(g->text_size), inner), colours_w = std::min(combo_width(g->colours), inner);
+    const int progress_w = g->busy ? g->px(160) : 0;
+    const int tools_w = size_w + gap + colours_w + (progress_w > 0 ? progress_w + gap : 0);
+    const bool one_row = inner - tools_w - gap * 2 >= g->px(240);
+    g->status_w = one_row ? inner - tools_w - gap * 2 : inner;
+    g->status_h = std::max(line, static_cast<int>(ui::text_extent(font, text_in(g->status), g->status_w).cy));
+
+    int bar_top;
+    if (one_row) {
+        const int row_h = std::max(field_h, g->status_h);
+        bar_top = h - pad / 2 - row_h - gap;
+        const int y = bar_top + gap;
+        MoveWindow(g->status, left, y + (row_h - g->status_h) / 2, g->status_w, g->status_h, TRUE);
+        int x = right - colours_w;
+        MoveWindow(g->colours, x, y + (row_h - field_h) / 2, colours_w, g->px(200), TRUE);
+        x -= gap + size_w;
+        MoveWindow(g->text_size, x, y + (row_h - field_h) / 2, size_w, g->px(200), TRUE);
+        if (progress_w > 0) MoveWindow(g->progress, x - gap - progress_w, y + (row_h - g->px(16)) / 2, progress_w, g->px(16), TRUE);
+    } else {
+        // The summary on its own rows; under it the progress, the zoom and the theme, right-aligned (one under another
+        // when even those do not fit side by side).
+        const bool tools_in_row = tools_w <= inner;
+        const int tools_h = tools_in_row ? field_h : field_h * 2 + gap + (progress_w > 0 ? g->px(16) + gap : 0);
+        bar_top = h - pad / 2 - tools_h - gap - g->status_h - gap;
+        MoveWindow(g->status, left, bar_top + gap, g->status_w, g->status_h, TRUE);
+        const int y = bar_top + gap + g->status_h + gap;
+        if (tools_in_row) {
+            int x = right - colours_w;
+            MoveWindow(g->colours, x, y, colours_w, g->px(200), TRUE);
+            x -= gap + size_w;
+            MoveWindow(g->text_size, x, y, size_w, g->px(200), TRUE);
+            if (progress_w > 0) MoveWindow(g->progress, x - gap - progress_w, y + (field_h - g->px(16)) / 2, progress_w, g->px(16), TRUE);
+        } else {
+            int y2 = y;
+            if (progress_w > 0) {
+                MoveWindow(g->progress, right - std::min(progress_w, inner), y2, std::min(progress_w, inner), g->px(16), TRUE);
+                y2 += g->px(16) + gap;
+            }
+            MoveWindow(g->text_size, right - size_w, y2, size_w, g->px(200), TRUE);
+            MoveWindow(g->colours, right - colours_w, y2 + field_h + gap, colours_w, g->px(200), TRUE);
+        }
     }
+
+    // ---- the list, and the selected mod's card beside it, or under it when the window is narrow
+    const int top = bar_bottom + pad;
+    const int bottom = std::max(top + line * 4, bar_top - gap);
+    const bool side_by_side = inner >= g->px(560);
+    const int panel_w = side_by_side ? std::clamp(inner * 38 / 100, g->px(280), inner - g->px(260) - pad) : inner;
+    const int list_w = side_by_side ? inner - panel_w - pad : inner;
+    const int list_label_h = std::max(line, static_cast<int>(ui::text_extent(font, L"Installed mods (higher in the list wins a file both change)", list_w).cy));
+    const int list_bottom = side_by_side ? bottom : top + (bottom - top) * 55 / 100;
+    MoveWindow(g->list_label, left, top, list_w, list_label_h, TRUE);
+    MoveWindow(g->list, left, top + list_label_h + g->px(2), list_w, std::max(line, list_bottom - top - list_label_h - g->px(2)), TRUE);
+    g->panel = side_by_side ? RECT{left + list_w + pad, top, right, bottom} : RECT{left, list_bottom + pad, right, bottom};
+    // The panel on the card (clear of its rounded corners) and what is on it, from its top; it scrolls when that is
+    // taller than the card.
+    const int edge = g->px(4);
+    const int box_w = std::max(1, static_cast<int>(g->panel.right - g->panel.left) - edge * 2);
+    const int box_h = std::max(1, static_cast<int>(g->panel.bottom - g->panel.top) - edge * 2);
+    MoveWindow(g->card, g->panel.left + edge, g->panel.top + edge, box_w, box_h, TRUE);
+    const mods::InstalledMod* m = selected_mod();
+    const int options = m ? static_cast<int>(std::min<std::size_t>(m->manifest.options.size(), kMaxOptions)) : 0;
+    const int option_field = combo_height(g->option_combos[0]);
+    const int details_min = line * 4 + g->px(8);
+    // Places the panel's controls for a panel `width` wide (or only measures them); returns their height.
+    const auto card_content = [&](int width, bool place) {
+        const int in = g->px(8), rx = in, inside_w = std::max(1, width - in * 2);
+        const int shift = place ? g->card_scroll : 0;
+        const auto put = [&](HWND c, int x, int y, int cw, int ch) {
+            if (place) MoveWindow(c, x, y - shift, cw, ch, TRUE);
+        };
+        int y = in;
+        // The preview gives up its room first when the card is short.
+        int preview_h = std::min(g->px(200), box_h / 3);
+        if (preview_h < g->px(48)) preview_h = 0;
+        put(g->preview, rx, y, inside_w, preview_h);
+        if (preview_h > 0) y += preview_h + gap;
+        // Each option's name beside its list while both fit, the name over the list otherwise.
+        int name_w = 0;
+        for (int i = 0; i < options; ++i)
+            name_w = std::max(name_w, static_cast<int>(ui::text_extent(font, text_in(g->option_labels[i])).cx) + g->px(4));
+        const bool names_beside = name_w + gap + g->px(140) <= inside_w;
+        for (int i = 0; i < kMaxOptions; ++i) {
+            if (i >= options) {  // hidden: out of the way
+                put(g->option_labels[i], rx, in, inside_w, line);
+                put(g->option_combos[i], rx, in, inside_w, g->px(200));
+                continue;
+            }
+            if (names_beside) {
+                put(g->option_labels[i], rx, y + (option_field - line) / 2, name_w, line);
+                put(g->option_combos[i], rx + name_w + gap, y, inside_w - name_w - gap, g->px(200));
+            } else {
+                const int name_h = std::max(line, static_cast<int>(ui::text_extent(font, text_in(g->option_labels[i]), inside_w).cy));
+                put(g->option_labels[i], rx, y, inside_w, name_h);
+                y += name_h + g->px(2);
+                put(g->option_combos[i], rx, y, inside_w, g->px(200));
+            }
+            y += option_field + gap;
+        }
+        put(g->details_label, rx, y, inside_w, line);
+        y += line + g->px(2);
+        // The details fill the rest of the card, or take a few lines of their own when the card scrolls.
+        const int details_h = std::max(details_min, box_h - in - y);
+        put(g->details, rx, y, inside_w, details_h);
+        return y + details_h + in;
+    };
+    int content = card_content(box_w, false);
+    const bool scrolls = content > box_h;
+    const int content_w = scrolls ? box_w - GetSystemMetricsForDpi(SM_CXVSCROLL, g->dpi) : box_w;
+    if (scrolls) content = card_content(content_w, false);
+    g->card_content_h = content;
+    g->card_scroll = scrolls ? std::clamp(g->card_scroll, 0, content - box_h) : 0;
+    SCROLLINFO info{};
+    info.cbSize = sizeof(info);
+    info.fMask = SIF_RANGE | SIF_PAGE | SIF_POS;
+    info.nMax = scrolls ? content - 1 : 0;
+    info.nPage = static_cast<UINT>(box_h);
+    info.nPos = g->card_scroll;
+    SetScrollInfo(g->card, SB_VERT, &info, TRUE);
+    card_content(content_w, true);
     InvalidateRect(g->window, nullptr, TRUE);
-    // The progress bar's room goes to the summary while nothing is being installed.
-    const int progress_room = g->busy ? g->px(170) : 0;
-    MoveWindow(g->status, pad, h - status_h + g->px(8), std::max(g->px(80), w - pad * 3 - look_w - progress_room),
-               g->px(22), TRUE);
-    MoveWindow(g->progress, w - pad * 2 - look_w - g->px(160), h - status_h + g->px(10), g->px(160), g->px(16), TRUE);
-    // List columns: the name takes what the others leave.
+    // List columns: the name takes what the others leave. Set only when the list's width or the zoom changed, so a
+    // column the player widened stays so while they pick mods or scroll the card.
+    if (list_w == g->columns_w && g->look.text_size == g->columns_zoom) return;
+    g->columns_w = list_w;
+    g->columns_zoom = g->look.text_size;
     const int fixed = g->px(60) + g->px(110) + g->px(170) + g->px(250);
     ListView_SetColumnWidth(g->list, 0, std::max(g->px(140), list_w - fixed - g->px(24)));
     ListView_SetColumnWidth(g->list, 1, g->px(60));
@@ -2440,14 +2653,14 @@ void show_look() {
     SendMessageW(g->colours, CB_SETCURSEL, static_cast<WPARAM>(g->look.theme), 0);
 }
 
-// Uses a new text size or colour choice at once and keeps it in appearance.cfg. A larger text size also makes the
-// window larger, as far as the screen allows.
+// Uses a new text size or colour choice at once and keeps it in appearance.cfg. The window keeps its size: layout()
+// fits the larger text into it.
 void apply_look(ui::Appearance next, bool redraw = false) {
     next.text_size = ui::step_text_size(next.text_size, 0);
     const bool dark = ui::is_dark(next.theme);
     if (next == g->look && dark == ui::colors().dark && !redraw) return;
     const int before = g->look.text_size;
-    const bool stored = next == g->look || ui::save_appearance(appearance_folder(), next);
+    const bool stored = next == g->look || g->checking || ui::save_appearance(appearance_folder(), next);
     g->look = next;
     ui::set_dark(dark, next.theme == ui::Theme::Shadow);
     make_fonts();
@@ -2455,28 +2668,15 @@ void apply_look(ui::Appearance next, bool redraw = false) {
     ui::apply_to_window(g->window);
     g->filling = false;
     show_look();
-    if (g->look.text_size > before && !IsZoomed(g->window)) {
-        RECT r;
-        GetWindowRect(g->window, &r);
-        MONITORINFO monitor{};
-        monitor.cbSize = sizeof(monitor);
-        GetMonitorInfoW(MonitorFromWindow(g->window, MONITOR_DEFAULTTONEAREST), &monitor);
-        const RECT& work = monitor.rcWork;
-        const int width = std::min(MulDiv(r.right - r.left, g->look.text_size, before), static_cast<int>(work.right - work.left));
-        const int height = std::min(MulDiv(r.bottom - r.top, g->look.text_size, before), static_cast<int>(work.bottom - work.top));
-        const int x = std::clamp(static_cast<int>(r.left), static_cast<int>(work.left), static_cast<int>(work.right) - width);
-        const int y = std::clamp(static_cast<int>(r.top), static_cast<int>(work.top), static_cast<int>(work.bottom) - height);
-        SetWindowPos(g->window, nullptr, x, y, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
-    }
     layout();
     fill_list();
     RedrawWindow(g->window, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_FRAME);
     if (!stored)
-        SetWindowTextW(g->status, wide("The zoom and theme could not be stored in appearance.cfg, so they are used "
-                                       "only until this window closes.").c_str());
+        set_status(wide("The zoom and theme could not be stored in appearance.cfg, so they are used only until this "
+                        "window closes."));
     else if (g->look.text_size != before)
-        SetWindowTextW(g->status, wide("Zoom " + std::to_string(g->look.text_size) +
-                                       " %. Ctrl and + or - also zoom in and out, and Ctrl and 0 goes back to 100 %.").c_str());
+        set_status(wide("Zoom " + std::to_string(g->look.text_size) +
+                        " %. Ctrl and + or - also zoom in and out, and Ctrl and 0 goes back to 100 %."));
 }
 
 // A colour change Windows announced while a pop-up window was open.
@@ -2523,6 +2723,70 @@ LRESULT popup_colors(UINT msg, WPARAM wp, LPARAM lp, HWND w, bool* handled) {
     return 0;
 }
 
+// The selected mod's panel: on the card's colour; what its controls tell goes to the main window, as if they were its
+// own; it scrolls up and down when they are taller than it.
+LRESULT CALLBACK card_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+        case WM_ERASEBKGND: {
+            RECT r;
+            GetClientRect(h, &r);
+            FillRect(reinterpret_cast<HDC>(wp), &r, ui::surface_brush());
+            return 1;
+        }
+        case WM_CTLCOLORSTATIC:
+        case WM_CTLCOLORBTN:
+        case WM_CTLCOLOREDIT:
+        case WM_CTLCOLORLISTBOX:
+        case WM_NOTIFY:
+        case WM_DRAWITEM:
+            return SendMessageW(GetParent(h), msg, wp, lp);
+        case WM_COMMAND:
+            if (HIWORD(wp) == CBN_SETFOCUS || HIWORD(wp) == EN_SETFOCUS) {
+                // Tab reached a control scrolled out of the card: scroll it into view.
+                RECT r, box;
+                GetWindowRect(reinterpret_cast<HWND>(lp), &r);
+                MapWindowPoints(nullptr, h, reinterpret_cast<POINT*>(&r), 2);
+                GetClientRect(h, &box);
+                int scroll = g->card_scroll;
+                if (r.top < 0) scroll += r.top - g->px(8);
+                else if (r.bottom > box.bottom) scroll += std::min(static_cast<int>(r.top) - g->px(8), static_cast<int>(r.bottom - box.bottom) + g->px(8));
+                if (scroll != g->card_scroll) {
+                    g->card_scroll = scroll;
+                    layout();
+                }
+            }
+            return SendMessageW(GetParent(h), msg, wp, lp);
+        case WM_VSCROLL: {
+            SCROLLINFO info{};
+            info.cbSize = sizeof(info);
+            info.fMask = SIF_ALL;
+            GetScrollInfo(h, SB_VERT, &info);
+            const int line = g->px(24), page = std::max(line, static_cast<int>(info.nPage) - line);
+            int pos = info.nPos;
+            switch (LOWORD(wp)) {
+                case SB_LINEUP: pos -= line; break;
+                case SB_LINEDOWN: pos += line; break;
+                case SB_PAGEUP: pos -= page; break;
+                case SB_PAGEDOWN: pos += page; break;
+                case SB_THUMBTRACK:
+                case SB_THUMBPOSITION: pos = info.nTrackPos; break;
+                case SB_TOP: pos = 0; break;
+                case SB_BOTTOM: pos = info.nMax; break;
+                default: return 0;
+            }
+            g->card_scroll = pos;
+            layout();
+            return 0;
+        }
+        case WM_MOUSEWHEEL:
+            if ((GetWindowLongW(h, GWL_STYLE) & WS_VSCROLL) == 0) break;
+            g->card_scroll -= GET_WHEEL_DELTA_WPARAM(wp) * g->px(48) / WHEEL_DELTA;
+            layout();
+            return 0;
+    }
+    return DefWindowProcW(h, msg, wp, lp);
+}
+
 void create_controls(HWND w) {
     g->window = w;
     g->dpi = GetDpiForWindow(w);
@@ -2546,8 +2810,7 @@ void create_controls(HWND w) {
                                 10, 10, w, reinterpret_cast<HMENU>(kIdMaster), inst, nullptr);
     // A visible label before the list: the list-view's own window text is not used as its accessible name.
     g->list_label = CreateWindowExW(0, WC_STATICW, L"Installed mods (higher in the list wins a file both change)",
-                                    WS_CHILD | WS_VISIBLE | SS_LEFTNOWORDWRAP | SS_ENDELLIPSIS, 0, 0, 10, 10, w, nullptr,
-                                    inst, nullptr);
+                                    WS_CHILD | WS_VISIBLE | SS_LEFT | SS_NOPREFIX, 0, 0, 10, 10, w, nullptr, inst, nullptr);
     g->list = CreateWindowExW(0, WC_LISTVIEWW, L"Installed mods",
                               WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_BORDER | LVS_REPORT | LVS_SINGLESEL |
                                   LVS_SHOWSELALWAYS | LVS_NOSORTHEADER,
@@ -2562,23 +2825,33 @@ void create_controls(HWND w) {
         c.cx = 100;
         ListView_InsertColumn(g->list, i, &c);
     }
-    g->preview = CreateWindowExW(0, WC_STATICW, L"", WS_CHILD | WS_VISIBLE | SS_OWNERDRAW, 0, 0, 10, 10, w,
+    // The selected mod's preview, options and details, on a panel of their own that scrolls when they do not fit.
+    WNDCLASSEXW card_class{sizeof(card_class)};
+    card_class.lpfnWndProc = card_proc;
+    card_class.hInstance = inst;
+    card_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    card_class.lpszClassName = L"ShadowModManagerCard";
+    RegisterClassExW(&card_class);
+    g->card = CreateWindowExW(WS_EX_CONTROLPARENT, L"ShadowModManagerCard", L"", WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN,
+                              0, 0, 10, 10, w, nullptr, inst, nullptr);
+    HWND card = g->card;
+    g->preview = CreateWindowExW(0, WC_STATICW, L"", WS_CHILD | WS_VISIBLE | SS_OWNERDRAW, 0, 0, 10, 10, card,
                                  reinterpret_cast<HMENU>(kIdPreview), inst, nullptr);
     for (int i = 0; i < kMaxOptions; ++i) {
-        g->option_labels[i] = CreateWindowExW(0, WC_STATICW, L"", WS_CHILD | SS_LEFTNOWORDWRAP, 0, 0, 10, 10, w,
+        g->option_labels[i] = CreateWindowExW(0, WC_STATICW, L"", WS_CHILD | SS_LEFT | SS_NOPREFIX, 0, 0, 10, 10, card,
                                               reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdOptionLabel0 + i)), inst, nullptr);
         g->option_combos[i] = CreateWindowExW(0, WC_COMBOBOXW, L"", WS_CHILD | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
-                                              0, 0, 10, 10, w,
+                                              0, 0, 10, 10, card,
                                               reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdOptionCombo0 + i)), inst, nullptr);
     }
     // The label names the pane for screen readers and UI Automation (it precedes the edit in tab order).
     g->details_label = CreateWindowExW(0, WC_STATICW, L"Details", WS_CHILD | WS_VISIBLE | SS_LEFTNOWORDWRAP, 0, 0, 10,
-                                       10, w, nullptr, inst, nullptr);
+                                       10, card, nullptr, inst, nullptr);
     g->details = CreateWindowExW(WS_EX_CLIENTEDGE, WC_EDITW, L"",
                                  WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_READONLY | ES_AUTOVSCROLL, 0, 0,
-                                 10, 10, w, reinterpret_cast<HMENU>(kIdDetails), inst, nullptr);
-    g->status = CreateWindowExW(0, WC_STATICW, L"", WS_CHILD | WS_VISIBLE | SS_LEFTNOWORDWRAP | SS_ENDELLIPSIS, 0, 0,
-                                10, 10, w, reinterpret_cast<HMENU>(kIdStatus), inst, nullptr);
+                                 10, 10, card, reinterpret_cast<HMENU>(kIdDetails), inst, nullptr);
+    g->status = CreateWindowExW(0, WC_STATICW, L"", WS_CHILD | WS_VISIBLE | SS_LEFT | SS_NOPREFIX, 0, 0, 10, 10, w,
+                                reinterpret_cast<HMENU>(kIdStatus), inst, nullptr);
     // The text size and colours, shared with the settings program (appearance.cfg).
     g->text_size = CreateWindowExW(0, WC_COMBOBOXW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
                                    0, 0, 10, 10, w, reinterpret_cast<HMENU>(kIdTextSize), inst, nullptr);
@@ -2592,6 +2865,19 @@ void create_controls(HWND w) {
                              0xE72C /*refresh*/, 0xE768 /*play*/};
     for (int i = 0; i < 7; ++i) ui::set_icon(g->buttons[i], icons[i]);
     ui::set_primary(g->buttons[6]);
+    // The six buttons' names as tooltips, used when a narrow window or a large zoom leaves them only their icons.
+    g->tips = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr, WS_POPUP | TTS_ALWAYSTIP | TTS_NOPREFIX, CW_USEDEFAULT,
+                              CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, w, nullptr, inst, nullptr);
+    for (int i = 0; i < 6; ++i) {
+        TOOLINFOW tip{};
+        tip.cbSize = sizeof(tip);
+        tip.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
+        tip.hwnd = w;
+        tip.uId = reinterpret_cast<UINT_PTR>(g->buttons[i]);
+        tip.lpszText = const_cast<wchar_t*>(labels[i]);
+        SendMessageW(g->tips, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&tip));
+    }
+    SendMessageW(g->tips, TTM_ACTIVATE, FALSE, 0);
     make_fonts();
     show_look();
     DragAcceptFiles(w, TRUE);
@@ -2640,12 +2926,13 @@ LRESULT CALLBACK window_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         case WM_GETMINMAXINFO: {
             auto* mmi = reinterpret_cast<MINMAXINFO*>(lp);
-            mmi->ptMinTrackSize = {MulDiv(860, static_cast<int>(GetDpiForWindow(w)), 96),
-                                   MulDiv(520, static_cast<int>(GetDpiForWindow(w)), 96)};
+            const SIZE smallest = smallest_window(GetDpiForWindow(w));
+            mmi->ptMinTrackSize = {smallest.cx, smallest.cy};
             return 0;
         }
         case WM_DPICHANGED: {
             g->dpi = HIWORD(wp);
+            g->columns_w = -1;  // the columns again at the new scale
             const RECT* r = reinterpret_cast<const RECT*>(lp);
             SetWindowPos(w, nullptr, r->left, r->top, r->right - r->left, r->bottom - r->top, SWP_NOZORDER);
             make_fonts();
@@ -2910,6 +3197,70 @@ LRESULT CALLBACK window_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
     return DefWindowProcW(w, msg, wp, lp);
 }
 
+// --check-layout <report>: the window at every zoom, in its start-up size, its smallest size and a wide one, while idle
+// and while installing, with a mod that has options selected when there is one; the window is never shown. Each
+// control whose text does not fit, each control outside the window, and any zoom that changed the window's size is
+// written to the report (UTF-8), one per line. Zoom is not stored. Returns the number of problems.
+int check_layout(const fs::path& report_file) {
+    g->checking = true;
+    const ui::Appearance first = g->look;
+    for (const mods::StateEntry& e : g->model.state.order) {
+        const mods::InstalledMod* m = g->model.find(e.id);
+        if (m != nullptr && !m->manifest.options.empty()) {
+            g->selected = e.id;
+            break;
+        }
+    }
+    fill_list();
+    std::wstring report;
+    int problems = 0;
+    RECT start;
+    GetWindowRect(g->window, &start);
+    const SIZE smallest = smallest_window(g->dpi);
+    MONITORINFO monitor{};
+    monitor.cbSize = sizeof(monitor);
+    GetMonitorInfoW(MonitorFromWindow(g->window, MONITOR_DEFAULTTONEAREST), &monitor);
+    const struct {
+        const wchar_t* name;
+        int w, h;
+    } sizes[] = {{L"start-up size", start.right - start.left, start.bottom - start.top},
+                 {L"smallest size", smallest.cx, smallest.cy},
+                 {L"wide", static_cast<int>(monitor.rcWork.right - monitor.rcWork.left),
+                  std::min(static_cast<int>(monitor.rcWork.bottom - monitor.rcWork.top), MulDiv(800, static_cast<int>(g->dpi), 96))}};
+    report += L"# selected: " + wide(g->selected.empty() ? std::string("none") : g->selected) + L"\n";
+    for (const auto& size : sizes) {
+        SetWindowPos(g->window, nullptr, monitor.rcWork.left, monitor.rcWork.top, size.w, size.h, SWP_NOZORDER | SWP_NOACTIVATE);
+        for (int zoom = ui::kSmallestText; zoom <= ui::kLargestText; zoom += ui::kTextStep) {
+            RECT before, after;
+            GetWindowRect(g->window, &before);
+            apply_look(ui::Appearance{g->look.theme, zoom});
+            GetWindowRect(g->window, &after);
+            const std::wstring when = std::wstring(size.name) + L" " + std::to_wstring(before.right - before.left) + L"x" +
+                                      std::to_wstring(before.bottom - before.top) + L", zoom " + std::to_wstring(zoom) + L" %";
+            report += L"# " + when + (g->icons_only ? L": icons only" : L": buttons with words") + L"\n";
+            if (!EqualRect(&before, &after)) {
+                report += when + L": the window's size changed\n";
+                ++problems;
+            }
+            for (const bool busy : {false, true}) {
+                set_busy(busy);
+                for (const std::wstring& line : ui::find_clipped(g->window, true)) {
+                    report += when + (busy ? L", installing: " : L": ") + line + L"\n";
+                    ++problems;
+                }
+            }
+            set_busy(false);
+        }
+    }
+    apply_look(first);
+    SetWindowPos(g->window, nullptr, start.left, start.top, start.right - start.left, start.bottom - start.top,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    report += L"problems: " + std::to_wstring(problems) + L"\n";
+    std::ofstream out(mods::long_path(report_file), std::ios::binary | std::ios::trunc);
+    out << narrow(report);
+    return problems;
+}
+
 int run_gui(const std::vector<std::string>& args) {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -2943,12 +3294,19 @@ int run_gui(const std::vector<std::string>& args) {
     wc.hIcon = LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(1));
     if (!wc.hIcon) wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
     RegisterClassExW(&wc);
-    HWND w = CreateWindowExW(0, wc.lpszClassName, window_title(), WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
+    // WS_CLIPCHILDREN: the card painted on the window never covers the panel and controls on it.
+    HWND w = CreateWindowExW(0, wc.lpszClassName, window_title(), WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, CW_USEDEFAULT,
                              CW_USEDEFAULT, 1180, 720, nullptr, nullptr, wc.hInstance, nullptr);
     const UINT dpi = GetDpiForWindow(w);
     SetWindowPos(w, nullptr, 0, 0, MulDiv(1180, static_cast<int>(dpi), 96), MulDiv(720, static_cast<int>(dpi), 96),
                  SWP_NOMOVE | SWP_NOZORDER);
     refresh_all();
+    for (std::size_t i = 0; i + 1 < args.size(); ++i)
+        if (args[i] == "--check-layout") {
+            const int problems = check_layout(mods::from_utf8(args[i + 1]));
+            DestroyWindow(w);
+            return problems > 0 ? 1 : 0;
+        }
     if (g->model.game.empty())
         MessageBoxW(w, wide("The game's files were not found: " + g->model.game_error +
                             ".\nInstalling needs them; put ModManager.exe beside ShadowTheHedgehog.exe.")
@@ -3010,7 +3368,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     LocalFree(argv);
     bool command = false;
     for (std::size_t i = 0; i < args.size(); ++i) {
-        if (args[i] == "--mods-dir" || args[i] == "--game-data" || args[i] == "--snapshot" || args[i] == "--select") {
+        if (args[i] == "--mods-dir" || args[i] == "--game-data" || args[i] == "--snapshot" || args[i] == "--select" ||
+            args[i] == "--check-layout") {
             ++i;
             continue;
         }

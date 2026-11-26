@@ -14,6 +14,7 @@ using std::min;
 
 #include <iterator>
 #include <string>
+#include <vector>
 
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "uxtheme.lib")
@@ -32,6 +33,7 @@ ULONG_PTR g_gdiplus = 0;
 const wchar_t* const kPrimary = L"ui.primary";
 const wchar_t* const kSwitch = L"ui.switch";
 const wchar_t* const kIcon = L"ui.icon";
+const wchar_t* const kIconOnly = L"ui.icon_only";
 
 // Windows' dark mode for menus, scroll bars and the lists of combo boxes has no published API. These uxtheme.dll
 // functions, by ordinal, are what Windows' own programs use; they are present from Windows 10 1903 (build 18362) on, and
@@ -248,10 +250,13 @@ LRESULT draw_button(const NMCUSTOMDRAW& cd) {
     const auto glyph = static_cast<wchar_t>(reinterpret_cast<UINT_PTR>(GetPropW(h, kIcon)));
     HFONT icons = glyph != 0 ? icon_font_for(dc, tm.tmHeight * 9 / 10) : nullptr;
     if (icons != nullptr) {
-        // The icon and the text together, centred.
+        // The icon and the text together, centred; only the icon when the button is too narrow for its words (its
+        // text stays its name for screen readers and its tooltip).
+        const bool icon_only = GetPropW(h, kIconOnly) != nullptr;
         RECT measure{0, 0, 0, 0};
-        DrawTextW(dc, text.c_str(), static_cast<int>(text.size()), &measure, DT_CALCRECT | DT_SINGLELINE | DT_NOPREFIX);
-        const int icon_w = tm.tmHeight, gap = text.empty() ? 0 : tm.tmHeight / 2;
+        if (!icon_only)
+            DrawTextW(dc, text.c_str(), static_cast<int>(text.size()), &measure, DT_CALCRECT | DT_SINGLELINE | DT_NOPREFIX);
+        const int icon_w = tm.tmHeight, gap = text.empty() || icon_only ? 0 : tm.tmHeight / 2;
         const int total = icon_w + gap + (measure.right - measure.left);
         RECT icon_box{face.left + (face.right - face.left - total) / 2, face.top, 0, face.bottom};
         icon_box.right = icon_box.left + icon_w;
@@ -260,7 +265,8 @@ LRESULT draw_button(const NMCUSTOMDRAW& cd) {
         SelectObject(dc, previous);
         DeleteObject(icons);
         t.left = icon_box.right + gap;
-        DrawTextW(dc, text.c_str(), static_cast<int>(text.size()), &t, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_HIDEPREFIX);
+        if (!icon_only)
+            DrawTextW(dc, text.c_str(), static_cast<int>(text.size()), &t, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_HIDEPREFIX);
     } else {
         DrawTextW(dc, text.c_str(), static_cast<int>(text.size()), &t,
                   DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_HIDEPREFIX);
@@ -322,14 +328,21 @@ LRESULT draw_check_box(const NMCUSTOMDRAW& cd) {
     RECT t{text_left, rc.top, rc.right, rc.bottom};
     SetBkMode(dc, TRANSPARENT);
     SetTextColor(dc, disabled ? p.muted : p.text);
-    const UINT format = DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_HIDEPREFIX;
+    // BS_MULTILINE: the words wrap to the box's width, the lines centred on its height.
+    const bool multiline = (GetWindowLongW(h, GWL_STYLE) & BS_MULTILINE) != 0;
+    UINT format = DT_LEFT | DT_HIDEPREFIX | (multiline ? DT_WORDBREAK : DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    if (multiline) {
+        RECT need = t;
+        DrawTextW(dc, text.c_str(), static_cast<int>(text.size()), &need, format | DT_CALCRECT);
+        t.top = rc.top + std::max(0L, (rc.bottom - rc.top - (need.bottom - need.top)) / 2);
+    }
     DrawTextW(dc, text.c_str(), static_cast<int>(text.size()), &t, format);
     if ((cd.uItemState & CDIS_FOCUS) != 0 && focus_shown(h)) {
         RECT f = t;
         DrawTextW(dc, text.c_str(), static_cast<int>(text.size()), &f, format | DT_CALCRECT);
         f.left = rc.left;
-        f.top = rc.top + 1;
-        f.bottom = rc.bottom - 1;
+        f.top = multiline ? std::max(rc.top + 1, f.top - 2) : rc.top + 1;
+        f.bottom = multiline ? std::min(rc.bottom - 1, f.bottom + 2) : rc.bottom - 1;
         f.right = std::min(static_cast<int>(rc.right), static_cast<int>(f.right) + 3);
         focus_ring(dc, f, 4.0f);
     }
@@ -613,6 +626,8 @@ void apply_to_control(HWND h) {
         SetWindowSubclass(h, tab_proc, 1, 0);
     } else if (is_class(h, WC_LISTBOXW)) {
         set_theme(h, dark, L"DarkMode_Explorer");
+    } else if ((GetWindowLongW(h, GWL_EXSTYLE) & WS_EX_CONTROLPARENT) != 0) {
+        set_theme(h, dark, L"DarkMode_Explorer");  // a program's own panel of controls: its scroll bar
     }
     InvalidateRect(h, nullptr, TRUE);
 }
@@ -676,6 +691,17 @@ void paint_nav_item(HDC dc, const RECT& r, const wchar_t* text, wchar_t glyph, b
     }
     SetBkMode(dc, TRANSPARENT);
     SetTextColor(dc, p.text);
+    if (text == nullptr || *text == L'\0') {  // a narrow list: the icon alone, centred
+        if (glyph != 0 && icons != nullptr) {
+            HGDIOBJ previous = SelectObject(dc, icons);
+            RECT icon_box = face;
+            icon_box.left += 2;  // clear of the accent mark
+            DrawTextW(dc, &glyph, 1, &icon_box, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+            SelectObject(dc, previous);
+        }
+        if (focused) focus_ring(dc, face, 5.0f);
+        return;
+    }
     int x = face.left + h / 2;
     if (glyph != 0 && icons != nullptr) {
         HGDIOBJ previous = SelectObject(dc, icons);
@@ -692,6 +718,145 @@ void paint_nav_item(HDC dc, const RECT& r, const wchar_t* text, wchar_t glyph, b
 }
 
 int font_height(int points, int dpi, int text_size) { return -MulDiv(points * text_size, dpi, 72 * 100); }
+
+void set_icon_only(HWND button, bool icon_only) {
+    const bool now = GetPropW(button, kIconOnly) != nullptr;
+    if (now == icon_only) return;
+    if (icon_only) SetPropW(button, kIconOnly, reinterpret_cast<HANDLE>(1));
+    else RemovePropW(button, kIconOnly);
+    InvalidateRect(button, nullptr, TRUE);
+}
+
+bool can_show_icon_only(HWND button) {
+    return g_palette.custom && GetPropW(button, kIcon) != nullptr && *icon_face() != L'\0';
+}
+
+SIZE text_extent(HFONT font, const std::wstring& text, int wrap) {
+    HDC dc = GetDC(nullptr);
+    HGDIOBJ old = SelectObject(dc, font);
+    RECT r{0, 0, wrap > 0 ? wrap : 0, 0};
+    if (text.empty()) {
+        TEXTMETRICW tm{};
+        GetTextMetricsW(dc, &tm);
+        r.bottom = tm.tmHeight;
+        r.right = 0;
+    } else {
+        DrawTextW(dc, text.c_str(), static_cast<int>(text.size()), &r,
+                  DT_CALCRECT | DT_NOPREFIX | DT_EXPANDTABS | (wrap > 0 ? DT_WORDBREAK : DT_SINGLELINE));
+    }
+    SelectObject(dc, old);
+    ReleaseDC(nullptr, dc);
+    return SIZE{r.right - r.left, r.bottom - r.top};
+}
+
+namespace {
+HFONT font_of(HWND h) {
+    auto font = reinterpret_cast<HFONT>(SendMessageW(h, WM_GETFONT, 0, 0));
+    return font != nullptr ? font : static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+}
+int line_height(HFONT font) { return text_extent(font, L"", 0).cy; }
+}  // namespace
+
+int button_width(HWND button) { return button_width(button, GetPropW(button, kIconOnly) != nullptr); }
+
+int button_width(HWND button, bool icon_only) {
+    HFONT font = font_of(button);
+    const int line = line_height(font);
+    const bool icon = g_palette.custom && GetPropW(button, kIcon) != nullptr && *icon_face() != L'\0';
+    if (icon && icon_only) return line * 2 + 4;
+    const int words = text_extent(font, text_of(button), 0).cx;
+    return words + (icon ? line + line / 2 : 0) + line * 3 / 2 + 4;
+}
+
+int check_box_width(HWND check_box) {
+    HFONT font = font_of(check_box);
+    const int line = line_height(font);
+    // The switch is two lines wide and a half line from its words; a box is about a line with half a line after it.
+    const int mark = g_palette.custom ? (GetPropW(check_box, kSwitch) != nullptr ? line * 2 + 1 + line / 2 : line * 4 / 5 + 1 + line * 2 / 5)
+                                      : GetSystemMetrics(SM_CXMENUCHECK) + 6;
+    return mark + text_extent(font, text_of(check_box), 0).cx + 4;
+}
+
+int check_box_height(HWND check_box, int width) {
+    HFONT font = font_of(check_box);
+    const int words = width - (check_box_width(check_box) - text_extent(font, text_of(check_box), 0).cx);
+    return text_extent(font, text_of(check_box), std::max(1, words)).cy + 4;
+}
+
+std::vector<std::wstring> find_clipped(HWND parent, bool whole_height) {
+    std::vector<std::wstring> problems;
+    RECT client;
+    GetClientRect(parent, &client);
+    for (HWND c = GetWindow(parent, GW_CHILD); c != nullptr; c = GetWindow(c, GW_HWNDNEXT)) {
+        if ((GetWindowLongW(c, GWL_STYLE) & WS_VISIBLE) == 0) continue;  // its own flag: the window may be hidden
+        if ((GetWindowLongW(c, GWL_EXSTYLE) & WS_EX_CONTROLPARENT) != 0) {
+            // A panel of controls that scrolls: its controls must fit its width; it scrolls for their height.
+            for (const std::wstring& inner : find_clipped(c, false)) problems.push_back(L"(in a panel) " + inner);
+        }
+        RECT r;
+        GetWindowRect(c, &r);
+        MapWindowPoints(nullptr, parent, reinterpret_cast<POINT*>(&r), 2);
+        const int w = r.right - r.left;
+        int h = r.bottom - r.top;
+        const std::wstring text = text_of(c);
+        const LONG style = GetWindowLongW(c, GWL_STYLE);
+        HFONT font = font_of(c);
+        std::wstring why;
+        const auto need = [&](const wchar_t* what, int needed, int had) {
+            if (needed > had && why.empty())
+                why = std::wstring(what) + L" needs " + std::to_wstring(needed) + L" px, has " + std::to_wstring(had);
+        };
+        if (is_class(c, WC_STATICW)) {
+            const LONG kind = style & SS_TYPEMASK;
+            if (text.empty() || kind == SS_OWNERDRAW || kind == SS_ICON || kind == SS_BITMAP) continue;
+            const bool one_line = kind == SS_LEFTNOWORDWRAP || (style & (SS_CENTERIMAGE | SS_ENDELLIPSIS)) != 0;
+            if (one_line) {
+                const SIZE s = text_extent(font, text, 0);
+                need(L"width", s.cx, w);
+                need(L"height", s.cy, h);
+            } else {
+                const SIZE s = text_extent(font, text, w);
+                need(L"width (a word)", s.cx, w);
+                need(L"height", s.cy, h);
+            }
+        } else if (is_class(c, WC_BUTTONW)) {
+            const LONG type = style & BS_TYPEMASK;
+            if (type == BS_PUSHBUTTON || type == BS_DEFPUSHBUTTON) {
+                need(L"width", button_width(c), w);
+                need(L"height", line_height(font) + 4, h);
+            } else if (type == BS_CHECKBOX || type == BS_AUTOCHECKBOX) {
+                if ((style & BS_MULTILINE) != 0) need(L"height", check_box_height(c, w), h);
+                else need(L"width", check_box_width(c), w);
+            }
+        } else if (is_class(c, WC_COMBOBOXW)) {
+            COMBOBOXINFO info{};
+            info.cbSize = sizeof(info);
+            const int sel = static_cast<int>(SendMessageW(c, CB_GETCURSEL, 0, 0));
+            if (sel >= 0 && GetComboBoxInfo(c, &info)) {
+                const int n = static_cast<int>(SendMessageW(c, CB_GETLBTEXTLEN, static_cast<WPARAM>(sel), 0));
+                std::wstring item(static_cast<std::size_t>(std::max(n, 0)) + 1, L'\0');
+                SendMessageW(c, CB_GETLBTEXT, static_cast<WPARAM>(sel), reinterpret_cast<LPARAM>(item.data()));
+                item.resize(static_cast<std::size_t>(std::max(n, 0)));
+                need(L"width of the choice", text_extent(font, item, 0).cx + 6, info.rcItem.right - info.rcItem.left);
+            }
+            h = 0;  // a combo box's height includes its list
+        }
+        if (why.empty() && (r.left < client.left || r.right > client.right))
+            why = L"crosses the window's side (" + std::to_wstring(r.left) + L".." + std::to_wstring(r.right) + L" of " +
+                  std::to_wstring(client.right) + L" px)";
+        if (why.empty() && whole_height && h > 0 && (r.top < client.top || r.bottom > client.bottom))
+            why = L"crosses the window's bottom (" + std::to_wstring(r.top) + L".." + std::to_wstring(r.bottom) + L" of " +
+                  std::to_wstring(client.bottom) + L" px)";
+        if (why.empty() && w > 0 && h > 0 && (w < 4 || h < 4)) why = L"is almost no size";
+        if (!why.empty()) {
+            wchar_t cls[64] = {};
+            GetClassNameW(c, cls, static_cast<int>(std::size(cls)));
+            problems.push_back(std::wstring(cls) + L" #" + std::to_wstring(GetDlgCtrlID(c)) + L" \"" + text.substr(0, 60) +
+                               L"\": " + why);
+        }
+    }
+    return problems;
+}
 
 void start_drawing() {
     if (g_gdiplus != 0) return;

@@ -171,7 +171,17 @@ of pages, the Mod Manager at the right end of its bottom bar):
 
 A change is used at once and saved at once (no Save needed); the other program uses it the next time it opens. The
 file is created only when one of the two is changed, and like the other files only the changed line is rewritten.
-With Windows' high contrast mode on, both programs use the high contrast colours whatever the file says. At a zoom
-too large for the screen the Settings window scrolls; the Mod Manager grows with the text and moves its filter
-and right-hand buttons to a second row when they no longer fit beside the others. The uninstaller keeps the file
-unless `-RemoveSaves` is given.
+With Windows' high contrast mode on, both programs use the high contrast colours whatever the file says.
+
+Zoom never changes a window's size: both programs lay everything out again for the room the window has (and again
+when the window is resized). Words wrap instead of being cut off, and nothing scrolls sideways. In the Settings
+program a setting's control moves under its name when the page is narrow, the navigation list shows only its icons,
+the keyboard page's two cards go one under the other, and the page scrolls up and down. The Controller buttons page
+has a scale of its own: its list and the controller pictures stay side by side and grow with the zoom or shrink to
+fit the window together, like a picture (in a window too narrow for that, the pictures go under the list at the
+zoom's size). In the Mod Manager the buttons wrap into more rows and show only their icons (their names as tooltips)
+when their words would take more than two rows, the selected mod's card goes under the list in a narrow window and
+scrolls when it is taller than its room, and the bottom bar wraps. Both programs check this with `--check-layout
+<report.txt>` (Settings also takes `--folder <dir>`): every zoom in the start-up, smallest and a wide window size, each
+control whose text does not fit and any zoom that changed the window's size reported, exit code 1 when there is one.
+The uninstaller keeps the file unless `-RemoveSaves` is given.
