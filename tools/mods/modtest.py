@@ -206,10 +206,19 @@ def game_run(args, exe, workdir, stage, tick, budget_ms, extra, tape=True, audio
     with open(os.path.join(workdir, "stderr.log"), "w", encoding="utf-8") as f:
         f.write(err)
     return {"dir": workdir, "exit": rc, "log": out + err, "seconds": round(secs, 1),
-            "frame": sha(os.path.join(workdir, "cap.png")), "state": sha(os.path.join(workdir, "state.json")),
+            "frame": frame_sha(workdir), "state": sha(os.path.join(workdir, "state.json")),
             "pcm": sha(os.path.join(workdir, "audio.pcm")),
             "trace": os.path.join(workdir, "trace.jsonl"), "report": os.path.join(workdir, "mods-report.json")}
 
+
+def frame_sha(workdir):
+    """The captured frame's hash. The runtime writes the capture it was asked for as cap.png or, when the path it
+    takes has no PNG writer (the renderer of a tests build), as cap.ppm beside cap.capture.json; either is the frame."""
+    for name in ("cap.png", "cap.ppm"):
+        h = sha(os.path.join(workdir, name))
+        if h is not None:
+            return h
+    return None
 
 def reads(trace):
     out = []

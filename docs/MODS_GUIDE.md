@@ -366,6 +366,10 @@ While the list is damaged, the game starts without mods.
 If a file of a mod gets damaged after installing, the game skips that file and uses its own file. Install the mod
 again.
 
+**The game closes with "Shadow the Hedgehog stopped because of an error in the game".**
+If the message says that mods are switched on, a mod is the likely cause: one that does not fit this game, or more
+mods together than the game's memory holds. Switch off some mods, or untick *Load mods*, and start again. If it also
+happens without mods, please report it with the file `session-report.json` from the game's folder.
 **The game misbehaves and I do not know which mod causes it.**
 Untick *Load mods* and try again. If the problem is gone, tick *Load mods* again, switch off half of your mods, and
 repeat until you find the one.
@@ -435,6 +439,12 @@ the code. Unless you build the game from source yourself, leave this window alon
 Mods that come only as a patch for a disc image (for example `.xdelta` files) cannot be used. If the same mod is also
 offered as loose game files, install those instead.
 
+**Many mods together can be too much for the game.**
+The game has the memory of the console it was made for. Each mod alone can fit and a set of them together not: in
+the tests of this release, 15 community mods each played a whole stage alone, and so did every pair tried, but all 15
+switched on together stopped the game about 50 seconds into the stage. When that happens the game closes and tells
+you: "Shadow the Hedgehog stopped because of an error in the game", with the number of mods that are on. Switch off
+some mods and start again. Mods that add enemies or objects to a stage and mods with larger models use the most.
 **Big "overhaul" mods load only in part.**
 *Shadow the Hedgehog: Reloaded* and similar projects are a mix of changed files and changed code. Their files load
 (stage changes, models, textures, text, music, voice lines). Their code features do not (for Reloaded: S rank, Red
@@ -471,10 +481,9 @@ The game reads the mods once, when it starts. Nothing changes in a game that is 
 On older systems, unpack the download yourself and install the folder.
 
 **Not everything has been tested.**
-Mods were checked mostly with automatic test runs: a fixed route through one stage, the first seconds of movies, and
-about a minute and a half of sound. The game's menus with mods, play in a normal window, and play beyond that route
-were not covered by those tests. If a mod causes trouble, switch it off and see
-[Troubleshooting](#troubleshooting).
-
+For this release, 15 downloads from the community were installed with the manager and each played through one stage
+(a fixed route through Westopolis, about five minutes) on the installed game: a character model, stage layouts,
+weapons, text, button pictures, voices, movies and three texture packs. Other stages, the game's menus with mods, and
+long play were not covered. If a mod causes trouble, switch it off and see [Troubleshooting](#troubleshooting).
 For the technical side (folder layout, the rules, how files are placed) see [mods/DESIGN.md](mods/DESIGN.md) and
 [mods/TEXTURE_PACKS.md](mods/TEXTURE_PACKS.md).

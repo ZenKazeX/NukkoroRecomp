@@ -1923,6 +1923,12 @@ gekko::DisplayConfig resolve_display_config(const Options& options) {
     return config;
 }
 
+// For the notice a player gets when the game stops on an error (the end of run()): how many mods are loaded, and
+// whether this process let go of a console Windows had opened for it alone (main(): started from the Start menu, a
+// shortcut, Explorer or the Mod Manager - a person is there to read a message box, and no log is on screen).
+std::size_t g_active_mod_count = 0;
+bool g_started_by_player = false;
+
 int run(Options options) {
     gekko::assets::pf_load_stamp("run");  // GEKKO_PF_LOAD_STAMP=1 only (measurement)
     if (options.native_boot_contract_directory &&
@@ -2385,6 +2391,7 @@ int run(Options options) {
                           << mods.files.size() << " files, " << mods.texture_dirs.size() << " texture packs, "
                           << mods.codes.size() << " data codes)\n";
                 for (const std::string& m : mods.active_mods) std::cout << "  mod: " << m << "\n";
+                g_active_mod_count = mods.active_mods.size();
                 storage_options.overlays = mods.files;
                 gekko::mod_overlay::set(mods.files);
                 // The switchable voice archive reads the English archive by path: give it the mods' version.
@@ -8761,6 +8768,26 @@ int run(Options options) {
                          reason != gekko::StopReason::HostRequest &&
                          reason != gekko::StopReason::HleExit);
 
+#if defined(GEKKO_SHIPPING) && defined(_WIN32)
+    // A player's game that stops on an error used to vanish without a word (its log went to a console that is no
+    // longer shown). Say what happened and what to try. With mods on, the usual cause is the mods: one that does not
+    // fit this game, or more of them together than the game's memory holds (the game then reads a missing animation
+    // or model). Only for a game a person started in a window; a run from a terminal or a script gets the log only.
+    if (failed && options.window && g_started_by_player) {
+        std::string text = "Shadow the Hedgehog stopped because of an error in the game.\n\n";
+        if (g_active_mod_count != 0) {
+            text += std::to_string(g_active_mod_count) + (g_active_mod_count == 1 ? " mod is" : " mods are") +
+                    " switched on. A mod that does not fit this game, or many mods together, can need more than the "
+                    "game can hold.\n\nOpen the Mod Manager, switch off some mods (or untick \"Load mods\" to play "
+                    "without any), and start the game again.";
+        } else {
+            text += "If it happens again, please report it and attach the file session-report.json from the game's "
+                    "folder.";
+        }
+        MessageBoxA(nullptr, text.c_str(), "Shadow the Hedgehog", MB_OK | MB_ICONWARNING | MB_SETFOREGROUND);
+    }
+#endif
+
     // STEP-0 measurement output (default off). One JSON object: the run's
     // identity plus one member per requested item. Every probe ran on the
     // guest thread, which has stopped, so nothing here races it.
@@ -10490,7 +10517,10 @@ Options parse_options(int argc, char** argv) {
 // redirected to a file or a pipe keeps its handles either way.
 static void release_own_console() noexcept {
     DWORD processes[2];
-    if (GetConsoleProcessList(processes, 2) == 1) FreeConsole();
+    if (GetConsoleProcessList(processes, 2) == 1) {
+        FreeConsole();
+        g_started_by_player = true;
+    }
 }
 #endif
 
