@@ -305,8 +305,9 @@ In the game's menus, mouse buttons do nothing. Use the keyboard there.
 The letters in brackets are the game's own buttons, so you can match them with the button prompts the game shows.
 
 The four *Camera* actions have no key at the start, because the mouse turns the camera. Give them keys if you want to
-turn the camera from the keyboard. Each *Camera* row also ends in a list: the mouse movement that action follows
-(*Mouse left*, *Mouse right*, *Mouse up*, *Mouse down* or *No mouse*; see [The four camera mouse lists](#the-four-camera-mouse-lists)).
+turn the camera from the keyboard. The first box of each *Camera* row is a list: the mouse movement that action follows
+(*Mouse left*, *Mouse right*, *Mouse up*, *Mouse down* or *No mouse*; see [The four camera mouse lists](#the-four-camera-mouse-lists)),
+and its other two boxes are its keys.
 
 ### The mouse settings
 
@@ -319,7 +320,7 @@ turn the camera from the keyboard. Each *Camera* row also ends in a list: the mo
 
 ### The four camera mouse lists
 
-The list at the end of each *Camera* row in the table of actions decides which mouse movement does that action:
+The list in the first box of each *Camera* row in the table of actions decides which mouse movement does that action:
 
 | Row | Choices | Default | Key in `controls.cfg` |
 |---|---|---|---|

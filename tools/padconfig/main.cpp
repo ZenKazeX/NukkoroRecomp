@@ -306,6 +306,7 @@ void show_focus() {
 
 // True when the text changed.
 bool set_text(HWND h, const std::wstring& text) {
+    if (h == nullptr) return false;  // a control this layout does not show (a camera row's last key box)
     const int length = GetWindowTextLengthW(h);
     std::wstring now(static_cast<std::size_t>(length) + 1, L'\0');
     GetWindowTextW(h, now.data(), length + 1);
@@ -1214,34 +1215,32 @@ int build_keyboard_page() {
     for (int b = 0; b < 5; ++b)
         key_w = std::max(key_w, units(ui::text_extent(g.font, bind_text(sp::mouse_bind(static_cast<sp::MouseButton>(b)))).cx));
     key_w += 28;  // the button's own edges
-    // The camera rows also have a list of the mouse movement each follows, in a fourth column (the fields marked
-    // in_table, in kCameraActions order).
+    // A camera row's first box is a list of the mouse movement it follows (the fields marked in_table, in kCameraActions
+    // order), then its keys: the list as wide as a key box, and every box as wide as the list needs.
     std::vector<Field*> mouse_lists;
     for (Field& f : g.fields)
         if (f.page == kKeyboard && f.in_table) mouse_lists.push_back(&f);
-    int mouse_w = 0;
     for (const Field* f : mouse_lists)
-        for (const Choice& c : f->choices) mouse_w = std::max(mouse_w, units(ui::text_extent(g.font, c.label).cx));
-    mouse_w += units(ui::dropdown_chrome(g.font)) + 16;
-    const int extra = mouse_w + 4;
+        for (const Choice& c : f->choices)
+            key_w = std::max(key_w, units(ui::text_extent(g.font, c.label).cx) + units(ui::dropdown_chrome(g.font)) + 16);
     int label_w = 0;
     for (const std::wstring& label : kActionLabels) label_w = std::max(label_w, units(ui::text_extent(g.font, label).cx) + 8);
-    const int full_table = kLeft + label_w + 2 + slots * (key_w + 4) + extra + 12;  // from the card's left edge at 12
+    const int full_table = kLeft + label_w + 2 + slots * (key_w + 4) + 12;  // from the card's left edge at 12
     const bool beside = g.page_w >= 12 + full_table + 12 + 440 + 12;
     const int table_r = beside ? 12 + full_table : g.page_w - 12;
     const int inner_w = table_r - 12 - kLeft;
     // Each action's name beside its boxes; or over them, in a row; or over them, one under another.
-    const bool label_beside = inner_w >= label_w + 2 + slots * (key_w + 4) + extra;
-    const bool one_row = label_beside || inner_w >= slots * (key_w + 4) + extra;
-    const int bind_w = label_beside ? std::min(key_w + 32, (inner_w - label_w - 2 - extra) / slots - 4)
-                       : one_row    ? std::min(key_w + 32, (inner_w - extra - (slots - 1) * 4) / slots)
+    const bool label_beside = inner_w >= label_w + 2 + slots * (key_w + 4);
+    const bool one_row = label_beside || inner_w >= slots * (key_w + 4);
+    const int bind_w = label_beside ? std::min(key_w + 32, (inner_w - label_w - 2) / slots - 4)
+                       : one_row    ? std::min(key_w + 32, (inner_w - (slots - 1) * 4) / slots)
                                     : inner_w;
     const int kLabelW = label_w;
     int y = g.top + 12;
     g.card_open = true;
     const std::wstring head = "Action"_w,
-                       hint = "Click a box, then press a key or a mouse button. A camera action can also follow the mouse: "_w
-                              "choose which way in the list at the end of its row."_w;
+                       hint = "Click a box, then press a key or a mouse button. A camera action's first box is the mouse "_w
+                              "movement it follows."_w;
     if (label_beside) {
         const int hint_h = std::max(20, text_height(hint, g.font, inner_w - kLabelW - 2));
         make(L"STATIC", head, SS_LEFT, kLeft, y, kLabelW - 8, 20, -1);
@@ -1266,20 +1265,23 @@ int build_keyboard_page() {
             y += 23;
         }
         const int first_x = label_beside ? kLeft + kLabelW + 2 : kLeft;
-        for (int s = 0; s < slots; ++s) {
-            const int x = one_row ? first_x + s * (bind_w + 4) : kLeft;
+        // The boxes in their columns: a camera row's list in the first, its first keys in the others.
+        const int keys = list != nullptr ? slots - 1 : slots;
+        for (int column = 0; column < slots; ++column) {
+            const int x = one_row ? first_x + column * (bind_w + 4) : kLeft;
+            if (list != nullptr && column == 0) {
+                list->id = kFirstField + static_cast<int>(list - g.fields.data());
+                list->control = make(L"COMBOBOX", list->label, CBS_DROPDOWNLIST | kDrawn | WS_TABSTOP | WS_VSCROLL, x, y,
+                                     bind_w, 300, list->id);
+                if (!one_row) y += 34;
+                continue;
+            }
+            const int s = column - (slots - keys);
             make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, x, y + dy, bind_w, 22,
                  kFirstBind + static_cast<int>(a * sp::kMaxBinds) + s);
-            if (!one_row && s + 1 < slots) y += 26;
+            if (!one_row && column + 1 < slots) y += 26;
         }
-        if (list != nullptr) {
-            list->id = kFirstField + static_cast<int>(list - g.fields.data());
-            if (!one_row) y += 26;
-            const int x = one_row ? first_x + slots * (bind_w + 4) : kLeft, w = one_row ? mouse_w : inner_w;
-            list->control = make(L"COMBOBOX", list->label, CBS_DROPDOWNLIST | kDrawn | WS_TABSTOP | WS_VSCROLL, x, y, w, 300, list->id);
-            if (!one_row) y += 8;
-        }
-        y += label_beside ? row_h + 2 : 30;
+        y += label_beside ? row_h + 2 : row_h + 8;
     }
     add_card(12, g.top, table_r, y + 12);
     const int column_l = beside ? table_r + 12 : 12, column_top = beside ? g.top : y + 12 + 16, column_r = g.page_w - 12;
