@@ -396,7 +396,9 @@ game files:
 - Shortcuts in the real Desktop and Start menu. Their code ran with folders inside this repository, as the work was
   limited to it.
 - Another machine, or a clean Windows install.
-- Add/Remove Programs: no entry exists, by design. Removal is through `Uninstall.cmd` or the Start menu shortcut.
+- Add/Remove Programs: no entry existed at the time of this round, by design; removal was through `Uninstall.cmd` or the
+  Start menu shortcut. (Since release 0.0.4 the setup writes a per-user Installed apps entry and installs an uninstall
+  window, `Uninstall.exe`; that round is recorded in the 0.0.4 release notes.)
 - The new Resolution row by script in the real menu; its logic has automated tests, and the owner tried it in the game.
 - How the game feels to play, beyond the owner's own sessions.
 
