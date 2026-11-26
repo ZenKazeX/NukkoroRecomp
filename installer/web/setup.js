@@ -1,4 +1,4 @@
-// Shadow the Hedgehog Recompiled setup page. Five steps: Welcome (the extracted disc), Japanese Voices (the optional
+// Shadow the Hedgehog setup page. Five steps: Welcome (the extracted disc), Japanese Voices (the optional
 // Japanese disc), Install Location, Components (shortcuts + build tools), Install (review, then the real build and copy
 // via the host).
 'use strict';
@@ -260,7 +260,7 @@ const jpIdle = 'Its voice files are copied to the voice_jp folder of the game. N
 function renderLocation() {
   content.innerHTML = `
     <h1>Install Location</h1>
-    <p class="description">Choose the folder where Shadow the Hedgehog Recompiled will be installed. Your settings and saves are kept there.</p>
+    <p class="description">Choose the folder where Shadow the Hedgehog will be installed. Your settings and saves are kept there.</p>
     <div class="folder-row" style="margin-top:16px"><input id="target-path" spellcheck="false" value="${escapeText(state.target.path)}">
       <button class="button" id="target-browse">Browse...</button></div>
     ${statusLine('target-status', state.target, '')}
@@ -347,7 +347,7 @@ function renderProgress() {
   const titles = { running: state.cancelling ? 'Cancelling...' : 'Installing...', complete: 'Installation Complete', failed: 'Installation Failed', cancelled: 'Installation Cancelled' };
   const descriptions = {
     running: escapeText(progressDescription()),
-    complete: `Shadow the Hedgehog Recompiled is installed in ${escapeText(state.target.result.path)}.`,
+    complete: `Shadow the Hedgehog is installed in ${escapeText(state.target.result.path)}.`,
     failed: `${escapeText(state.error)} Select Retry to try again.`,
     cancelled: 'The installation was stopped. Select Retry to start again.',
   };

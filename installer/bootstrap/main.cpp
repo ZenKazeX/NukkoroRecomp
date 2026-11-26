@@ -16,7 +16,7 @@ namespace fs = std::filesystem;
 namespace {
 
 constexpr int kPackageResource = 101, kSetupResource = 102;
-constexpr const wchar_t* kTitle = L"Nukkoro Recompiled Setup";
+constexpr const wchar_t* kTitle = L"Shadow the Hedgehog Setup";
 
 std::wstring env(const wchar_t* name) {
     std::wstring value(32768, L'\0');

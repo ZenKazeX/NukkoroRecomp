@@ -532,3 +532,67 @@ gets. The post-link checks still run (69 s); they are not skipped. In the same f
 - The setup window's own scripted run with the new package; the setup exe was built and unpacked the package (14
   prebuilt files present).
 - Gameplay beyond the Westopolis replay.
+
+# Release 0.0.4, the last day (2026-11-26)
+
+What was added on the day of the release, how it was tested, and what was found. The round that ran on the released
+package itself is summarised in the release notes; the rounds below ran on the commits before it, each a full package
+build from that commit (`dev/Package-Release.ps1`, with the content scan).
+
+## What a round is
+
+1. The tests tree at the commit and the whole ctest suite.
+2. The package, the setup window and the single-file setup program from the commit.
+3. Two installs from the package: through the call the setup window makes (folders with spaces, accented letters,
+   brackets and an ampersand; a Python under a non-ASCII path), and through the setup window's self-test with Python
+   reported missing and a stand-in installer. Each installed game runs the development tree's tape gate (two recorded
+   stages: state, audio, behaviour trace, ten screenshots; 12 checks).
+4. The installer's and the uninstaller's own tests, and the zip's `Install.cmd` route.
+5. `Settings.exe --check-layout` and `ModManager.exe --check-layout`.
+6. Mod scenarios (`tools/mods/modtest.py`).
+7. Player scenarios: cancel in the build and Retry (gated), an update over an install holding a player's files, an
+   install over a running game, the uninstaller.
+
+## Results
+
+| Commit | What it added | Round |
+|---|---|---|
+| 44fdd98 | guides, Settings save fix, development keys and console off | full: all passed |
+| 3d79baf | stick pictures, camera mouse lists | full: all passed |
+| ea6553d | stick pictures | package, installs, layout, mods: all passed |
+| 1407d5c | the uninstall window and the Installed apps entry | full: all passed; uninstall window and console uninstaller on the real installs |
+| f69f411 | the error message, the mods guide, the harness fix | full: all passed but one screenshot hash, see below |
+
+ctest was 301 of 305 in every round; the same four cannot run on the test PC (three need the Python module `pefile`,
+one a reference executable that is not built).
+
+## Found on the day
+
+- **Development keys in the player's game.** N and M (savestate), F5 (snapshot), F8 and F9 (markers), F6 and the
+  keypad (effect layers) answered in the installed game. Off under `GEKKO_SHIPPING` now. Checked on the installed game
+  against the previous build as a control: the control wrote a savestate and a snapshot, the new build nothing.
+- **A console window beside the game.** The player's build lets go of a console Windows opened for it alone. Checked
+  the same way (the control holds a console, the new build none).
+- **Settings: Save blocked by an untouched value.** Read in the code; no test exercises it.
+- **Mods with real downloads.** 17 files from GameBanana's Shadow the Hedgehog section. 15 are loadable mods: each
+  alone plays the whole Westopolis tape on the player's executable (the gate's runner, `run_tape.ps1`), as do the
+  seven- and eight-mod halves, the 14 without the stage mod, and the stage mod with each of eight others. All 15
+  together stop at tick 2,002,050,000 with a 2-byte load from address 4: the motion bank's clip allocation had
+  returned 0 (28 times; 0 in every other run). The game's own heap is exhausted; the console has the same heap. Three
+  texture packs: 5 textures drawn from packs on the player's executable. The save download is refused by name. One
+  archive arrived cut off (a download fault here, shown by its checksum) and was fetched again.
+- **The game vanished without a word on an error.** It now shows one message; with mods on it says how many are on.
+  The first version was never seen (a message box started after the window has closed is ended by the pending
+  WM_QUIT); it runs on its own thread now.
+- **The mod harness skipped every picture check.** It read `cap.png`; the tests build writes `cap.ppm`.
+- **One screenshot hash differed once.** In the round on f69f411 the gate on the cancel-and-retry build differed in
+  one of ten screenshots: one pixel, one step in one channel. The same executable passed 12 of 12 when the gate was
+  run again. Not reproduced, cause unknown.
+- **The cancel scenario counted no processes.** Its filter matched command lines, and a compiler's command line is a
+  response file. It counts by parentage now.
+
+## Not tested
+
+A clean Windows or a second PC; Windows 10; the real unattended installs of Visual Studio and Python (a stand-in is
+used); the Settings program by hand with a controller; the mouse-direction settings in play; mods in other stages, in
+the menus and in long play; Shadow the Hedgehog Reloaded; play by a person from the released build.
