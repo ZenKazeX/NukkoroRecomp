@@ -21,3 +21,15 @@ inline constexpr Hotspot kTiltedHotspots[] = {
     {"z", 211, 0.7660f, 0.3535f, 0.1380f, 0.1162f, 0.8396f, 0.3873f},
 };
 inline constexpr float kTiltedAspect = 1.63636f;  // width / height
+// The view from above in layers, for the sticks: the controller without its two stick caps (resource 103), and each
+// cap turned on a bone at the stick's root (art/render_top.py, "sticks") towards every point of a kStickGrid x
+// kStickGrid grid of stick positions: a sheet of frames, column 0 = full left, the top row = full up (its resource id,
+// and one frame's box in the picture, as fractions of the picture's width and height). Drawn with the frame nearest the
+// player's stick, they show the stick as it is tilted.
+inline constexpr int kTopBodyId = 103;
+inline constexpr int kStickGrid = 7;
+struct CapArt { const char* key; int id; float x, y, w, h; };
+inline constexpr CapArt kStickCaps[] = {
+    {"stick", 104, 0.1030f, 0.2155f, 0.2130f, 0.3232f},
+    {"cstick", 105, 0.5630f, 0.5842f, 0.1600f, 0.2413f},
+};
