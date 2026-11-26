@@ -713,9 +713,18 @@ bool HostWindow::pump() {
     const bool mark_fresh = marker_key_ != 0 && take_fresh(marker_key_);
     const bool range_fresh = range_key_ != 0 && take_fresh(range_key_);
     const bool snapshot_fresh = snapshot_key_ != 0 && take_fresh(snapshot_key_);
-    if (keyboard_active && save_fresh) save_state_requested_ = true;
-    if (keyboard_active && load_fresh) load_state_requested_ = true;
-    if (keyboard_active && mark_fresh) {
+    // The savestate (N, M), marker (F8), range (F9), snapshot (F5) and effect-layer (F6, the keypad) keys are
+    // development controls: the player's executable (GEKKO_SHIPPING) answers none of them, so those keys are free
+    // for the player's own bindings and cannot load a state or switch an effect off by accident. Num * (the frame
+    // counter) is a player setting and stays.
+#if defined(GEKKO_SHIPPING)
+    const bool development_keys = false;
+#else
+    const bool development_keys = keyboard_active;
+#endif
+    if (development_keys && save_fresh) save_state_requested_ = true;
+    if (development_keys && load_fresh) load_state_requested_ = true;
+    if (development_keys && mark_fresh) {
         ++user_marks_requested_;
         // Where the mouse points as the key goes down, when it is over the picture.
         POINT cursor{};
@@ -731,7 +740,7 @@ bool HostWindow::pump() {
     }
     const unsigned clicks = g_clicks;
     g_clicks = 0;
-    if (click_marks_ && clicks != 0u) {
+    if (development_keys && click_marks_ && clicks != 0u) {
         RECT client{};
         if (GetClientRect(static_cast<HWND>(handle_), &client) && client.right > 0 && client.bottom > 0) {
             user_marks_requested_ += clicks;
@@ -740,8 +749,8 @@ bool HostWindow::pump() {
             mark_y_ = (g_click_y + 0.5) / client.bottom;
         }
     }
-    if (keyboard_active && range_fresh) ++range_marks_requested_;
-    if (keyboard_active && snapshot_fresh) ++snapshot_requests_;
+    if (development_keys && range_fresh) ++range_marks_requested_;
+    if (development_keys && snapshot_fresh) ++snapshot_requests_;
     {
         constexpr struct {
             int key;
@@ -756,7 +765,7 @@ bool HostWindow::pump() {
             {VK_INSERT, kEffectKeyToggle}, {VK_HOME, kEffectKeySolo}, {VK_END, kEffectKeyIsolate},
             {VK_DELETE, kEffectKeyAllOn}};
         for (const auto& k : kEffectKeys)
-            if (take_fresh(k.key) && keyboard_active) effect_keys_ |= k.bit;
+            if (take_fresh(k.key) && (k.bit == kEffectKeyFps ? keyboard_active : development_keys)) effect_keys_ |= k.bit;
     }
     save_state_key_down_ = g_key_held['N'];
     load_state_key_down_ = g_key_held['M'];

@@ -1497,7 +1497,11 @@ void print_usage() {
                  "  --aspect <ratio>          Screen ratio: auto, W:H (4:3, 16:9, 32:10, 64:27, ...) or a number\n"
                  "  --draw-distance <scale>   Object draw distance: 1 (the original) to 8 (to a pixel); default 1\n"
                  "  --effects-off <a,b,...>   Effect layers not drawn (glare, lens-flare, motion-blur, fog, ...;\n"
+#if defined(GEKKO_SHIPPING)
+                 "                            --list-effect-layers)\n"
+#else
                  "                            --list-effect-layers); Num / (or F6) in the window: the layer list\n"
+#endif
                  "  --effects-solo <layer>    Draw only this effect layer (the other effects off)\n"
                  "  --effects-isolate         With --effects-solo: without the world (the effect alone)\n"
                  "  --list-effect-layers      Print the effect layer names and exit\n"
@@ -1506,6 +1510,10 @@ void print_usage() {
                  "  --aspect-ratio <w/h>      Custom aspect, e.g. 2.37\n"
                  "  --hud-scale <factor>      HUD element scale, independent of aspect\n"
                  "  --hud-inset <pixels>      Horizontal/vertical HUD safe-zone inset\n"
+#if defined(GEKKO_SHIPPING)
+                 "  --state-file <file>       Savestate slot of --load-state / --save-state; default\n"
+                 "                            save-data/slot0.gekkostate\n"
+#else
                  "  --state-file <file>       Savestate slot used by the N (save) and\n"
                  "                            M (load) hotkeys. Development tool; default\n"
                  "                            save-data/slot0.gekkostate\n"
@@ -1514,9 +1522,11 @@ void print_usage() {
                  "                            GEKKO_AUDIO_AUDIT trace\n"
                  "  F9 (in game)              Range (--range-key): the first press marks a range's start,\n"
                  "                            the next its end (replay or loop it: replay_markers.py)\n"
+#endif
                  "  --load-state              Restore --state-file before the first frame\n"
                  "  --save-state              Write a savestate when the run ends\n"
                  "  --save-state-file <file>  Override only the end-of-run savestate output\n"
+#if !defined(GEKKO_SHIPPING)
                  "  --dev-link 127.0.0.1:<port>  Connect to the before / after comparison\n"
                  "                            workstation (tools/comparator); --dev-link-name <role>\n"
                  "                            names this run there, --start-paused waits for its\n"
@@ -1529,6 +1539,7 @@ void print_usage() {
                  "                            or a digit, none; default F5): saves this moment into a\n"
                  "                            new folder under --snapshot-dir <dir> (default:\n"
                  "                            snapshots/ beside the executable)\n"
+#endif
                  "  --input-tape-record <file>  Record every latched controller sample (game time)\n"
                  "  --input-tape-play <file>  Latch the controller samples of a recorded tape\n"
                  "  --stop-at-tick <ticks>    End the run at the traversal boundary after the host\n"
