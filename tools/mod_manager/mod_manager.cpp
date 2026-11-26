@@ -1156,6 +1156,7 @@ struct Gui {
     std::vector<std::string> profile_names;  // as offered in the last Profiles menu
     ui::Appearance look;                     // the text size and colours (appearance.cfg beside the manager)
     HWND text_size = nullptr, colours = nullptr;
+    bool look_pending = false;  // a colour change waits for a pop-up window to close
     RECT panel{};  // the card behind the selected mod's preview, options and details
 
     // At the screen's scale and the chosen text size.
@@ -1164,6 +1165,7 @@ struct Gui {
 Gui* g = nullptr;
 
 LRESULT popup_colors(UINT msg, WPARAM wp, LPARAM lp, HWND w, bool* handled);
+void apply_pending_look();
 
 struct InstallJob {
     std::vector<fs::path> sources;
@@ -1268,6 +1270,8 @@ const mods::InstalledMod* selected_mod() {
     return g->model.find(g->selected);
 }
 
+void layout();
+
 void set_busy(bool busy) {
     g->busy = busy;
     if (g->progress) {
@@ -1279,6 +1283,7 @@ void set_busy(bool busy) {
     for (HWND b : g->buttons) EnableWindow(b, !busy);
     EnableWindow(g->list, !busy);
     EnableWindow(g->master, !busy);
+    if (g->list != nullptr) layout();  // the progress bar's room in the bottom bar
 }
 
 void show_details() {
@@ -1939,6 +1944,7 @@ void code_window() {
         }
     }
     EnableWindow(g->window, TRUE);
+    apply_pending_look();
     DestroyWindow(cw.window);
     g_code = nullptr;
     SetForegroundWindow(g->window);
@@ -2108,6 +2114,7 @@ bool edit_form(const wchar_t* title, std::vector<FormField>& fields) {
         }
     }
     EnableWindow(g->window, TRUE);
+    apply_pending_look();
     DestroyWindow(w);
     SetForegroundWindow(g->window);
     return st.ok;
@@ -2385,7 +2392,9 @@ void layout() {
         MoveWindow(g->details, rx, y, inside_w, bottom - inner - y, TRUE);
     }
     InvalidateRect(g->window, nullptr, TRUE);
-    MoveWindow(g->status, pad, h - status_h + g->px(8), std::max(g->px(80), w - pad * 3 - look_w - g->px(170)),
+    // The progress bar's room goes to the summary while nothing is being installed.
+    const int progress_room = g->busy ? g->px(170) : 0;
+    MoveWindow(g->status, pad, h - status_h + g->px(8), std::max(g->px(80), w - pad * 3 - look_w - progress_room),
                g->px(22), TRUE);
     MoveWindow(g->progress, w - pad * 2 - look_w - g->px(160), h - status_h + g->px(10), g->px(160), g->px(16), TRUE);
     // List columns: the name takes what the others leave.
@@ -2433,10 +2442,10 @@ void show_look() {
 
 // Uses a new text size or colour choice at once and keeps it in appearance.cfg. A larger text size also makes the
 // window larger, as far as the screen allows.
-void apply_look(ui::Appearance next) {
+void apply_look(ui::Appearance next, bool redraw = false) {
     next.text_size = ui::step_text_size(next.text_size, 0);
     const bool dark = ui::is_dark(next.theme);
-    if (next == g->look && dark == ui::colors().dark) return;
+    if (next == g->look && dark == ui::colors().dark && !redraw) return;
     const int before = g->look.text_size;
     const bool stored = next == g->look || ui::save_appearance(appearance_folder(), next);
     g->look = next;
@@ -2468,6 +2477,19 @@ void apply_look(ui::Appearance next) {
     else if (g->look.text_size != before)
         SetWindowTextW(g->status, wide("Zoom " + std::to_string(g->look.text_size) +
                                        " %. Ctrl and + or - also zoom in and out, and Ctrl and 0 goes back to 100 %.").c_str());
+}
+
+// A colour change Windows announced while a pop-up window was open.
+void apply_pending_look() {
+    if (!g->look_pending) return;
+    g->look_pending = false;
+    apply_look(g->look, true);
+}
+
+// A zoom or theme list's choice is used when the list closes, or at once when it is changed while closed (arrow keys
+// on the closed list): not while the player moves through the open list.
+bool look_chosen(HWND list, int code) {
+    return code == CBN_CLOSEUP || (code == CBN_SELCHANGE && SendMessageW(list, CB_GETDROPPEDSTATE, 0, 0) == FALSE);
 }
 
 void step_text(int steps) {
@@ -2601,10 +2623,14 @@ LRESULT CALLBACK window_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             apply_look(ui::Appearance{static_cast<ui::Theme>(wp), static_cast<int>(lp)});
             return 0;
         case WM_SETTINGCHANGE:
-            // Windows' light or dark app mode, followed when the colours are "as Windows".
-            if (lp != 0 && lstrcmpW(reinterpret_cast<const wchar_t*>(lp), L"ImmersiveColorSet") == 0 &&
-                g->look.theme == ui::Theme::System)
-                apply_look(g->look);
+            // Windows' light or dark app mode (followed when the theme is "same as Windows"), its accent colour and its
+            // high contrast mode: drawn again in the new colours.
+            if (((lp != 0 && lstrcmpW(reinterpret_cast<const wchar_t*>(lp), L"ImmersiveColorSet") == 0) || wp == SPI_SETHIGHCONTRAST) &&
+                ui::colors_differ(ui::is_dark(g->look.theme), g->look.theme == ui::Theme::Shadow)) {
+                // Not under an open pop-up (Code mods, a form): its controls use the fonts apply_look remakes.
+                if (IsWindowEnabled(w)) apply_look(g->look, true);
+                else g->look_pending = true;
+            }
             break;
         case WM_CREATE:
             create_controls(w);
@@ -2773,12 +2799,12 @@ LRESULT CALLBACK window_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
                 fill_list();
                 return 0;
             }
-            if (id == kIdTextSize && HIWORD(wp) == CBN_SELCHANGE) {
+            if (id == kIdTextSize && look_chosen(g->text_size, HIWORD(wp))) {
                 const int i = static_cast<int>(SendMessageW(g->text_size, CB_GETCURSEL, 0, 0));
                 if (i >= 0) PostMessageW(w, kMsgLook, static_cast<WPARAM>(g->look.theme), ui::kSmallestText + i * ui::kTextStep);
                 return 0;
             }
-            if (id == kIdColours && HIWORD(wp) == CBN_SELCHANGE) {
+            if (id == kIdColours && look_chosen(g->colours, HIWORD(wp))) {
                 const int i = static_cast<int>(SendMessageW(g->colours, CB_GETCURSEL, 0, 0));
                 if (i >= 0 && i < static_cast<int>(std::size(kThemeLabels))) PostMessageW(w, kMsgLook, static_cast<WPARAM>(i), g->look.text_size);
                 return 0;
@@ -2937,7 +2963,7 @@ int run_gui(const std::vector<std::string>& args) {
     layout();
     ACCEL keys[] = {{FCONTROL | FVIRTKEY, 'O', kIdInstall},       {FVIRTKEY, VK_F5, kIdRefresh},
                     {FCONTROL | FVIRTKEY, 'F', kCmdFocusFilter},  {FCONTROL | FVIRTKEY, 'E', kCmdEditInfo},
-                    {FCONTROL | FVIRTKEY, 'P', kIdPlay},          {FCONTROL | FVIRTKEY, VK_OEM_PLUS, kCmdTextLarger},
+                    {FCONTROL | FVIRTKEY, 'P', kIdPlay},          {FCONTROL | FVIRTKEY, VK_OEM_PLUS, kCmdTextLarger}, {FCONTROL | FSHIFT | FVIRTKEY, VK_OEM_PLUS, kCmdTextLarger},
                     {FCONTROL | FVIRTKEY, VK_ADD, kCmdTextLarger}, {FCONTROL | FVIRTKEY, VK_OEM_MINUS, kCmdTextSmaller},
                     {FCONTROL | FVIRTKEY, VK_SUBTRACT, kCmdTextSmaller}, {FCONTROL | FVIRTKEY, '0', kCmdTextNormal},
                     {FCONTROL | FVIRTKEY, VK_NUMPAD0, kCmdTextNormal}};

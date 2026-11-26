@@ -1109,7 +1109,8 @@ void show_page(int page) {
     if (static_cast<int>(SendMessageW(g.tabs, LB_GETCURSEL, 0, 0)) != page)
         SendMessageW(g.tabs, LB_SETCURSEL, static_cast<WPARAM>(page), 0);
     set_text(item(kPageTitle), kPageNames[page]);
-    InvalidateRect(g.window, nullptr, TRUE);  // the page's cards    refresh_rows();
+    InvalidateRect(g.window, nullptr, TRUE);  // the page's cards
+    refresh_rows();
     refresh_binds();
     refresh_status();
 }
@@ -1325,6 +1326,12 @@ void set_look(ui::Appearance next, int focus) {
                      " %. Ctrl and + or - also zoom in and out, and Ctrl and 0 goes back to 100 %."_w);
 }
 
+// A zoom or theme list's choice is used when the list closes, or at once when it is changed while closed (arrow keys
+// on the closed list): not while the player moves through the open list, which a rebuild would close.
+bool look_chosen(HWND list, int code) {
+    return code == CBN_CLOSEUP || (code == CBN_SELCHANGE && SendMessageW(list, CB_GETDROPPEDSTATE, 0, 0) == FALSE);
+}
+
 void step_text(int steps) {
     ui::Appearance next = g.look;
     next.text_size = steps == 0 ? ui::kSmallestText : ui::step_text_size(g.look.text_size, steps);
@@ -1464,9 +1471,11 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpar
         set_look(ui::Appearance{static_cast<ui::Theme>(wparam), LOWORD(lparam)}, HIWORD(lparam));
         return 0;
     case WM_SETTINGCHANGE:
-        // Windows' light or dark app mode, followed when the colours are "as Windows".
-        if (lparam != 0 && lstrcmpW(reinterpret_cast<const wchar_t*>(lparam), L"ImmersiveColorSet") == 0 &&
-            g.look.theme == ui::Theme::System && ui::is_dark(ui::Theme::System) != ui::colors().dark)
+        // Windows' light or dark app mode (followed when the theme is "same as Windows"), its accent colour and its
+        // high contrast mode: drawn again in the new colours.
+        if (((lparam != 0 && lstrcmpW(reinterpret_cast<const wchar_t*>(lparam), L"ImmersiveColorSet") == 0) ||
+             wparam == SPI_SETHIGHCONTRAST) &&
+            ui::colors_differ(ui::is_dark(g.look.theme), g.look.theme == ui::Theme::Shadow))
             rebuild_view(0);
         return DefWindowProcW(hwnd, message, wparam, lparam);
     case WM_LBUTTONDOWN: {
@@ -1517,10 +1526,10 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpar
         } else if (id == kTabs && code == LBN_SELCHANGE) {
             const int page = static_cast<int>(SendMessageW(g.tabs, LB_GETCURSEL, 0, 0));
             if (page >= 0 && page < kPageCount && page != g.page) show_page(page);
-        } else if (id == kTextSize && code == CBN_SELCHANGE) {
+        } else if (id == kTextSize && look_chosen(item(kTextSize), code)) {
             const auto i = static_cast<std::size_t>(SendMessageW(item(kTextSize), CB_GETCURSEL, 0, 0));
             if (i < std::size(kTextSizes)) PostMessageW(hwnd, kMsgLook, static_cast<WPARAM>(g.look.theme), MAKELPARAM(kTextSizes[i], kTextSize));
-        } else if (id == kColours && code == CBN_SELCHANGE) {
+        } else if (id == kColours && look_chosen(item(kColours), code)) {
             const auto i = static_cast<std::size_t>(SendMessageW(item(kColours), CB_GETCURSEL, 0, 0));
             if (i < std::size(kThemes)) PostMessageW(hwnd, kMsgLook, static_cast<WPARAM>(kThemes[i].theme), MAKELPARAM(g.look.text_size, kColours));
         } else if (id == kRestore) {

@@ -50,6 +50,9 @@ bool is_dark(Theme theme);
 // shadow: the Shadow theme, dark with the game's red instead of Windows' accent colour.
 void set_dark(bool dark, bool shadow = false);
 const Palette& colors();
+// Whether set_dark(dark, shadow) would now give other colours than the ones in use: another light or dark, Windows'
+// accent colour or high contrast mode changed. Windows announces colour changes often; this tells the real ones.
+bool colors_differ(bool dark, bool shadow);
 HBRUSH window_brush();
 HBRUSH surface_brush();
 HBRUSH field_brush();

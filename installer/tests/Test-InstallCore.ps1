@@ -55,6 +55,26 @@ try {
     Check 'update: a recorded shortcut with a name that is still used stays' (Test-Path (Join-Path $desk 'Other.lnk'))
     Check 'update: a shortcut it never made stays' (Test-Path (Join-Path $desk 'Shadow the Hedgehog Recompiled (mine).lnk'))
     Check 'update: it says what it removed' ($gone.Count -eq 6) ($gone -join '; ')
+    # Without a new desktop shortcut the old one stays (it still starts the game).
+    $l = $shell.CreateShortcut((Join-Path $desk 'Shadow the Hedgehog Recompiled.lnk')); $l.TargetPath = Join-Path $old 'ShadowTheHedgehog.exe'; $l.Save()
+    $m.shortcuts = @($l.FullName); $m.shortcut_folders = @()
+    [System.IO.File]::WriteAllText((Join-Path $old 'install-manifest.json'), ($m | ConvertTo-Json -Depth 4))
+    [void](Remove-RetiredItems $old $false)
+    Check 'update: no new desktop shortcut, so the old one stays' (Test-Path (Join-Path $desk 'Shadow the Hedgehog Recompiled.lnk'))
+
+    # --- the proposed folder: an install under the old name is updated, not installed twice -------------
+    $realProfile = $env:USERPROFILE
+    try {
+        $env:USERPROFILE = Join-Path $scratch 'profile'
+        Check 'default folder: Games\Shadow the Hedgehog on a new PC' ((Get-DefaultInstallFolder) -eq (Join-Path $env:USERPROFILE 'Games\Shadow the Hedgehog'))
+        $oldInstall = Join-Path $env:USERPROFILE 'Games\Shadow the Hedgehog Recompiled'
+        New-Item -ItemType Directory -Force -Path $oldInstall | Out-Null
+        Set-Content -LiteralPath (Join-Path $oldInstall 'install-manifest.json') -Value '{}' -Encoding UTF8
+        Check 'default folder: an existing install in the old folder is proposed' ((Get-DefaultInstallFolder) -eq $oldInstall)
+        New-Item -ItemType Directory -Force -Path (Join-Path $env:USERPROFILE 'Games\Shadow the Hedgehog') | Out-Null
+        Set-Content -LiteralPath (Join-Path $env:USERPROFILE 'Games\Shadow the Hedgehog\install-manifest.json') -Value '{}' -Encoding UTF8
+        Check 'default folder: an install in the new folder wins' ((Get-DefaultInstallFolder) -eq (Join-Path $env:USERPROFILE 'Games\Shadow the Hedgehog'))
+    } finally { $env:USERPROFILE = $realProfile }
 
     # --- the install folder ---------------------------------------------------------------------------
     $disc = Join-Path $scratch 'disc'; New-Item -ItemType Directory -Force -Path $disc | Out-Null

@@ -27,7 +27,15 @@ function Get-RepoRoot { $script:RepoRoot }
 
 function Get-BuiltExe { Join-Path $script:RepoRoot ".build\release\bin\Release\$script:GameExe" }
 
-function Get-DefaultInstallFolder { Join-Path $env:USERPROFILE 'Games\Shadow the Hedgehog' }
+# The folder the setup proposes: an existing install in the folder earlier versions proposed (so running the new setup
+# updates it, instead of installing a second copy beside it), otherwise Games\Shadow the Hedgehog.
+function Get-DefaultInstallFolder {
+    $old = Join-Path $env:USERPROFILE 'Games\Shadow the Hedgehog Recompiled'
+    $new = Join-Path $env:USERPROFILE 'Games\Shadow the Hedgehog'
+    if (-not (Test-Path -LiteralPath (Join-Path $new 'install-manifest.json') -PathType Leaf) -and
+        (Test-Path -LiteralPath (Join-Path $old 'install-manifest.json') -PathType Leaf)) { return $old }
+    return $new
+}
 
 function Format-Size([double]$bytes) {
     if ($bytes -ge 1GB) { return '{0:N1} GB' -f ($bytes / 1GB) }
@@ -886,7 +894,7 @@ function Write-InstallManifest([string]$target, [string]$discRoot, [string[]]$sh
 # Removes what an earlier version installed under its old names: the settings program and mod manager (beside the
 # game), and the shortcuts and Start menu folder that it recorded in install-manifest.json and that still point into
 # this install folder. Returns what was removed.
-function Remove-RetiredItems([string]$target) {
+function Remove-RetiredItems([string]$target, [bool]$desktop = $true) {
     $removed = @()
     foreach ($name in $script:RetiredPrograms) {
         $file = Join-Path $target $name
@@ -906,6 +914,9 @@ function Remove-RetiredItems([string]$target) {
         # A shortcut with an old name, or any shortcut in the old Start menu folder (Settings, Mod Manager there too).
         $inOldFolder = $script:RetiredFolders -contains (Split-Path -Leaf (Split-Path -Parent $file))
         if ($script:RetiredShortcuts -notcontains (Split-Path -Leaf $file) -and -not $inOldFolder) { continue }
+        # Outside the old Start menu folder (the desktop): only when the new shortcut replaces it. The game's own file
+        # keeps its name, so a kept old desktop shortcut still starts the game.
+        if (-not $inOldFolder -and -not $desktop) { continue }
         if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
         $points = [string]$shell.CreateShortcut($file).TargetPath
         if (-not $points.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
@@ -1104,7 +1115,7 @@ function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$j
         }
         Write-InstallInfo $targetPath $disc $japanese
         foreach ($name in @('Uninstall.ps1', 'Uninstall.cmd')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $targetPath -Force }
-        foreach ($old in @(Remove-RetiredItems $targetPath)) { & $OnEvent @{ type = 'log'; text = "Removed (renamed in this version): $old`n" } }
+        foreach ($old in @(Remove-RetiredItems $targetPath $desktop)) { & $OnEvent @{ type = 'log'; text = "Removed (renamed in this version): $old`n" } }
         $shortcuts = @(New-GameShortcuts $targetPath $desktop $startMenu $desktopDir $startMenuDir)
         foreach ($made in $shortcuts) { & $OnEvent @{ type = 'log'; text = "Shortcut: $made`n" } }
         Write-InstallManifest $targetPath $disc.Root $shortcuts $(if ($startMenu) { @($startMenuDir) } else { @() }) $japaneseFiles

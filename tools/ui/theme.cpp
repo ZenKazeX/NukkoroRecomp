@@ -529,6 +529,13 @@ void set_dark(bool dark, bool shadow) {
 }
 
 const Palette& colors() { return g_palette; }
+
+bool colors_differ(bool dark, bool shadow) {
+    const Palette& p = g_palette;
+    if (p.dark != dark || p.custom == high_contrast()) return true;
+    if (!p.custom) return p.window != GetSysColor(COLOR_BTNFACE) || p.text != GetSysColor(COLOR_BTNTEXT);
+    return !(dark && shadow) && p.accent != windows_accent(dark);
+}
 HBRUSH window_brush() { return g_window != nullptr ? g_window : GetSysColorBrush(COLOR_BTNFACE); }
 HBRUSH surface_brush() { return g_surface != nullptr ? g_surface : window_brush(); }
 HBRUSH field_brush() { return g_field != nullptr ? g_field : GetSysColorBrush(COLOR_WINDOW); }
