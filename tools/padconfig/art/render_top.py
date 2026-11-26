@@ -83,6 +83,19 @@ for o in bpy.context.scene.objects:
         caps["c"] = o
 assert set(caps) == {"main", "c"}, caps
 
+# A little shine on the sticks (their own copy of the plastic): a stronger highlight and a thin clear coat, so the light
+# runs over a cap as it tilts.
+SHINE = {"Specular IOR Level": 0.6, "Coat Weight": 0.25, "Coat Roughness": 0.15}
+def shiny(material):
+    for name, value in SHINE.items():
+        material.node_tree.nodes["Principled BSDF"].inputs[name].default_value = value
+    return material
+stick_mat = shiny(mat.copy())
+stick_mat.name = "Stick"
+for cap in caps.values():
+    cap.data.materials.clear()
+    cap.data.materials.append(stick_mat)
+
 scene = bpy.context.scene
 scene.render.engine = 'CYCLES'
 scene.cycles.samples = samples
@@ -147,13 +160,63 @@ def render(name, hide=(), holdout=()):
 
 others = [o for o in scene.objects if o.type == 'MESH' and o not in caps.values()]
 # ---- the sticks as a virtual controller: a bone at each stick's root, the cap tilted on it ----------------------------
-# "sticks": each cap alone (the rest held out, so the shell hides what tilts under it), turned on a bone whose head is
-# the stick's root, PIVOT_DEPTH units under the cap, as a GameCube stick moves: inside an octagonal gate with its
+# "sticks": each cap alone, turned on a bone whose head is
+# the stick's root: the centre of the dome under the cap (the part that fills the gate; a sphere round the pivot, so it
+# rolls in place as on a real controller and the gate never opens; found by fitting a sphere to it), as a GameCube
+# stick moves: inside an octagonal gate with its
 # corners (the notches) at the 4 directions and the 4 diagonals, up to MOST_TILT degrees at a notch (the sticks' parts
 # allow about +-30). Rendered for the middle and for RINGS distances (1/RINGS .. 1 of the way to the gate) in each of
 # DIRECTIONS directions (every 22.5 degrees from the right, anticlockwise: the notches and the gate's edges between them),
-# only in the area round the stick: sticks/<main|c>_0.png (the middle) and sticks/<main|c>_<ring>_<direction>.png.
-DIRECTIONS, RINGS, MOST_TILT, PIVOT_DEPTH = 16, 4, 25.0, 4.0
+# only in the area round the stick: sticks/<main|c>_0.png (the middle) and sticks/<main|c>_<ring>_<direction>.png. The
+# rest of the controller is a shadow catcher: not drawn, but it hides what tilts under the shell, and the cap's shadow
+# on it is in the frame (drawn over the body without caps, the stick casts its shadow as it moves).
+# "sticks-test": a few of those frames only.
+DIRECTIONS, RINGS, MOST_TILT = 16, 4, 25.0
+
+def dome_centre(cap):
+    # The centre of the sphere the cap's dome lies on: a least-squares fit to the outer surface of its lowest quarter.
+    import numpy as np
+    pts = np.array([list(cap.matrix_world @ v.co) for v in cap.data.vertices])
+    lo, hi = pts[:, 2].min(), pts[:, 2].max()
+    mid = pts.mean(axis=0)
+    r = np.hypot(pts[:, 0] - mid[0], pts[:, 1] - mid[1])
+    sel = (pts[:, 2] < lo + 0.25 * (hi - lo)) & (r > 0.5 * r.max())
+    A = np.c_[2 * pts[sel], np.ones(int(sel.sum()))]
+    sol = np.linalg.lstsq(A, (pts[sel] ** 2).sum(axis=1), rcond=None)[0]
+    centre = Vector(sol[:3])
+    return centre, math.sqrt(sol[3] + centre.length_squared), lo
+
+# The rest of each dome, which the model leaves out: a real stick's dome reaches on under the shell, so a tilted stick
+# still fills its gate. The colour of each cap's plastic (sRGB 0..255) and how far down the dome goes (degrees from
+# its top).
+DOME_COLOUR = {"main": (178, 189, 198), "c": (236, 174, 12)}
+DOME_REACH = 72.0
+
+def complete_dome(key, root, radius, cap_bottom):
+    import bmesh
+    me = bpy.data.meshes.new("dome_" + key)
+    bm = bmesh.new()
+    bmesh.ops.create_uvsphere(bm, u_segments=96, v_segments=64, radius=radius - 0.03)
+    lowest = root.z + (radius - 0.03) * math.cos(math.radians(DOME_REACH)) - root.z
+    keep_top = cap_bottom + 0.8 - root.z  # tucked up under the model's own dome (just inside it): no seam between them
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.z > keep_top or v.co.z < lowest], context="VERTS")
+    bm.to_mesh(me)
+    bm.free()
+    dome = bpy.data.objects.new("dome_" + key, me)
+    scene.collection.objects.link(dome)
+    dome.location = root
+    for p in me.polygons:
+        p.use_smooth = True
+    mat = bpy.data.materials.new("Dome_" + key)
+    mat.use_nodes = True
+    b = mat.node_tree.nodes["Principled BSDF"]
+    srgb = [c / 255.0 for c in DOME_COLOUR[key]]
+    linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in srgb]
+    b.inputs["Base Color"].default_value = (*linear, 1.0)
+    b.inputs["Roughness"].default_value = 0.45
+    me.materials.append(shiny(mat))
+    bpy.context.view_layer.update()  # its matrix_world, before it is parented
+    return dome
 
 def gate(angle):
     # How far the octagonal gate lets the stick go in a direction, as a fraction of the way to a notch.
@@ -169,20 +232,26 @@ def stick_frames():
     rig = bpy.data.objects.new("Sticks", arm_data)
     scene.collection.objects.link(rig)
     bpy.context.view_layer.objects.active = rig
+    domes_wanted = {}
     bpy.ops.object.mode_set(mode='EDIT')
     for key, cap in caps.items():
-        lo = min((cap.matrix_world @ v.co).z for v in cap.data.vertices)
-        c = centre(cap)
+        root, radius, bottom = dome_centre(cap)
+        domes_wanted[key] = (root.copy(), radius, bottom)
         bone = arm_data.edit_bones.new(key)
-        bone.head = (c.x, c.y, lo - PIVOT_DEPTH)  # the stick's root
-        bone.tail = (c.x, c.y, lo)
+        bone.head = root  # the stick's root
+        bone.tail = root + Vector((0.0, 0.0, 4.0))
+        print("ROOT", key, tuple(round(v, 2) for v in root))
     bpy.ops.object.mode_set(mode='OBJECT')
+    domes = {}
     for key, cap in caps.items():
-        world = cap.matrix_world.copy()
-        cap.parent = rig
-        cap.parent_type = 'BONE'
-        cap.parent_bone = key
-        cap.matrix_world = world  # stays where it is; follows the bone from now on
+        dome = complete_dome(key, *domes_wanted[key])
+        domes[key] = dome
+        for part in (cap, dome):
+            world = part.matrix_world.copy()
+            part.parent = rig
+            part.parent_type = 'BONE'
+            part.parent_bone = key
+            part.matrix_world = world  # stays where it is; follows the bone from now on
     rig.hide_render = True
     os.makedirs(os.path.join(out, "sticks"), exist_ok=True)
     scene.render.use_border = True
@@ -193,8 +262,9 @@ def stick_frames():
         scene.render.border_min_y, scene.render.border_max_y = 1.0 - y1, 1.0 - y0
         for o in scene.objects:
             if o.type == 'MESH':
-                o.hide_render = o in caps.values() and o is not cap
-                o.is_holdout = o in others
+                o.hide_render = (o in caps.values() and o is not cap) or (o in domes.values() and o is not domes[key])
+                o.is_holdout = False
+                o.is_shadow_catcher = o in others and o not in domes.values()
         pose = rig.pose.bones[key]
         pose.rotation_mode = 'QUATERNION'
         rest = rig.data.bones[key].matrix_local.to_3x3()
@@ -203,6 +273,8 @@ def stick_frames():
             for direction in range(DIRECTIONS):
                 angle = math.radians(direction * 360.0 / DIRECTIONS)
                 poses.append(("%s_%d_%d.png" % (key, ring, direction), angle, ring / RINGS * gate(angle)))
+        if only == "sticks-test":
+            poses = [p for p in poses if p[0] in ("%s_0.png" % key, "%s_4_0.png" % key, "%s_4_2.png" % key, "%s_4_6.png" % key, "%s_2_12.png" % key)]
         for name, angle, length in poses:
             if length > 0.0:
                 # Pushed that way the stick's top leans that way: a turn about the axis across it.
@@ -218,7 +290,7 @@ def stick_frames():
     print("WROTE sticks")
 if only in ("all", "full"):
     render("top_full.png")
-if only == "sticks":
+if only in ("sticks", "sticks-test"):
     stick_frames()
 if only in ("all", "layers"):
     render("top_body.png", hide=list(caps.values()))
