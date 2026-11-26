@@ -124,9 +124,11 @@ A separate native Win32 program (`ShadowModManager.exe`, placed beside `ShadowTh
 menu: the in-game Options menu is the only menu we restyle, mods must be chosen before the game mounts its files (a
 storage tree cannot be swapped under a running game without changing its timing), and installing needs file dialogs,
 drag-and-drop and archive handling that belong to the desktop. It uses only Windows components (common controls v6,
-WIC for previews, shell for Recycle Bin and drop) and is per-monitor DPI aware. Its colours (as Windows, light or
-dark) and text size (100 to 200 %) are shared with the Settings program through `appearance.cfg`
-([PC_SETTINGS_FILES.md](../PC_SETTINGS_FILES.md#appearancecfg-the-programs-text-size-and-colours)).
+WIC for previews, shell for Recycle Bin and drop) and is per-monitor DPI aware. It is drawn in Windows 11's style
+(tools/ui/theme.h): Segoe UI Variable, rounded buttons with icons, Play in the accent colour, the selected mod's side on
+a card, the Shadow icon. Its theme (as Windows, light, dark or Shadow) and zoom (100 to 200 %) are shared with the
+Settings program through `appearance.cfg`
+([PC_SETTINGS_FILES.md](../PC_SETTINGS_FILES.md#appearancecfg-the-programs-zoom-and-theme)).
 
 Window:
 
@@ -149,7 +151,7 @@ Window:
 - "Load mods" master switch, Refresh (F5), Play (Ctrl+P), Remove (Del, to the Recycle Bin).
 - Failed saves are reported (after ~0.6 s of retries); a damaged `mods.json` answered No makes the window read only.
 - The window's size and place are remembered in `mods/.manager.json` (ignored when that screen is gone).
-- Bottom bar, right: Text size (also Ctrl and + / -, Ctrl and 0, Ctrl and the mouse wheel) and Colours, used at once
+- Bottom bar, right: Zoom (also Ctrl and + / -, Ctrl and 0, Ctrl and the mouse wheel) and Theme, used at once
   and kept in `appearance.cfg` beside the manager.
 - `--snapshot <png> [--select <id>]` writes a picture of the window (documentation).
 

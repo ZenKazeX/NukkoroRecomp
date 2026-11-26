@@ -622,7 +622,8 @@ if(WIN32 AND SHADOW_PREBUILT_USED)
         VERBATIM)
 elseif(WIN32)
     # The text size and colours are shared with the settings program (tools/ui, appearance.cfg).
-    add_executable(ShadowModManager WIN32 tools/mod_manager/mod_manager.cpp tools/ui/appearance.cpp tools/ui/theme.cpp)
+    add_executable(ShadowModManager WIN32 tools/mod_manager/mod_manager.cpp tools/mod_manager/mod_manager.rc tools/ui/appearance.cpp
+                   tools/ui/theme.cpp)
     target_include_directories(ShadowModManager PRIVATE tools/ui)
     set_target_properties(ShadowModManager PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     target_link_libraries(ShadowModManager PRIVATE shadow_mods comctl32 shell32 ole32 windowscodecs dwmapi uxtheme

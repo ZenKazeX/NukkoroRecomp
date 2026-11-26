@@ -9,7 +9,9 @@ the volumes, the controller mapping, the keyboard - is set in four plain-text fi
 who would rather not edit files: pages for Display, Frame rate, Sound, Language, Controller buttons, Controller
 options, Keyboard and mouse, and Saving. It shows what the files hold, writes only the keys the player changes (every
 other line, comment and line ending stays, as when the game writes), creates a file only when something in it is
-saved, refuses values the game would not accept, and has a Restore defaults button per page. It reads the files again
+saved, refuses values the game would not accept, and has a Restore defaults button per page. It is laid out like
+Windows 11's own Settings: the pages in a list on the left, each setting on a card with its explanation, switches for
+on/off settings, and Windows' accent colour on the Save button. It reads the files again
 before it writes, so a key the game wrote meanwhile (a window resized, Alt+Enter) is kept. `--folder <dir>` makes it
 edit the files of another folder. Which control writes which key is listed in the last section of this page.
 
@@ -156,20 +158,20 @@ Not offered, on purpose: `gameplay_aspect` (a test setting for the game logic, n
 holds that is not in a list (a frame rate of 100, a ratio of 2.37) is shown as "(set in the file)" and kept unless
 the player picks another.
 
-## appearance.cfg: the programs' text size and colours
+## appearance.cfg: the programs' zoom and theme
 
 The Settings program and the Mod Manager share one more file beside them, `appearance.cfg`. It holds how the two
-programs look; the game does not read it. Both programs have two lists for it (the Settings program right of its
-page tabs, the Mod Manager at the right end of its bottom bar):
+programs look; the game does not read it. Both programs have two lists for it (the Settings program under its list
+of pages, the Mod Manager at the right end of its bottom bar):
 
 | Control | Key | Values |
 |---|---|---|
-| Text size: 100 % .. 200 % (also Ctrl and + / -, Ctrl and 0 for 100 %, Ctrl and the mouse wheel) | `text_size` | 100, 125, 150, 175, 200 |
-| Colours: as Windows / light / dark | `theme` | `system` (Windows' app mode: Settings > Personalisation > Colours), `light`, `dark` |
+| Zoom: 100 % .. 200 %, everything larger (also Ctrl and + / -, Ctrl and 0 for 100 %, Ctrl and the mouse wheel) | `zoom` | 100, 125, 150, 175, 200 |
+| Theme: same as Windows / light / dark / Shadow | `theme` | `system` (Windows' app mode: Settings > Personalisation > Colours), `light`, `dark`, `shadow` (near black with Shadow's red instead of Windows' accent colour) |
 
 A change is used at once and saved at once (no Save needed); the other program uses it the next time it opens. The
 file is created only when one of the two is changed, and like the other files only the changed line is rewritten.
-With Windows' high contrast mode on, both programs use the high contrast colours whatever the file says. At a text
-size too large for the screen the Settings window scrolls; the Mod Manager grows with the text and moves its filter
+With Windows' high contrast mode on, both programs use the high contrast colours whatever the file says. At a zoom
+too large for the screen the Settings window scrolls; the Mod Manager grows with the text and moves its filter
 and right-hand buttons to a second row when they no longer fit beside the others. The uninstaller keeps the file
 unless `-RemoveSaves` is given.

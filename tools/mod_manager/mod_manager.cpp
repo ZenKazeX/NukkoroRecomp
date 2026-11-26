@@ -1146,6 +1146,7 @@ struct Gui {
     std::vector<std::string> profile_names;  // as offered in the last Profiles menu
     ui::Appearance look;                     // the text size and colours (appearance.cfg beside the manager)
     HWND text_size = nullptr, colours = nullptr;
+    RECT panel{};  // the card behind the selected mod's preview, options and details
 
     // At the screen's scale and the chosen text size.
     int px(int v) const { return MulDiv(v, static_cast<int>(dpi) * look.text_size, 96 * 100); }
@@ -2324,7 +2325,7 @@ void layout() {
     RECT rc;
     GetClientRect(g->window, &rc);
     const int w = rc.right, h = rc.bottom;
-    const int pad = g->px(8), bh = g->px(30), bw = g->px(96);
+    const int pad = g->px(12), bh = g->px(32), bw = g->px(112);
     int x = pad;
     for (int i = 0; i < 6; ++i) {
         MoveWindow(g->buttons[i], x, pad, bw, bh, TRUE);
@@ -2344,7 +2345,7 @@ void layout() {
     MoveWindow(g->filter, filter_x, row + g->px(3), filter_w, bh - g->px(6), TRUE);
     // The bar at the bottom: the summary, the progress while installing, the text size and the colours.
     const int status_h = g->px(36);
-    const int colours_w = g->px(160), size_w = g->px(130), look_w = size_w + g->px(6) + colours_w;
+    const int colours_w = g->px(220), size_w = g->px(120), look_w = size_w + g->px(6) + colours_w;
     MoveWindow(g->colours, w - pad - colours_w, h - status_h + g->px(4), colours_w, g->px(200), TRUE);
     MoveWindow(g->text_size, w - pad - look_w, h - status_h + g->px(4), size_w, g->px(200), TRUE);
     const int top = row + bh + pad;
@@ -2353,20 +2354,27 @@ void layout() {
     const int list_w = w - right_w - pad * 3;
     MoveWindow(g->list_label, pad, top, list_w, g->px(18), TRUE);
     MoveWindow(g->list, pad, top + g->px(20), list_w, bottom - top - g->px(20), TRUE);
-    const int rx = pad * 2 + list_w;
-    const int preview_h = std::min(g->px(200), (bottom - top) / 3);
-    MoveWindow(g->preview, rx, top, right_w, preview_h, TRUE);
-    int y = top + preview_h + pad;
-    const mods::InstalledMod* m = selected_mod();
-    const int options = m ? static_cast<int>(std::min<std::size_t>(m->manifest.options.size(), kMaxOptions)) : 0;
-    for (int i = 0; i < kMaxOptions; ++i) {
-        MoveWindow(g->option_labels[i], rx, y + g->px(4) + i * g->px(30), right_w * 62 / 100 - pad, g->px(22), TRUE);
-        MoveWindow(g->option_combos[i], rx + right_w * 62 / 100, y + i * g->px(30), right_w * 38 / 100, g->px(200), TRUE);
+    // The selected mod's side: a card with the preview, the options and the details inside it.
+    g->panel = RECT{pad * 2 + list_w, top, pad * 2 + list_w + right_w, bottom};
+    const int inner = g->px(12);
+    const int rx = g->panel.left + inner;
+    const int inside_w = right_w - inner * 2;  // what is inside the card
+    {
+        const int preview_h = std::min(g->px(200), (bottom - top) / 3);
+        MoveWindow(g->preview, rx, top + inner, inside_w, preview_h, TRUE);
+        int y = top + inner + preview_h + pad;
+        const mods::InstalledMod* m = selected_mod();
+        const int options = m ? static_cast<int>(std::min<std::size_t>(m->manifest.options.size(), kMaxOptions)) : 0;
+        for (int i = 0; i < kMaxOptions; ++i) {
+            MoveWindow(g->option_labels[i], rx, y + g->px(4) + i * g->px(30), inside_w * 62 / 100 - pad, g->px(22), TRUE);
+            MoveWindow(g->option_combos[i], rx + inside_w * 62 / 100, y + i * g->px(30), inside_w * 38 / 100, g->px(200), TRUE);
+        }
+        y += options * g->px(30);
+        MoveWindow(g->details_label, rx, y, inside_w, g->px(18), TRUE);
+        y += g->px(20);
+        MoveWindow(g->details, rx, y, inside_w, bottom - inner - y, TRUE);
     }
-    y += options * g->px(30);
-    MoveWindow(g->details_label, rx, y, right_w, g->px(18), TRUE);
-    y += g->px(20);
-    MoveWindow(g->details, rx, y, right_w, bottom - y, TRUE);
+    InvalidateRect(g->window, nullptr, TRUE);
     MoveWindow(g->status, pad, h - status_h + g->px(8), std::max(g->px(80), w - pad * 3 - look_w - g->px(170)),
                g->px(22), TRUE);
     MoveWindow(g->progress, w - pad * 2 - look_w - g->px(160), h - status_h + g->px(10), g->px(160), g->px(16), TRUE);
@@ -2386,6 +2394,7 @@ void make_fonts() {
     ncm.cbSize = sizeof(ncm);
     SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0, g->dpi);
     ncm.lfMessageFont.lfHeight = MulDiv(ncm.lfMessageFont.lfHeight, g->look.text_size, 100);
+    lstrcpynW(ncm.lfMessageFont.lfFaceName, ui::text_face(), LF_FACESIZE);
     g->font = CreateFontIndirectW(&ncm.lfMessageFont);
     LOGFONTW b = ncm.lfMessageFont;
     b.lfWeight = FW_SEMIBOLD;
@@ -2403,7 +2412,7 @@ void make_fonts() {
 // ---- text size and colours (tools/ui, shared with the settings program) -----------------------------------------------
 
 // The colour choices in the list's order, which is ui::Theme's.
-const char* const kThemeLabels[] = {"Colours: as Windows", "Colours: light", "Colours: dark"};
+const char* const kThemeLabels[] = {"Theme: same as Windows", "Theme: light", "Theme: dark", "Theme: Shadow"};
 
 fs::path appearance_folder() { return executable_dir(); }
 
@@ -2421,7 +2430,7 @@ void apply_look(ui::Appearance next) {
     const int before = g->look.text_size;
     const bool stored = next == g->look || ui::save_appearance(appearance_folder(), next);
     g->look = next;
-    ui::set_dark(dark);
+    ui::set_dark(dark, next.theme == ui::Theme::Shadow);
     make_fonts();
     g->filling = true;  // remaking the list's check boxes clears them: fill_list sets them again
     ui::apply_to_window(g->window);
@@ -2444,11 +2453,11 @@ void apply_look(ui::Appearance next) {
     fill_list();
     RedrawWindow(g->window, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_FRAME);
     if (!stored)
-        SetWindowTextW(g->status, wide("The text size and colours could not be stored in appearance.cfg, so they are used "
+        SetWindowTextW(g->status, wide("The zoom and theme could not be stored in appearance.cfg, so they are used "
                                        "only until this window closes.").c_str());
     else if (g->look.text_size != before)
-        SetWindowTextW(g->status, wide("Text size " + std::to_string(g->look.text_size) +
-                                       " %. Ctrl and + or - also change it, and Ctrl and 0 sets it back.").c_str());
+        SetWindowTextW(g->status, wide("Zoom " + std::to_string(g->look.text_size) +
+                                       " %. Ctrl and + or - also zoom in and out, and Ctrl and 0 goes back to 100 %.").c_str());
 }
 
 void step_text(int steps) {
@@ -2542,10 +2551,15 @@ void create_controls(HWND w) {
     g->text_size = CreateWindowExW(0, WC_COMBOBOXW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
                                    0, 0, 10, 10, w, reinterpret_cast<HMENU>(kIdTextSize), inst, nullptr);
     for (int size = ui::kSmallestText; size <= ui::kLargestText; size += ui::kTextStep)
-        SendMessageW(g->text_size, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(wide("Text size: " + std::to_string(size) + " %").c_str()));
+        SendMessageW(g->text_size, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(wide("Zoom: " + std::to_string(size) + " %").c_str()));
     g->colours = CreateWindowExW(0, WC_COMBOBOXW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
                                  0, 0, 10, 10, w, reinterpret_cast<HMENU>(kIdColours), inst, nullptr);
     for (const char* label : kThemeLabels) SendMessageW(g->colours, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(wide(label).c_str()));
+    // Icons before the buttons' words (Segoe Fluent Icons), and Play as the window's main button.
+    const wchar_t icons[] = {0xE710 /*add*/, 0xE74D /*delete*/, 0xE74A /*up*/, 0xE74B /*down*/, 0xE838 /*folder*/,
+                             0xE72C /*refresh*/, 0xE768 /*play*/};
+    for (int i = 0; i < 7; ++i) ui::set_icon(g->buttons[i], icons[i]);
+    ui::set_primary(g->buttons[6]);
     make_fonts();
     show_look();
     DragAcceptFiles(w, TRUE);
@@ -2553,6 +2567,20 @@ void create_controls(HWND w) {
 }
 
 LRESULT CALLBACK window_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
+    if (g->list != nullptr && msg == WM_PAINT) {
+        PAINTSTRUCT ps;
+        HDC dc = BeginPaint(w, &ps);
+        if (g->panel.right > g->panel.left) ui::paint_card(dc, g->panel, g->px(6));
+        EndPaint(w, &ps);
+        return 0;
+    }
+    if (g->list != nullptr && (msg == WM_CTLCOLORSTATIC || msg == WM_CTLCOLORBTN)) {
+        // The labels on the details card have the card's background.
+        const auto control = reinterpret_cast<HWND>(lp);
+        bool on_panel = control == g->details_label;
+        for (HWND label : g->option_labels) on_panel = on_panel || control == label;
+        if (on_panel) return ui::control_color(msg, reinterpret_cast<HDC>(wp), control, false, true);
+    }
     if (g->list != nullptr) {
         bool handled = false;
         const LRESULT colored = popup_colors(msg, wp, lp, w, &handled);
@@ -2657,7 +2685,7 @@ LRESULT CALLBACK window_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_DRAWITEM: {
             auto* di = reinterpret_cast<DRAWITEMSTRUCT*>(lp);
             if (di->CtlID != kIdPreview) break;
-            FillRect(di->hDC, &di->rcItem, ui::window_brush());
+            FillRect(di->hDC, &di->rcItem, ui::surface_brush());  // on the details card
             const int bw = di->rcItem.right - di->rcItem.left, bh = di->rcItem.bottom - di->rcItem.top;
             if (g->preview_bitmap && g->preview_w > 0) {
                 const double s = std::min(static_cast<double>(bw) / g->preview_w, static_cast<double>(bh) / g->preview_h);
@@ -2866,9 +2894,10 @@ int run_gui(const std::vector<std::string>& args) {
     } else {
         g->model.game_error = "no folder with files/ beside the manager or in the working directory";
     }
+    ui::start_drawing();
     g->look = ui::load_appearance(appearance_folder());
     g->look.text_size = ui::step_text_size(g->look.text_size, 0);
-    ui::set_dark(ui::is_dark(g->look.theme));
+    ui::set_dark(ui::is_dark(g->look.theme), g->look.theme == ui::Theme::Shadow);
     WNDCLASSEXW wc{sizeof(wc)};
     wc.lpfnWndProc = window_proc;
     wc.hInstance = GetModuleHandleW(nullptr);
@@ -2930,6 +2959,7 @@ int run_gui(const std::vector<std::string>& args) {
         }
     }
     DestroyAcceleratorTable(g->accelerators);
+    ui::stop_drawing();
     CoUninitialize();
     return 0;
 }

@@ -123,8 +123,9 @@ program writes `display.cfg`, `options.cfg`, `pad.cfg` and `controls.cfg` in the
 [docs/PC_SETTINGS_FILES.md](docs/PC_SETTINGS_FILES.md) describes every line. Alt+Enter switches between a window and
 fullscreen.
 
-The Settings program and the Mod Manager can show larger text (up to 200 %) and dark colours: use the *Text size* and
-*Colours* lists (top right in Settings, bottom right in the Mod Manager), or hold Ctrl and press + or -. Both programs
+The Settings program and the Mod Manager can be zoomed (up to 200 %) and themed (light, dark, or Shadow: black and red):
+use the *Zoom* and *Theme* lists (under the list of pages in Settings, bottom right in the Mod Manager), or hold Ctrl and
+press + or - to zoom. Both programs
 share the choice.
 
 ## Mods

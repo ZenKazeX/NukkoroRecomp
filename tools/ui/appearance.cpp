@@ -37,6 +37,7 @@ const char* theme_name(Theme t) {
     switch (t) {
         case Theme::Light: return "light";
         case Theme::Dark: return "dark";
+        case Theme::Shadow: return "shadow";
         default: return "system";
     }
 }
@@ -62,7 +63,8 @@ Appearance parse_appearance(const std::string& text) {
                 if (value == "system") a.theme = Theme::System;
                 else if (value == "light") a.theme = Theme::Light;
                 else if (value == "dark") a.theme = Theme::Dark;
-            } else if (key == "text_size") {
+                else if (value == "shadow") a.theme = Theme::Shadow;
+            } else if (key == "zoom") {
                 std::size_t used = 0;
                 int size = 0;
                 try {
@@ -80,7 +82,7 @@ Appearance parse_appearance(const std::string& text) {
 
 std::string update_appearance(const std::string& text, const Appearance& appearance) {
     const std::string theme_line = std::string("theme = ") + theme_name(appearance.theme);
-    const std::string size_line = "text_size = " + std::to_string(step_text_size(appearance.text_size, 0));
+    const std::string size_line = "zoom = " + std::to_string(step_text_size(appearance.text_size, 0));
     const bool crlf = text.find("\r\n") != std::string::npos;
     const std::string newline = crlf ? "\r\n" : "\n";
     std::string out;
@@ -102,7 +104,7 @@ std::string update_appearance(const std::string& text, const Appearance& appeara
         if (split(line, key, value) && key == "theme") {
             line = theme_line;
             theme_done = true;
-        } else if (split(line, key, value) && key == "text_size") {
+        } else if (split(line, key, value) && key == "zoom") {
             line = size_line;
             size_done = true;
         }
