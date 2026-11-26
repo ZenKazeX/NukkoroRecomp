@@ -198,8 +198,10 @@ bool on_card(HWND h) { return std::find(g.on_card.begin(), g.on_card.end(), h) !
 // Pixels to units, at the present screen and zoom.
 int units(int pixels) { return MulDiv(pixels, 96 * 100, g.dpi * g.look.text_size); }
 
-// Moves the content so that y of it is at the window's top. Every control is moved by hand: the window may have
-// controls outside its visible part, which ScrollWindowEx leaves where they are.
+// Moves the content so that y of it is at the window's top, as Windows' own windows scroll: what is on screen is moved
+// as it is drawn (one copy of the whole picture, cards and controls together, so nothing flickers or leaves ghosts)
+// and only the strip that comes into view is drawn. ScrollWindowEx moves the controls it sees; those it leaves (off
+// screen, or on the hidden pages) are moved by hand, without drawing.
 void scroll_to(int y) {
     RECT client;
     GetClientRect(g.window, &client);
@@ -208,22 +210,23 @@ void scroll_to(int y) {
     if (dy == 0) return;
     g.scroll_y = y;
     SetScrollPos(g.window, SB_VERT, y, TRUE);
-    // Moved without drawing, then drawn once, whole: a control moved with its old picture (Windows copies it along)
-    // would leave ghosts of the card edges and texts behind it.
-    SendMessageW(g.window, WM_SETREDRAW, FALSE, 0);
-    int children = 0;
-    for (HWND c = GetWindow(g.window, GW_CHILD); c != nullptr; c = GetWindow(c, GW_HWNDNEXT)) ++children;
-    HDWP moves = BeginDeferWindowPos(children);
-    for (HWND c = GetWindow(g.window, GW_CHILD); c != nullptr && moves != nullptr; c = GetWindow(c, GW_HWNDNEXT)) {
+    const auto where = [](HWND c) {
         RECT r;
         GetWindowRect(c, &r);
         MapWindowPoints(nullptr, g.window, reinterpret_cast<POINT*>(&r), 2);
-        moves = DeferWindowPos(moves, c, nullptr, r.left, r.top + dy, 0, 0,
-                               SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_NOREDRAW);
-    }
-    if (moves != nullptr) EndDeferWindowPos(moves);
-    SendMessageW(g.window, WM_SETREDRAW, TRUE, 0);
-    RedrawWindow(g.window, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+        return r;
+    };
+    std::vector<std::pair<HWND, RECT>> before;
+    for (HWND c = GetWindow(g.window, GW_CHILD); c != nullptr; c = GetWindow(c, GW_HWNDNEXT)) before.emplace_back(c, where(c));
+    UpdateWindow(g.window);  // what is copied must be drawn first
+    HRGN exposed = CreateRectRgn(0, 0, 0, 0);
+    ScrollWindowEx(g.window, 0, dy, nullptr, nullptr, exposed, nullptr, SW_SCROLLCHILDREN | SW_INVALIDATE | SW_ERASE);
+    for (const auto& [c, r] : before)
+        if (where(c).top == r.top)
+            SetWindowPos(c, nullptr, r.left, r.top + dy, 0, 0,
+                         SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_NOREDRAW);
+    RedrawWindow(g.window, nullptr, exposed, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+    DeleteObject(exposed);
 }
 
 // The scroll bar for the window's present size: none when everything fits. The layout keeps the bar's room either
