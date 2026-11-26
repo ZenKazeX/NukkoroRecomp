@@ -34,6 +34,9 @@
 #include "shadow/mods/install.h"
 #include "shadow/mods/mods.h"
 
+#include "appearance.h"
+#include "theme.h"
+
 #pragma comment(linker, "\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
 namespace fs = std::filesystem;
@@ -1097,6 +1100,8 @@ enum : int {
     kIdProfiles,
     kIdCode,
     kIdProgress,
+    kIdTextSize,
+    kIdColours,
     kIdOptionLabel0 = 200,
     kIdOptionCombo0 = 220,
     // context menu and keyboard commands
@@ -1107,12 +1112,16 @@ enum : int {
     kCmdDisableAll,
     kCmdEditInfo,
     kCmdFocusFilter,
+    kCmdTextLarger,
+    kCmdTextSmaller,
+    kCmdTextNormal,
     kCmdProfileSave = 400,
     kCmdProfileLoad0 = 500,
     kCmdProfileDelete0 = 700,
 };
 constexpr int kMaxOptions = 6;
 constexpr UINT kMsgInstalled = WM_APP + 1;
+constexpr UINT kMsgLook = WM_APP + 3;  // wparam: ui::Theme, lparam: text size
 
 struct Gui {
     Model model;
@@ -1135,10 +1144,15 @@ struct Gui {
     std::string drag_key;                    // the mod being dragged to a new place, empty when none
     HACCEL accelerators = nullptr;
     std::vector<std::string> profile_names;  // as offered in the last Profiles menu
+    ui::Appearance look;                     // the text size and colours (appearance.cfg beside the manager)
+    HWND text_size = nullptr, colours = nullptr;
 
-    int px(int v) const { return MulDiv(v, static_cast<int>(dpi), 96); }
+    // At the screen's scale and the chosen text size.
+    int px(int v) const { return MulDiv(v, static_cast<int>(dpi) * look.text_size, 96 * 100); }
 };
 Gui* g = nullptr;
+
+LRESULT popup_colors(UINT msg, WPARAM wp, LPARAM lp, HWND w, bool* handled);
 
 struct InstallJob {
     std::vector<fs::path> sources;
@@ -1379,11 +1393,15 @@ std::string filter_text() {
 }
 
 // The status column's colour: green loads, orange loads with a warning, red cannot load, grey off.
+// Lighter shades on the dark background, so they stay as readable as on the light one.
 COLORREF status_color(const std::string& status) {
-    if (status.rfind("Loads", 0) == 0)
-        return status.find("NTSC-U") != std::string::npos ? RGB(184, 100, 0) : RGB(30, 120, 50);
-    if (status.rfind("Not loaded", 0) == 0 || status.rfind("Invalid", 0) == 0) return RGB(190, 30, 30);
-    if (status.rfind("Off", 0) == 0 || status.rfind("On (all", 0) == 0) return GetSysColor(COLOR_GRAYTEXT);
+    const bool dark = ui::colors().dark;
+    if (status.rfind("Loads", 0) == 0) {
+        if (status.find("NTSC-U") != std::string::npos) return dark ? RGB(255, 176, 80) : RGB(184, 100, 0);
+        return dark ? RGB(120, 214, 140) : RGB(30, 120, 50);
+    }
+    if (status.rfind("Not loaded", 0) == 0 || status.rfind("Invalid", 0) == 0) return dark ? RGB(255, 128, 128) : RGB(190, 30, 30);
+    if (status.rfind("Off", 0) == 0 || status.rfind("On (all", 0) == 0) return ui::colors().muted;
     return CLR_DEFAULT;
 }
 
@@ -1771,6 +1789,9 @@ void code_window_refresh() {
 }
 
 LRESULT CALLBACK code_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
+    bool handled = false;
+    const LRESULT colored = popup_colors(msg, wp, lp, w, &handled);
+    if (handled) return colored;
     switch (msg) {
         case WM_COMMAND:
             if (LOWORD(wp) == IDOK || LOWORD(wp) == IDCANCEL) {
@@ -1836,6 +1857,7 @@ void code_window() {
     cw.window = CreateWindowExW(WS_EX_DLGMODALFRAME, L"ShadowModManagerCode", L"Code mods", WS_POPUP | WS_CAPTION | WS_SYSMENU,
                                 owner.left + (owner.right - owner.left - W) / 2, owner.top + (owner.bottom - owner.top - H) / 2,
                                 W, H, g->window, nullptr, inst, nullptr);
+    ui::apply_to_window(cw.window);  // the title bar; the controls are coloured as they are made
     RECT cr;
     GetClientRect(cw.window, &cr);
     const int cw_ = cr.right, ch = cr.bottom;
@@ -1846,7 +1868,7 @@ void code_window() {
                               pad, pad + g->px(22), cw_ - pad * 2, ch - g->px(22) - pad * 3 - g->px(110) - g->px(30),
                               cw.window, nullptr, inst, nullptr);
     ListView_SetExtendedListViewStyle(cw.list, LVS_EX_CHECKBOXES | LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_LABELTIP);
-    SetWindowTheme(cw.list, L"Explorer", nullptr);
+    ui::apply_to_control(cw.list);  // before the rows: it remakes the check boxes
     const wchar_t* cols[] = {L"Code", L"Mod"};
     const int widths[] = {cw_ - pad * 2 - g->px(200), g->px(180)};
     for (int i = 0; i < 2; ++i) {
@@ -1885,6 +1907,7 @@ void code_window() {
     HWND close = CreateWindowExW(0, WC_BUTTONW, L"Close", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON, cw_ - pad - bw, by,
                                  bw, g->px(30), cw.window, reinterpret_cast<HMENU>(IDOK), inst, nullptr);
     for (HWND h : {label, cw.list, cw.info, build, rep, close}) SendMessageW(h, WM_SETFONT, reinterpret_cast<WPARAM>(g->font), TRUE);
+    for (HWND h : {label, cw.info, build, rep, close}) ui::apply_to_control(h);
     if (row == 0) {
         LVITEMW item{};
         item.mask = LVIF_TEXT;
@@ -1977,6 +2000,9 @@ struct FormState {
 
 LRESULT CALLBACK form_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
     auto* st = reinterpret_cast<FormState*>(GetWindowLongPtrW(w, GWLP_USERDATA));
+    bool handled = false;
+    const LRESULT colored = popup_colors(msg, wp, lp, w, &handled);
+    if (handled) return colored;
     switch (msg) {
         case WM_COMMAND:
             if (st && (LOWORD(wp) == IDOK || LOWORD(wp) == IDCANCEL)) {
@@ -2052,6 +2078,7 @@ bool edit_form(const wchar_t* title, std::vector<FormField>& fields) {
                                   reinterpret_cast<HMENU>(IDCANCEL), inst, nullptr);
     SendMessageW(ok, WM_SETFONT, reinterpret_cast<WPARAM>(g->font), TRUE);
     SendMessageW(cancel, WM_SETFONT, reinterpret_cast<WPARAM>(g->font), TRUE);
+    ui::apply_to_window(w);
     EnableWindow(g->window, FALSE);
     ShowWindow(w, SW_SHOW);
     if (!st.edits.empty()) {
@@ -2303,15 +2330,24 @@ void layout() {
         MoveWindow(g->buttons[i], x, pad, bw, bh, TRUE);
         x += bw + g->px(4);
     }
-    MoveWindow(g->buttons[6], w - pad - g->px(120), pad, g->px(120), bh, TRUE);  // Play
-    MoveWindow(g->master, w - pad - g->px(120) - g->px(150), pad, g->px(144), bh, TRUE);
-    MoveWindow(g->profiles, w - pad - g->px(120) - g->px(150) - g->px(100), pad, g->px(94), bh, TRUE);
-    MoveWindow(g->code, w - pad - g->px(120) - g->px(150) - g->px(100) - g->px(84), pad, g->px(80), bh, TRUE);
-    const int filter_x = x + g->px(8);
-    const int filter_w = std::max(g->px(120), w - pad - g->px(120) - g->px(150) - g->px(100) - g->px(84) - g->px(8) - filter_x);
-    MoveWindow(g->filter, filter_x, pad + g->px(3), filter_w, bh - g->px(6), TRUE);
-    const int status_h = g->px(24);
-    const int top = pad * 2 + bh;
+    // Code, Profiles, Load mods and Play on the right, the filter between. When they do not fit beside the six buttons
+    // (a large text size or a narrow window), they and the filter go on a second row.
+    const int group_w = g->px(120) + g->px(150) + g->px(100) + g->px(84);
+    const bool one_row = x + g->px(8) + g->px(160) + g->px(8) + group_w + pad <= w;
+    const int row = one_row ? pad : pad * 2 + bh;
+    MoveWindow(g->buttons[6], w - pad - g->px(120), row, g->px(120), bh, TRUE);  // Play
+    MoveWindow(g->master, w - pad - g->px(120) - g->px(150), row, g->px(144), bh, TRUE);
+    MoveWindow(g->profiles, w - pad - g->px(120) - g->px(150) - g->px(100), row, g->px(94), bh, TRUE);
+    MoveWindow(g->code, w - pad - group_w, row, g->px(80), bh, TRUE);
+    const int filter_x = one_row ? x + g->px(8) : pad;
+    const int filter_w = std::max(g->px(120), w - pad - group_w - g->px(8) - filter_x);
+    MoveWindow(g->filter, filter_x, row + g->px(3), filter_w, bh - g->px(6), TRUE);
+    // The bar at the bottom: the summary, the progress while installing, the text size and the colours.
+    const int status_h = g->px(36);
+    const int colours_w = g->px(160), size_w = g->px(130), look_w = size_w + g->px(6) + colours_w;
+    MoveWindow(g->colours, w - pad - colours_w, h - status_h + g->px(4), colours_w, g->px(200), TRUE);
+    MoveWindow(g->text_size, w - pad - look_w, h - status_h + g->px(4), size_w, g->px(200), TRUE);
+    const int top = row + bh + pad;
     const int bottom = h - status_h - pad;
     const int right_w = std::max(g->px(320), w * 38 / 100);
     const int list_w = w - right_w - pad * 3;
@@ -2331,8 +2367,9 @@ void layout() {
     MoveWindow(g->details_label, rx, y, right_w, g->px(18), TRUE);
     y += g->px(20);
     MoveWindow(g->details, rx, y, right_w, bottom - y, TRUE);
-    MoveWindow(g->status, pad, h - status_h, w - pad * 2 - g->px(170), status_h - g->px(4), TRUE);
-    MoveWindow(g->progress, w - pad - g->px(160), h - status_h + g->px(2), g->px(160), status_h - g->px(8), TRUE);
+    MoveWindow(g->status, pad, h - status_h + g->px(8), std::max(g->px(80), w - pad * 3 - look_w - g->px(170)),
+               g->px(22), TRUE);
+    MoveWindow(g->progress, w - pad * 2 - look_w - g->px(160), h - status_h + g->px(10), g->px(160), g->px(16), TRUE);
     // List columns: the name takes what the others leave.
     const int fixed = g->px(60) + g->px(110) + g->px(170) + g->px(250);
     ListView_SetColumnWidth(g->list, 0, std::max(g->px(140), list_w - fixed - g->px(24)));
@@ -2348,6 +2385,7 @@ void make_fonts() {
     NONCLIENTMETRICSW ncm{};
     ncm.cbSize = sizeof(ncm);
     SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0, g->dpi);
+    ncm.lfMessageFont.lfHeight = MulDiv(ncm.lfMessageFont.lfHeight, g->look.text_size, 100);
     g->font = CreateFontIndirectW(&ncm.lfMessageFont);
     LOGFONTW b = ncm.lfMessageFont;
     b.lfWeight = FW_SEMIBOLD;
@@ -2360,6 +2398,88 @@ void make_fonts() {
         },
         reinterpret_cast<LPARAM>(g->font));
     SendMessageW(g->buttons[6], WM_SETFONT, reinterpret_cast<WPARAM>(g->bold), TRUE);
+}
+
+// ---- text size and colours (tools/ui, shared with the settings program) -----------------------------------------------
+
+// The colour choices in the list's order, which is ui::Theme's.
+const char* const kThemeLabels[] = {"Colours: as Windows", "Colours: light", "Colours: dark"};
+
+fs::path appearance_folder() { return executable_dir(); }
+
+void show_look() {
+    SendMessageW(g->text_size, CB_SETCURSEL, static_cast<WPARAM>((g->look.text_size - ui::kSmallestText) / ui::kTextStep), 0);
+    SendMessageW(g->colours, CB_SETCURSEL, static_cast<WPARAM>(g->look.theme), 0);
+}
+
+// Uses a new text size or colour choice at once and keeps it in appearance.cfg. A larger text size also makes the
+// window larger, as far as the screen allows.
+void apply_look(ui::Appearance next) {
+    next.text_size = ui::step_text_size(next.text_size, 0);
+    const bool dark = ui::is_dark(next.theme);
+    if (next == g->look && dark == ui::colors().dark) return;
+    const int before = g->look.text_size;
+    const bool stored = next == g->look || ui::save_appearance(appearance_folder(), next);
+    g->look = next;
+    ui::set_dark(dark);
+    make_fonts();
+    g->filling = true;  // remaking the list's check boxes clears them: fill_list sets them again
+    ui::apply_to_window(g->window);
+    g->filling = false;
+    show_look();
+    if (g->look.text_size > before && !IsZoomed(g->window)) {
+        RECT r;
+        GetWindowRect(g->window, &r);
+        MONITORINFO monitor{};
+        monitor.cbSize = sizeof(monitor);
+        GetMonitorInfoW(MonitorFromWindow(g->window, MONITOR_DEFAULTTONEAREST), &monitor);
+        const RECT& work = monitor.rcWork;
+        const int width = std::min(MulDiv(r.right - r.left, g->look.text_size, before), static_cast<int>(work.right - work.left));
+        const int height = std::min(MulDiv(r.bottom - r.top, g->look.text_size, before), static_cast<int>(work.bottom - work.top));
+        const int x = std::clamp(static_cast<int>(r.left), static_cast<int>(work.left), static_cast<int>(work.right) - width);
+        const int y = std::clamp(static_cast<int>(r.top), static_cast<int>(work.top), static_cast<int>(work.bottom) - height);
+        SetWindowPos(g->window, nullptr, x, y, width, height, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    layout();
+    fill_list();
+    RedrawWindow(g->window, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_FRAME);
+    if (!stored)
+        SetWindowTextW(g->status, wide("The text size and colours could not be stored in appearance.cfg, so they are used "
+                                       "only until this window closes.").c_str());
+    else if (g->look.text_size != before)
+        SetWindowTextW(g->status, wide("Text size " + std::to_string(g->look.text_size) +
+                                       " %. Ctrl and + or - also change it, and Ctrl and 0 sets it back.").c_str());
+}
+
+void step_text(int steps) {
+    ui::Appearance next = g->look;
+    next.text_size = steps == 0 ? ui::kSmallestText : ui::step_text_size(g->look.text_size, steps);
+    apply_look(next);
+}
+
+// A pop-up window of the manager (Code mods, the small forms) in the current colours.
+LRESULT popup_colors(UINT msg, WPARAM wp, LPARAM lp, HWND w, bool* handled) {
+    *handled = true;
+    switch (msg) {
+        case WM_ERASEBKGND: {
+            RECT r;
+            GetClientRect(w, &r);
+            FillRect(reinterpret_cast<HDC>(wp), &r, ui::window_brush());
+            return 1;
+        }
+        case WM_CTLCOLORSTATIC:
+        case WM_CTLCOLORBTN:
+        case WM_CTLCOLOREDIT:
+        case WM_CTLCOLORLISTBOX:
+            return ui::control_color(msg, reinterpret_cast<HDC>(wp), reinterpret_cast<HWND>(lp));
+        case WM_NOTIFY: {
+            LRESULT drawn = 0;
+            if (ui::custom_draw(reinterpret_cast<const NMHDR*>(lp), &drawn)) return drawn;
+            break;
+        }
+    }
+    *handled = false;
+    return 0;
 }
 
 void create_controls(HWND w) {
@@ -2392,8 +2512,7 @@ void create_controls(HWND w) {
                                   LVS_SHOWSELALWAYS | LVS_NOSORTHEADER,
                               0, 0, 10, 10, w, reinterpret_cast<HMENU>(kIdList), inst, nullptr);
     ListView_SetExtendedListViewStyle(g->list, LVS_EX_CHECKBOXES | LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER |
-                                                   LVS_EX_LABELTIP);
-    SetWindowTheme(g->list, L"Explorer", nullptr);
+                                                   LVS_EX_LABELTIP);  // its theme: ui::apply_to_window below
     const wchar_t* cols[] = {L"Mod (highest priority first)", L"Version", L"Author", L"Content", L"Status"};
     for (int i = 0; i < 5; ++i) {
         LVCOLUMNW c{};
@@ -2419,18 +2538,36 @@ void create_controls(HWND w) {
                                  10, 10, w, reinterpret_cast<HMENU>(kIdDetails), inst, nullptr);
     g->status = CreateWindowExW(0, WC_STATICW, L"", WS_CHILD | WS_VISIBLE | SS_LEFTNOWORDWRAP | SS_ENDELLIPSIS, 0, 0,
                                 10, 10, w, reinterpret_cast<HMENU>(kIdStatus), inst, nullptr);
+    // The text size and colours, shared with the settings program (appearance.cfg).
+    g->text_size = CreateWindowExW(0, WC_COMBOBOXW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
+                                   0, 0, 10, 10, w, reinterpret_cast<HMENU>(kIdTextSize), inst, nullptr);
+    for (int size = ui::kSmallestText; size <= ui::kLargestText; size += ui::kTextStep)
+        SendMessageW(g->text_size, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(wide("Text size: " + std::to_string(size) + " %").c_str()));
+    g->colours = CreateWindowExW(0, WC_COMBOBOXW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
+                                 0, 0, 10, 10, w, reinterpret_cast<HMENU>(kIdColours), inst, nullptr);
+    for (const char* label : kThemeLabels) SendMessageW(g->colours, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(wide(label).c_str()));
     make_fonts();
+    show_look();
     DragAcceptFiles(w, TRUE);
-    // Follow the system's light/dark choice for the title bar.
-    DWORD light = 1, size = sizeof(light);
-    RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
-                 L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &light, &size);
-    const BOOL dark = light == 0;
-    DwmSetWindowAttribute(w, 20 /*DWMWA_USE_IMMERSIVE_DARK_MODE*/, &dark, sizeof(dark));
+    ui::apply_to_window(w);
 }
 
 LRESULT CALLBACK window_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
+    if (g->list != nullptr) {
+        bool handled = false;
+        const LRESULT colored = popup_colors(msg, wp, lp, w, &handled);
+        if (handled) return colored;
+    }
     switch (msg) {
+        case kMsgLook:  // posted, so the list that was used is not remade while it is still telling about the choice
+            apply_look(ui::Appearance{static_cast<ui::Theme>(wp), static_cast<int>(lp)});
+            return 0;
+        case WM_SETTINGCHANGE:
+            // Windows' light or dark app mode, followed when the colours are "as Windows".
+            if (lp != 0 && lstrcmpW(reinterpret_cast<const wchar_t*>(lp), L"ImmersiveColorSet") == 0 &&
+                g->look.theme == ui::Theme::System)
+                apply_look(g->look);
+            break;
         case WM_CREATE:
             create_controls(w);
             return 0;
@@ -2520,7 +2657,7 @@ LRESULT CALLBACK window_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_DRAWITEM: {
             auto* di = reinterpret_cast<DRAWITEMSTRUCT*>(lp);
             if (di->CtlID != kIdPreview) break;
-            FillRect(di->hDC, &di->rcItem, GetSysColorBrush(COLOR_BTNFACE));
+            FillRect(di->hDC, &di->rcItem, ui::window_brush());
             const int bw = di->rcItem.right - di->rcItem.left, bh = di->rcItem.bottom - di->rcItem.top;
             if (g->preview_bitmap && g->preview_w > 0) {
                 const double s = std::min(static_cast<double>(bw) / g->preview_w, static_cast<double>(bh) / g->preview_h);
@@ -2536,7 +2673,7 @@ LRESULT CALLBACK window_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             } else {
                 SetBkMode(di->hDC, TRANSPARENT);
                 SelectObject(di->hDC, g->font);
-                SetTextColor(di->hDC, GetSysColor(COLOR_GRAYTEXT));
+                SetTextColor(di->hDC, ui::colors().muted);
                 RECT r = di->rcItem;
                 DrawTextW(di->hDC, selected_mod() ? L"No preview image" : L"Drop mod archives or folders here", -1,
                           &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
@@ -2596,6 +2733,20 @@ LRESULT CALLBACK window_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             const int id = LOWORD(wp);
             if (id == kIdFilter && HIWORD(wp) == EN_CHANGE) {
                 fill_list();
+                return 0;
+            }
+            if (id == kIdTextSize && HIWORD(wp) == CBN_SELCHANGE) {
+                const int i = static_cast<int>(SendMessageW(g->text_size, CB_GETCURSEL, 0, 0));
+                if (i >= 0) PostMessageW(w, kMsgLook, static_cast<WPARAM>(g->look.theme), ui::kSmallestText + i * ui::kTextStep);
+                return 0;
+            }
+            if (id == kIdColours && HIWORD(wp) == CBN_SELCHANGE) {
+                const int i = static_cast<int>(SendMessageW(g->colours, CB_GETCURSEL, 0, 0));
+                if (i >= 0 && i < static_cast<int>(std::size(kThemeLabels))) PostMessageW(w, kMsgLook, static_cast<WPARAM>(i), g->look.text_size);
+                return 0;
+            }
+            if (id == kCmdTextLarger || id == kCmdTextSmaller || id == kCmdTextNormal) {
+                step_text(id == kCmdTextLarger ? 1 : id == kCmdTextSmaller ? -1 : 0);
                 return 0;
             }
             if (g->busy) break;
@@ -2715,6 +2866,9 @@ int run_gui(const std::vector<std::string>& args) {
     } else {
         g->model.game_error = "no folder with files/ beside the manager or in the working directory";
     }
+    g->look = ui::load_appearance(appearance_folder());
+    g->look.text_size = ui::step_text_size(g->look.text_size, 0);
+    ui::set_dark(ui::is_dark(g->look.theme));
     WNDCLASSEXW wc{sizeof(wc)};
     wc.lpfnWndProc = window_proc;
     wc.hInstance = GetModuleHandleW(nullptr);
@@ -2744,7 +2898,10 @@ int run_gui(const std::vector<std::string>& args) {
     layout();
     ACCEL keys[] = {{FCONTROL | FVIRTKEY, 'O', kIdInstall},       {FVIRTKEY, VK_F5, kIdRefresh},
                     {FCONTROL | FVIRTKEY, 'F', kCmdFocusFilter},  {FCONTROL | FVIRTKEY, 'E', kCmdEditInfo},
-                    {FCONTROL | FVIRTKEY, 'P', kIdPlay}};
+                    {FCONTROL | FVIRTKEY, 'P', kIdPlay},          {FCONTROL | FVIRTKEY, VK_OEM_PLUS, kCmdTextLarger},
+                    {FCONTROL | FVIRTKEY, VK_ADD, kCmdTextLarger}, {FCONTROL | FVIRTKEY, VK_OEM_MINUS, kCmdTextSmaller},
+                    {FCONTROL | FVIRTKEY, VK_SUBTRACT, kCmdTextSmaller}, {FCONTROL | FVIRTKEY, '0', kCmdTextNormal},
+                    {FCONTROL | FVIRTKEY, VK_NUMPAD0, kCmdTextNormal}};
     g->accelerators = CreateAcceleratorTableW(keys, static_cast<int>(std::size(keys)));
     // --snapshot <file.png>: the window as drawn, written once it has painted, then the program ends (documentation
     // and checks of the layout without anyone at the screen). --select <id> picks the mod shown in the details.
@@ -2762,6 +2919,11 @@ int run_gui(const std::vector<std::string>& args) {
     MSG m;
     while (GetMessageW(&m, nullptr, 0, 0) > 0) {
         if (TranslateAcceleratorW(w, g->accelerators, &m)) continue;
+        // Ctrl with the mouse wheel: the text size, over any part of the window.
+        if (m.message == WM_MOUSEWHEEL && (GET_KEYSTATE_WPARAM(m.wParam) & MK_CONTROL) != 0 && GetAncestor(m.hwnd, GA_ROOT) == w) {
+            step_text(GET_WHEEL_DELTA_WPARAM(m.wParam) > 0 ? 1 : -1);
+            continue;
+        }
         if (!IsDialogMessageW(w, &m)) {
             TranslateMessage(&m);
             DispatchMessageW(&m);

@@ -123,6 +123,10 @@ program writes `display.cfg`, `options.cfg`, `pad.cfg` and `controls.cfg` in the
 [docs/PC_SETTINGS_FILES.md](docs/PC_SETTINGS_FILES.md) describes every line. Alt+Enter switches between a window and
 fullscreen.
 
+The Settings program and the Mod Manager can show larger text (up to 200 %) and dark colours: use the *Text size* and
+*Colours* lists (top right in Settings, bottom right in the Mod Manager), or hold Ctrl and press + or -. Both programs
+share the choice.
+
 ## Mods
 
 The game loads mods from the `mods` folder in the install folder. Mods that replace the game's files (models, stages,

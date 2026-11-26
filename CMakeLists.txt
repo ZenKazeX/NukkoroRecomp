@@ -621,7 +621,9 @@ if(WIN32 AND SHADOW_PREBUILT_USED)
         COMMENT "Using the prebuilt ShadowModManager.exe"
         VERBATIM)
 elseif(WIN32)
-    add_executable(ShadowModManager WIN32 tools/mod_manager/mod_manager.cpp)
+    # The text size and colours are shared with the settings program (tools/ui, appearance.cfg).
+    add_executable(ShadowModManager WIN32 tools/mod_manager/mod_manager.cpp tools/ui/appearance.cpp tools/ui/theme.cpp)
+    target_include_directories(ShadowModManager PRIVATE tools/ui)
     set_target_properties(ShadowModManager PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
     target_link_libraries(ShadowModManager PRIVATE shadow_mods comctl32 shell32 ole32 windowscodecs dwmapi uxtheme
                           msimg32 comdlg32 advapi32)
@@ -4704,10 +4706,10 @@ elseif(WIN32 AND (TARGET ShadowTheHedgehog OR SHADOW_PREBUILT_EXPORT))
     add_executable(ShadowPadConfig WIN32 tools/padconfig/main.cpp tools/padconfig/pad_config.cpp tools/padconfig/controller_view.cpp tools/padconfig/padconfig.rc
                    tools/padconfig/settings_model.cpp runtime/src/gekko/config_file.cpp
                    runtime/lift/peripheral/gamepad_binding.cpp runtime/lift/peripheral/action_map.cpp
-                   runtime/lift/peripheral/controls.cpp)
-    target_include_directories(ShadowPadConfig PRIVATE runtime/include runtime/lift tools/padconfig)
+                   runtime/lift/peripheral/controls.cpp tools/ui/appearance.cpp tools/ui/theme.cpp)
+    target_include_directories(ShadowPadConfig PRIVATE runtime/include runtime/lift tools/padconfig tools/ui)
     target_compile_features(ShadowPadConfig PRIVATE cxx_std_20)
-    target_link_libraries(ShadowPadConfig PRIVATE comctl32 gdiplus)
+    target_link_libraries(ShadowPadConfig PRIVATE comctl32 gdiplus dwmapi uxtheme)
     set_source_files_properties(tools/padconfig/padconfig.rc PROPERTIES OBJECT_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/padconfig/art/top.png;${CMAKE_CURRENT_SOURCE_DIR}/tools/padconfig/art/tilted.png")
     # Beside the game (bin/<config>, the game's RUNTIME_OUTPUT_DIRECTORY).
@@ -4743,6 +4745,16 @@ elseif(WIN32 AND (TARGET ShadowTheHedgehog OR SHADOW_PREBUILT_EXPORT))
         endif()
         add_test(NAME configurator_settings_tests COMMAND configurator_settings_tests)
         set_tests_properties(configurator_settings_tests PROPERTIES TIMEOUT 60 LABELS "menu")
+        # appearance.cfg, the text size and colours the settings program and the mod manager share.
+        add_executable(ui_appearance_tests runtime/tests/ui_appearance_tests.cpp tools/ui/appearance.cpp)
+        target_include_directories(ui_appearance_tests PRIVATE runtime/tests tools/ui)
+        target_compile_features(ui_appearance_tests PRIVATE cxx_std_20)
+        if(MSVC)
+            target_compile_options(ui_appearance_tests PRIVATE /W4 /permissive-)
+            set_property(TARGET ui_appearance_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        endif()
+        add_test(NAME ui_appearance_tests COMMAND ui_appearance_tests)
+        set_tests_properties(ui_appearance_tests PROPERTIES TIMEOUT 60 LABELS "menu")
     endif()
 endif()
 

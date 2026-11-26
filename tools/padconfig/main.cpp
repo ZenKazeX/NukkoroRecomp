@@ -29,10 +29,12 @@ using std::min;
 #include <string>
 #include <vector>
 
+#include "appearance.h"
 #include "controller_view.h"
 #include "gekko/display_geometry.h"
 #include "pad_config.h"
 #include "settings_model.h"
+#include "theme.h"
 
 #pragma comment(linker, "\"/manifestdependency:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 
@@ -55,14 +57,19 @@ std::wstring operator""_w(const char* text, std::size_t length) { return wide(st
 
 const std::wstring kTitle = "Shadow the Hedgehog Recompiled - Settings"_w;
 
-// Layout (96 dpi units). The page area sits between the tab strip and the bar at the bottom.
+// Layout (96 dpi units at the normal text size; px() scales them by the screen and the chosen text size). The page area
+// sits between the tab strip and the bar at the bottom. At a large text size the window may not fit on the screen: it
+// then scrolls.
 constexpr int kClientW = 1094, kTop = 40, kPageH = 586, kBottom = kTop + kPageH, kClientH = kBottom + 70;
+// The text size and colour choices, right of the tab strip.
+constexpr int kLookSizeW = 130, kLookColoursW = 160, kLookX = kClientW - 8 - kLookColoursW - 6 - kLookSizeW;
 
 constexpr int kFirstRow = 100, kFirstLive = 200;
 enum : int { kThreshold = 300, kThresholdValue, kSwapSticks, kStyle };
-enum : int { kTabs = 400, kRestore, kSave, kClose, kStatus, kInfo };
+enum : int { kTabs = 400, kRestore, kSave, kClose, kStatus, kInfo, kTextSize, kColours };
 constexpr int kFirstField = 1000, kFirstBind = 2000;
 constexpr UINT_PTR kPollTimer = 1;
+constexpr UINT kMsgLook = WM_APP + 1;  // wparam: ui::Theme, lparam: text size, control to focus
 constexpr DWORD kCaptureMs = 6000;
 
 enum Page : int { kDisplay, kFrameRate, kSound, kLanguage, kPadButtons, kPadOptions, kKeyboard, kSaving, kPageCount };
@@ -140,11 +147,111 @@ struct App {
     std::wstring message;
     ControllerView view;
     bool left_trigger = false, right_trigger = false;
+
+    ui::Appearance look;           // the text size and colours (appearance.cfg)
+    int scroll_x = 0, scroll_y = 0;  // how far the window's content is scrolled
+    HWND last_focus = nullptr;
 } g;
 
 std::wstring number_text(double v) { return wide(format_number(v)); }
-int px(int v) { return MulDiv(v, g.dpi, 96); }
+int px(int v) { return MulDiv(v, g.dpi * g.look.text_size, 96 * 100); }
 HWND item(int id) { return GetDlgItem(g.window, id); }
+
+// ---- scrolling (only at a text size too large for the screen) ------------------------------------------------------
+
+int content_w() { return px(kClientW); }
+int content_h() { return px(kClientH); }
+
+// Moves the content so that (x, y) of it is at the window's top left. Every control is moved by hand: the window may
+// have controls outside its visible part, which ScrollWindowEx leaves where they are.
+void scroll_to(int x, int y) {
+    RECT client;
+    GetClientRect(g.window, &client);
+    x = std::clamp(x, 0, std::max(0, content_w() - static_cast<int>(client.right)));
+    y = std::clamp(y, 0, std::max(0, content_h() - static_cast<int>(client.bottom)));
+    const int dx = g.scroll_x - x, dy = g.scroll_y - y;
+    if (dx == 0 && dy == 0) return;
+    g.scroll_x = x;
+    g.scroll_y = y;
+    SetScrollPos(g.window, SB_HORZ, x, TRUE);
+    SetScrollPos(g.window, SB_VERT, y, TRUE);
+    int children = 0;
+    for (HWND c = GetWindow(g.window, GW_CHILD); c != nullptr; c = GetWindow(c, GW_HWNDNEXT)) ++children;
+    HDWP moves = BeginDeferWindowPos(children);
+    for (HWND c = GetWindow(g.window, GW_CHILD); c != nullptr && moves != nullptr; c = GetWindow(c, GW_HWNDNEXT)) {
+        RECT r;
+        GetWindowRect(c, &r);
+        MapWindowPoints(nullptr, g.window, reinterpret_cast<POINT*>(&r), 2);
+        moves = DeferWindowPos(moves, c, nullptr, r.left + dx, r.top + dy, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    if (moves != nullptr) EndDeferWindowPos(moves);
+    InvalidateRect(g.window, nullptr, TRUE);
+}
+
+// The scroll bars for the window's present size: none when everything fits.
+void update_scrollbars() {
+    static bool busy = false;  // showing a bar resizes the window, which comes back here
+    if (busy) return;
+    busy = true;
+    for (int pass = 0; pass < 2; ++pass) {  // a bar for one direction can make the other one needed
+        RECT client;
+        GetClientRect(g.window, &client);
+        SCROLLINFO info{};
+        info.cbSize = sizeof(info);
+        info.fMask = SIF_RANGE | SIF_PAGE;
+        info.nMax = content_w() - 1;
+        info.nPage = static_cast<UINT>(client.right);
+        SetScrollInfo(g.window, SB_HORZ, &info, TRUE);
+        info.nMax = content_h() - 1;
+        info.nPage = static_cast<UINT>(client.bottom);
+        SetScrollInfo(g.window, SB_VERT, &info, TRUE);
+    }
+    scroll_to(g.scroll_x, g.scroll_y);
+    busy = false;
+}
+
+// A scroll bar was used: `bar` is SB_HORZ or SB_VERT, `code` the WM_xSCROLL request.
+void on_scrollbar(int bar, int code) {
+    SCROLLINFO info{};
+    info.cbSize = sizeof(info);
+    info.fMask = SIF_ALL;
+    GetScrollInfo(g.window, bar, &info);
+    int pos = info.nPos;
+    const int line = px(40), page = static_cast<int>(info.nPage) - line;
+    switch (code) {
+        case SB_LINEUP: pos -= line; break;
+        case SB_LINEDOWN: pos += line; break;
+        case SB_PAGEUP: pos -= page; break;
+        case SB_PAGEDOWN: pos += page; break;
+        case SB_THUMBTRACK:
+        case SB_THUMBPOSITION: pos = info.nTrackPos; break;
+        case SB_TOP: pos = 0; break;
+        case SB_BOTTOM: pos = info.nMax; break;
+        default: return;
+    }
+    if (bar == SB_HORZ) scroll_to(pos, g.scroll_y);
+    else scroll_to(g.scroll_x, pos);
+}
+
+// Brings the control with the keyboard focus into view (Tab may reach one outside the visible part).
+void show_focus() {
+    HWND focus = GetFocus();
+    if (focus == g.last_focus) return;
+    g.last_focus = focus;
+    while (focus != nullptr && GetParent(focus) != g.window) focus = GetParent(focus);
+    if (focus == nullptr) return;
+    RECT r, client;
+    GetWindowRect(focus, &r);
+    MapWindowPoints(nullptr, g.window, reinterpret_cast<POINT*>(&r), 2);
+    GetClientRect(g.window, &client);
+    const int margin = px(12);
+    int x = g.scroll_x, y = g.scroll_y;
+    if (r.left < 0) x += r.left - margin;
+    else if (r.right > client.right) x += std::min(r.left - margin, r.right - client.right + margin);
+    if (r.top < 0) y += r.top - margin;
+    else if (r.bottom > client.bottom) y += std::min(r.top - margin, r.bottom - client.bottom + margin);
+    scroll_to(x, y);
+}
 
 void set_text(HWND h, const std::wstring& text) {
     const int length = GetWindowTextLengthW(h);
@@ -292,7 +399,9 @@ void finish_capture(std::uint16_t mask) {
     stop_capture();
 }
 
-RECT picture_area() { return RECT{px(414), px(kTop + 4), px(1082), px(kBottom - 4)}; }
+RECT picture_area() {
+    return RECT{px(414) - g.scroll_x, px(kTop + 4) - g.scroll_y, px(1082) - g.scroll_x, px(kBottom - 4) - g.scroll_y};
+}
 
 // Repaints the pictures only when what they show changed.
 void refresh_picture(WORD buttons) {
@@ -824,9 +933,18 @@ void build_keyboard_page() {
          SS_LEFT | SS_NOPREFIX, 620, y + 6, 450, 110, kHelpId);
 }
 
+// The text size and colour choices, as offered right of the tab strip.
+const int kTextSizes[] = {100, 125, 150, 175, 200};
+const struct {
+    std::wstring label;
+    ui::Theme theme;
+} kThemes[] = {{"Colours: as Windows"_w, ui::Theme::System},
+               {"Colours: light"_w, ui::Theme::Light},
+               {"Colours: dark"_w, ui::Theme::Dark}};
+
 void build() {
     g.tabs = CreateWindowExW(0, WC_TABCONTROLW, L"", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_TABSTOP, px(8), px(6),
-                             px(kClientW - 16), px(30), g.window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTabs)),
+                             px(kLookX - 8 - 8), px(30), g.window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kTabs)),
                              GetModuleHandleW(nullptr), nullptr);
     SendMessageW(g.tabs, WM_SETFONT, reinterpret_cast<WPARAM>(g.font), TRUE);
     for (int i = 0; i < kPageCount; ++i) {
@@ -835,6 +953,14 @@ void build() {
         tab.pszText = const_cast<wchar_t*>(kPageNames[i].c_str());
         SendMessageW(g.tabs, TCM_INSERTITEMW, static_cast<WPARAM>(i), reinterpret_cast<LPARAM>(&tab));
     }
+    HWND sizes = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, kLookX, 8, kLookSizeW, 300, kTextSize);
+    for (const int size : kTextSizes) {
+        const std::wstring label = "Text size: "_w + std::to_wstring(size) + " %"_w;
+        SendMessageW(sizes, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(label.c_str()));
+    }
+    HWND themes = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, kLookX + kLookSizeW + 6, 8,
+                       kLookColoursW, 300, kColours);
+    for (const auto& t : kThemes) SendMessageW(themes, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(t.label.c_str()));
 
     define_fields();
     const std::wstring intros[kPageCount] = {
@@ -882,6 +1008,7 @@ void show_page(int page) {
     for (int p = 0; p < kPageCount; ++p)
         for (HWND h : g.page_controls[static_cast<std::size_t>(p)]) ShowWindow(h, p == page ? SW_SHOW : SW_HIDE);
     SendMessageW(g.tabs, TCM_SETCURSEL, static_cast<WPARAM>(page), 0);
+    InvalidateRect(g.tabs, nullptr, TRUE);
     const RECT area = picture_area();
     InvalidateRect(g.window, &area, TRUE);
     refresh_rows();
@@ -1008,6 +1135,95 @@ bool confirm_close() {
     return answer == IDNO || save();
 }
 
+// ---- text size and colours ---------------------------------------------------------------------------------------
+
+void make_font() {
+    if (g.font != nullptr) DeleteObject(g.font);
+    g.font = CreateFontW(ui::font_height(10, g.dpi, g.look.text_size), 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0,
+                         CLEARTYPE_QUALITY, 0, L"Segoe UI");
+}
+
+void refresh_look() {
+    for (int i = 0; i < static_cast<int>(std::size(kTextSizes)); ++i)
+        if (kTextSizes[i] == g.look.text_size) SendMessageW(item(kTextSize), CB_SETCURSEL, static_cast<WPARAM>(i), 0);
+    for (int i = 0; i < static_cast<int>(std::size(kThemes)); ++i)
+        if (kThemes[i].theme == g.look.theme) SendMessageW(item(kColours), CB_SETCURSEL, static_cast<WPARAM>(i), 0);
+}
+
+// The window as large as its content, but no larger than the screen it is on (it scrolls then).
+void fit_window() {
+    constexpr DWORD kNoBars = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_THICKFRAME;
+    RECT want{0, 0, content_w(), content_h()};
+    AdjustWindowRect(&want, kNoBars, FALSE);
+    int w = want.right - want.left, h = want.bottom - want.top;
+    RECT now;
+    GetWindowRect(g.window, &now);
+    MONITORINFO monitor{};
+    monitor.cbSize = sizeof(monitor);
+    GetMonitorInfoW(MonitorFromWindow(g.window, MONITOR_DEFAULTTONEAREST), &monitor);
+    const RECT& work = monitor.rcWork;
+    w = std::min(w, static_cast<int>(work.right - work.left));
+    h = std::min(h, static_cast<int>(work.bottom - work.top));
+    const int x = std::clamp(static_cast<int>(now.left), static_cast<int>(work.left), static_cast<int>(work.right) - w);
+    const int y = std::clamp(static_cast<int>(now.top), static_cast<int>(work.top), static_cast<int>(work.bottom) - h);
+    SetWindowPos(g.window, nullptr, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+// Makes every control again at the chosen text size and in the chosen colours. The settings being edited are kept;
+// `focus` (a control id) gets the keyboard focus afterwards.
+void rebuild_view(int focus) {
+    const int page = g.page;
+    if (focus == 0) {  // the control that has the focus now
+        HWND f = GetFocus();
+        while (f != nullptr && GetParent(f) != g.window) f = GetParent(f);
+        if (f != nullptr) focus = GetDlgCtrlID(f);
+    }
+    SendMessageW(g.window, WM_SETREDRAW, FALSE, 0);
+    for (HWND c = GetWindow(g.window, GW_CHILD); c != nullptr; c = GetWindow(g.window, GW_CHILD)) DestroyWindow(c);
+    for (auto& controls : g.page_controls) controls.clear();
+    g.fields.clear();
+    g.refused.clear();
+    g.scroll_x = g.scroll_y = 0;
+    g.last_focus = nullptr;
+    ui::set_dark(ui::is_dark(g.look.theme));
+    make_font();
+    build();
+    refresh_fields();
+    refresh_rows();
+    refresh_pad_options();
+    refresh_binds();
+    refresh_look();
+    ui::apply_to_window(g.window);
+    show_page(page);
+    SendMessageW(g.window, WM_SETREDRAW, TRUE, 0);
+    fit_window();
+    update_scrollbars();
+    if (focus > 0 && item(focus) != nullptr) SetFocus(item(focus));
+    RedrawWindow(g.window, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_FRAME);
+}
+
+// A new text size or colour choice: kept in appearance.cfg (the Mod Manager uses it too) and shown at once.
+void set_look(ui::Appearance next, int focus) {
+    next.text_size = ui::step_text_size(next.text_size, 0);
+    if (next == g.look) return;
+    const bool size_changed = next.text_size != g.look.text_size;
+    g.look = next;
+    const bool stored = ui::save_appearance(g.folder, g.look);
+    rebuild_view(focus);
+    if (!stored)
+        show_message("The text size and colours could not be stored in appearance.cfg, so they are used only until this "_w
+                     "window closes."_w);
+    else if (size_changed)
+        show_message("Text size "_w + std::to_wstring(g.look.text_size) +
+                     " %. Ctrl and + or - also change it, and Ctrl and 0 sets it back."_w);
+}
+
+void step_text(int steps) {
+    ui::Appearance next = g.look;
+    next.text_size = steps == 0 ? ui::kSmallestText : ui::step_text_size(g.look.text_size, steps);
+    set_look(next, 0);
+}
+
 // ---- the window --------------------------------------------------------------------------------------------------
 
 void on_timer() {
@@ -1041,44 +1257,84 @@ void on_timer() {
 
 LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
+    case WM_ERASEBKGND: {
+        RECT client;
+        GetClientRect(hwnd, &client);
+        FillRect(reinterpret_cast<HDC>(wparam), &client, ui::window_brush());
+        return 1;
+    }
     case WM_PAINT: {
         PAINTSTRUCT paint;
         HDC dc = BeginPaint(hwnd, &paint);
         if (g.page == kPadButtons) {
             const RECT area = picture_area();
+            const int w = area.right - area.left, h = area.bottom - area.top;
             // Off screen first, so a press does not flicker.
             HDC buffer = CreateCompatibleDC(dc);
-            HBITMAP bitmap = CreateCompatibleBitmap(dc, area.right, area.bottom);
+            HBITMAP bitmap = CreateCompatibleBitmap(dc, std::max(w, 1), std::max(h, 1));
             HGDIOBJ old = SelectObject(buffer, bitmap);
-            FillRect(buffer, &area, GetSysColorBrush(COLOR_BTNFACE));
-            paint_controller(buffer, area, g.view);
-            BitBlt(dc, area.left, area.top, area.right - area.left, area.bottom - area.top, buffer, area.left, area.top, SRCCOPY);
+            const RECT inside{0, 0, w, h};
+            FillRect(buffer, &inside, ui::window_brush());
+            paint_controller(buffer, inside, g.view, ui::colors().dark);
+            BitBlt(dc, area.left, area.top, w, h, buffer, 0, 0, SRCCOPY);
             SelectObject(buffer, old);
             DeleteObject(bitmap);
             DeleteDC(buffer);
         }
         // A line above the bar at the bottom.
-        RECT line{px(8), px(kBottom), px(kClientW - 8), px(kBottom) + 1};
-        FillRect(dc, &line, GetSysColorBrush(COLOR_3DSHADOW));
+        RECT line{px(8) - g.scroll_x, px(kBottom) - g.scroll_y, px(kClientW - 8) - g.scroll_x, px(kBottom) + 1 - g.scroll_y};
+        SetDCBrushColor(dc, ui::colors().border);
+        FillRect(dc, &line, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
         EndPaint(hwnd, &paint);
         return 0;
     }
-    case WM_CTLCOLORSTATIC: {
+    case WM_CTLCOLORSTATIC:
+    case WM_CTLCOLORBTN:
+    case WM_CTLCOLOREDIT:
+    case WM_CTLCOLORLISTBOX: {
         const int id = GetDlgCtrlID(reinterpret_cast<HWND>(lparam));
-        HDC dc = reinterpret_cast<HDC>(wparam);
-        SetBkColor(dc, GetSysColor(COLOR_BTNFACE));
-        if (id == kHelpId || id == kInfo) SetTextColor(dc, GetSysColor(COLOR_GRAYTEXT));
-        return reinterpret_cast<LRESULT>(GetSysColorBrush(COLOR_BTNFACE));
+        return ui::control_color(message, reinterpret_cast<HDC>(wparam), reinterpret_cast<HWND>(lparam),
+                                 message == WM_CTLCOLORSTATIC && (id == kHelpId || id == kInfo));
     }
     case WM_TIMER:
         if (wparam == kPollTimer) on_timer();
         return 0;
     case WM_NOTIFY: {
         const auto* header = reinterpret_cast<const NMHDR*>(lparam);
+        LRESULT drawn = 0;
+        if (ui::custom_draw(header, &drawn)) return drawn;
         if (header->idFrom == kTabs && header->code == TCN_SELCHANGE)
             show_page(static_cast<int>(SendMessageW(g.tabs, TCM_GETCURSEL, 0, 0)));
         return 0;
     }
+    case WM_SIZE:
+        update_scrollbars();
+        return 0;
+    case WM_GETMINMAXINFO: {
+        // No larger than the content; small enough to fit any screen (it scrolls).
+        auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
+        RECT most{0, 0, content_w(), content_h()};
+        AdjustWindowRect(&most, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_THICKFRAME, FALSE);
+        info->ptMaxTrackSize = {most.right - most.left, most.bottom - most.top};
+        info->ptMinTrackSize = {std::min(static_cast<LONG>(MulDiv(480, g.dpi, 96)), most.right - most.left),
+                                std::min(static_cast<LONG>(MulDiv(360, g.dpi, 96)), most.bottom - most.top)};
+        return 0;
+    }
+    case WM_VSCROLL:
+        on_scrollbar(SB_VERT, LOWORD(wparam));
+        return 0;
+    case WM_MOUSEWHEEL:
+        scroll_to(g.scroll_x, g.scroll_y - GET_WHEEL_DELTA_WPARAM(wparam) * px(60) / WHEEL_DELTA);
+        return 0;
+    case kMsgLook:  // posted, so the list that was used is not remade while it is still telling about the choice
+        set_look(ui::Appearance{static_cast<ui::Theme>(wparam), LOWORD(lparam)}, HIWORD(lparam));
+        return 0;
+    case WM_SETTINGCHANGE:
+        // Windows' light or dark app mode, followed when the colours are "as Windows".
+        if (lparam != 0 && lstrcmpW(reinterpret_cast<const wchar_t*>(lparam), L"ImmersiveColorSet") == 0 &&
+            g.look.theme == ui::Theme::System && ui::is_dark(ui::Theme::System) != ui::colors().dark)
+            rebuild_view(0);
+        return DefWindowProcW(hwnd, message, wparam, lparam);
     case WM_LBUTTONDOWN: {
         if (g.page != kPadButtons) return 0;
         const int control = control_at(picture_area(), POINT{GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
@@ -1098,7 +1354,9 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpar
         return DefWindowProcW(hwnd, message, wparam, lparam);
     case WM_HSCROLL: {
         HWND from = reinterpret_cast<HWND>(lparam);
-        if (from == item(kThreshold)) {
+        if (from == nullptr) {  // the window's own scroll bar
+            on_scrollbar(SB_HORZ, LOWORD(wparam));
+        } else if (from == item(kThreshold)) {
             g.binding.trigger_threshold = static_cast<std::uint8_t>(SendMessageW(item(kThreshold), TBM_GETPOS, 0, 0));
             set_text(item(kThresholdValue), std::to_wstring(g.binding.trigger_threshold));
             changed();
@@ -1122,6 +1380,12 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpar
         } else if (id == kStyle && code == CBN_SELCHANGE) {
             g.binding.button_style = kStyles[SendMessageW(item(kStyle), CB_GETCURSEL, 0, 0)].style;
             changed();
+        } else if (id == kTextSize && code == CBN_SELCHANGE) {
+            const auto i = static_cast<std::size_t>(SendMessageW(item(kTextSize), CB_GETCURSEL, 0, 0));
+            if (i < std::size(kTextSizes)) PostMessageW(hwnd, kMsgLook, static_cast<WPARAM>(g.look.theme), MAKELPARAM(kTextSizes[i], kTextSize));
+        } else if (id == kColours && code == CBN_SELCHANGE) {
+            const auto i = static_cast<std::size_t>(SendMessageW(item(kColours), CB_GETCURSEL, 0, 0));
+            if (i < std::size(kThemes)) PostMessageW(hwnd, kMsgLook, static_cast<WPARAM>(kThemes[i].theme), MAKELPARAM(g.look.text_size, kColours));
         } else if (id == kRestore) {
             restore_defaults();
         } else if (id == kSave || id == IDOK) {
@@ -1188,8 +1452,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     HDC screen = GetDC(nullptr);
     g.dpi = GetDeviceCaps(screen, LOGPIXELSY);
     ReleaseDC(nullptr, screen);
-    g.font = CreateFontW(-MulDiv(10, g.dpi, 72), 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Segoe UI");
-
     g.folder = this_program_folder();
     int argc = 0;
     if (LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc)) {
@@ -1197,6 +1459,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
             if (std::wstring(argv[i]) == L"--folder") g.folder = argv[i + 1];
         LocalFree(argv);
     }
+    g.look = ui::load_appearance(g.folder);
+    g.look.text_size = ui::step_text_size(g.look.text_size, 0);
+    ui::set_dark(ui::is_dark(g.look.theme));
+    make_font();
     const std::wstring notes = load_all();
     g.game_running = game_is_running();
     g.next_game_check = GetTickCount() + 2000;
@@ -1212,7 +1478,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     cls.hIconSm = cls.hIcon;
     RegisterClassExW(&cls);
 
-    constexpr DWORD kStyleFlags = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_CLIPCHILDREN;
+    // Resizable only so that a large text size can be scrolled on a small screen; never larger than the content.
+    constexpr DWORD kStyleFlags = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_THICKFRAME | WS_CLIPCHILDREN;
     RECT size{0, 0, px(kClientW), px(kClientH)};
     AdjustWindowRect(&size, kStyleFlags, FALSE);
     g.window = CreateWindowExW(0, cls.lpszClassName, kTitle.c_str(), kStyleFlags, CW_USEDEFAULT, CW_USEDEFAULT,
@@ -1222,7 +1489,11 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     refresh_rows();
     refresh_pad_options();
     refresh_binds();
+    refresh_look();
+    ui::apply_to_window(g.window);
     show_page(kDisplay);
+    fit_window();
+    update_scrollbars();
     if (!notes.empty()) show_message(notes);
     ShowWindow(g.window, show);
     SetTimer(g.window, kPollTimer, 16, nullptr);
@@ -1260,9 +1531,26 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
                 msg.message == WM_XBUTTONUP)
                 continue;
         }
-        if (IsDialogMessageW(g.window, &msg)) continue;
+        // Ctrl and +, - or 0, and Ctrl with the mouse wheel: the text size, wherever the focus is.
+        const bool ctrl = (GetKeyState(VK_CONTROL) & 0x8000) != 0;
+        if (msg.message == WM_KEYDOWN && ctrl && g.capturing < 0) {
+            const WPARAM k = msg.wParam;
+            if (k == VK_OEM_PLUS || k == VK_ADD || k == VK_OEM_MINUS || k == VK_SUBTRACT || k == '0' || k == VK_NUMPAD0) {
+                step_text(k == VK_OEM_PLUS || k == VK_ADD ? 1 : k == '0' || k == VK_NUMPAD0 ? 0 : -1);
+                continue;
+            }
+        }
+        if (msg.message == WM_MOUSEWHEEL && (GET_KEYSTATE_WPARAM(msg.wParam) & MK_CONTROL) != 0) {
+            step_text(GET_WHEEL_DELTA_WPARAM(msg.wParam) > 0 ? 1 : -1);
+            continue;
+        }
+        if (IsDialogMessageW(g.window, &msg)) {
+            show_focus();
+            continue;
+        }
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
+        show_focus();
     }
     Gdiplus::GdiplusShutdown(gdiplus_token);
     return 0;

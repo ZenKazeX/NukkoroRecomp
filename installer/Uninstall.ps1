@@ -7,8 +7,8 @@
     it made, and its own bookkeeping files. Anything else in the folder is left alone. A recorded file that has
     changed since it was installed is kept and reported.
 
-    Saves, settings and mods (save-data, snapshots, mods, options.cfg, display.cfg, pad.cfg, controls.cfg) are kept
-    unless -RemoveSaves is given.
+    Saves, settings and mods (save-data, snapshots, mods, options.cfg, display.cfg, pad.cfg, controls.cfg,
+    appearance.cfg) are kept unless -RemoveSaves is given.
 
     The folder is removed only if nothing is left in it.
 
@@ -30,7 +30,7 @@ $GameExe = 'ShadowTheHedgehog.exe'
 $ManifestName = 'install-manifest.json'
 # The player's own data: never removed unless -RemoveSaves names it.
 $PlayerFolders = @('save-data', 'snapshots', 'mods')
-$PlayerFiles = @('options.cfg', 'display.cfg', 'pad.cfg', 'controls.cfg')
+$PlayerFiles = @('options.cfg', 'display.cfg', 'pad.cfg', 'controls.cfg', 'appearance.cfg')
 # What the game writes for itself and rewrites on every run: not the player's data, so it goes with the game.
 $GeneratedFiles = @('session-report.json')
 

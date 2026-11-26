@@ -26,7 +26,9 @@ constexpr REAL kViewW = 660.0f, kViewH = 590.0f;
 constexpr REAL kPictureX = 130.0f, kPictureW = 400.0f;
 constexpr REAL kTopY = 8.0f, kTiltedY = 306.0f;
 constexpr REAL kColumnW = 122.0f;
+// The labels' ink and the leader lines, on the light and on the dark background.
 const Color kInk(255, 28, 28, 28), kLine(255, 110, 110, 110);
+const Color kDarkInk(255, 242, 242, 242), kDarkLine(255, 165, 165, 165);
 
 std::wstring wide(const std::string& s) { return std::wstring(s.begin(), s.end()); }
 
@@ -122,6 +124,7 @@ struct Painter {
     FontFamily family{L"Segoe UI"};
     Font label{&family, 14.5f, FontStyleBold, UnitPixel};
     Font caption{&family, 12.5f, FontStyleRegular, UnitPixel};
+    Color ink = kInk, line = kLine;
 
     void text(const std::wstring& s, const Font& f, REAL x, REAL y, REAL w, StringAlignment align, const Color& c) {
         StringFormat fmt;
@@ -132,18 +135,18 @@ struct Painter {
     }
 
     void leader(PointF from, PointF to) {
-        Pen p(kLine, 1.1f);
+        Pen p(line, 1.1f);
         g.DrawLine(&p, from, to);
-        SolidBrush dot(kLine);
+        SolidBrush dot(line);
         g.FillEllipse(&dot, to.X - 2.2f, to.Y - 2.2f, 4.4f, 4.4f);
     }
 
     void left(REAL y, const std::wstring& s, PointF to) {
-        text(s, label, 0, y, kColumnW, StringAlignmentFar, kInk);
+        text(s, label, 0, y, kColumnW, StringAlignmentFar, ink);
         leader(PointF(kColumnW + 3, y), to);
     }
     void right(REAL y, const std::wstring& s, PointF to) {
-        text(s, label, kViewW - kColumnW, y, kColumnW, StringAlignmentNear, kInk);
+        text(s, label, kViewW - kColumnW, y, kColumnW, StringAlignmentNear, ink);
         leader(PointF(kViewW - kColumnW - 3, y), to);
     }
 
@@ -197,9 +200,9 @@ struct Painter {
         right(160, of("b"), top("b"));
         right(226, c_stick, top("cstick"));
         const PointF start = top("start");
-        text(of("start"), label, start.X - 60, start.Y + 62, 120, StringAlignmentCenter, kInk);
+        text(of("start"), label, start.X - 60, start.Y + 62, 120, StringAlignmentCenter, ink);
         leader(PointF(start.X, start.Y + 50), PointF(start.X, start.Y + 7));
-        text(wide("Click a button on the picture to change it"), caption, kPictureX - 40, kTiltedY - 18, kPictureW + 80, StringAlignmentCenter, kLine);
+        text(wide("Click a button on the picture to change it"), caption, kPictureX - 40, kTiltedY - 18, kPictureW + 80, StringAlignmentCenter, line);
 
         left(kTiltedY + 44, of("l"), tilted("l"));
         right(kTiltedY + 26, of("r"), tilted("r"));
@@ -248,7 +251,7 @@ std::wstring control_label(const GamepadBinding& binding, std::size_t index) {
     return mask == 0u ? trigger : wide(button_names(mask)) + L" or " + trigger;
 }
 
-void paint_controller(HDC dc, const RECT& area, const ControllerView& view) {
+void paint_controller(HDC dc, const RECT& area, const ControllerView& view, bool dark) {
     if (area.right <= area.left || area.bottom <= area.top) return;
     Graphics g(dc);
     g.SetSmoothingMode(SmoothingModeAntiAlias);
@@ -257,6 +260,10 @@ void paint_controller(HDC dc, const RECT& area, const ControllerView& view) {
     g.TranslateTransform(static_cast<REAL>(area.left), static_cast<REAL>(area.top));
     g.ScaleTransform(scale, scale);
     Painter painter{g, view};
+    if (dark) {
+        painter.ink = kDarkInk;
+        painter.line = kDarkLine;
+    }
     painter.draw_pictures();
     painter.draw_labels();
 }

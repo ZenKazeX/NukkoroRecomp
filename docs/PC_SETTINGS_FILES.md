@@ -155,3 +155,21 @@ Not offered, on purpose: `gameplay_aspect` (a test setting for the game logic, n
 `hud_inset` (accepted but they change nothing in this renderer) and the retired render-size keys. A value the file
 holds that is not in a list (a frame rate of 100, a ratio of 2.37) is shown as "(set in the file)" and kept unless
 the player picks another.
+
+## appearance.cfg: the programs' text size and colours
+
+The Settings program and the Mod Manager share one more file beside them, `appearance.cfg`. It holds how the two
+programs look; the game does not read it. Both programs have two lists for it (the Settings program right of its
+page tabs, the Mod Manager at the right end of its bottom bar):
+
+| Control | Key | Values |
+|---|---|---|
+| Text size: 100 % .. 200 % (also Ctrl and + / -, Ctrl and 0 for 100 %, Ctrl and the mouse wheel) | `text_size` | 100, 125, 150, 175, 200 |
+| Colours: as Windows / light / dark | `theme` | `system` (Windows' app mode: Settings > Personalisation > Colours), `light`, `dark` |
+
+A change is used at once and saved at once (no Save needed); the other program uses it the next time it opens. The
+file is created only when one of the two is changed, and like the other files only the changed line is rewritten.
+With Windows' high contrast mode on, both programs use the high contrast colours whatever the file says. At a text
+size too large for the screen the Settings window scrolls; the Mod Manager grows with the text and moves its filter
+and right-hand buttons to a second row when they no longer fit beside the others. The uninstaller keeps the file
+unless `-RemoveSaves` is given.

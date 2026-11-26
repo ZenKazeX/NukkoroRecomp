@@ -26,8 +26,8 @@ bool operator==(const ControllerView& a, const ControllerView& b) noexcept;
 // What presses control `index`: "A", "LB or LT", "RT". The analog triggers always work as L and R.
 std::wstring control_label(const GamepadBinding& binding, std::size_t index);
 
-// Paints both views inside `area` of `dc`. Needs GDI+ started.
-void paint_controller(HDC dc, const RECT& area, const ControllerView& view);
+// Paints both views inside `area` of `dc`, with light labels when `dark`. Needs GDI+ started.
+void paint_controller(HDC dc, const RECT& area, const ControllerView& view, bool dark = false);
 
 // The kControls row of the button at `point` on the pictures; -1 when none.
 int control_at(const RECT& area, POINT point);
