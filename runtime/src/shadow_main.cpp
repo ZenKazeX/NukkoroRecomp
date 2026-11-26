@@ -2394,6 +2394,19 @@ int run(Options options) {
                 g_active_mod_count = mods.active_mods.size();
                 storage_options.overlays = mods.files;
                 gekko::mod_overlay::set(mods.files);
+                // More game memory for the mods' files (gekko/game_memory_end.h). The disc's game fits the console's
+                // 24 MiB; mods' models, stages and tables are larger, and several together ran the game's heap out
+                // (15 community mods at once: the game then read through a failed allocation). The game builds its
+                // heap from the bounds its operating system reports, so the added room is simply a larger heap. Only
+                // when a mod replaces game files: a run without mods, or with texture packs alone, is unchanged.
+                if (!mods.files.empty()) {
+                    if (system.guest_memory().extend_legacy_heap(gekko::GuestMemory::kLegacyHeapMaxEnd)) {
+                        std::cout << "Game memory: 256 MiB for this run (mods replace game files; the game alone has 24 MiB)\n";
+                    } else {
+                        std::cerr << "[mods] warning: the game could not be given more memory; many mods together may "
+                                     "not fit\n";
+                    }
+                }
                 // The switchable voice archive reads the English archive by path: give it the mods' version.
                 if (const std::filesystem::path* voices = gekko::mod_overlay::find("PRS_VOICE_E.afs"))
                     gekko::override_english_voice_archive(*voices);

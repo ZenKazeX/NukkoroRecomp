@@ -1,4 +1,5 @@
 #include "gekko/system.h"
+#include "gekko/game_memory_end.h"
 #include "gekko/native_sound_ampdb.h"
 #include "gekko/thread_name.h"  // ES-T1
 
@@ -72,12 +73,15 @@
 namespace gekko {
 namespace {
 
-constexpr u32 kBi2GuestAddress = 0x817fe000u;
+// The BI2 block's place: the last 8 KiB of the game's memory (0x817fe000 on the console's 24 MiB).
+constexpr u32 kBi2Bytes = 0x2000u;
+inline u32 bi2_guest_address() noexcept { return game_memory_end() - kBi2Bytes; }
+static_assert(kConsoleMemoryEnd - kBi2Bytes == 0x817fe000u, "the console's BI2 address");
 
 // A NUL-terminated guest string (at most 64 bytes) for the voice-routing report.
 std::string guest_cstring(Cpu& cpu, u32 address) {
     std::string out;
-    if (address < 0x80000000u || address >= 0x81800000u) return out;
+    if (address < 0x80000000u || address >= game_memory_end()) return out;
     for (u32 i = 0; i < 64u; ++i) {
         const char c = static_cast<char>(cpu.mem_read8(address + i));
         if (c == 0) break;
@@ -1973,13 +1977,14 @@ void System::apply_boot_configuration(const BootConfiguration& configuration) {
     }
     if (!configuration.bi2.empty()) {
         const u32 size = static_cast<u32>(std::min<std::size_t>(configuration.bi2.size(), 0x2000));
-        memory_.write_block(kBi2GuestAddress, configuration.bi2.data(), size);
+        memory_.write_block(bi2_guest_address(), configuration.bi2.data(), size);
     }
 
     // M1 (docs/memory-architecture-20261006/README.md section 4): the OS is
     // still told the size of the range its own heap runs over; M2 replaces
     // the OS heap and with it what these words mean.
-    constexpr u32 kLegacyOsMemorySize = GuestMemory::kLegacyHeapEnd - GuestMemory::kImageBase;
+    // The console's 24 MiB, or what this run was given (GuestMemory::extend_legacy_heap, before this call).
+    const u32 kLegacyOsMemorySize = game_memory_end() - GuestMemory::kImageBase;
     memory_.write32(0x80000020u, 0x0d15ea5eu);              // booted from the boot ROM
     memory_.write32(0x80000028u, kLegacyOsMemorySize);      // memory size the OS reports
     memory_.write32(0x8000002cu, configuration.console_type);
@@ -1994,7 +1999,7 @@ void System::apply_boot_configuration(const BootConfiguration& configuration) {
     // VIWaitForRetrace returns before VIConfigure has run.
     video_->boot(configuration.pal);
     memory_.write32(0x800000f0u, kLegacyOsMemorySize);      // the same, as the "simulated" size
-    memory_.write32(0x800000f4u, kBi2GuestAddress);         // pointer to the BI2 block
+    memory_.write32(0x800000f4u, bi2_guest_address());         // pointer to the BI2 block
     memory_.write32(0x800000f8u, 0x09a7ec80u);              // bus clock: 162 MHz
     memory_.write32(0x800000fcu, 0x1cf7c580u);              // core clock: 486 MHz
 
@@ -2008,7 +2013,7 @@ void System::apply_boot_configuration(const BootConfiguration& configuration) {
         // is native, docs/DISC_SYSTEM_MAP.md cut 2).
         const u64 size = assets_.names().reservation_bytes();
         const u32 aligned = static_cast<u32>((size + 31u) & ~u64{31u});
-        arena_high_ = (kBi2GuestAddress - aligned) & ~31u;
+        arena_high_ = (bi2_guest_address() - aligned) & ~31u;
         memory_.write32(0x80000034u, arena_high_);  // arena high
     }
 }

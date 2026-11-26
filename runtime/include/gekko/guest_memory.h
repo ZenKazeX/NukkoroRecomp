@@ -33,6 +33,7 @@
 #include <utility>
 #include <vector>
 
+#include "gekko/game_memory_end.h"
 #include "gekko/gc_addr.h"
 #include "gekko/types.h"
 
@@ -86,6 +87,11 @@ public:
     // M2 hands every allocation to the native allocator and unmaps it.
     static constexpr u32 kLegacyHeapBase = kImageEnd;
     static constexpr u32 kLegacyHeapEnd = 0x81800000u;
+    // More room for a run whose mods replace the game's files (gekko/game_memory_end.h): the heap's range grows to
+    // `new_end` (at most kLegacyHeapMaxEnd: 256 MiB of game memory in all, the whole range below the retired arenas). Only before the game's first instruction
+    // and before anything holds a pointer into the range: the region is mapped anew, zero-filled. False, with the
+    // range as it was, when the host refuses. A run that never calls this has the console's range, as always.
+    bool extend_legacy_heap(u32 new_end);
 
     enum class RegionKind : u8 { Image = 1, LockedCache = 2, LegacyHeap = 3, Arena = 4 };
     static const char* kind_name(RegionKind kind) noexcept;
@@ -182,6 +188,8 @@ public:
     // own with set_unmapped_access_stops) instead of reading 0 or dropping the store. (peek* and window_bytes stay
     // host-side looks: an unmapped byte reads 0 there, as everywhere.)
     static constexpr u32 kRetiredArenaBase = 0x90000000u;
+    // The furthest the game's heap may be extended (extend_legacy_heap): right up to that range.
+    static constexpr u32 kLegacyHeapMaxEnd = kRetiredArenaBase;
     static constexpr u32 kRetiredArenaEnd = 0xA0000000u;
     static constexpr bool in_retired_arenas(u32 address) noexcept {
         return address - kRetiredArenaBase < kRetiredArenaEnd - kRetiredArenaBase;

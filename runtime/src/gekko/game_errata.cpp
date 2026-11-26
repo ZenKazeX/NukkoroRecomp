@@ -1,6 +1,7 @@
 // Original-game bugs fixed on purpose. Contract and evidence: include/gekko/game_errata.h, docs/GAME_ERRATA.md.
 
 #include "gekko/game_errata.h"
+#include "gekko/game_memory_end.h"
 
 #include <cstdlib>
 
@@ -31,7 +32,7 @@ bool player_motion_constructor_entry(Cpu& c, Stats& stats) {
 namespace {
 
 bool guest_object(u32 address) noexcept {
-    return address >= 0x80000000u && address < 0x81800000u && (address & 3u) == 0u;
+    return address >= 0x80000000u && address < gekko::game_memory_end() && (address & 3u) == 0u;
 }
 
 }  // namespace

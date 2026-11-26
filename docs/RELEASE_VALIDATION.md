@@ -596,3 +596,14 @@ one a reference executable that is not built).
 A clean Windows or a second PC; Windows 10; the real unattended installs of Visual Studio and Python (a stand-in is
 used); the Settings program by hand with a controller; the mouse-direction settings in play; mods in other stages, in
 the menus and in long play; Shadow the Hedgehog Reloaded; play by a person from the released build.
+
+## More game memory for runs with mods (2026-11-27)
+
+The heap exhaustion above is removed for mod runs. `GuestMemory::extend_legacy_heap` maps the game's heap range up to
+0x90000000 (256 MiB of game memory) when a mod replaces game files; the boot block's memory size, the BI2 address and
+the arena limit follow (`gekko/game_memory_end.h`), and the ten places that compared a pointer with the console's
+0x81800000 compare with the run's end. On the development build: the 15 mods together play the whole Westopolis tape
+with 0 failed clip allocations at 64 MiB and at 256 MiB, at the same CPU time; a run without mods and a run with a
+texture pack alone keep the console's range and an identical state hash. The player's build and the gate: see the
+release notes. Not shown: that behaviour with a mod is the same in the larger memory as in the console's (state
+hashes differ by the memory size words and the heap's free tail); that is piece W1 of `docs/memory/REWRITE_PLAN.md`.

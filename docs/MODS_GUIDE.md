@@ -439,12 +439,13 @@ the code. Unless you build the game from source yourself, leave this window alon
 Mods that come only as a patch for a disc image (for example `.xdelta` files) cannot be used. If the same mod is also
 offered as loose game files, install those instead.
 
-**Many mods together can be too much for the game.**
-The game has the memory of the console it was made for. Each mod alone can fit and a set of them together not: in
-the tests of this release, 15 community mods each played a whole stage alone, and so did every pair tried, but all 15
-switched on together stopped the game about 50 seconds into the stage. When that happens the game closes and tells
-you: "Shadow the Hedgehog stopped because of an error in the game", with the number of mods that are on. Switch off
-some mods and start again. Mods that add enemies or objects to a stage and mods with larger models use the most.
+**Memory for mods.**
+The game was made for a console with 24 MiB of memory, and mods' models and stages are larger than the disc's. When a
+mod replaces game files, the game is therefore given about ten times that (256 MiB). In the tests of this release, 15
+community mods switched on together first stopped the game about 50 seconds into a stage, because its memory ran out;
+with the larger memory the same 15 play the whole stage. A game without mods, or with texture packs only, runs exactly
+as before. A very large set of mods can still be too much; the game then closes and tells you: "Shadow the Hedgehog
+stopped because of an error in the game", with the number of mods that are on. Switch off some mods and start again.
 **Big "overhaul" mods load only in part.**
 *Shadow the Hedgehog: Reloaded* and similar projects are a mix of changed files and changed code. Their files load
 (stage changes, models, textures, text, music, voice lines). Their code features do not (for Reloaded: S rank, Red

@@ -11,6 +11,7 @@
 #include <string>
 
 #include "gekko/cpu.h"
+#include "gekko/game_memory_end.h"
 #include "gekko/native_motion_bank_store.h"
 #include "gekko/native_motion_store.h"
 #include "motion/skeleton_pose.h"
@@ -108,7 +109,7 @@ float read_f32(Cpu& c, u32 address) {
 // A guest address the game's data can live at: its memory. (The motion clip pool's addresses are handles of native
 // storage since 2026-11-21, read through NativeMotionStore::pool_bytes, never through the window.)
 bool in_ram(u32 p) {
-    return p >= 0x80000000u && p < 0x81800000u;
+    return p >= 0x80000000u && p < gekko::game_memory_end();
 }
 bool pointer(u32 p) { return in_ram(p) && (p & 3u) == 0u; }
 
@@ -161,7 +162,7 @@ u32 swap_unless(bool native, u32 v) { return native ? v : ((v >> 24) | ((v >> 8)
 bool guest_string_equals(Cpu& c, u32 guest, const char* host);
 
 u32 binary_symbol(Cpu& c, u32 binary, const char* symbol) {
-    if (!(binary >= 0x80000000u && binary < 0x81800000u))
+    if (!(binary >= 0x80000000u && binary < gekko::game_memory_end()))
         return 0u;
     const bool native = c.mem_read8(binary + 1u) != 0u;
     const u32 table = c.mem_read32(binary + 0x1Cu), names = c.mem_read32(binary + 0x24u), data = c.mem_read32(binary + 0x14u);
@@ -187,7 +188,7 @@ bool guest_string_equals(Cpu& c, u32 guest, const char* host) {
 }
 
 bool guest_strings_equal(Cpu& c, u32 a, u32 b) {
-    if (!(a >= 0x80000000u && a < 0x81800000u) || !(b >= 0x80000000u && b < 0x81800000u))
+    if (!(a >= 0x80000000u && a < gekko::game_memory_end()) || !(b >= 0x80000000u && b < gekko::game_memory_end()))
         return false;
     for (u32 i = 0; i < 256u; ++i) {
         const u8 x = c.mem_read8(a + i);

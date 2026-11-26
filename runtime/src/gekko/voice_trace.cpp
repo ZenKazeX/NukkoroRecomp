@@ -1,6 +1,7 @@
 // Dialogue voice + subtitle window trace. Contract and event list: include/gekko/voice_trace.h.
 
 #include "gekko/voice_trace.h"
+#include "gekko/game_memory_end.h"
 
 #if !defined(GEKKO_SHIPPING)
 
@@ -50,7 +51,7 @@ Sink& sink() {
     return s;
 }
 
-bool plausible(u32 a) noexcept { return a >= 0x80000000u && a < 0x81800000u; }
+bool plausible(u32 a) noexcept { return a >= 0x80000000u && a < gekko::game_memory_end(); }
 
 // One line; fields are "key=value" pairs formatted by the caller.
 void emit(Cpu& cpu, const char* event, const char* fmt, ...) {

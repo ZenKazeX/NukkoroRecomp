@@ -1,4 +1,5 @@
 #include "gekko/gameplay_camera.h"
+#include "gekko/game_memory_end.h"
 
 #include <bit>
 #include <cstdio>
@@ -15,7 +16,7 @@ constexpr u32 kCameraManager = 0x8056FED4u;           // SonicteamUSA::System::C
 constexpr u32 kUnitVectorData = kCameraManager + 0xCu;  // vector<shared_ptr<CameraManagerUnit>> at +4: data at its +8
 constexpr u32 kUnitRequestListSize = 0xE0u;           // CameraManagerUnit: request list size
 
-bool plausible(u32 address) noexcept { return address >= 0x80000000u && address < 0x81800000u; }
+bool plausible(u32 address) noexcept { return address >= 0x80000000u && address < gekko::game_memory_end(); }
 
 }  // namespace
 

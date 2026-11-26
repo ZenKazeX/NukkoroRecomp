@@ -3,6 +3,7 @@
 // guest allocator calls are written here by hand, each from the disassembly named in its comment.
 
 #include "gekko/native_s1_target2.h"
+#include "gekko/game_memory_end.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -31,6 +32,9 @@ bool g_guard = true;                 // the Target vtable-word guard (off only f
 
 constexpr u32 kRamLo = 0x80000000u;  // liveness-roots: value-only
 constexpr u32 kRamHi = 0x81800000u;  // liveness-roots: value-only
+static_assert(kRamHi == gekko::kConsoleMemoryEnd, "the console's memory end");
+// The end of the game's memory in this run: the console's, or higher when the run was given more (game_memory_end.h).
+inline u32 ram_hi() noexcept { return gekko::game_memory_end(); }
 constexpr u32 kWindow = 0x600u;      // stack bytes below the entry r1 the trees write (deepest frame is ~0x180)
 constexpr u32 kMaxEntries = 4096u;
 constexpr u32 kTargetVtable = 0x8053ECB0u;  // liveness-roots: value-only
@@ -81,7 +85,7 @@ void set_guard_enabled(bool enabled) noexcept { g_guard = enabled; }
 bool enabled() noexcept { return g_enabled; }
 
 namespace {
-inline bool ram_word(u32 a) noexcept { return (a & 3u) == 0u && a >= kRamLo && a < kRamHi - 4u; }
+inline bool ram_word(u32 a) noexcept { return (a & 3u) == 0u && a >= kRamLo && a < ram_hi() - 4u; }
 }
 
 bool serve(Cpu& c, Entry entry) noexcept {
@@ -92,7 +96,7 @@ bool serve(Cpu& c, Entry entry) noexcept {
     };
     if (!g_enabled) return decline(Reason::Disabled);
     const u32 sp0 = c.gpr[1], lr0 = c.lr, pc0 = c.pc;
-    if (sp0 < kRamLo + kWindow + 0x40u || sp0 >= kRamHi) return decline(Reason::BadShape);
+    if (sp0 < kRamLo + kWindow + 0x40u || sp0 >= ram_hi()) return decline(Reason::BadShape);
     const u32 stack_lo = sp0 - kWindow, stack_hi = sp0 + 8u;  // the owner writes below r1 and the caller's LR slot [r1 + 4]
     const auto in_stack = [&](u32 a) noexcept { return a + 4u > stack_lo && a < stack_hi; };
     u32 saved[32];
@@ -251,7 +255,7 @@ bool serve(Cpu& c, Entry entry) noexcept {
                 const u32 holder = c.mem_read32(a);
                 if (!ram_word(holder + 4u)) return decline(Reason::BadShape);
                 const u32 px = c.mem_read32(holder), pn = c.mem_read32(holder + 4u);
-                if (px == 0u || pn == 0u || (px & 3u) != 0u || px < kRamLo || px + 0x38u > kRamHi || !ram_word(pn + 8u)) return decline(Reason::ExpiredOrNull);
+                if (px == 0u || pn == 0u || (px & 3u) != 0u || px < kRamLo || px + 0x38u > ram_hi() || !ram_word(pn + 8u)) return decline(Reason::ExpiredOrNull);
                 const u32 use = c.mem_read32(pn + 4u), weak = c.mem_read32(pn + 8u);
                 if (use == 0u || use >= 0xFFFFFF00u || weak == 0u || weak >= 0xFFFFFF00u) return decline(Reason::ExpiredOrNull);
                 if (g_guard && (c.mem_read32(px) != kTargetVtable || c.mem_read32(kTargetVtable + 8u) != kTargetPosFn)) return decline(Reason::KindOfTarget);

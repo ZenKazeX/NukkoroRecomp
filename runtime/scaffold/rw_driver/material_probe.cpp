@@ -4,6 +4,7 @@
 #include "material_probe.h"
 
 #include "gekko/cpu.h"
+#include "gekko/game_memory_end.h"
 
 #include <algorithm>
 #include <cmath>
@@ -87,7 +88,7 @@ void MaterialProbe::texanim(Cpu& c) {
     const u32 set = c.gpr[3];
     const u32 anim = set + 0x44u + c.gpr[4] * 0x14u;
     const u32 def = c.mem_read32(anim);
-    if (def < 0x80000000u || def >= 0x81800000u)
+    if (def < 0x80000000u || def >= gekko::game_memory_end())
         return;
     char name[33]{};
     for (u32 i = 0; i < 32u; ++i) {

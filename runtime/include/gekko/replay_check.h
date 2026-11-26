@@ -14,6 +14,7 @@
 // Addresses: tools/comparator/comparator/probes.py (the PAL build). Each group is FNV-1a 32 over its words in order; an
 // unreadable pointer path contributes a fixed marker, so a missing player hashes the same in both runs.
 
+#include "gekko/game_memory_end.h"
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -28,7 +29,7 @@ inline std::uint32_t fnv_word(std::uint32_t h, std::uint32_t w) noexcept {
     return h;
 }
 
-inline bool guest_pointer(std::uint32_t p) noexcept { return p >= 0x80000000u && p < 0x81800000u && (p & 3u) == 0u; }
+inline bool guest_pointer(std::uint32_t p) noexcept { return p >= 0x80000000u && p < gekko::game_memory_end() && (p & 3u) == 0u; }
 
 // `read32(address)`: a guest word.
 template <typename Read32>

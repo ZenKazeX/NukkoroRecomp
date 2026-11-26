@@ -300,6 +300,47 @@ bool GuestMemory::unmap(u32 base) {
     return false;
 }
 
+bool GuestMemory::extend_legacy_heap(u32 new_end) {
+    static_assert(kLegacyHeapEnd == kConsoleMemoryEnd, "the console's memory end");
+    if (new_end <= kLegacyHeapEnd || new_end > kLegacyHeapMaxEnd || (new_end % kGranule) != 0u) return false;
+    std::size_t place = regions_.size();
+    for (std::size_t index = 0; index < regions_.size(); ++index) {
+        const Region& region = regions_[index];
+        if (region.base == kLegacyHeapBase) {
+            if (region.kind != RegionKind::LegacyHeap || region.size != kLegacyHeapEnd - kLegacyHeapBase) return false;
+            place = index;
+        } else if (static_cast<u64>(region.base) < new_end && static_cast<u64>(region.base) + region.size > kLegacyHeapEnd) {
+            return false;  // something is mapped where the added room would be
+        }
+    }
+    if (place == regions_.size() || !unmap(kLegacyHeapBase)) return false;
+#if defined(_WIN32)
+    // The window now has two placeholders side by side: the heap's old range and everything after it up to the next
+    // region. One view cannot replace two placeholders, so they are joined first (map() then splits off exactly the
+    // new range). If the join is refused, map() below fails and the old range is put back.
+    {
+        MEMORY_BASIC_INFORMATION after{};
+        if (VirtualQuery(fm_window_ + kLegacyHeapEnd, &after, sizeof(after)) == sizeof(after) &&
+            after.BaseAddress == fm_window_ + kLegacyHeapEnd) {
+            const SIZE_T joined = static_cast<SIZE_T>((static_cast<u8*>(after.BaseAddress) + after.RegionSize) -
+                                                      (fm_window_ + kLegacyHeapBase));
+            VirtualFree(fm_window_ + kLegacyHeapBase, joined, MEM_RELEASE | MEM_COALESCE_PLACEHOLDERS);
+        }
+    }
+#endif
+    const bool grown = map(kLegacyHeapBase, new_end - kLegacyHeapBase, new_end - kLegacyHeapBase, RegionKind::LegacyHeap,
+                           "legacy-os-heap");
+    if (!grown && !map(kLegacyHeapBase, kLegacyHeapEnd - kLegacyHeapBase, kLegacyHeapEnd - kLegacyHeapBase,
+                       RegionKind::LegacyHeap, "legacy-os-heap")) {
+        std::fprintf(stderr, "guest memory: cannot map the game's heap again\n");
+        std::abort();
+    }
+    // The region keeps its place in the list (map() appends).
+    std::rotate(regions_.begin() + static_cast<std::ptrdiff_t>(place), regions_.end() - 1, regions_.end());
+    if (grown) g_game_memory_end = new_end;
+    notify_translation_change();
+    return grown;
+}
 const GuestMemory::Region* GuestMemory::region_at(u32 address) const noexcept {
     // FM step 2: a scan of the (three or four) regions replaces the 2^18-entry
     // per-page index.
