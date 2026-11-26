@@ -318,9 +318,9 @@ struct Painter {
     }    void draw_pictures() {
         g.SetInterpolationMode(InterpolationModeHighQualityBicubic);
         g.SetPixelOffsetMode(PixelOffsetModeHalf);
-        // Still sticks: the whole picture. A tilted one: the body without its caps, and the caps where the sticks are.
-        const bool tilted = v.main_x != 0.0f || v.main_y != 0.0f || v.c_x != 0.0f || v.c_y != 0.0f;
-        Bitmap* body = tilted ? art(kTopBodyId) : nullptr;
+        // The body without its caps, and the caps where the sticks are, still or not: the whole picture (art 101) has
+        // the model's own stick domes, so switching to it at rest would change the sticks' look as they stop.
+        Bitmap* body = art(kTopBodyId);
         if (body != nullptr) {
             g.DrawImage(body, top_rect(m));
             draw_cap(kStickCaps[0], 0, v.main_x, v.main_y);

@@ -174,7 +174,6 @@ others = [o for o in scene.objects if o.type == 'MESH' and o not in caps.values(
 # sticks/tops.txt. "sticks-test": a few of those frames only. "sticks-tops": no render; writes sticks/tops.txt, where the top of the cap
 # (its middle, at its highest point) is in the picture's pixels in each frame, for art/hotspots.inc (kStickTops).
 CUT_Z = {"main": 21.3, "c": 19.55}  # just above each skirt (it ends at 21.15 and 19.38; the stems go on to 22.5 and 20.8)
-STEM_R = {"main": 1.4, "c": 1.68}  # the stems' radii
 DIRECTIONS, RINGS, MOST_TILT = 16, 4, 25.0
 
 def dome_centre(cap):
@@ -202,8 +201,9 @@ def complete_dome(key, root, radius, cap_bottom):
     bm = bmesh.new()
     bmesh.ops.create_uvsphere(bm, u_segments=96, v_segments=64, radius=radius - 0.03)
     lowest = root.z + (radius - 0.03) * math.cos(math.radians(DOME_REACH)) - root.z
-    keep_top = cap_bottom + 0.8 - root.z  # tucked up under the model's own dome (just inside it): no seam between them
-    bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.z > keep_top or v.co.z < lowest], context="VERTS")
+    # The whole sphere down to DOME_REACH: in the stick frames it replaces the model's own low, faceted skirt (one smooth
+    # ball, the same from above at every tilt, so the frames have nothing that changes on it).
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.z < lowest], context="VERTS")
     bm.to_mesh(me)
     bm.free()
     dome = bpy.data.objects.new("dome_" + key, me)
@@ -270,55 +270,35 @@ def stick_frames():
                       (min(c.y for c in disc) + max(c.y for c in disc)) / 2.0, hi))
         top_local[key] = cap.matrix_world.inverted() @ top
         print("TOP", key, tuple(round(v, 2) for v in top), len(disc), "vertices")
-    # Each cap in two parts, cut across its stem just above the flared skirt it stands on (model units above the root at
-    # rest): the skirt, wider than the top and meeting the dome, goes into the dome layer, which is drawn where it is;
-    # the stem and the top into the cap layer, which is moved onto the stick's top. Seen from above, the top covers the cut.
-    # A material each that shows one part (the other transparent): object coordinates, so the cut turns with the cap.
-    part_mats = {}
+    # Each cap without its skirt: cut across its stem just above the skirt (model units above the root at rest; the
+    # dome's sphere meets the stem there), the part below a holdout. Object coordinates, so the cut turns with the cap.
+    top_mats = {}
     for key, cap in caps.items():
         inverse = cap.matrix_world.inverted()
         point = inverse @ Vector((domes_wanted[key][0].x, domes_wanted[key][0].y, CUT_Z[key]))
         normal = (inverse.to_3x3() @ Vector((0.0, 0.0, 1.0))).normalized()
-        part_mats[key] = {}
-        for part in ("skirt", "top"):
-            m = stick_mat.copy()
-            m.name = "Stick %s %s" % (key, part)
-            nodes, links = m.node_tree.nodes, m.node_tree.links
-            out_node = nodes["Material Output"]
-            surface = out_node.inputs["Surface"].links[0].from_socket
-            coords = nodes.new("ShaderNodeTexCoord")
-            dot = nodes.new("ShaderNodeVectorMath")
-            dot.operation = "DOT_PRODUCT"
-            dot.inputs[1].default_value = normal
-            links.new(coords.outputs["Object"], dot.inputs[0])
-            above = nodes.new("ShaderNodeMath")
-            above.operation = "GREATER_THAN"
-            links.new(dot.outputs["Value"], above.inputs[0])
-            above.inputs[1].default_value = normal.dot(point)
-            mix = nodes.new("ShaderNodeMixShader")
-            # Cut away: transparent in the dome layer (the top above the skirt); a holdout in the cap layer, so nothing behind
-            # the skirt (the shadow inside it) shows through.
-            clear = nodes.new("ShaderNodeBsdfTransparent" if part == "skirt" else "ShaderNodeHoldout")
-            links.new(above.outputs["Value"], mix.inputs["Fac"])
-            # Fac 1 (above the cut) takes the second shader.
-            links.new(surface if part == "skirt" else clear.outputs[0], mix.inputs[1])
-            links.new(clear.outputs[0] if part == "skirt" else surface, mix.inputs[2])
-            links.new(mix.outputs[0], out_node.inputs["Surface"])
-            part_mats[key][part] = m
-    # The cut stem is open: in the dome layer a lid closes it, so where the cap layer is moved a little off its frame the
-    # stick's own colour shows round the stem, not the dark inside.
-    lids = {}
-    for key in caps:
-        root = domes_wanted[key][0]
-        bpy.ops.mesh.primitive_circle_add(vertices=48, fill_type="NGON", radius=STEM_R[key] + 0.02,
-                                          location=(root.x, root.y, CUT_Z[key]))
-        lid = bpy.context.active_object
-        lid.data.materials.append(domes[key].data.materials[0])  # the dome's: the plastic's plain colour
-        lid.visible_shadow = False
-        world = lid.matrix_world.copy()
-        lid.parent, lid.parent_type, lid.parent_bone = rig, "BONE", key
-        lid.matrix_world = world
-        lids[key] = lid
+        m = stick_mat.copy()
+        m.name = "Stick %s top" % key
+        nodes, links = m.node_tree.nodes, m.node_tree.links
+        out_node = nodes["Material Output"]
+        surface = out_node.inputs["Surface"].links[0].from_socket
+        coords = nodes.new("ShaderNodeTexCoord")
+        dot = nodes.new("ShaderNodeVectorMath")
+        dot.operation = "DOT_PRODUCT"
+        dot.inputs[1].default_value = normal
+        links.new(coords.outputs["Object"], dot.inputs[0])
+        above = nodes.new("ShaderNodeMath")
+        above.operation = "GREATER_THAN"
+        links.new(dot.outputs["Value"], above.inputs[0])
+        above.inputs[1].default_value = normal.dot(point)
+        mix = nodes.new("ShaderNodeMixShader")
+        cut = nodes.new("ShaderNodeHoldout")
+        links.new(above.outputs["Value"], mix.inputs["Fac"])
+        links.new(cut.outputs[0], mix.inputs[1])  # Fac 0: below the cut
+        links.new(surface, mix.inputs[2])  # Fac 1: above it
+        links.new(mix.outputs[0], out_node.inputs["Surface"])
+        top_mats[key] = m
+        cap.data.materials[0] = m
     scene.render.use_border = True
     scene.render.use_crop_to_border = True
     for key, cap in caps.items():
@@ -328,8 +308,10 @@ def stick_frames():
         for o in scene.objects:
             if o.type == 'MESH':
                 o.hide_render = (o in caps.values() and o is not cap) or (o in domes.values() and o is not domes[key])
-                o.is_holdout = False
-                o.is_shadow_catcher = o in others and o not in domes.values()
+                # The body: a holdout. It hides what the shell covers, and nothing is drawn on it: no shadow of the
+                # stick, which would change from frame to frame and flicker where the program blends them.
+                o.is_holdout = o in others
+                o.is_shadow_catcher = False
         pose = rig.pose.bones[key]
         pose.rotation_mode = 'QUATERNION'
         rest = rig.data.bones[key].matrix_local.to_3x3()
@@ -356,20 +338,17 @@ def stick_frames():
             if only == "sticks-tops":
                 continue
             # Two layers, so the program can move the cap onto the stick's top while the dome below stays where it is:
-            # the dome and the cap's skirt with their shadows, then the cap's stem and top with theirs (the dome a
-            # holdout: where it is in front, the dome layer shows through).
+            # the dome (without the cap: its cut-away part is a holdout, which would show through even unseen), then the
+            # cap's stem and top (the dome a holdout: where it is in front, the dome layer shows through).
             for layer in ("dome", "cap"):
-                cap.data.materials[0] = part_mats[key]["top" if layer == "cap" else "skirt"]
-                for k, lid in lids.items():
-                    lid.hide_render = k != key or layer == "cap"
+                cap.hide_render = layer == "dome"
                 domes[key].is_holdout = layer == "cap"
                 domes[key].visible_shadow = layer == "dome"
                 scene.render.filepath = os.path.join(out, "sticks", name if layer == "dome" else "cap_" + name)
                 bpy.ops.render.render(write_still=True)
             domes[key].is_holdout = False
             domes[key].visible_shadow = True
-            cap.data.materials[0] = stick_mat
-            cap.visible_camera = domes[key].visible_camera = True
+            cap.hide_render = False
         pose.rotation_quaternion = Quaternion()
     with open(os.path.join(out, "sticks", "tops.txt"), "w") as fh:
         fh.write("\n".join(tops) + "\n")
