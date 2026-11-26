@@ -22,14 +22,15 @@ inline constexpr Hotspot kTiltedHotspots[] = {
 };
 inline constexpr float kTiltedAspect = 1.63636f;  // width / height
 // The view from above in layers, for the sticks: the controller without its two stick caps (resource 103), and each
-// cap turned on a bone at the stick's root (art/render_top.py, "sticks") towards every point of a kStickGrid x
-// kStickGrid grid of stick positions: a sheet of frames, column 0 = full left, the top row = full up (its resource id,
-// and one frame's box in the picture, as fractions of the picture's width and height). Drawn with the frame nearest the
-// player's stick, they show the stick as it is tilted.
+// cap turned on a bone at its stick's root (art/render_top.py, "sticks") as a GameCube stick moves, in its octagonal
+// gate: a sheet of frames, the middle at the top left, then a row for each of kStickRings distances (1/kStickRings ..
+// the gate), a column for each of kStickDirections directions (every 22.5 degrees from the right, anticlockwise). Each
+// cap: its resource id, one frame's box in the picture (fractions of the picture's width and height), and how far the
+// cap's top moves at full tilt, as a fraction of the frame's width.
 inline constexpr int kTopBodyId = 103;
-inline constexpr int kStickGrid = 7;
-struct CapArt { const char* key; int id; float x, y, w, h; };
+inline constexpr int kStickDirections = 16, kStickRings = 4;
+struct CapArt { const char* key; int id; float x, y, w, h, travel; };
 inline constexpr CapArt kStickCaps[] = {
-    {"stick", 104, 0.1030f, 0.2155f, 0.2130f, 0.3232f},
-    {"cstick", 105, 0.5630f, 0.5842f, 0.1600f, 0.2413f},
+    {"stick", 104, 0.0990f, 0.2079f, 0.2220f, 0.3384f, 0.1363f},
+    {"cstick", 105, 0.5580f, 0.5751f, 0.1700f, 0.2580f, 0.1041f},
 };

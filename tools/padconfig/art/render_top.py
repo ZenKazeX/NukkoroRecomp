@@ -147,11 +147,19 @@ def render(name, hide=(), holdout=()):
 
 others = [o for o in scene.objects if o.type == 'MESH' and o not in caps.values()]
 # ---- the sticks as a virtual controller: a bone at each stick's root, the cap tilted on it ----------------------------
-# "sticks": each cap alone (the rest held out, so the shell hides what tilts under it), tilted towards each point of a
-# GRID x GRID grid of stick positions (-1..1 on both axes, the tilt's length kept within 1), up to MOST_TILT degrees,
-# rendered only in the area round the stick: sticks/<main|c>_<column>_<row>.png, column 0 = full left, row 0 = full
-# down. The cap turns on a bone whose head is the stick's root, PIVOT_DEPTH units under the cap.
-GRID, MOST_TILT, PIVOT_DEPTH = 7, 22.0, 4.0
+# "sticks": each cap alone (the rest held out, so the shell hides what tilts under it), turned on a bone whose head is
+# the stick's root, PIVOT_DEPTH units under the cap, as a GameCube stick moves: inside an octagonal gate with its
+# corners (the notches) at the 4 directions and the 4 diagonals, up to MOST_TILT degrees at a notch (the sticks' parts
+# allow about +-30). Rendered for the middle and for RINGS distances (1/RINGS .. 1 of the way to the gate) in each of
+# DIRECTIONS directions (every 22.5 degrees from the right, anticlockwise: the notches and the gate's edges between them),
+# only in the area round the stick: sticks/<main|c>_0.png (the middle) and sticks/<main|c>_<ring>_<direction>.png.
+DIRECTIONS, RINGS, MOST_TILT, PIVOT_DEPTH = 16, 4, 25.0, 4.0
+
+def gate(angle):
+    # How far the octagonal gate lets the stick go in a direction, as a fraction of the way to a notch.
+    sector = math.radians(22.5)
+    off = (angle % math.radians(45.0)) - sector
+    return math.cos(sector) / math.cos(off)
 # Where each stick is in the picture, as fractions of its width and height from the top left (the area rendered).
 STICK_AREA = {"main": (0.066, 0.158, 0.356, 0.598), "c": (0.496, 0.481, 0.788, 0.924)}
 
@@ -190,22 +198,22 @@ def stick_frames():
         pose = rig.pose.bones[key]
         pose.rotation_mode = 'QUATERNION'
         rest = rig.data.bones[key].matrix_local.to_3x3()
-        for column in range(GRID):
-            for row in range(GRID):
-                dx = column / (GRID - 1) * 2.0 - 1.0
-                dy = row / (GRID - 1) * 2.0 - 1.0
-                length = math.hypot(dx, dy)
-                if length > 1.0:
-                    dx, dy, length = dx / length, dy / length, 1.0
-                if length > 0.0:
-                    # Pushed towards (dx, dy) the stick's top leans that way: a turn about (-dy, dx, 0).
-                    turn = Matrix.Rotation(math.radians(MOST_TILT * length), 3, Vector((-dy, dx, 0.0)).normalized())
-                    pose.rotation_quaternion = (rest.inverted() @ turn @ rest).to_quaternion()
-                else:
-                    pose.rotation_quaternion = Quaternion()
-                bpy.context.view_layer.update()
-                scene.render.filepath = os.path.join(out, "sticks", "%s_%d_%d.png" % (key, column, row))
-                bpy.ops.render.render(write_still=True)
+        poses = [("%s_0.png" % key, 0.0, 0.0)]
+        for ring in range(1, RINGS + 1):
+            for direction in range(DIRECTIONS):
+                angle = math.radians(direction * 360.0 / DIRECTIONS)
+                poses.append(("%s_%d_%d.png" % (key, ring, direction), angle, ring / RINGS * gate(angle)))
+        for name, angle, length in poses:
+            if length > 0.0:
+                # Pushed that way the stick's top leans that way: a turn about the axis across it.
+                dx, dy = math.cos(angle), math.sin(angle)
+                turn = Matrix.Rotation(math.radians(MOST_TILT * length), 3, Vector((-dy, dx, 0.0)))
+                pose.rotation_quaternion = (rest.inverted() @ turn @ rest).to_quaternion()
+            else:
+                pose.rotation_quaternion = Quaternion()
+            bpy.context.view_layer.update()
+            scene.render.filepath = os.path.join(out, "sticks", name)
+            bpy.ops.render.render(write_still=True)
         pose.rotation_quaternion = Quaternion()
     print("WROTE sticks")
 if only in ("all", "full"):

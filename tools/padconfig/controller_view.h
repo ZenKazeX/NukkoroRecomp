@@ -19,11 +19,16 @@ struct ControllerView {
     bool left_trigger = false;   // past the mapping's trigger threshold
     bool right_trigger = false;
     int selected = -1;           // the kControls row being changed
-    float main_x = 0, main_y = 0;  // the game's main stick and C stick as the player tilts them: -1..1, up is +
+    float main_x = 0, main_y = 0;  // the main stick and C stick as drawn, in their gates (stick_in_gate()): up is +
     float c_x = 0, c_y = 0;
 };
 
 bool operator==(const ControllerView& a, const ControllerView& b) noexcept;
+
+// A stick position read from a controller (-1..1 on each axis, round, up is +) as a GameCube stick would take it: held
+// inside the octagonal gate (at its corners, the notches at the 4 directions and the 4 diagonals, 1 from the middle;
+// nearer between them), and settled into a notch it is pushed fully towards within a few degrees.
+void stick_in_gate(float x, float y, float& gate_x, float& gate_y);
 
 // What presses control `index`: "A", "LB or LT", "RT". The analog triggers always work as L and R.
 std::wstring control_label(const GamepadBinding& binding, std::size_t index);

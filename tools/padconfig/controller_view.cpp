@@ -110,8 +110,19 @@ const Marks& marks(int id) {
     return cache.emplace(id, m).first->second;
 }
 
-// ---- the sticks: the picture from above in layers (the body, and each cap alone), a cap drawn moved the way the
-// player tilts the stick ----------------------------------------------------------------------------------------------
+// ---- the sticks: the picture from above in layers (the body, and each cap turned on a bone, in frames), drawn the way
+// the player tilts the stick, in a GameCube stick's octagonal gate ----------------------------------------------------
+
+constexpr REAL kPi = 3.14159265f;
+constexpr REAL kSector = kPi / 8.0f;  // half the angle between two notches (22.5 degrees)
+
+// How far the octagonal gate lets the stick go towards `angle` (radians from the right, anticlockwise): 1 at a notch
+// (its corners, every 45 degrees), cos(22.5) halfway between two.
+REAL gate_at(REAL angle) {
+    REAL off = std::fmod(angle, kPi / 4.0f);
+    if (off < 0) off += kPi / 4.0f;
+    return std::cos(kSector) / std::cos(off - kSector);
+}
 
 // Where things are, in view units: the label columns `f` times their normal width (and the labels f times their normal
 // size) on both sides of the pictures, the whole scaled by `scale` to the area and centred across it.
@@ -211,26 +222,36 @@ struct Painter {
         return at(tilted_rect(m), h->cx, h->cy);
     }
 
-    // A stick cap as the player tilts that stick: the frame of its sheet nearest the stick's position, with a red ring
-    // like a pressed button's (stronger the further it is tilted) while it is away from the middle.
+    // A stick cap as the stick is held (x, y: in its gate, stick_in_gate()): the frame of its sheet nearest that
+    // position, moved by what is left between the two (the cap's top moves about in proportion), so that it follows
+    // the stick smoothly; with a red ring like a pressed button's round its top, stronger the further it is tilted.
     void draw_cap(const CapArt& cap, float x, float y) {
         Bitmap* sheet = art(cap.id);
         if (sheet == nullptr) return;
-        const int last = kStickGrid - 1;
-        const int column = std::clamp(static_cast<int>(std::lround((x + 1.0f) / 2.0f * last)), 0, last);
-        const int row = last - std::clamp(static_cast<int>(std::lround((y + 1.0f) / 2.0f * last)), 0, last);  // up is on top
-        const REAL cell_w = static_cast<REAL>(sheet->GetWidth()) / kStickGrid, cell_h = static_cast<REAL>(sheet->GetHeight()) / kStickGrid;
+        const REAL length = std::sqrt(x * x + y * y);
+        const REAL angle = std::atan2(y, x);
+        int ring = 0, direction = 0;
+        if (length > 0.0f) {
+            ring = std::clamp(static_cast<int>(std::lround(length / gate_at(angle) * kStickRings)), 0, kStickRings);
+            direction = static_cast<int>(std::lround(angle / (2.0f * kPi) * kStickDirections));
+            direction = ((direction % kStickDirections) + kStickDirections) % kStickDirections;
+        }
+        // The frame's own position, and what is left over.
+        const REAL frame_angle = direction * 2.0f * kPi / kStickDirections;
+        const REAL frame_length = static_cast<REAL>(ring) / kStickRings * gate_at(frame_angle);
+        const REAL left_x = x - frame_length * std::cos(frame_angle), left_y = y - frame_length * std::sin(frame_angle);
+        const REAL cell_w = static_cast<REAL>(sheet->GetWidth()) / kStickDirections;
+        const REAL cell_h = static_cast<REAL>(sheet->GetHeight()) / (kStickRings + 1);
         const RectF r = top_rect(m);
-        const RectF box(r.X + r.Width * cap.x, r.Y + r.Height * cap.y, r.Width * cap.w, r.Height * cap.h);
-        g.DrawImage(sheet, box, column * cell_w, row * cell_h, cell_w, cell_h, UnitPixel);
-        if (x == 0.0f && y == 0.0f) return;
-        // The ring round the cap's top, which leans with the stick: about a third of the frame across, at its centre
-        // moved up to a quarter of the frame towards the tilt.
-        const REAL amount = std::min(1.0f, std::sqrt(x * x + y * y));
-        const REAL radius = std::min(box.Width, box.Height) * 0.30f;
-        const PointF centre(box.X + box.Width * (0.5f + 0.17f * x), box.Y + box.Height * (0.5f - 0.17f * y));
-        Pen ring(Color(static_cast<BYTE>(90 + 120 * amount), 235, 45, 35), 3.0f);
-        g.DrawEllipse(&ring, centre.X - radius, centre.Y - radius, radius * 2.0f, radius * 2.0f);
+        const REAL box_w = r.Width * cap.w, box_h = r.Height * cap.h, travel = box_w * cap.travel;
+        const RectF box(r.X + r.Width * cap.x + left_x * travel, r.Y + r.Height * cap.y - left_y * travel, box_w, box_h);
+        g.DrawImage(sheet, box, (ring == 0 ? 0 : direction) * cell_w, ring * cell_h, cell_w, cell_h, UnitPixel);
+        if (length == 0.0f) return;
+        const REAL amount = std::min(1.0f, length);
+        const REAL radius = std::min(box_w, box_h) * 0.30f;
+        const PointF top(r.X + r.Width * cap.x + box_w / 2.0f + x * travel, r.Y + r.Height * cap.y + box_h / 2.0f - y * travel);
+        Pen ring_pen(Color(static_cast<BYTE>(90 + 120 * amount), 235, 45, 35), 3.0f);
+        g.DrawEllipse(&ring_pen, top.X - radius, top.Y - radius, radius * 2.0f, radius * 2.0f);
     }
     void draw_pictures() {
         g.SetInterpolationMode(InterpolationModeHighQualityBicubic);
@@ -303,6 +324,21 @@ int hit(const Hotspot (&list)[N], const RectF& r, PointF p) {
 bool operator==(const ControllerView& a, const ControllerView& b) noexcept {
     return same(a.binding, b.binding) && a.held == b.held && a.left_trigger == b.left_trigger && a.right_trigger == b.right_trigger &&
            a.selected == b.selected && a.main_x == b.main_x && a.main_y == b.main_y && a.c_x == b.c_x && a.c_y == b.c_y;
+}
+
+void stick_in_gate(float x, float y, float& gate_x, float& gate_y) {
+    const REAL length = std::min(1.0f, std::sqrt(x * x + y * y));
+    if (length <= 0.0f) {
+        gate_x = gate_y = 0.0f;
+        return;
+    }
+    REAL angle = std::atan2(y, x);
+    // Pushed (nearly) all the way, the stick slides along the gate into a notch it is within 8 degrees of.
+    const REAL notch = std::round(angle / (kPi / 4.0f)) * (kPi / 4.0f);
+    if (length > 0.85f && std::fabs(angle - notch) < kPi / 22.5f) angle = notch;
+    const REAL held = std::min(length, gate_at(angle));
+    gate_x = held * std::cos(angle);
+    gate_y = held * std::sin(angle);
 }
 
 std::wstring control_label(const GamepadBinding& binding, std::size_t index) {

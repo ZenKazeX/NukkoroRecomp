@@ -187,6 +187,7 @@ struct App {
     ControllerView view;
     bool left_trigger = false, right_trigger = false;
     float left_x = 0, left_y = 0, right_x = 0, right_y = 0;  // the sticks, -1..1 (up is +), 0 inside their dead zones
+    float shown_sticks[4] = {};  // the main and C stick as drawn now (x, y each), easing towards where they are held
 
     ui::Appearance look;           // the text size and colours (appearance.cfg)
     int scroll_y = 0;     // how far the window's content is scrolled (only up and down)
@@ -477,12 +478,24 @@ void refresh_picture(WORD buttons) {
     next.held = buttons;
     next.left_trigger = g.left_trigger;
     next.right_trigger = g.right_trigger;
-    // The game's main stick is the player's left one, or the right one when they swapped them.
+    // The game's main stick is the player's left one, or the right one when they swapped them; each as a GameCube
+    // stick takes it (in its octagonal gate), and drawn easing towards it like a spring-centred stick, not jumping:
+    // a third of the way more each 16 ms (about 40 ms to get there), in steps of 1/256 so a still stick stops repainting.
     const bool swapped = g.binding.swap_sticks;
-    next.main_x = swapped ? g.right_x : g.left_x;
-    next.main_y = swapped ? g.right_y : g.left_y;
-    next.c_x = swapped ? g.left_x : g.right_x;
-    next.c_y = swapped ? g.left_y : g.right_y;
+    float target[4];
+    stick_in_gate(swapped ? g.right_x : g.left_x, swapped ? g.right_y : g.left_y, target[0], target[1]);
+    stick_in_gate(swapped ? g.left_x : g.right_x, swapped ? g.left_y : g.right_y, target[2], target[3]);
+    float* shown[4] = {&g.shown_sticks[0], &g.shown_sticks[1], &g.shown_sticks[2], &g.shown_sticks[3]};
+    for (int i = 0; i < 4; ++i) {
+        float& s = *shown[i];
+        s += (target[i] - s) * 0.4f;
+        if (std::fabs(target[i] - s) < 1.0f / 256.0f) s = target[i];
+    }
+    const auto step = [](float v) { return std::round(v * 256.0f) / 256.0f; };
+    next.main_x = step(g.shown_sticks[0]);
+    next.main_y = step(g.shown_sticks[1]);
+    next.c_x = step(g.shown_sticks[2]);
+    next.c_y = step(g.shown_sticks[3]);
     next.selected = g.capturing;
     if (next == g.view) return;
     g.view = next;
