@@ -77,6 +77,7 @@ constexpr int kFirstRow = 100, kFirstLive = 200;
 enum : int { kThreshold = 300, kThresholdValue, kSwapSticks, kStyle };
 enum : int { kTabs = 400, kRestore, kSave, kClose, kStatus, kInfo, kTextSize, kColours, kPageTitle };
 constexpr int kFirstField = 1000, kFirstBind = 2000;
+constexpr DWORD kDrawn = CBS_OWNERDRAWFIXED | CBS_HASSTRINGS;  // drop-down lists drawn by tools/ui (ui::draw_item)
 constexpr UINT_PTR kPollTimer = 1;
 constexpr UINT kMsgLook = WM_APP + 1;  // wparam: ui::Theme, lparam: text size, control to focus
 constexpr DWORD kCaptureMs = 6000;
@@ -576,7 +577,7 @@ void fit_drop_width(HWND combo) {
         text.resize(static_cast<std::size_t>(n));
         widest = std::max(widest, static_cast<int>(ui::text_extent(font, text).cx));
     }
-    SendMessageW(combo, CB_SETDROPPEDWIDTH, static_cast<WPARAM>(widest + px(16) + GetSystemMetrics(SM_CXVSCROLL)), 0);
+    SendMessageW(combo, CB_SETDROPPEDWIDTH, static_cast<WPARAM>(widest + ui::dropdown_chrome(font) + GetSystemMetrics(SM_CXVSCROLL)), 0);
 }
 
 void refresh_field(Field& f) {
@@ -696,8 +697,10 @@ HWND make(const wchar_t* cls, const std::wstring& text, DWORD style, int x, int 
         if (g.next_made >= g.made.size()) return nullptr;
         HWND c = g.made[g.next_made++];
         SetWindowPos(c, nullptr, px(g.origin_x + x), px(y) - g.scroll_y, px(w), px(h), SWP_NOZORDER | SWP_NOACTIVATE);
-        if (g.building == kPadButtons)  // the controller page's scale may have changed with the window
+        if (g.building == kPadButtons) {  // the controller page's scale may have changed with the window
             SendMessageW(c, WM_SETFONT, reinterpret_cast<WPARAM>(font != nullptr ? font : page_font()), FALSE);
+            ui::fit_dropdown(c);  // a drop-down list's heights follow its font (nothing for other controls)
+        }
         return c;
     }
     HWND c = CreateWindowExW(0, cls, text.c_str(), WS_CHILD | (g.building < 0 ? WS_VISIBLE : 0) | style, px(g.origin_x + x),
@@ -742,9 +745,10 @@ constexpr int kCardLeft = 18;
 int place_card(Field& f, int y) {
     f.id = kFirstField + static_cast<int>(&f - g.fields.data());
     const int right = g.page_w - 12;
-    const int inner_l = kCardLeft + 20, inner_r = right - 20, inner_w = inner_r - inner_l;
     int control_w = f.kind == Kind::Check ? 120 : f.kind == Kind::Number ? 110 : 320;
-    const bool beside = inner_w - control_w - 32 >= 260;  // the words keep room for about 40 characters a line
+    const bool beside = right - kCardLeft - 40 - control_w - 32 >= 260;  // the words keep room for about 40 characters a line
+    const int margin = beside ? 20 : 12;  // a narrow card keeps more of its width for its words and list
+    const int inner_l = kCardLeft + margin, inner_r = right - margin, inner_w = inner_r - inner_l;
     if (!beside) control_w = std::min(control_w, inner_w);
     const int text_w = beside ? inner_w - control_w - 32 : inner_w;
     const int label_h = text_height(f.label, g.font, text_w), help_h = text_height(f.help, g.caption, text_w);
@@ -763,7 +767,7 @@ int place_card(Field& f, int y) {
             if (!g.relayout) ui::set_switch(f.control);
             break;
         case Kind::Combo:
-            f.control = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, control_x, cy + 1, control_w, 300, f.id);
+            f.control = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | kDrawn | WS_TABSTOP | WS_VSCROLL, control_x, cy + 1, control_w, 300, f.id);
             break;
         case Kind::Slider:
             f.control = make(TRACKBAR_CLASSW, L"", TBS_HORZ | TBS_NOTICKS | WS_TABSTOP, control_x, cy, control_w - 100, 30, f.id);
@@ -775,7 +779,7 @@ int place_card(Field& f, int y) {
             f.control = make(L"EDIT", L"", ES_AUTOHSCROLL | WS_BORDER | WS_TABSTOP, control_x, cy + 2, control_w, 26, f.id);
             break;
         case Kind::Size:
-            f.control = make(L"COMBOBOX", L"", CBS_DROPDOWN | WS_TABSTOP | WS_VSCROLL, control_x, cy + 1, control_w, 300, f.id);
+            f.control = make(L"COMBOBOX", L"", CBS_DROPDOWN | kDrawn | WS_TABSTOP | WS_VSCROLL, control_x, cy + 1, control_w, 300, f.id);
             if (!g.relayout) {
                 for (const Choice& c : f.choices) SendMessageW(f.control, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(c.label.c_str()));
                 fit_drop_width(f.control);
@@ -802,7 +806,7 @@ int place(Field& f, int x, int y, int w) {
             if (!g.relayout) ui::set_switch(f.control);
             break;
         case Kind::Combo:
-            f.control = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, cx, cy, control_w, 300, f.id);
+            f.control = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | kDrawn | WS_TABSTOP | WS_VSCROLL, cx, cy, control_w, 300, f.id);
             break;
         case Kind::Slider:
             f.control = make(TRACKBAR_CLASSW, L"", TBS_HORZ | TBS_NOTICKS | WS_TABSTOP, cx, cy, control_w - 96, 26, f.id);
@@ -814,7 +818,7 @@ int place(Field& f, int x, int y, int w) {
             f.control = make(L"EDIT", L"", ES_AUTOHSCROLL | WS_BORDER | WS_TABSTOP, cx, cy, control_w, 26, f.id);
             break;
         case Kind::Size:
-            f.control = make(L"COMBOBOX", L"", CBS_DROPDOWN | WS_TABSTOP | WS_VSCROLL, cx, cy, control_w, 300, f.id);
+            f.control = make(L"COMBOBOX", L"", CBS_DROPDOWN | kDrawn | WS_TABSTOP | WS_VSCROLL, cx, cy, control_w, 300, f.id);
             if (!g.relayout)
                 for (const Choice& c : f.choices) SendMessageW(f.control, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(c.label.c_str()));
             break;
@@ -1091,7 +1095,7 @@ int lay_out_pad_page(int page_w, int top, HFONT font) {
         make(L"STATIC", prompts, SS_LEFT | SS_CENTERIMAGE, kLeft, y, inner_w, 22, -1);
         y += 22;
     }
-    HWND combo = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, name_beside ? kLeft + kNameW + 2 : kLeft, y,
+    HWND combo = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | kDrawn | WS_TABSTOP | WS_VSCROLL, name_beside ? kLeft + kNameW + 2 : kLeft, y,
                       std::min(200, name_beside ? inner_w - kNameW - 2 : inner_w), 200, kStyle);
     if (!g.relayout) {
         for (const auto& s : kStyles) SendMessageW(combo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(s.label.c_str()));
@@ -1217,9 +1221,9 @@ const int kTextSizes[] = {100, 125, 150, 175, 200};
 const struct {
     std::wstring label;
     ui::Theme theme;
-} kThemes[] = {{"Theme: same as Windows"_w, ui::Theme::System},
-               {"Theme: light"_w, ui::Theme::Light},
-               {"Theme: dark"_w, ui::Theme::Dark},
+} kThemes[] = {{"Theme: Same as Windows"_w, ui::Theme::System},
+               {"Theme: Light"_w, ui::Theme::Light},
+               {"Theme: Dark"_w, ui::Theme::Dark},
                {"Theme: Shadow"_w, ui::Theme::Shadow}};
 
 // The navigation list's icons (Segoe Fluent Icons / Segoe MDL2 Assets), in page order.
@@ -1320,8 +1324,8 @@ void build() {
     g.tabs = make(L"LISTBOX", L"", LBS_OWNERDRAWFIXED | LBS_HASSTRINGS | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT | WS_TABSTOP,
                   12, 16, nav_w - 24, kPageCount * kNavItemH + 4, kTabs);
     const int look_y = 16 + kPageCount * kNavItemH + 24;
-    HWND sizes = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, 16, look_y, kLookW, 300, kTextSize);
-    HWND themes = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, 16, look_y + 40, kLookW, 300, kColours);
+    HWND sizes = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | kDrawn | WS_TABSTOP | WS_VSCROLL, 16, look_y, kLookW, 300, kTextSize);
+    HWND themes = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | kDrawn | WS_TABSTOP | WS_VSCROLL, 16, look_y + 40, kLookW, 300, kColours);
     if (!g.relayout) {
         for (int i = 0; i < kPageCount; ++i) SendMessageW(g.tabs, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(kPageNames[i].c_str()));
         SendMessageW(g.tabs, LB_SETITEMHEIGHT, 0, px(kNavItemH));
@@ -1544,8 +1548,8 @@ constexpr DWORD kStyleFlags = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIM
 
 // The window's smallest size: small enough for any screen, the same at every zoom (the page scrolls).
 SIZE smallest_window() {
-    // 760 pixels at 96 dpi: the longest drop-down choice still fits at zoom 200 %.
-    return SIZE{MulDiv(760, g.dpi, 96), MulDiv(480, g.dpi, 96)};
+    // 780 pixels at 96 dpi: the longest drop-down choice still fits at zoom 200 %.
+    return SIZE{MulDiv(780, g.dpi, 96), MulDiv(480, g.dpi, 96)};
 }
 
 // The window at the start: as wide as the pages at zoom 100 % and as tall as the content was then (`content_h`
@@ -1746,11 +1750,13 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpar
     }
     case WM_MEASUREITEM: {
         auto* measure = reinterpret_cast<MEASUREITEMSTRUCT*>(lparam);
+        if (ui::measure_item(measure)) return TRUE;
         if (measure->CtlID == kTabs) measure->itemHeight = static_cast<UINT>(px(kNavItemH));
         return TRUE;
     }
     case WM_DRAWITEM: {
         const auto* draw = reinterpret_cast<const DRAWITEMSTRUCT*>(lparam);
+        if (ui::draw_item(draw)) return TRUE;
         if (draw->CtlID != kTabs) return DefWindowProcW(hwnd, message, wparam, lparam);
         if (draw->itemID == static_cast<UINT>(-1)) {
             FillRect(draw->hDC, &draw->rcItem, ui::window_brush());

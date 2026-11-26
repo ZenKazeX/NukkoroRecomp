@@ -167,7 +167,7 @@ of pages, the Mod Manager at the right end of its bottom bar):
 | Control | Key | Values |
 |---|---|---|
 | Zoom: 100 % .. 200 %, everything larger (also Ctrl and + / -, Ctrl and 0 for 100 %, Ctrl and the mouse wheel) | `zoom` | 100, 125, 150, 175, 200 |
-| Theme: same as Windows / light / dark / Shadow | `theme` | `system` (Windows' app mode: Settings > Personalisation > Colours), `light`, `dark`, `shadow` (near black with Shadow's red instead of Windows' accent colour) |
+| Theme: Same as Windows / Light / Dark / Shadow | `theme` | `system` (Windows' app mode: Settings > Personalisation > Colours), `light`, `dark`, `shadow` (near black with Shadow's red instead of Windows' accent colour) |
 
 A change is used at once and saved at once (no Save needed); the other program uses it the next time it opens. The
 file is created only when one of the two is changed, and like the other files only the changed line is rewritten.

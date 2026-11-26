@@ -125,7 +125,7 @@ menu: the in-game Options menu is the only menu we restyle, mods must be chosen 
 storage tree cannot be swapped under a running game without changing its timing), and installing needs file dialogs,
 drag-and-drop and archive handling that belong to the desktop. It uses only Windows components (common controls v6,
 WIC for previews, shell for Recycle Bin and drop) and is per-monitor DPI aware. It is drawn in Windows 11's style
-(tools/ui/theme.h): Segoe UI Variable, rounded buttons with icons, Play in the accent colour, the selected mod's side on
+(tools/ui/theme.h): Segoe UI Variable, rounded buttons with icons and drop-down lists with roomy rows, Play in the accent colour, the selected mod's side on
 a card, the Shadow icon. Its theme (as Windows, light, dark or Shadow) and zoom (100 to 200 %) are shared with the
 Settings program through `appearance.cfg`
 ([PC_SETTINGS_FILES.md](../PC_SETTINGS_FILES.md#appearancecfg-the-programs-zoom-and-theme)).

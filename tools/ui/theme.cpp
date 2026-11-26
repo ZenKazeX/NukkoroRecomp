@@ -442,7 +442,240 @@ void set_theme(HWND h, bool dark, const wchar_t* dark_name, const wchar_t* light
     SetWindowTheme(h, dark ? dark_name : light_name, nullptr);
 }
 
+// ---- drop-down lists: a rounded box with a chevron, and roomy rows with a rounded highlight -----------------------------
+
+const wchar_t* const kHot = L"ui.hot";
+
+int font_line(HFONT font) {
+    HDC dc = GetDC(nullptr);
+    HGDIOBJ old = SelectObject(dc, font);
+    TEXTMETRICW tm{};
+    GetTextMetricsW(dc, &tm);
+    SelectObject(dc, old);
+    ReleaseDC(nullptr, dc);
+    return tm.tmHeight;
+}
+
+HFONT combo_font(HWND h) {
+    auto font = reinterpret_cast<HFONT>(SendMessageW(h, WM_GETFONT, 0, 0));
+    return font != nullptr ? font : static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT));
+}
+
+bool editable_combo(HWND h) { return (GetWindowLongW(h, GWL_STYLE) & 3) == CBS_DROPDOWN; }
+
+std::wstring combo_item_text(HWND h, int index) {
+    if (index < 0) return {};
+    const int n = static_cast<int>(SendMessageW(h, CB_GETLBTEXTLEN, static_cast<WPARAM>(index), 0));
+    if (n <= 0) return {};
+    std::wstring text(static_cast<std::size_t>(n) + 1, L'\0');
+    SendMessageW(h, CB_GETLBTEXT, static_cast<WPARAM>(index), reinterpret_cast<LPARAM>(text.data()));
+    text.resize(static_cast<std::size_t>(n));
+    return text;
+}
+
+// A downward chevron centred on (cx, cy), `size` wide.
+void chevron(HDC dc, float cx, float cy, float size, COLORREF color) {
+    Gdiplus::Graphics g(dc);
+    g.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+    Gdiplus::Pen pen(gp(color), std::max(1.2f, size / 7.0f));
+    pen.SetStartCap(Gdiplus::LineCapRound);
+    pen.SetEndCap(Gdiplus::LineCapRound);
+    pen.SetLineJoin(Gdiplus::LineJoinRound);
+    const float half = size / 2.0f, rise = size / 4.0f;
+    const Gdiplus::PointF points[] = {{cx - half, cy - rise}, {cx, cy + rise}, {cx + half, cy - rise}};
+    g.DrawLines(&pen, points, 3);
+}
+
+// The closed box, drawn whole (off screen first): a rounded face like a button's, the chosen item's words, the chevron.
+// An editable one is a field with its own edit inside: only its face, edge and chevron are drawn here.
+void paint_dropdown(HWND h, HDC target) {
+    const Palette& p = g_palette;
+    RECT rc;
+    GetClientRect(h, &rc);
+    const int w = rc.right - rc.left, hgt = rc.bottom - rc.top;
+    if (w <= 0 || hgt <= 0) return;
+    HDC dc = CreateCompatibleDC(target);
+    HBITMAP bitmap = CreateCompatibleBitmap(target, w, hgt);
+    HGDIOBJ old_bitmap = SelectObject(dc, bitmap);
+    fill_parent_background(h, dc, rc);
+    HFONT font = combo_font(h);
+    HGDIOBJ old_font = SelectObject(dc, font);
+    const int line = font_line(font);
+    const float radius = std::max(4.0f, line / 4.0f);
+    const bool editable = editable_combo(h);
+    const bool disabled = !IsWindowEnabled(h);
+    const bool dropped = SendMessageW(h, CB_GETDROPPEDSTATE, 0, 0) != FALSE;
+    const bool hot = GetPropW(h, kHot) != nullptr;
+    HWND focus = GetFocus();
+    const bool focused = focus == h || (focus != nullptr && GetParent(focus) == h);
+    COLORREF fill = editable ? p.field : dropped ? p.control_pressed : hot && !disabled ? p.control_hot : p.control;
+    RECT face = rc;
+    round_rect(dc, face, radius, fill, p.control_stroke);
+    // The chevron in the last line and a fifth (an editable box's edit ends before it: place_edit()).
+    const int arrow_left = rc.right - line * 6 / 5 - 4;
+    const COLORREF ink = disabled ? p.muted : p.text;
+    chevron(dc, (arrow_left + rc.right) / 2.0f, hgt / 2.0f, line * 0.55f, ink);
+    if (!editable) {
+        const std::wstring text = combo_item_text(h, static_cast<int>(SendMessageW(h, CB_GETCURSEL, 0, 0)));
+        RECT t{rc.left + line / 2, rc.top, arrow_left, rc.bottom};
+        SetBkMode(dc, TRANSPARENT);
+        SetTextColor(dc, ink);
+        DrawTextW(dc, text.c_str(), static_cast<int>(text.size()), &t, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+        if (focused && focus_shown(h)) focus_ring(dc, rc, radius + 1.0f);
+    } else if (focused) {
+        // A field with the focus: Windows 11's accent line along its bottom.
+        RECT underline{rc.left + 1, rc.bottom - 2, rc.right - 1, rc.bottom};
+        SetDCBrushColor(dc, p.accent);
+        FillRect(dc, &underline, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+    }
+    BitBlt(target, 0, 0, w, hgt, dc, 0, 0, SRCCOPY);
+    SelectObject(dc, old_font);
+    SelectObject(dc, old_bitmap);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+}
+
+// An editable box's edit: its words at the same place as a closed list's, centred on the box's height, clear of the
+// chevron. Windows places it again whenever the box changes size or font: this follows.
+void place_edit(HWND h) {
+    COMBOBOXINFO info{};
+    info.cbSize = sizeof(info);
+    if (!editable_combo(h) || !GetComboBoxInfo(h, &info) || info.hwndItem == nullptr || info.hwndItem == h) return;
+    RECT rc;
+    GetClientRect(h, &rc);
+    const int line = font_line(combo_font(h));
+    const int edit_h = std::min(line + 2, static_cast<int>(rc.bottom) - 4);
+    const int left = line / 2 - 1, right = rc.right - line * 6 / 5 - 6;
+    SetWindowPos(info.hwndItem, nullptr, left, (rc.bottom - edit_h) / 2, std::max(1, right - left), edit_h,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+LRESULT CALLBACK dropdown_proc(HWND h, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR, DWORD_PTR) {
+    if (!g_palette.custom) return DefSubclassProc(h, message, wparam, lparam);
+    switch (message) {
+        case WM_SIZE:
+        case WM_SETFONT:
+        case CB_SETITEMHEIGHT: {
+            const LRESULT result = DefSubclassProc(h, message, wparam, lparam);
+            place_edit(h);
+            return result;
+        }
+        case WM_ERASEBKGND:
+            return 1;
+        case WM_PAINT: {
+            PAINTSTRUCT ps;
+            HDC dc = BeginPaint(h, &ps);
+            paint_dropdown(h, dc);
+            EndPaint(h, &ps);
+            return 0;
+        }
+        case WM_PRINTCLIENT:
+            paint_dropdown(h, reinterpret_cast<HDC>(wparam));
+            return 0;
+        case WM_MOUSEMOVE:
+            if (GetPropW(h, kHot) == nullptr) {
+                SetPropW(h, kHot, reinterpret_cast<HANDLE>(1));
+                TRACKMOUSEEVENT track{sizeof(track), TME_LEAVE, h, 0};
+                TrackMouseEvent(&track);
+                InvalidateRect(h, nullptr, FALSE);
+            }
+            break;
+        case WM_MOUSELEAVE:
+            RemovePropW(h, kHot);
+            InvalidateRect(h, nullptr, FALSE);
+            break;
+        case WM_SETFOCUS:
+        case WM_KILLFOCUS:
+        case WM_ENABLE:
+        case CB_SETCURSEL:
+        case CB_SHOWDROPDOWN:
+        case WM_COMMAND:  // from an editable box's edit: its focus
+        case WM_CTLCOLOREDIT: {
+            const LRESULT result = DefSubclassProc(h, message, wparam, lparam);
+            if (message != WM_CTLCOLOREDIT) InvalidateRect(h, nullptr, FALSE);
+            return result;
+        }
+        case WM_NCDESTROY:
+            RemovePropW(h, kHot);
+            RemoveWindowSubclass(h, dropdown_proc, 2);
+            break;
+    }
+    return DefSubclassProc(h, message, wparam, lparam);
+}
+
 }  // namespace
+
+int dropdown_chrome(HFONT font) {
+    const int line = font_line(font);
+    return line / 2 + line * 6 / 5 + 8;  // the words' margin, the chevron's room, the edges
+}
+
+void fit_dropdown(HWND combo) {
+    if (!is_class(combo, WC_COMBOBOXW)) return;
+    const int line = font_line(combo_font(combo));
+    const LONG style = GetWindowLongW(combo, GWL_STYLE);
+    if ((style & (CBS_OWNERDRAWFIXED | CBS_OWNERDRAWVARIABLE)) != 0) {
+        // The closed box about a line and a half high (two at the edges), the rows of the open list a little more.
+        SendMessageW(combo, CB_SETITEMHEIGHT, static_cast<WPARAM>(-1), line * 3 / 2);
+        SendMessageW(combo, CB_SETITEMHEIGHT, 0, line * 9 / 5);
+    }
+    SetWindowSubclass(combo, dropdown_proc, 2, 0);
+    if (g_palette.custom) place_edit(combo);
+    COMBOBOXINFO info{};
+    info.cbSize = sizeof(info);
+    if (windows_build() >= 22000 && GetComboBoxInfo(combo, &info) && info.hwndList != nullptr) {
+        const DWORD round = 3 /*DWMWCP_ROUNDSMALL*/;
+        DwmSetWindowAttribute(info.hwndList, 33 /*DWMWA_WINDOW_CORNER_PREFERENCE*/, &round, sizeof(round));
+    }
+    InvalidateRect(combo, nullptr, TRUE);
+}
+
+bool measure_item(MEASUREITEMSTRUCT* measure) {
+    if (measure->CtlType != ODT_COMBOBOX) return false;
+    // fit_dropdown() sets the real heights once the box has its font.
+    measure->itemHeight = static_cast<UINT>(font_line(static_cast<HFONT>(GetStockObject(DEFAULT_GUI_FONT))) * 9 / 5);
+    return true;
+}
+
+bool draw_item(const DRAWITEMSTRUCT* draw) {
+    if (draw->CtlType != ODT_COMBOBOX) return false;
+    const Palette& p = g_palette;
+    HWND h = draw->hwndItem;
+    HDC dc = draw->hDC;
+    const RECT& r = draw->rcItem;
+    const bool in_box = (draw->itemState & ODS_COMBOBOXEDIT) != 0;  // the closed box's words (high contrast)
+    const bool selected = (draw->itemState & ODS_SELECTED) != 0;
+    const bool disabled = (draw->itemState & ODS_DISABLED) != 0 || !IsWindowEnabled(h);
+    HFONT font = combo_font(h);
+    HGDIOBJ old_font = SelectObject(dc, font);
+    const int line = font_line(font);
+    const std::wstring text = combo_item_text(h, static_cast<int>(draw->itemID));
+    RECT t{r.left + line / 2 + 4, r.top, r.right - 4, r.bottom};
+    SetBkMode(dc, TRANSPARENT);
+    if (!p.custom) {
+        // High contrast: the system's colours, as Windows draws a list.
+        const bool highlight = selected && !in_box;
+        FillRect(dc, &r, GetSysColorBrush(highlight ? COLOR_HIGHLIGHT : COLOR_WINDOW));
+        SetTextColor(dc, GetSysColor(disabled ? COLOR_GRAYTEXT : highlight ? COLOR_HIGHLIGHTTEXT : COLOR_WINDOWTEXT));
+        DrawTextW(dc, text.c_str(), static_cast<int>(text.size()), &t, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+        if ((draw->itemState & ODS_FOCUS) != 0 && !in_box) DrawFocusRect(dc, &r);
+        SelectObject(dc, old_font);
+        return true;
+    }
+    FillRect(dc, &r, in_box ? surface_brush() : field_brush());
+    if (selected && !in_box) {
+        // The row under the pointer or the keys: a rounded highlight with the accent mark, as in Windows 11's lists.
+        const RECT face{r.left + 4, r.top + 2, r.right - 4, r.bottom - 2};
+        round_rect(dc, face, std::max(4.0f, line / 4.0f), p.selected, p.selected, 0.0f);
+        const int mark_h = (r.bottom - r.top) * 2 / 5;
+        const RECT mark{face.left, r.top + (r.bottom - r.top - mark_h) / 2, face.left + 3, r.top + (r.bottom - r.top - mark_h) / 2 + mark_h};
+        round_rect(dc, mark, 1.5f, p.accent, p.accent, 0.0f);
+    }
+    SetTextColor(dc, disabled ? p.muted : p.field_text);
+    DrawTextW(dc, text.c_str(), static_cast<int>(text.size()), &t, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX);
+    SelectObject(dc, old_font);
+    return true;
+}
 
 bool windows_prefers_dark() {
     if (high_contrast()) return false;
@@ -601,6 +834,7 @@ void apply_to_control(HWND h) {
         set_theme(h, dark, L"DarkMode_Explorer");
     } else if (is_class(h, WC_COMBOBOXW)) {
         set_theme(h, dark, L"DarkMode_CFD");
+        fit_dropdown(h);
         COMBOBOXINFO info{};
         info.cbSize = sizeof(info);
         if (GetComboBoxInfo(h, &info)) {
@@ -833,11 +1067,11 @@ std::vector<std::wstring> find_clipped(HWND parent, bool whole_height) {
             info.cbSize = sizeof(info);
             const int sel = static_cast<int>(SendMessageW(c, CB_GETCURSEL, 0, 0));
             if (sel >= 0 && GetComboBoxInfo(c, &info)) {
-                const int n = static_cast<int>(SendMessageW(c, CB_GETLBTEXTLEN, static_cast<WPARAM>(sel), 0));
-                std::wstring item(static_cast<std::size_t>(std::max(n, 0)) + 1, L'\0');
-                SendMessageW(c, CB_GETLBTEXT, static_cast<WPARAM>(sel), reinterpret_cast<LPARAM>(item.data()));
-                item.resize(static_cast<std::size_t>(std::max(n, 0)));
-                need(L"width of the choice", text_extent(font, item, 0).cx + 6, info.rcItem.right - info.rcItem.left);
+                const std::wstring item = combo_item_text(c, sel);
+                if (g_palette.custom && !editable_combo(c))  // drawn here: its words, their margin and the chevron
+                    need(L"width of the choice", text_extent(font, item, 0).cx + dropdown_chrome(font), w);
+                else
+                    need(L"width of the choice", text_extent(font, item, 0).cx + 6, info.rcItem.right - info.rcItem.left);
             }
             h = 0;  // a combo box's height includes its list
         }

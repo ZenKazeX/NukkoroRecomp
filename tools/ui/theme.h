@@ -114,6 +114,15 @@ int button_width(HWND button);
 int button_width(HWND button, bool icon_only);
 int check_box_width(HWND check_box);
 int check_box_height(HWND check_box, int width);
+// Drop-down lists (combo boxes) in Windows 11's style, at the size of their font: create them with CBS_OWNERDRAWFIXED |
+// CBS_HASSTRINGS, answer WM_MEASUREITEM and WM_DRAWITEM with measure_item() and draw_item() (true when they were a
+// combo box's), and call fit_dropdown() after a new font (apply_to_control() does it). The closed box is a rounded face
+// with a chevron, the open list has roomy rows with a rounded highlight. dropdown_chrome(): the width a closed box
+// needs besides its words, in pixels.
+void fit_dropdown(HWND combo);
+bool measure_item(MEASUREITEMSTRUCT* measure);
+bool draw_item(const DRAWITEMSTRUCT* draw);
+int dropdown_chrome(HFONT font);
 // The visible child controls of `parent` whose text does not fit them (statics, buttons, check boxes, the chosen item
 // of combo boxes) or that cross the window's side, and its bottom too when `whole_height` (a window that does not
 // scroll). One line each, for the programs' --check-layout.

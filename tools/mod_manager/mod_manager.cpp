@@ -2393,7 +2393,7 @@ int combo_width(HWND combo) {
         text.resize(static_cast<std::size_t>(n));
         widest = std::max(widest, static_cast<int>(ui::text_extent(font, text).cx));
     }
-    return widest + GetSystemMetricsForDpi(SM_CXVSCROLL, g->dpi) + g->px(16);
+    return widest + ui::dropdown_chrome(font);
 }
 
 // Zoom never changes the window's size: everything is placed for the room the window has. The buttons and the bars
@@ -2639,12 +2639,19 @@ void make_fonts() {
         },
         reinterpret_cast<LPARAM>(g->font));
     SendMessageW(g->buttons[6], WM_SETFONT, reinterpret_cast<WPARAM>(g->bold), TRUE);
+    EnumChildWindows(
+        g->window,
+        [](HWND child, LPARAM) -> BOOL {
+            ui::fit_dropdown(child);  // a drop-down list's heights follow its font (nothing for other controls)
+            return TRUE;
+        },
+        0);
 }
 
 // ---- text size and colours (tools/ui, shared with the settings program) -----------------------------------------------
 
 // The colour choices in the list's order, which is ui::Theme's.
-const char* const kThemeLabels[] = {"Theme: same as Windows", "Theme: light", "Theme: dark", "Theme: Shadow"};
+const char* const kThemeLabels[] = {"Theme: Same as Windows", "Theme: Light", "Theme: Dark", "Theme: Shadow"};
 
 fs::path appearance_folder() { return executable_dir(); }
 
@@ -2739,6 +2746,7 @@ LRESULT CALLBACK card_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_CTLCOLORLISTBOX:
         case WM_NOTIFY:
         case WM_DRAWITEM:
+        case WM_MEASUREITEM:
             return SendMessageW(GetParent(h), msg, wp, lp);
         case WM_COMMAND:
             if (HIWORD(wp) == CBN_SETFOCUS || HIWORD(wp) == EN_SETFOCUS) {
@@ -2840,7 +2848,7 @@ void create_controls(HWND w) {
     for (int i = 0; i < kMaxOptions; ++i) {
         g->option_labels[i] = CreateWindowExW(0, WC_STATICW, L"", WS_CHILD | SS_LEFT | SS_NOPREFIX, 0, 0, 10, 10, card,
                                               reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdOptionLabel0 + i)), inst, nullptr);
-        g->option_combos[i] = CreateWindowExW(0, WC_COMBOBOXW, L"", WS_CHILD | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
+        g->option_combos[i] = CreateWindowExW(0, WC_COMBOBOXW, L"", WS_CHILD | WS_TABSTOP | CBS_DROPDOWNLIST | CBS_OWNERDRAWFIXED | CBS_HASSTRINGS | WS_VSCROLL,
                                               0, 0, 10, 10, card,
                                               reinterpret_cast<HMENU>(static_cast<INT_PTR>(kIdOptionCombo0 + i)), inst, nullptr);
     }
@@ -2853,11 +2861,11 @@ void create_controls(HWND w) {
     g->status = CreateWindowExW(0, WC_STATICW, L"", WS_CHILD | WS_VISIBLE | SS_LEFT | SS_NOPREFIX, 0, 0, 10, 10, w,
                                 reinterpret_cast<HMENU>(kIdStatus), inst, nullptr);
     // The text size and colours, shared with the settings program (appearance.cfg).
-    g->text_size = CreateWindowExW(0, WC_COMBOBOXW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
+    g->text_size = CreateWindowExW(0, WC_COMBOBOXW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | CBS_OWNERDRAWFIXED | CBS_HASSTRINGS | WS_VSCROLL,
                                    0, 0, 10, 10, w, reinterpret_cast<HMENU>(kIdTextSize), inst, nullptr);
     for (int size = ui::kSmallestText; size <= ui::kLargestText; size += ui::kTextStep)
         SendMessageW(g->text_size, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(wide("Zoom: " + std::to_string(size) + " %").c_str()));
-    g->colours = CreateWindowExW(0, WC_COMBOBOXW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
+    g->colours = CreateWindowExW(0, WC_COMBOBOXW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | CBS_OWNERDRAWFIXED | CBS_HASSTRINGS | WS_VSCROLL,
                                  0, 0, 10, 10, w, reinterpret_cast<HMENU>(kIdColours), inst, nullptr);
     for (const char* label : kThemeLabels) SendMessageW(g->colours, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(wide(label).c_str()));
     // Icons before the buttons' words (Segoe Fluent Icons), and Play as the window's main button.
@@ -2897,6 +2905,7 @@ LRESULT CALLBACK window_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         const auto control = reinterpret_cast<HWND>(lp);
         bool on_panel = control == g->details_label;
         for (HWND label : g->option_labels) on_panel = on_panel || control == label;
+        for (HWND combo : g->option_combos) on_panel = on_panel || control == combo;
         if (on_panel) return ui::control_color(msg, reinterpret_cast<HDC>(wp), control, false, true);
     }
     if (g->list != nullptr) {
@@ -2917,6 +2926,9 @@ LRESULT CALLBACK window_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
                 if (IsWindowEnabled(w)) apply_look(g->look, true);
                 else g->look_pending = true;
             }
+            break;
+        case WM_MEASUREITEM:
+            if (ui::measure_item(reinterpret_cast<MEASUREITEMSTRUCT*>(lp))) return TRUE;
             break;
         case WM_CREATE:
             create_controls(w);
@@ -3007,6 +3019,7 @@ LRESULT CALLBACK window_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             break;
         case WM_DRAWITEM: {
             auto* di = reinterpret_cast<DRAWITEMSTRUCT*>(lp);
+            if (ui::draw_item(di)) return TRUE;  // the drop-down lists
             if (di->CtlID != kIdPreview) break;
             FillRect(di->hDC, &di->rcItem, ui::surface_brush());  // on the details card
             const int bw = di->rcItem.right - di->rcItem.left, bh = di->rcItem.bottom - di->rcItem.top;
