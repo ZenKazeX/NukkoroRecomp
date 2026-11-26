@@ -35,7 +35,7 @@ inline constexpr int kStickDirections = 16, kStickRings = 4;
 struct CapArt { const char* key; int id, cap_id; float x, y, w, h, top; };
 inline constexpr CapArt kStickCaps[] = {
     {"stick", 104, 106, 0.0660f, 0.1593f, 0.2900f, 0.4203f, 0.0620f},
-    {"cstick", 105, 107, 0.5490f, 0.5584f, 0.1980f, 0.2898f, 0.0340f},
+    {"cstick", 105, 107, 0.5480f, 0.4810f, 0.1990f, 0.3672f, 0.0340f},
 };
 inline constexpr float kStickTops[2][kStickRings + 1][kStickDirections][2] = {
     {
