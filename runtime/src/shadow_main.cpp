@@ -10483,7 +10483,21 @@ Options parse_options(int argc, char** argv) {
 
 }  // namespace
 
+#if defined(GEKKO_SHIPPING) && defined(_WIN32)
+// The player's executable shows no console window. Started from the Start menu, a shortcut, Explorer or the Mod
+// Manager, Windows opens a console for it alone: that one is let go, so the log does not scroll beside the game.
+// Started from a terminal or a script (the console has another process too), the log still prints there, and output
+// redirected to a file or a pipe keeps its handles either way.
+static void release_own_console() noexcept {
+    DWORD processes[2];
+    if (GetConsoleProcessList(processes, 2) == 1) FreeConsole();
+}
+#endif
+
 int main(int argc, char** argv) {
+#if defined(GEKKO_SHIPPING) && defined(_WIN32)
+    release_own_console();
+#endif
     gekko::name_this_thread("main-ui");  // ES-T1: the window / present loop runs here in windowed runs
     // stdout is FULLY buffered whenever it is not a console - a pipe or a file -
     // and MSVC has no line buffering (_IOLBF behaves as full buffering). A
