@@ -867,6 +867,15 @@ int place(Field& f, int x, int y, int w) {
     return beside ? std::max(label_h + 4, 26) + 20 : label_h + 4 + 26 + 16;
 }
 
+// The camera's mouse movements as the game plays them: the file's camera_*_mouse with an older "invert mouse" applied
+// (it swaps the two directions of its axis: kCameraActions are left, right, up, down).
+std::array<sp::MouseMove, sp::kCameraActionCount> camera_mouse_as_played(const ControlsConfig& k) {
+    std::array<sp::MouseMove, sp::kCameraActionCount> moves = k.camera_mouse;
+    if (k.mouse_invert_x) std::swap(moves[0], moves[1]);
+    if (k.mouse_invert_y) std::swap(moves[2], moves[3]);
+    return moves;
+}
+
 // The pages' fields, in page order. Each reads and changes g's settings directly.
 void add(int page, Kind kind, std::wstring label, std::wstring help, std::function<double()> get,
          std::function<void(double)> set, std::vector<Choice> choices = {}) {
@@ -1057,10 +1066,28 @@ void define_fields() {
     };
     speed("Mouse speed, left and right"_w, k.mouse_sensitivity_x);
     speed("Mouse speed, up and down"_w, k.mouse_sensitivity_y);
-    add(kKeyboard, Kind::Check, "Invert mouse left and right"_w, L"", [&] { return k.mouse_invert_x ? 1.0 : 0.0; },
-        [&](double v) { k.mouse_invert_x = v != 0.0; });
-    add(kKeyboard, Kind::Check, "Invert mouse up and down"_w, L"", [&] { return k.mouse_invert_y ? 1.0 : 0.0; },
-        [&](double v) { k.mouse_invert_y = v != 0.0; });
+    // The mouse movement each camera action follows (controls.cfg camera_*_mouse). The lists show what the game does:
+    // an older file's "invert mouse" swaps the two directions of that axis, and choosing in a list writes the choice
+    // without the invert, so the file says plainly what happens.
+    {
+        const std::wstring camera_labels[sp::kCameraActionCount] = {"Camera left: mouse"_w, "Camera right: mouse"_w,
+                                                                    "Camera up: mouse"_w, "Camera down: mouse"_w};
+        const std::vector<Choice> moves = {{"Moving left"_w, static_cast<double>(sp::MouseMove::Left)},
+                                           {"Moving right"_w, static_cast<double>(sp::MouseMove::Right)},
+                                           {"Moving up"_w, static_cast<double>(sp::MouseMove::Up)},
+                                           {"Moving down"_w, static_cast<double>(sp::MouseMove::Down)},
+                                           {"Not the mouse"_w, static_cast<double>(sp::MouseMove::None)}};
+        for (std::size_t i = 0; i < sp::kCameraActionCount; ++i) {
+            add(kKeyboard, Kind::Combo, camera_labels[i], L"",
+                [&k, i] { return static_cast<double>(camera_mouse_as_played(k)[i]); },
+                [&k, i](double v) {
+                    k.camera_mouse = camera_mouse_as_played(k);
+                    k.mouse_invert_x = k.mouse_invert_y = false;
+                    k.camera_mouse[i] = static_cast<sp::MouseMove>(static_cast<int>(v));
+                },
+                moves);
+        }
+    }
     add(kKeyboard, Kind::Check, "Keep the pointer in the game"_w, L"", [&] { return k.mouse_capture ? 1.0 : 0.0; },
         [&](double v) { k.mouse_capture = v != 0.0; });
     add(kKeyboard, Kind::Slider, "Walk speed"_w, L"", [&] { return static_cast<double>(k.walk_deflection); },
@@ -1234,7 +1261,9 @@ int build_keyboard_page() {
     for (Field& f : g.fields)
         if (f.page == kKeyboard) y += place(f, x, y, w);
     const std::wstring note =
-        "Mouse speed 1 is the normal speed; 2 turns twice as fast. Walk speed is how fast you move while holding "_w
+        "Mouse speed 1 is the normal speed; 2 turns twice as fast. Each camera action follows the mouse moving the way "_w
+        "you choose, as the GameCube's C stick does: camera left swings the camera round to the left, which turns the "_w
+        "view right, so it follows the mouse moving right by default. Walk speed is how fast you move while holding "_w
         "Walk (36 is the default). Keyboard and mouse changes also apply when you switch back to a running game."_w;
     const int note_h = text_height(note, g.caption, w);
     make(L"STATIC", note, SS_LEFT | SS_NOPREFIX, x, y + 6, w, note_h, kHelpId, g.caption);

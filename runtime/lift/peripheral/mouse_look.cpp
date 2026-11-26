@@ -54,6 +54,32 @@ void MouseLook::commit() noexcept {
     have_pending_x_ = have_pending_y_ = false;
 }
 
+void MouseCameraMap::update(std::int64_t mouse_x, std::int64_t mouse_y) noexcept {
+    if (!started_) {
+        started_ = true;
+        last_x_ = mouse_x;
+        last_y_ = mouse_y;
+        return;
+    }
+    const std::int64_t dx = mouse_x - last_x_, dy = mouse_y - last_y_;
+    last_x_ = mouse_x;
+    last_y_ = mouse_y;
+    // How far the mouse moved each way since the last call.
+    const auto moved = [&](MouseMove move) -> std::int64_t {
+        switch (move) {
+            case MouseMove::Left: return dx < 0 ? -dx : 0;
+            case MouseMove::Right: return dx > 0 ? dx : 0;
+            case MouseMove::Up: return dy < 0 ? -dy : 0;
+            case MouseMove::Down: return dy > 0 ? dy : 0;
+            case MouseMove::None: return 0;
+        }
+        return 0;
+    };
+    // kCameraActions: left, right, up, down.
+    stick_x_ += moved(map_[1]) - moved(map_[0]);
+    stick_y_ += moved(map_[2]) - moved(map_[3]);
+}
+
 void apply_look_to_stick(ControllerSample& sample, const MouseLook::Output& look) noexcept {
     if (look.yaw_rate != 0.0) sample.substick_x = stick_for_rate(look.yaw_rate);
     if (look.height_rate != 0.0) sample.substick_y = stick_for_rate(look.height_rate);

@@ -482,6 +482,7 @@ ControlsConfig merge(ControlsConfig out, const ControlsConfig& before, const Con
     for (std::size_t i = 0; i < out.binds.size(); ++i) PADCONFIG_MERGE(binds[i])
     PADCONFIG_MERGE(mouse_sensitivity_x) PADCONFIG_MERGE(mouse_sensitivity_y) PADCONFIG_MERGE(mouse_invert_x)
     PADCONFIG_MERGE(mouse_invert_y) PADCONFIG_MERGE(mouse_capture) PADCONFIG_MERGE(walk_deflection)
+    for (std::size_t i = 0; i < out.camera_mouse.size(); ++i) PADCONFIG_MERGE(camera_mouse[i])
     return out;
 }
 

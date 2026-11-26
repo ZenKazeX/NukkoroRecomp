@@ -279,6 +279,21 @@ void controls_file(const fs::path& dir) {
     sp::parse_controls(written, reread, &errors);
     check(reread == after, "the game reads back exactly the controls chosen");
 
+    // The camera's mouse movements (the Keyboard and mouse page's lists): written as camera_*_mouse, read back.
+    ControlsConfig camera = after;
+    camera.camera_mouse[0] = sp::MouseMove::Left;
+    camera.camera_mouse[1] = sp::MouseMove::Right;
+    check(save_controls(file, after, camera, &error), "controls.cfg saves the camera's mouse movements");
+    const std::string with_camera = read_all(file);
+    const std::vector<std::string> added = new_lines(written, with_camera);
+    check(added.size() == 2 && contains(with_camera, "camera_left_mouse=left\n") &&
+              contains(with_camera, "camera_right_mouse=right\n"),
+          "controls.cfg: only the two changed camera movements are written (appended, as new keys are)");
+    ControlsConfig camera_back = sp::default_controls();
+    sp::parse_controls(with_camera, camera_back, nullptr);
+    check(camera_back == camera, "the game reads back the camera's mouse movements chosen");
+    write_all(file, written);
+
     ControlsConfig bad = after;
     bad.mouse_sensitivity_x = 80;
     check(!save_controls(file, after, bad, &error) && !error.empty(), "a mouse speed above 50 is refused");

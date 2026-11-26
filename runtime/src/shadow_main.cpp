@@ -4514,6 +4514,7 @@ int run(Options options) {
             // Set by the input thread when the mouse is taken from the camera: what it had accumulated is dropped.
             std::atomic<bool> mouse_look_reset{false};
             shadow::peripheral::MouseLook mouse_look;
+            shadow::peripheral::MouseCameraMap mouse_camera;
             std::uint64_t mouse_look_generation = 0;
             // On the game thread, where a sample enters the game: the camera stick from the mouse's counts.
             const auto overlay_mouse_look = [&](shadow::peripheral::ControllerSample& pad) {
@@ -4523,11 +4524,14 @@ int run(Options options) {
                     const auto config = gekko::controls_settings().current();
                     mouse_look.set_settings({config->mouse_sensitivity_x, config->mouse_sensitivity_y,
                                              config->mouse_invert_x, config->mouse_invert_y});
+                    mouse_camera.set_map(config->camera_mouse);
                 }
-                // A positive camera stick orbits the eye to the right, which turns the view left (measured,
-                // tools/controls/camera_parity.py), so the mouse moving right is a negative stick: the view follows the
-                // hand. Mouse Y counts grow toward the player; the camera stick's Y grows away.
-                const std::int64_t total_x = -raw_input.mouse_total_x(), total_y = -raw_input.mouse_total_y();
+                // The mouse's motion as the camera stick, by the movement each camera action follows (controls.cfg
+                // camera_*_mouse). A positive camera stick orbits the eye to the right, which turns the view left
+                // (measured, tools/controls/camera_parity.py): by default camera left follows the mouse moving right, so
+                // the view follows the hand. Mouse Y counts grow toward the player; the camera stick's Y grows away.
+                mouse_camera.update(raw_input.mouse_total_x(), raw_input.mouse_total_y());
+                const std::int64_t total_x = mouse_camera.stick_x(), total_y = mouse_camera.stick_y();
                 if (mouse_look_reset.exchange(false, std::memory_order_acq_rel)) mouse_look.reset(total_x, total_y);
                 shadow::peripheral::apply_look_to_stick(pad, mouse_look.peek(total_x, total_y));
             };

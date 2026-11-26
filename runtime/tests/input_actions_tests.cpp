@@ -342,6 +342,63 @@ void stick_mapping() {
     check(untouched.substick_x == 77, "no mouse motion leaves the gamepad's stick alone");
 }
 
+// The camera actions' mouse movements (controls.cfg camera_*_mouse) and the map the game reads the mouse through.
+void camera_mouse() {
+    const ControlsConfig defaults = default_controls();
+    check(defaults.camera_mouse[0] == MouseMove::Right && defaults.camera_mouse[1] == MouseMove::Left &&
+              defaults.camera_mouse[2] == MouseMove::Up && defaults.camera_mouse[3] == MouseMove::Down,
+          "by default camera left follows the mouse moving right (the view follows the hand), up follows up");
+
+    // The default map is exactly the earlier mapping: stick = minus the mouse's counts, on both axes.
+    {
+        MouseCameraMap map;
+        map.update(1000, -500);  // the first call only starts the count
+        const std::int64_t moves[][2] = {{30, 0}, {-70, 12}, {5, -40}, {0, 0}, {-3, 3}};
+        std::int64_t x = 1000, y = -500;
+        for (const auto& m : moves) {
+            x += m[0];
+            y += m[1];
+            map.update(x, y);
+        }
+        check(map.stick_x() == -(x - 1000) && map.stick_y() == -(y + 500), "the default map is the earlier mapping");
+    }
+    // Swapped left and right: the opposite yaw; up and down unchanged.
+    {
+        MouseCameraMap swapped;
+        swapped.set_map({MouseMove::Left, MouseMove::Right, MouseMove::Up, MouseMove::Down});
+        swapped.update(0, 0);
+        swapped.update(40, -10);
+        check(swapped.stick_x() == 40 && swapped.stick_y() == 10, "camera left on the mouse moving left turns the other way");
+    }
+    // Each action on its own movement: left and right from the mouse's up and down.
+    {
+        MouseCameraMap crossed;
+        crossed.set_map({MouseMove::Up, MouseMove::Down, MouseMove::None, MouseMove::None});
+        crossed.update(0, 0);
+        crossed.update(100, -25);  // right 100, up 25
+        check(crossed.stick_x() == -25 && crossed.stick_y() == 0, "the mouse moving up steers camera left; sideways motion does nothing");
+        crossed.update(100, 15);  // down 40
+        check(crossed.stick_x() == 15, "the mouse moving down steers camera right");
+    }
+
+    // controls.cfg: read, refused, written and read back.
+    ControlsConfig config = default_controls();
+    check(parse_controls("camera_left_mouse = left\ncamera_right_mouse = right\ncamera_up_mouse = none\n", config, nullptr),
+          "camera mouse keys read");
+    check(config.camera_mouse[0] == MouseMove::Left && config.camera_mouse[1] == MouseMove::Right &&
+              config.camera_mouse[2] == MouseMove::None && config.camera_mouse[3] == MouseMove::Down,
+          "camera mouse values applied");
+    std::vector<std::string> errors;
+    ControlsConfig bad = default_controls();
+    check(!parse_controls("camera_down_mouse = sideways\n", bad, &errors) && bad.camera_mouse[3] == MouseMove::Down &&
+              errors.size() == 1,
+          "an unknown movement is refused and not applied");
+    std::string text;
+    for (const ControlsSetting& s : controls_settings(config)) text += s.key + " = " + s.value + "\n";
+    ControlsConfig back = default_controls();
+    check(parse_controls(text, back, nullptr) && back.camera_mouse == config.camera_mouse, "camera mouse keys write and read back");
+}
+
 // What the input thread adds per poll (printed, not asserted: it is a measurement).
 void action_cost() {
     const ControlsConfig config = default_controls();
@@ -362,6 +419,7 @@ int main() {
     config_text();
     settings_service();
     mouse_rotation();
+    camera_mouse();
     action_cost();
     stick_mapping();
     if (g_failures == 0) {

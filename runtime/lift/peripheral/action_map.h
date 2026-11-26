@@ -99,6 +99,16 @@ bool key_from_name(std::string_view name, int& virtual_key) noexcept;
 inline constexpr std::size_t kMaxBinds = 3;
 using ActionBinds = std::array<Bind, kMaxBinds>;
 
+// A mouse movement a camera action follows (controls.cfg: camera_left_mouse = right, ...): moving the mouse that way
+// steers the camera as that action does, in proportion to the motion (peripheral/mouse_look.h).
+enum class MouseMove : std::uint8_t { None, Left, Right, Up, Down };
+// The camera actions, in the order of ControlsConfig::camera_mouse.
+inline constexpr Action kCameraActions[] = {Action::CameraLeft, Action::CameraRight, Action::CameraUp, Action::CameraDown};
+inline constexpr std::size_t kCameraActionCount = 4;
+// "none", "left", "right", "up", "down", and back (exact, lower case).
+const char* mouse_move_name(MouseMove move) noexcept;
+bool mouse_move_from_name(std::string_view name, MouseMove& out) noexcept;
+
 // What the player can configure.
 struct ControlsConfig {
     std::array<ActionBinds, kActionCount> binds{};
@@ -109,6 +119,10 @@ struct ControlsConfig {
     double mouse_sensitivity_y = 1.0;
     bool mouse_invert_x = false;
     bool mouse_invert_y = false;
+    // The mouse movement each camera action follows (kCameraActions order). The game's camera left orbits the camera to
+    // the left, which swings the view right, so by default it follows the mouse moving right and the view follows the
+    // hand; up follows the mouse moving up. The inverts above apply on top.
+    std::array<MouseMove, kCameraActionCount> camera_mouse{MouseMove::Right, MouseMove::Left, MouseMove::Up, MouseMove::Down};
     bool mouse_capture = true;  // hide and confine the cursor during gameplay
 
     // The stick units the Walk action holds the movement stick at (the walk band of the game's stick tuning).
@@ -123,7 +137,8 @@ struct ControlsConfig {
 ControlsConfig default_controls() noexcept;
 
 // Parses controls.cfg text over `config`. Keys: one per action (action_name) with a comma-separated list of binds or
-// "none", and mouse_sensitivity_x/y, mouse_invert_x/y, mouse_capture, walk_deflection. A malformed line is an error and
+// "none", camera_left_mouse / camera_right_mouse / camera_up_mouse / camera_down_mouse (a mouse_move_name), and
+// mouse_sensitivity_x/y, mouse_invert_x/y, mouse_capture, walk_deflection. A malformed line is an error and
 // is not applied (`errors` gets one message per problem, naming the line); the rest of the file still applies, so one
 // typo cannot take every control away. Returns false when anything was reported.
 bool parse_controls(const std::string& text, ControlsConfig& config, std::vector<std::string>* errors);

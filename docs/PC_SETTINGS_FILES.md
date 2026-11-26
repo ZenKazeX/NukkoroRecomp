@@ -150,7 +150,8 @@ gone:
 | Controller options | Invert camera left and right / up and down | `options.cfg` | `invert_camera_x`, `invert_camera_y` | `true` / `false` |
 | Keyboard and mouse | the 22 actions, three keys or mouse buttons each | `controls.cfg` | the action keys | binds, or `none` |
 | Keyboard and mouse | Mouse speed, left and right / up and down | `controls.cfg` | `mouse_sensitivity_x`, `mouse_sensitivity_y` | 0.01 .. 50 |
-| Keyboard and mouse | Invert mouse, Keep the pointer in the game, Walk speed | `controls.cfg` | `mouse_invert_x`, `mouse_invert_y`, `mouse_capture`, `walk_deflection` | 0 / 1; 1 .. 100 |
+| Keyboard and mouse | Camera left / right / up / down: mouse (which mouse movement steers each camera action) | `controls.cfg` | `camera_left_mouse`, `camera_right_mouse`, `camera_up_mouse`, `camera_down_mouse` (`mouse_invert_x`, `mouse_invert_y` swap on top; saving from the list writes them 0) | `left`, `right`, `up`, `down`, `none` |
+| Keyboard and mouse | Keep the pointer in the game, Walk speed | `controls.cfg` | `mouse_capture`, `walk_deflection` | 0 / 1; 1 .. 100 |
 | Saving | Autosave | `options.cfg` | `autosave` | `true` / `false`; "Not chosen yet" removes the line |
 
 Not offered, on purpose: `gameplay_aspect` (a test setting for the game logic, not a picture setting), `hud_scale` /

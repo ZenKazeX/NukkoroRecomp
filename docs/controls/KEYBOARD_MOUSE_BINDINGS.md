@@ -23,6 +23,14 @@ original game's (ORIGINAL_GAMECUBE_CONTROL_MAP.md).
 **Mouse:** moving it right turns the view right; forward moves the camera in and lower, the same input as the game's
 stick. Mouse buttons do nothing in menus.
 
+**Which way the mouse steers the camera** is set per camera action: `camera_left_mouse`, `camera_right_mouse`,
+`camera_up_mouse` and `camera_down_mouse` each name the mouse movement that action follows: `left`, `right`, `up`, `down`
+or `none` (the Settings program's Keyboard and mouse page has a list for each). Moving the mouse that way steers the camera
+as the action does, in proportion to the motion. The game's camera left orbits the camera to the left, which swings the
+view right, so by default `camera_left_mouse = right` and `camera_right_mouse = left` (the view follows the hand), and
+`camera_up_mouse = up`, `camera_down_mouse = down`. `mouse_invert_x` / `mouse_invert_y` still swap the two directions of
+their axis on top (older files); the Settings program writes the movements instead and turns the inverts off.
+
 **Not rebinding on purpose:** Alt+Enter, Alt+F4. Esc quits only if the player binds no action to it. N and M are still
 the development savestate keys in non-shipping builds.
 
@@ -37,6 +45,10 @@ mouse_sensitivity_x = 1.0     # 0.01 to 50: 1.0 = 0.06 degrees of yaw per count
 mouse_sensitivity_y = 1.0
 mouse_invert_x = 0
 mouse_invert_y = 0
+camera_left_mouse = right     # left, right, up, down or none
+camera_right_mouse = left
+camera_up_mouse = up
+camera_down_mouse = down
 mouse_capture = 1             # hide and confine the cursor in play
 walk_deflection = 36          # 1 to 100 stick units
 ```

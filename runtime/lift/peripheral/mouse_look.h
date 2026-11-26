@@ -18,8 +18,10 @@
 // peek() and commit() are separate because a latched sample may be replaced by a newer one before the engine reads it
 // (the 5 ms latch grid of a recording): only what the engine actually read is consumed.
 
+#include <array>
 #include <cstdint>
 
+#include "peripheral/action_map.h"
 #include "peripheral/controls.h"
 
 namespace shadow::peripheral {
@@ -63,6 +65,26 @@ private:
     std::int64_t consumed_x_ = 0, consumed_y_ = 0;
     std::int64_t pending_x_ = 0, pending_y_ = 0;
     bool have_pending_x_ = false, have_pending_y_ = false;
+};
+
+// The mouse's motion as the camera stick's counts, by the mouse movement each camera action follows
+// (ControlsConfig::camera_mouse): moving the mouse a way that an action follows steers the camera as that action does,
+// one count of stick motion for each count of mouse motion that way. Running totals, as MouseLook reads them.
+//   mouse: x grows to the right, y towards the player (the host's raw counts)
+//   stick: x grows towards camera right, y towards camera up
+class MouseCameraMap {
+public:
+    void set_map(const std::array<MouseMove, kCameraActionCount>& map) noexcept { map_ = map; }
+    // The mouse's running totals now; the stick's totals grow by the motion since the last call.
+    void update(std::int64_t mouse_x, std::int64_t mouse_y) noexcept;
+    std::int64_t stick_x() const noexcept { return stick_x_; }
+    std::int64_t stick_y() const noexcept { return stick_y_; }
+
+private:
+    std::array<MouseMove, kCameraActionCount> map_{MouseMove::Right, MouseMove::Left, MouseMove::Up, MouseMove::Down};
+    bool started_ = false;
+    std::int64_t last_x_ = 0, last_y_ = 0;
+    std::int64_t stick_x_ = 0, stick_y_ = 0;
 };
 
 // Writes the rates onto the camera stick of `sample`, in the stick units that the engine's dead zone (25) and live range

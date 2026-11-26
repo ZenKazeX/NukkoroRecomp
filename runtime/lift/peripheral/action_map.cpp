@@ -4,6 +4,7 @@
 #include <charconv>
 #include <cstdio>
 #include <cstdlib>
+#include <iterator>
 
 namespace shadow::peripheral {
 
@@ -235,6 +236,26 @@ ControlsConfig default_controls() noexcept {
     return config;
 }
 
+namespace {
+constexpr const char* kMouseMoveNames[] = {"none", "left", "right", "up", "down"};
+// The controls.cfg key of a camera action's mouse movement: the action's name and "_mouse".
+std::string camera_mouse_key(std::size_t index) { return std::string(action_name(kCameraActions[index])) + "_mouse"; }
+}  // namespace
+
+const char* mouse_move_name(MouseMove move) noexcept {
+    const auto index = static_cast<std::size_t>(move);
+    return index < std::size(kMouseMoveNames) ? kMouseMoveNames[index] : "none";
+}
+
+bool mouse_move_from_name(std::string_view name, MouseMove& out) noexcept {
+    for (std::size_t index = 0; index < std::size(kMouseMoveNames); ++index)
+        if (name == kMouseMoveNames[index]) {
+            out = static_cast<MouseMove>(index);
+            return true;
+        }
+    return false;
+}
+
 bool validate_controls(const ControlsConfig& config, std::string* error) {
     const auto fail = [&](const char* what) {
         if (error != nullptr) *error = what;
@@ -317,6 +338,18 @@ bool parse_controls(const std::string& text, ControlsConfig& config, std::vector
                                      : key == "mouse_invert_y" ? config.mouse_invert_y : config.mouse_capture) = flag;
             continue;
         }
+        bool camera_mouse_key_found = false;
+        for (std::size_t index = 0; index < kCameraActionCount && !camera_mouse_key_found; ++index) {
+            if (key != camera_mouse_key(index)) continue;
+            camera_mouse_key_found = true;
+            MouseMove move{};
+            if (!mouse_move_from_name(value, move)) {
+                report(std::string(key) + ": expected none, left, right, up or down");
+                continue;
+            }
+            config.camera_mouse[index] = move;
+        }
+        if (camera_mouse_key_found) continue;
         if (key == "walk_deflection") {
             int deflection = 0;
             if (!parse_number(value, deflection) || deflection < 1 || deflection > kStickFull) {
@@ -353,6 +386,8 @@ std::vector<ControlsSetting> controls_settings(const ControlsConfig& config) {
     out.push_back({"mouse_invert_y", config.mouse_invert_y ? "1" : "0"});
     out.push_back({"mouse_capture", config.mouse_capture ? "1" : "0"});
     out.push_back({"walk_deflection", std::to_string(config.walk_deflection)});
+    for (std::size_t index = 0; index < kCameraActionCount; ++index)
+        out.push_back({camera_mouse_key(index), mouse_move_name(config.camera_mouse[index])});
     return out;
 }
 
