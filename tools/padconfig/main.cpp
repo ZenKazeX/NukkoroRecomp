@@ -1730,7 +1730,7 @@ void on_timer() {
         for (std::size_t i = 0; i < kControls.size(); ++i) {
             const std::uint16_t mask = g.binding.*kControls[i].field;
             const bool down = g.capturing < 0 && mask != 0u && (buttons & mask) != 0u;
-            set_text(item(kFirstLive + static_cast<int>(i)), down ? L"●" : L"");
+            set_text(item(kFirstLive + static_cast<int>(i)), down ? L"\u25CF" : L""  /* a dot; escaped: this file is not compiled as UTF-8 */);
         }
         refresh_picture(buttons);
     }
