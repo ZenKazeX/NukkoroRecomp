@@ -1,4 +1,4 @@
-# Mod loader and ShadowModManager
+# Mod loader and the Mod Manager
 
 The PC build of Shadow the Hedgehog (a static recompilation made with GekkoForge, under development) loads mods
 natively from a `mods/` folder beside the executable. What the community's mods are and which kinds can work:
@@ -82,7 +82,7 @@ never overwritten silently: the game runs without mods and says why; the manager
   the PAL disc (3,480 files), the NTSC-U disc (3,479) or any real mod tested (1,659 files). Movies (`.sfd`, `.flo`)
   are walked packet by packet: both the disc's layout and CRI sfdmux's (no end code, no padding: the community's
   re-edited intros, refused as damaged until 2026-11-14) are accepted; a cut stream is not (FORMAT_CHECKS.md 3.10).
-- **Code patches** (DOL, Gecko/AR, MCM, xdelta): recognised, kept in `codes/`, reported, never applied
+- **Code patches** (DOL, Gecko/AR, MCM, xdelta): recognised, kept in `codes/`, reported, never applied by installing or enabling a mod (chosen items take effect only after a developer build: codemods/README.md)
   (RELOADED_RESEARCH.md §4).
 
 ## Zero cost and bit-exact when off
@@ -158,7 +158,7 @@ Window:
   checks that every text fits at every zoom and window size (exit code 1 when one does not).
 
 Command line (`ModManager.exe help`): `list`, `info`, `install [--replace] [--name]`, `enable`, `disable`,
-`enable-all`, `disable-all`, `remove`, `move <id> <pos>`, `option <id> <option> <choice>`, `master on|off`,
+`enable-all`, `disable-all`, `remove`, `move <id> <pos>`, `option <id> <option> <choice>`, `master on|off`, `codes <id>`, `code <id> <item> on|off`, `code-signature`, `code-plan` (the code items of mods: a developer feature, see codemods/README.md),
 `profile list|save|load|delete [<name>]`, `set-info <id> <field> <value>`, `check` (exit 1 when an enabled mod
 cannot load), `plan` (JSON), `validate <folder>`; `--mods-dir`, `--game-data`.
 

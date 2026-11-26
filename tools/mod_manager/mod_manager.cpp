@@ -708,7 +708,7 @@ const char kHelp[] =
     "  info <id>                     everything about one mod\n"
     "  install <archive|folder>...   install downloads (.zip, .7z, .rar, folders); --replace updates, --name N\n"
     "  enable <id> | disable <id>    switch a mod on or off (enable also enables disabled dependencies)\n"
-    "  remove <id>                   delete an installed mod's folder\n"
+    "  remove <id>                   delete an installed mod's folder (for good: not to the Recycle Bin)\n"
     "  move <id> <position>          set the priority (1 = highest)\n"
     "  option <id> <option> <choice> choose an option of a mod\n"
     "  master on|off                 load mods at all\n"
@@ -1312,7 +1312,7 @@ void show_details() {
     if (m == nullptr) {
         SetWindowTextW(g->details,
                        crlf(L"Select a mod to see its details.\n\nInstall mods by dropping archives (.zip, .7z, .rar) or "
-                            L"folders onto this window, or with Install.\n\nMods higher in the list have priority: when "
+                            L"folders onto this window, or with Install...\n\nMods higher in the list have priority: when "
                             L"two mods replace the same file, the higher one wins.")
                            .c_str());
         InvalidateRect(g->preview, nullptr, TRUE);

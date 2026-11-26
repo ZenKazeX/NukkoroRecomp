@@ -38,7 +38,7 @@ An unknown key or a bad value stops the game at start with the line number (`dis
 | `fullscreen` | `true` / `false` | `false` | Fullscreen (borderless at the desktop's size). Alt+Enter toggles it and saves it. |
 | `exclusive` | `true` / `false` | `false` | With `fullscreen=true`: the monitor's own display mode `fullscreen_width` x `fullscreen_height` instead of borderless. Alt+Enter into an exclusive mode keeps it only when the monitor accepts the mode; otherwise (or with no answer within 15 s) the window goes back as it was and nothing is saved. |
 | `fullscreen_width`, `fullscreen_height` | pixels, at least 160 x 120; `0` = the desktop's mode | `0` | The exclusive mode's size. |
-| `width`, `height` (also `window_width`, `window_height`) | pixels, at least 160 x 120 | `1280`, `720` | The window's client size. Resizing the window saves the new size. |
+| `width`, `height` (also `window_width`, `window_height`) | pixels, at least 160 x 120 (the Settings program offers 320 x 240 and up) | `1280`, `720` | The window's client size. Resizing the window saves the new size. |
 | `aspect` | `auto`, `W:H` (`4:3`, `16:9`, `16:10`, `21:9`, `32:10`, `32:9`, ...) or a number such as `2.37` | `auto` | The picture's shape. `auto` = the window's or screen's own shape; a fixed ratio is letterboxed inside it. |
 | `aspect_ratio` (also `custom_aspect`) | `W:H` or a number, 0.25 .. 8 | none | An older spelling of a fixed `aspect`. |
 | `render_scale` | percent, 25 .. 200 | `100` | The 3D resolution per side of the picture (50 = half the pixels per side, 200 = supersampled). A value outside the range is clamped with a warning. |
@@ -88,7 +88,7 @@ not wholly a number, out of range, or an unknown key stops the game at start wit
 
 | Key | Values | Default | What it does |
 |---|---|---|---|
-| `a`, `b`, `x`, `y`, `start` | mask | A, B, X, Y, Start | The game's buttons of the same names. |
+| `a`, `b`, `x`, `y`, `start` | mask | A, X, B, Y, Start (Xbox names) | The game's buttons of the same names. B and X follow their place on the GameCube controller: the game's B is the left face button (Xbox X), its X the right one (Xbox B). |
 | `l`, `z` | mask | left shoulder, right shoulder | L and Z. |
 | `r` | mask | `0` (the right trigger raises R) | R. |
 | `dpad_up`, `dpad_down`, `dpad_left`, `dpad_right` | mask | the D-pad | The game's D-pad. |

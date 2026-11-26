@@ -672,7 +672,7 @@ bool HostWindow::pump() {
     const bool keyboard_active =
         handle_ != nullptr && GetForegroundWindow() == static_cast<HWND>(handle_);
     {
-        // Esc quits only while no action uses it (the default layout has it as Pause).
+        // Esc quits only while no action uses it (the default layout has it as Back).
         const auto controls = controls_settings().current();
         const bool escape_is_bound =
             !shadow::peripheral::bound_actions(*controls, shadow::peripheral::key_bind(VK_ESCAPE)).empty();

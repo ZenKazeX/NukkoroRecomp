@@ -376,7 +376,7 @@ void refresh_status() {
     std::wstring text;
     if (g.capturing >= 0) {
         text = "Press the controller button for "_w + wide(kControls[static_cast<std::size_t>(g.capturing)].name) +
-               ". Esc cancels, Delete clears it."_w;
+               ". Esc cancels, Delete or Backspace clears it."_w;
     } else if (g.key_capture >= 0) {
         text = "Press a key or a mouse button for "_w +
                std::wstring(kActionLabels[static_cast<std::size_t>(g.key_capture) / sp::kMaxBinds]) +
@@ -1544,7 +1544,11 @@ bool save() {
         show_message(g.refused.begin()->second + " Nothing was saved."_w);
         return false;
     }
-    for (const std::string& problem : {check_display(g.display), check_options(g.options), check_controls(g.keys)})
+    // Only what is about to be written is checked. A value the player did not touch here (a hand-edited file with a
+    // window narrower than this program offers) must not stop another page from being saved.
+    for (const std::string& problem : {g.display == g.display_saved ? std::string() : check_display(g.display),
+                                       g.options == g.options_saved ? std::string() : check_options(g.options),
+                                       g.keys == g.keys_saved ? std::string() : check_controls(g.keys)})
         if (!problem.empty()) {
             show_message(wide(problem) + " Nothing was saved."_w);
             return false;

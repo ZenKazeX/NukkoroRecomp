@@ -11,7 +11,7 @@ ENGINE.md (the in-game engine for data codes).
 
 1. **Choose.** The manager lists what each mod offers as code (`list_code_items`): its replacement `main.dol`, MCM
    libraries, each named code of a Dolphin game ini, plain code text files. *Code mods...* (window) or
-   `ShadowModManager code <mod> <item> on|off` (CLI) saves the choice in `mods.json`. The chosen items of the enabled
+   `ModManager.exe code <mod> <item> on|off` (CLI) saves the choice in `mods.json`. The chosen items of the enabled
    mods, in load order, with the bytes of their files, give the *selection signature*.
 2. **Build.** *Build...* runs `tools/mods/codemods/build_variant.py` for that signature:
    - `patchset.py` translates each item to PAL addresses (address map + byte signatures; caves relocated into

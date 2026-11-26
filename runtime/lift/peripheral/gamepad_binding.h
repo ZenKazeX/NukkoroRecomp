@@ -3,7 +3,7 @@
 // A PC gamepad as one of Shadow's controllers: which gamepad buttons raise which of the game's controls,
 // and how the analog sticks map to stick units.
 //
-// The binding is the player's (pad.cfg, written by tools/launcher.py: key = gamepad button mask). The stick
+// The binding is the player's (pad.cfg, written by the Settings program: key = gamepad button mask). The stick
 // mapping is not a preference: the game's movement and camera code compares stick magnitudes against fixed
 // thresholds, so the dead zone (8000 of 32767) and the scale (full deflection = 100 stick units) are part of
 // how the game plays and stay as they are. docs/lift-20261006/L1_INPUT.md.
