@@ -19,6 +19,8 @@ struct ControllerView {
     bool left_trigger = false;   // past the mapping's trigger threshold
     bool right_trigger = false;
     int selected = -1;           // the kControls row being changed
+    float main_x = 0, main_y = 0;  // the game's main stick and C stick as the player tilts them: -1..1, up is +
+    float c_x = 0, c_y = 0;
 };
 
 bool operator==(const ControllerView& a, const ControllerView& b) noexcept;

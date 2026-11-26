@@ -9,7 +9,9 @@ using std::min;
 #include <objidl.h>
 #include <gdiplus.h>
 
+#include <cmath>
 #include <cstring>
+#include <string>
 #include <map>
 
 #include "art/hotspots.inc"
@@ -105,6 +107,77 @@ const Marks& marks(int id) {
         m.picked = tinted(m.raw, 255, 190, 30, 0.34);
     }
     return cache.emplace(id, m).first->second;
+}
+
+// ---- the sticks: their caps, cut out of the picture from above, drawn tilted the way the player holds them ------------
+
+// A stick's cap in the picture from above (fractions of the picture's width: its radius, and the radius of the dark
+// gate around it), measured on the render.
+struct StickArt {
+    const char* key;
+    float cap, gate;
+};
+constexpr StickArt kSticks[] = {{"stick", 0.076f, 0.088f}, {"cstick", 0.071f, 0.084f}};
+// How far a cap moves at full tilt, as a fraction of the picture's width (about what the real stick shows from above).
+constexpr float kMostTilt = 0.032f;
+
+struct Cap {
+    Bitmap* image = nullptr;  // the cap, round, with a soft edge
+    Color well;               // the gate's colour, shown where the cap has moved away
+};
+
+// Kept for the program's life, like the pictures.
+const Cap& cap_of(const StickArt& stick) {
+    static std::map<std::string, Cap> cache;
+    auto it = cache.find(stick.key);
+    if (it != cache.end()) return it->second;
+    Cap c;
+    Bitmap* top = art(101);
+    const Hotspot* h = nullptr;
+    for (const Hotspot& spot : kTopHotspots)
+        if (std::strcmp(spot.key, stick.key) == 0) h = &spot;
+    if (top != nullptr && h != nullptr) {
+        const INT w = static_cast<INT>(top->GetWidth()), ht = static_cast<INT>(top->GetHeight());
+        const REAL cx = w * h->cx, cy = ht * h->cy, r = w * stick.cap;
+        const INT size = static_cast<INT>(std::ceil(r * 2.0f)) + 2;
+        auto* image = new Bitmap(size, size, PixelFormat32bppARGB);
+        {
+            Graphics g(image);
+            g.SetInterpolationMode(InterpolationModeHighQualityBicubic);
+            g.SetPixelOffsetMode(PixelOffsetModeHalf);
+            g.DrawImage(top, RectF(0, 0, static_cast<REAL>(size), static_cast<REAL>(size)), cx - size / 2.0f, cy - size / 2.0f,
+                        static_cast<REAL>(size), static_cast<REAL>(size), UnitPixel);
+        }
+        Rect all(0, 0, size, size);
+        BitmapData data{};
+        image->LockBits(&all, ImageLockModeRead | ImageLockModeWrite, PixelFormat32bppARGB, &data);
+        for (INT y = 0; y < size; ++y) {
+            auto* row = reinterpret_cast<BYTE*>(data.Scan0) + y * data.Stride;
+            for (INT x = 0; x < size; ++x) {
+                const REAL dx = x + 0.5f - size / 2.0f, dy = y + 0.5f - size / 2.0f;
+                const REAL inside = std::clamp(r - std::sqrt(dx * dx + dy * dy) + 0.5f, 0.0f, 1.0f);  // a soft edge
+                row[x * 4 + 3] = static_cast<BYTE>(row[x * 4 + 3] * inside);
+            }
+        }
+        image->UnlockBits(&data);
+        c.image = image;
+        // The gate's colour: the picture's average on a ring between the cap and the gate's edge.
+        int red = 0, green = 0, blue = 0, n = 0;
+        const REAL ring = w * (stick.cap + stick.gate) / 2.0f;
+        for (int i = 0; i < 32; ++i) {
+            const REAL a = i * 6.2831853f / 32.0f;
+            const INT x = static_cast<INT>(cx + ring * std::cos(a)), y = static_cast<INT>(cy + ring * std::sin(a));
+            if (x < 0 || y < 0 || x >= w || y >= ht) continue;
+            Color px;
+            top->GetPixel(x, y, &px);
+            red += px.GetR();
+            green += px.GetG();
+            blue += px.GetB();
+            ++n;
+        }
+        if (n > 0) c.well = Color(255, static_cast<BYTE>(red / n), static_cast<BYTE>(green / n), static_cast<BYTE>(blue / n));
+    }
+    return cache.emplace(stick.key, c).first->second;
 }
 
 // Where things are, in view units: the label columns `f` times their normal width (and the labels f times their normal
@@ -205,10 +278,32 @@ struct Painter {
         return at(tilted_rect(m), h->cx, h->cy);
     }
 
+    // A stick held away from the middle: its gate shows where the cap was, and the cap is drawn moved that way.
+    void draw_stick(const StickArt& stick, float x, float y) {
+        if (x == 0.0f && y == 0.0f) return;
+        const Cap& c = cap_of(stick);
+        if (c.image == nullptr) return;
+        const RectF r = top_rect(m);
+        const PointF centre = top(stick.key);
+        const REAL radius = r.Width * stick.cap;
+        SolidBrush well(c.well);
+        g.FillEllipse(&well, centre.X - radius, centre.Y - radius, radius * 2.0f, radius * 2.0f);
+        const REAL shift = r.Width * kMostTilt;
+        const REAL size = c.image->GetWidth() * r.Width / art(101)->GetWidth();  // its pixels at the picture's scale
+        const PointF moved(centre.X + x * shift, centre.Y - y * shift);
+        g.DrawImage(c.image, RectF(moved.X - size / 2.0f, moved.Y - size / 2.0f, size, size));
+        // Lit like a pressed button: a red ring round the cap, stronger the further it is tilted.
+        const REAL amount = std::min(1.0f, std::sqrt(x * x + y * y));
+        Pen ring(Color(static_cast<BYTE>(90 + 120 * amount), 235, 45, 35), 3.0f);
+        g.DrawEllipse(&ring, moved.X - radius, moved.Y - radius, radius * 2.0f, radius * 2.0f);
+    }
+
     void draw_pictures() {
         g.SetInterpolationMode(InterpolationModeHighQualityBicubic);
         g.SetPixelOffsetMode(PixelOffsetModeHalf);
         if (Bitmap* b = art(101)) g.DrawImage(b, top_rect(m));
+        draw_stick(kSticks[0], v.main_x, v.main_y);
+        draw_stick(kSticks[1], v.c_x, v.c_y);
         if (Bitmap* b = art(102)) g.DrawImage(b, tilted_rect(m));
         for (const Hotspot& h : kTopHotspots) mark(top_rect(m), h);
         for (const Hotspot& h : kTiltedHotspots) mark(tilted_rect(m), h);
@@ -266,7 +361,7 @@ int hit(const Hotspot (&list)[N], const RectF& r, PointF p) {
 
 bool operator==(const ControllerView& a, const ControllerView& b) noexcept {
     return same(a.binding, b.binding) && a.held == b.held && a.left_trigger == b.left_trigger && a.right_trigger == b.right_trigger &&
-           a.selected == b.selected;
+           a.selected == b.selected && a.main_x == b.main_x && a.main_y == b.main_y && a.c_x == b.c_x && a.c_y == b.c_y;
 }
 
 std::wstring control_label(const GamepadBinding& binding, std::size_t index) {

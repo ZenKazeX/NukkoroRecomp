@@ -186,6 +186,7 @@ struct App {
     std::wstring message;
     ControllerView view;
     bool left_trigger = false, right_trigger = false;
+    float left_x = 0, left_y = 0, right_x = 0, right_y = 0;  // the sticks, -1..1 (up is +), 0 inside their dead zones
 
     ui::Appearance look;           // the text size and colours (appearance.cfg)
     int scroll_y = 0;     // how far the window's content is scrolled (only up and down)
@@ -335,6 +336,7 @@ void load_xinput() {
 bool poll(WORD& buttons) {
     buttons = 0;
     g.left_trigger = g.right_trigger = false;
+    g.left_x = g.left_y = g.right_x = g.right_y = 0.0f;
     if (g.get_state == nullptr) return false;
     for (DWORD user = 0; user < XUSER_MAX_COUNT; ++user) {
         XINPUT_STATE state{};
@@ -342,6 +344,17 @@ bool poll(WORD& buttons) {
             buttons = state.Gamepad.wButtons;
             g.left_trigger = state.Gamepad.bLeftTrigger > g.binding.trigger_threshold;
             g.right_trigger = state.Gamepad.bRightTrigger > g.binding.trigger_threshold;
+            // The sticks for the pictures, outside XInput's recommended dead zones, in steps of 1/32 (a still stick
+            // does not repaint the pictures).
+            const auto stick = [](SHORT x, SHORT y, int dead, float& out_x, float& out_y) {
+                const float fx = x / 32767.0f, fy = y / 32767.0f, length = std::sqrt(fx * fx + fy * fy);
+                if (length * 32767.0f <= static_cast<float>(dead)) return;
+                const float scale = std::min(1.0f, length) / length;
+                out_x = std::round(fx * scale * 32.0f) / 32.0f;
+                out_y = std::round(fy * scale * 32.0f) / 32.0f;
+            };
+            stick(state.Gamepad.sThumbLX, state.Gamepad.sThumbLY, XINPUT_GAMEPAD_LEFT_THUMB_DEADZONE, g.left_x, g.left_y);
+            stick(state.Gamepad.sThumbRX, state.Gamepad.sThumbRY, XINPUT_GAMEPAD_RIGHT_THUMB_DEADZONE, g.right_x, g.right_y);
             return true;
         }
     }
@@ -464,6 +477,12 @@ void refresh_picture(WORD buttons) {
     next.held = buttons;
     next.left_trigger = g.left_trigger;
     next.right_trigger = g.right_trigger;
+    // The game's main stick is the player's left one, or the right one when they swapped them.
+    const bool swapped = g.binding.swap_sticks;
+    next.main_x = swapped ? g.right_x : g.left_x;
+    next.main_y = swapped ? g.right_y : g.left_y;
+    next.c_x = swapped ? g.left_x : g.right_x;
+    next.c_y = swapped ? g.left_y : g.right_y;
     next.selected = g.capturing;
     if (next == g.view) return;
     g.view = next;
