@@ -5,7 +5,7 @@ screen is the game's own (retail): Sound (the music player), Vibration, System (
 Dolby Pro Logic II), Subtitle (the text language) and Load. Everything a PC adds on top - the window, the picture,
 the volumes, the controller mapping, the keyboard - is set in four plain-text files.
 
-**The Settings program** (`ShadowPadConfig.exe` beside the game, *Settings* in the Start menu) sets them for players
+**The Settings program** (`Settings.exe` beside the game, *Settings* in the Start menu) sets them for players
 who would rather not edit files: pages for Display, Frame rate, Sound, Language, Controller buttons, Controller
 options, Keyboard and mouse, and Saving. It shows what the files hold, writes only the keys the player changes (every
 other line, comment and line ending stays, as when the game writes), creates a file only when something in it is

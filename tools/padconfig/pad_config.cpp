@@ -68,7 +68,7 @@ bool same(const GamepadBinding& a, const GamepadBinding& b) noexcept {
 }
 
 std::string format_binding(const GamepadBinding& binding) {
-    std::string out = "# Controller buttons for Shadow the Hedgehog. Written by ShadowPadConfig.exe.\n"
+    std::string out = "# Controller buttons for Shadow the Hedgehog. Written by Settings.exe.\n"
                       "# Values are controller button masks; 0 means not set.\n\n";
     char line[96];
     for (const Control& c : kControls) {

@@ -1,4 +1,4 @@
-// ShadowPadConfig.exe: the game's settings program ("Shadow the Hedgehog Recompiled - Settings"). It edits the files the
+// Settings.exe: the game's settings program ("Settings - Shadow the Hedgehog"). It edits the files the
 // game reads when it starts, beside this program: display.cfg (screen and frame rate), options.cfg (sound, language,
 // rumble, camera, autosave), pad.cfg (which controller button does what) and controls.cfg (keyboard and mouse).
 // docs/PC_SETTINGS_FILES.md lists every key. Only the keys the player changes are written; every other line stays.
@@ -55,7 +55,7 @@ std::wstring wide(const std::string& s) {
 }
 std::wstring operator""_w(const char* text, std::size_t length) { return wide(std::string(text, length)); }
 
-const std::wstring kTitle = "Shadow the Hedgehog Recompiled - Settings"_w;
+const std::wstring kTitle = "Settings - Shadow the Hedgehog"_w;
 
 // Layout (96 dpi units at the normal text size; px() scales them by the screen and the chosen text size), in the
 // manner of Windows 11's own Settings: a navigation list on the left (with the text size and colour choices under it),

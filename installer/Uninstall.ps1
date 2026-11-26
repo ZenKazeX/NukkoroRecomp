@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Removes an installed copy of Shadow the Hedgehog Recompiled.
+    Removes an installed copy of Shadow the Hedgehog (the PC recompilation).
 
 .DESCRIPTION
     Removes only what the installer recorded in install-manifest.json: the game, the copied disc files, the shortcuts
@@ -46,7 +46,8 @@ if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
 }
 try { $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json }
 catch { Stop-Uninstall "$manifestPath cannot be read: $($_.Exception.Message). Nothing was changed." }
-if ($manifest.schema -ne 1 -or $manifest.product -ne 'Shadow the Hedgehog Recompiled') {
+# Installs from before the rename recorded the product as 'Shadow the Hedgehog Recompiled'.
+if ($manifest.schema -ne 1 -or @('Shadow the Hedgehog', 'Shadow the Hedgehog Recompiled') -notcontains $manifest.product) {
     Stop-Uninstall "$manifestPath is not this game's install record. Nothing was changed."
 }
 
@@ -121,7 +122,7 @@ foreach ($link in @($manifest.shortcuts)) {
 foreach ($dir in @($manifest.shortcut_folders)) {
     if (-not $dir) { continue }
     $path = [string]$dir
-    if ((Split-Path -Leaf $path) -ne 'Shadow the Hedgehog Recompiled') { continue }
+    if (@('Shadow the Hedgehog', 'Shadow the Hedgehog Recompiled') -notcontains (Split-Path -Leaf $path)) { continue }
     if ((Test-Path -LiteralPath $path -PathType Container) -and -not (Get-ChildItem -LiteralPath $path -Force | Select-Object -First 1)) {
         Remove-Item -LiteralPath $path -Force
     }

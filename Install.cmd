@@ -1,6 +1,6 @@
 @echo off
 setlocal
-rem Shadow the Hedgehog Recompiled setup.
+rem Shadow the Hedgehog setup (the PC recompilation).
 rem   Install.cmd                                   opens the setup window (built here on first use)
 rem   Install.cmd -DiscPath <dir> -InstallPath <dir> installs from the console instead
 cd /d "%~dp0"
@@ -35,6 +35,6 @@ type .build-setup.log
 echo.
 echo The setup window could not be built (log above: .build-setup.log).
 echo You can still install from the console:
-echo   Install.cmd -DiscPath "D:\Dumps\Shadow PAL" -InstallPath "%USERPROFILE%\Games\Shadow the Hedgehog Recompiled"
+echo   Install.cmd -DiscPath "D:\Dumps\Shadow PAL" -InstallPath "%USERPROFILE%\Games\Shadow the Hedgehog"
 pause
 exit /b 1

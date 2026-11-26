@@ -36,8 +36,8 @@ function New-FakeInstall([string]$name) {
     Put (Join-Path $root 'session-report.json') '{}'
     $root
 }
-function Write-Manifest([string]$root, $files, $shortcuts = @(), $folders = @()) {
-    $m = [ordered]@{ schema = 1; product = 'Shadow the Hedgehog Recompiled'; files = @($files); shortcuts = @($shortcuts); shortcut_folders = @($folders) }
+function Write-Manifest([string]$root, $files, $shortcuts = @(), $folders = @(), [string]$product = 'Shadow the Hedgehog') {
+    $m = [ordered]@{ schema = 1; product = $product; files = @($files); shortcuts = @($shortcuts); shortcut_folders = @($folders) }
     [System.IO.File]::WriteAllText((Join-Path $root 'install-manifest.json'), ($m | ConvertTo-Json -Depth 4))
 }
 function Files([string]$root) { @('ShadowTheHedgehog.exe', 'files\a\b.dat', 'files\c.dat' | ForEach-Object { Entry $root $_ }) }
@@ -52,8 +52,8 @@ function Run-Uninstall([string]$root, [string[]]$more = @()) {
 
 # 1. Default: saves, settings, unrelated files stay; the game, files and bookkeeping go; shortcuts inside go.
 $r = New-FakeInstall 'default'
-$menu = Join-Path $base 'menu\Shadow the Hedgehog Recompiled'
-$lnk = Join-Path $menu 'Shadow the Hedgehog Recompiled.lnk'
+$menu = Join-Path $base 'menu\Shadow the Hedgehog'
+$lnk = Join-Path $menu 'Shadow the Hedgehog.lnk'
 New-Link $lnk (Join-Path $r 'ShadowTheHedgehog.exe')
 $foreign = Join-Path $base 'desktop\other.lnk'
 New-Link $foreign 'C:\Windows\notepad.exe'
@@ -72,6 +72,17 @@ Check (-not (Test-Path (Join-Path $r 'Uninstall.ps1'))) 'default: the uninstalle
 Check (-not (Test-Path $lnk)) 'default: its shortcut is gone'
 Check (-not (Test-Path $menu)) 'default: its emptied Start menu folder is gone'
 Check (Test-Path $foreign) 'default: a shortcut to something else stays'
+
+# 1b. An install from before the rename (product and Start menu folder 'Shadow the Hedgehog Recompiled') still uninstalls.
+$r = New-FakeInstall 'old-name'
+$oldMenu = Join-Path $base 'menu-old\Shadow the Hedgehog Recompiled'
+$oldLnk = Join-Path $oldMenu 'Shadow the Hedgehog Recompiled.lnk'
+New-Link $oldLnk (Join-Path $r 'ShadowTheHedgehog.exe')
+Write-Manifest $r (Files $r) @($oldLnk) @($oldMenu) 'Shadow the Hedgehog Recompiled'
+$rc = Run-Uninstall $r
+Check ($rc -eq 0) 'old name: exit 0'
+Check (-not (Test-Path (Join-Path $r 'ShadowTheHedgehog.exe'))) 'old name: the game is gone'
+Check (-not (Test-Path $oldMenu)) 'old name: its Start menu folder is gone'
 
 # 2. -RemoveSaves: the saves go, unrelated files still stay.
 $r = New-FakeInstall 'saves'

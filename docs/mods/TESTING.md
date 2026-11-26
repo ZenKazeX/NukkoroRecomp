@@ -18,7 +18,7 @@ every tree; registered with CTest when `SHADOW_BUILD_TESTS=ON`).
 ## 2. End-to-end scenarios: `tools/mods/modtest.py run`
 
 ```
-python -I tools/mods/modtest.py run --exe <game.exe> --manager <ShadowModManager.exe> --game <game data> \
+python -I tools/mods/modtest.py run --exe <game.exe> --manager <ModManager.exe> --game <game data> \
     --downloads <dir with gb_dl/ and dl/> --work <scratch dir> [--only a,b] [--report out.json]
 ```
 

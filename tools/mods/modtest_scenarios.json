@@ -157,7 +157,7 @@
     },
     {
       "name": "code-no-hud-engine",
-      "what": "A code mod end to end: Reloaded's Gecko 'No HUD' chosen with 'ShadowModManager code', decided by build_variant.py --prepare-only (a data code: no recompile), run by the in-game engine on the stock executable; the HUD is gone against the same data without the code",
+      "what": "A code mod end to end: Reloaded's Gecko 'No HUD' chosen with 'ModManager code', decided by build_variant.py --prepare-only (a data code: no recompile), run by the in-game engine on the stock executable; the HUD is gone against the same data without the code",
       "mods": [{"install": "dl/ShdTH-Reloaded"}],
       "code": [[0, "gecko:No HUD", "on"]], "prepare_variant": true,
       "tick": 810000000,

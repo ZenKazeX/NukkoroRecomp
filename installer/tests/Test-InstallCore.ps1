@@ -28,6 +28,34 @@ try {
     Set-Content -LiteralPath (Join-Path $scratch 'b.log') -Value 'CMake Error: an earlier step' -Encoding UTF8
     Check 'cause: only what the step wrote' ((Get-StepFailureCause $log $offset) -match 'LNK1104')
 
+    # --- an update removes what earlier versions called by other names ---------------------------------
+    $old = Join-Path $scratch 'old install'
+    $menuOld = Join-Path $scratch 'menu\Shadow the Hedgehog Recompiled'
+    $desk = Join-Path $scratch 'desktop'
+    New-Item -ItemType Directory -Force -Path $old, $menuOld, $desk | Out-Null
+    foreach ($name in 'ShadowTheHedgehog.exe', 'ShadowPadConfig.exe', 'ShadowModManager.exe', 'Settings.exe') {
+        [System.IO.File]::WriteAllBytes((Join-Path $old $name), [byte[]](1))
+    }
+    $shell = New-Object -ComObject WScript.Shell
+    $made = @()
+    foreach ($pair in @(@($menuOld, 'Shadow the Hedgehog Recompiled.lnk', 'ShadowTheHedgehog.exe'),
+                        @($menuOld, 'Settings.lnk', 'ShadowPadConfig.exe'),
+                        @($desk, 'Shadow the Hedgehog Recompiled.lnk', 'ShadowTheHedgehog.exe'),
+                        @($desk, 'Other.lnk', 'ShadowTheHedgehog.exe'))) {
+        $l = $shell.CreateShortcut((Join-Path $pair[0] $pair[1])); $l.TargetPath = Join-Path $old $pair[2]; $l.Save(); $made += $l.FullName
+    }
+    $foreign = $shell.CreateShortcut((Join-Path $desk 'Shadow the Hedgehog Recompiled (mine).lnk')); $foreign.TargetPath = 'C:\Windows\notepad.exe'; $foreign.Save()
+    $m = [ordered]@{ schema = 1; product = 'Shadow the Hedgehog Recompiled'; files = @(); shortcuts = $made; shortcut_folders = @($menuOld) }
+    [System.IO.File]::WriteAllText((Join-Path $old 'install-manifest.json'), ($m | ConvertTo-Json -Depth 4))
+    $gone = @(Remove-RetiredItems $old)
+    Check 'update: the old settings program and mod manager are removed' (-not (Test-Path (Join-Path $old 'ShadowPadConfig.exe')) -and -not (Test-Path (Join-Path $old 'ShadowModManager.exe')))
+    Check 'update: the game and the new programs stay' ((Test-Path (Join-Path $old 'ShadowTheHedgehog.exe')) -and (Test-Path (Join-Path $old 'Settings.exe')))
+    Check 'update: the old Start menu folder goes, with every shortcut in it' (-not (Test-Path $menuOld))
+    Check 'update: the old desktop shortcut goes' (-not (Test-Path (Join-Path $desk 'Shadow the Hedgehog Recompiled.lnk')))
+    Check 'update: a recorded shortcut with a name that is still used stays' (Test-Path (Join-Path $desk 'Other.lnk'))
+    Check 'update: a shortcut it never made stays' (Test-Path (Join-Path $desk 'Shadow the Hedgehog Recompiled (mine).lnk'))
+    Check 'update: it says what it removed' ($gone.Count -eq 6) ($gone -join '; ')
+
     # --- the install folder ---------------------------------------------------------------------------
     $disc = Join-Path $scratch 'disc'; New-Item -ItemType Directory -Force -Path $disc | Out-Null
     $target = Join-Path $scratch ("Caf" + [char]0xE9 + " (na" + [char]0xEF + "ve) & more\Shadow")

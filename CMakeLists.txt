@@ -285,7 +285,7 @@ set(SHADOW_PREBUILT_PROGRAMS ppcrecomp ShadowPadConfig ShadowModManager)
 #   native_boot.cpp, os_exception_entry.cpp: the SDK's exception vector, 38 PowerPC words (gekko/os_exception_vector.h)
 #   the boot writes into guest memory and the exception entry checks; native_boot.cpp also has a table of the OS's.
 #   runtime/mods/afs.cpp: the names of the memory-card banner and icon files it checks, which the compiler pools next
-#   to each other in the disc's own order (a 70-byte run of the disc's file table). ShadowModManager.exe keeps a
+#   to each other in the disc's own order (a 70-byte run of the disc's file table). ModManager.exe keeps a
 #   48-byte part of it, under the scan's limits.
 set(SHADOW_PREBUILT_LOCAL_SOURCES
     runtime/mods/afs.cpp
@@ -602,7 +602,8 @@ if(NOT SHADOW_BUILD_TESTS)
     set_target_properties(code_engine_tests PROPERTIES EXCLUDE_FROM_ALL ON)
 endif()
 
-# ShadowModManager.exe: the mod manager (window + command line), beside the game executable. Windows only.
+# ModManager.exe (target ShadowModManager): the mod manager (window + command line), beside the game executable.
+# Windows only. The prebuilt file keeps the target's name (prebuilt/ShadowModManager.exe); the installed one is ModManager.exe.
 # The manager and the game both use the mods/ folder beside their own executable, so they share bin/<config>.
 set(SHADOW_MOD_MANAGER_DATA region_diff.json reloaded_features.json file_contexts.json)
 if(WIN32 AND SHADOW_PREBUILT_USED)
@@ -615,17 +616,17 @@ if(WIN32 AND SHADOW_PREBUILT_USED)
     add_custom_target(ShadowModManager ALL
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/bin/$<CONFIG>/mods-data"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SHADOW_PREBUILT_USED}/ShadowModManager.exe"
-                "${CMAKE_BINARY_DIR}/bin/$<CONFIG>/ShadowModManager.exe"
+                "${CMAKE_BINARY_DIR}/bin/$<CONFIG>/ModManager.exe"
         ${_shadow_mod_data_copy}
         DEPENDS "${SHADOW_PREBUILT_USED}/ShadowModManager.exe"
-        COMMENT "Using the prebuilt ShadowModManager.exe"
+        COMMENT "Using the prebuilt mod manager (ModManager.exe)"
         VERBATIM)
 elseif(WIN32)
     # The text size and colours are shared with the settings program (tools/ui, appearance.cfg).
     add_executable(ShadowModManager WIN32 tools/mod_manager/mod_manager.cpp tools/mod_manager/mod_manager.rc tools/ui/appearance.cpp
                    tools/ui/theme.cpp)
     target_include_directories(ShadowModManager PRIVATE tools/ui)
-    set_target_properties(ShadowModManager PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+    set_target_properties(ShadowModManager PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin" OUTPUT_NAME ModManager)
     target_link_libraries(ShadowModManager PRIVATE shadow_mods comctl32 shell32 ole32 windowscodecs dwmapi uxtheme
                           msimg32 comdlg32 advapi32)
     target_compile_definitions(ShadowModManager PRIVATE UNICODE _UNICODE)
@@ -4690,16 +4691,16 @@ if(SHADOW_BUILD_TESTS)
     endif()
 endif()
 
-# The settings program (ShadowPadConfig.exe, "Settings" in the Start menu): installed beside the game, it edits the
+# The settings program (Settings.exe, target ShadowPadConfig; "Settings" in the Start menu): installed beside the game, it edits the
 # display.cfg, options.cfg, pad.cfg and controls.cfg the game reads at start (docs/PC_SETTINGS_FILES.md).
 if(WIN32 AND TARGET ShadowTheHedgehog AND SHADOW_PREBUILT_USED)
     # The prebuilt configurator, put where the build would have written it.
     add_custom_target(ShadowPadConfig ALL
         COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:ShadowTheHedgehog>"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${SHADOW_PREBUILT_USED}/ShadowPadConfig.exe"
-                "$<TARGET_FILE_DIR:ShadowTheHedgehog>/ShadowPadConfig.exe"
+                "$<TARGET_FILE_DIR:ShadowTheHedgehog>/Settings.exe"
         DEPENDS "${SHADOW_PREBUILT_USED}/ShadowPadConfig.exe"
-        COMMENT "Using the prebuilt ShadowPadConfig.exe"
+        COMMENT "Using the prebuilt settings program (Settings.exe)"
         VERBATIM)
 elseif(WIN32 AND (TARGET ShadowTheHedgehog OR SHADOW_PREBUILT_EXPORT))
     # The game's own parsers and line-preserving writer are compiled in, so the program reads and writes the files as
@@ -4714,7 +4715,7 @@ elseif(WIN32 AND (TARGET ShadowTheHedgehog OR SHADOW_PREBUILT_EXPORT))
     set_source_files_properties(tools/padconfig/padconfig.rc PROPERTIES OBJECT_DEPENDS
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/padconfig/art/top.png;${CMAKE_CURRENT_SOURCE_DIR}/tools/padconfig/art/tilted.png")
     # Beside the game (bin/<config>, the game's RUNTIME_OUTPUT_DIRECTORY).
-    set_target_properties(ShadowPadConfig PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+    set_target_properties(ShadowPadConfig PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin" OUTPUT_NAME Settings)
     if(MSVC)
         target_compile_options(ShadowPadConfig PRIVATE /W4 /permissive-)
         set_property(TARGET ShadowPadConfig PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")

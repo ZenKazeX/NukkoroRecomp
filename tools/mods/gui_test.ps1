@@ -1,6 +1,6 @@
-﻿<#
+<#
 .SYNOPSIS
-  Drives the real window of ShadowModManager.exe from outside, the way a user does, and checks the results on disk.
+  Drives the real window of ModManager.exe (the Mod Manager) from outside, the way a user does, and checks the results on disk.
 
 .DESCRIPTION
   Windows PowerShell 5.1. No third-party modules. What it uses:
@@ -20,11 +20,11 @@
 
 .EXAMPLE
   powershell -NoProfile -ExecutionPolicy Bypass -File tools\mods\gui_test.ps1 `
-     -Exe D:\build\ShadowModManager.exe -GameData D:\ShadowGame `
+     -Exe D:\build\ModManager.exe -GameData D:\ShadowGame `
      -Downloads D:\downloads -Work D:\scratch\gui-work -ModelFixes D:\repos\shadow-model-fixes
 #>
 param(
-    [Parameter(Mandatory = $true)][string]$Exe,         # ShadowModManager.exe (mods-data\ beside it)
+    [Parameter(Mandatory = $true)][string]$Exe,         # ModManager.exe (mods-data\ beside it)
     [Parameter(Mandatory = $true)][string]$GameData,    # folder that contains files\ (read only)
     [Parameter(Mandatory = $true)][string]$Downloads,   # cream.rar, playable_tails.zip, xbox_buttons_files.zip
     [Parameter(Mandatory = $true)][string]$Work,        # parent for the fresh per-run folders (nothing else is touched)

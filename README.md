@@ -48,12 +48,14 @@ You do not have to install any of these tools yourself. When Visual Studio's bui
 
 The first build takes about 5 to 20 minutes. Afterwards the extracted disc folder is no longer needed, and you can delete
 the build files in `C:\Users\Public\NukkoroRecomp`. Running the setup again on the same folder updates the game and keeps
-your saves.
+your saves. The game is installed as *Shadow the Hedgehog* in the Start menu, with *Settings* and *Mod Manager* beside
+it; an update removes the shortcuts and programs of earlier versions, which had other names (*Shadow the Hedgehog
+Recompiled*, `ShadowPadConfig.exe`, `ShadowModManager.exe`).
 
 From a copy of this repository, run `Install.cmd` instead. To install from a console:
 
 ```powershell
-.\Install.cmd -DiscPath "D:\Dumps\Shadow PAL" -InstallPath "D:\Games\Shadow the Hedgehog Recompiled"
+.\Install.cmd -DiscPath "D:\Dumps\Shadow PAL" -InstallPath "D:\Games\Shadow the Hedgehog"
 ```
 
 ### Japanese voices
@@ -70,7 +72,7 @@ folder; nothing else from the Japanese disc is used. To switch the spoken langua
 chosen; your saves and settings are kept. From a console:
 
 ```powershell
-.\Install.cmd -DiscPath "D:\Dumps\Shadow PAL" -JapaneseDiscPath "D:\Dumps\Shadow JP" -InstallPath "D:\Games\Shadow the Hedgehog Recompiled"
+.\Install.cmd -DiscPath "D:\Dumps\Shadow PAL" -JapaneseDiscPath "D:\Dumps\Shadow JP" -InstallPath "D:\Games\Shadow the Hedgehog"
 ```
 
 ### Extracting the disc
@@ -101,7 +103,7 @@ Follow the red numbers in each picture. Right-click means the right mouse button
 
 ## Controller
 
-Run `ShadowPadConfig.exe` in the install folder, or use the *Settings* shortcut in the Start menu, and open the
+Run `Settings.exe` in the install folder, or use the *Settings* shortcut in the Start menu, and open the
 *Controller buttons* page. Click a button on the picture, press the button you want on your controller, then Save. The
 game uses the new mapping the next time it starts.
 
@@ -117,7 +119,7 @@ setting).
 
 The Options screen is the game's own. Everything a PC adds - the window and full screen, resolution, picture shape,
 frame rate and V-Sync, volumes, spoken language and subtitles, rumble, camera inversion, controller buttons, keyboard
-and mouse, autosave - is in the *Settings* program (`ShadowPadConfig.exe` in the install folder, *Settings* in the
+and mouse, autosave - is in the *Settings* program (`Settings.exe` in the install folder, *Settings* in the
 Start menu). The game reads the settings when it starts, so a change takes effect the next time you start it. The
 program writes `display.cfg`, `options.cfg`, `pad.cfg` and `controls.cfg` in the install folder;
 [docs/PC_SETTINGS_FILES.md](docs/PC_SETTINGS_FILES.md) describes every line. Alt+Enter switches between a window and
@@ -133,7 +135,7 @@ share the choice.
 The game loads mods from the `mods` folder in the install folder. Mods that replace the game's files (models, stages,
 textures, text, sounds, movies) and Dolphin texture packs work.
 
-1. Run `ShadowModManager.exe` in the install folder, or use the *Mod Manager* shortcut in the Start menu.
+1. Run `ModManager.exe` in the install folder, or use the *Mod Manager* shortcut in the Start menu.
 2. Drop a downloaded mod (`.zip`, `.7z`, `.rar`, or a folder) on the window, or click *Install...*. The manager puts
    each file where the game expects it and says what it left out.
 3. Tick the mods you want. The list's order is the priority: when two mods change the same file, the higher one wins,
@@ -142,7 +144,7 @@ textures, text, sounds, movies) and Dolphin texture packs work.
 
 Code patches (Gecko and Action Replay codes, patched `main.dol` files) are recognised and kept with the mod, but they
 are not applied. Programs and save files in a download are never installed. To play without mods, switch off *Load
-mods* in the manager, or start the game with `--no-mods`. `ShadowModManager.exe help` lists the command-line use, and
+mods* in the manager, or start the game with `--no-mods`. `ModManager.exe help` lists the command-line use, and
 [docs/mods/DESIGN.md](docs/mods/DESIGN.md) describes the folder layout and the rules.
 
 ## Saves

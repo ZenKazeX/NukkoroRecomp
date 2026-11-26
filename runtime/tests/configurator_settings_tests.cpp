@@ -297,7 +297,7 @@ void pad_file(const fs::path& dir) {
     changed.trigger_threshold = 90;
     check(save_binding(file, changed, &error), "pad.cfg saves");
     const std::string written = read_all(file);
-    check(contains(written, "# my own note\n") && contains(written, "Written by ShadowPadConfig.exe"),
+    check(contains(written, "# my own note\n") && contains(written, "Written by Settings.exe"),
           "pad.cfg: comments are kept");
     check(contains(written, "= 0x2000   # B\n"), "pad.cfg: the changed button's own comment names its new button");
     check(new_lines(text, written).size() == 2, "pad.cfg: only the changed keys are written");

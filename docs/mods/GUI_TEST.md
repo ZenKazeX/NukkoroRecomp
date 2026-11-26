@@ -1,6 +1,6 @@
 # Automated test of the mod manager's window
 
-`tools/mods/gui_test.ps1` starts the real `ShadowModManager.exe` window and drives it from outside, the way a user does,
+`tools/mods/gui_test.ps1` starts the real `ModManager.exe` window and drives it from outside, the way a user does,
 then checks the results on disk. Until now the window was checked from rendered pictures and every action through the
 command line; this test is the first that presses the window's own controls.
 
@@ -8,7 +8,7 @@ Windows PowerShell 5.1, no third-party modules, no change to the manager.
 
 ```
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\mods\gui_test.ps1 `
-    -Exe <ShadowModManager.exe> -GameData <folder with files\> -Downloads <folder> -Work <scratch folder> `
+    -Exe <ModManager.exe> -GameData <folder with files\> -Downloads <folder> -Work <scratch folder> `
     [-ModelFixes <a mod folder with options>] [-Only <step id prefix>]
 ```
 

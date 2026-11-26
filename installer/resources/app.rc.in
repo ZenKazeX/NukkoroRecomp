@@ -14,8 +14,8 @@ BEGIN
     BEGIN
         BLOCK "040904B0"
         BEGIN
-            VALUE "FileDescription", "Shadow the Hedgehog Recompiled setup"
-            VALUE "ProductName", "Shadow the Hedgehog Recompiled (work in progress)"
+            VALUE "FileDescription", "Shadow the Hedgehog setup"
+            VALUE "ProductName", "Shadow the Hedgehog, recompiled for PC (unofficial, work in progress)"
             VALUE "FileVersion", "1.0.0"
             VALUE "ProductVersion", "1.0.0"
         END

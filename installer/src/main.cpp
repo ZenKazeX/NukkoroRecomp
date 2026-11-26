@@ -1,4 +1,4 @@
-// Shadow the Hedgehog Recompiled setup: a Win32 window that shows installer/web in WebView2.
+// Shadow the Hedgehog setup: a Win32 window that shows installer/web in WebView2.
 // The page asks the host for native things through a small message bridge ("command|id|payload"):
 // the Windows folder chooser, the PowerShell backend (installer/Backend.ps1, whitelisted commands
 // only) and the install itself, which runs in a Job object so Cancel or closing the window stops
@@ -39,7 +39,7 @@ constexpr int DesignHeight = 648;
 constexpr wchar_t PageHost[] = L"setup.nukkoro.local";
 constexpr wchar_t ArtHost[] = L"art.nukkoro.local";
 constexpr wchar_t PageUrl[] = L"https://setup.nukkoro.local/index.html";
-constexpr wchar_t Title[] = L"Shadow the Hedgehog Recompiled Setup";
+constexpr wchar_t Title[] = L"Shadow the Hedgehog Setup";
 constexpr wchar_t GameExe[] = L"ShadowTheHedgehog.exe";
 
 // ---- small helpers ----------------------------------------------------------------
@@ -272,7 +272,7 @@ private:
             FAILED(devices->GetDefaultAudioEndpoint(eRender, eConsole, &device)) ||
             FAILED(device->Activate(__uuidof(IAudioSessionManager), CLSCTX_ALL, nullptr, reinterpret_cast<void**>(manager.GetAddressOf()))) ||
             FAILED(manager->GetAudioSessionControl(nullptr, 0, &session))) return;
-        session->SetDisplayName(L"Nukkoro Recompiled Setup", nullptr);
+        session->SetDisplayName(L"Shadow the Hedgehog Setup", nullptr);
         wchar_t exe[MAX_PATH];
         if (GetModuleFileNameW(nullptr, exe, MAX_PATH)) session->SetIconPath((std::wstring(exe) + L",0").c_str(), nullptr);
     }
@@ -347,7 +347,7 @@ public:
             if (SUCCEEDED(hr)) hr = dialog->SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_NOCHANGEDIR);
             dialog->SetTitle(folderForJapaneseDisc ? L"Choose the folder Dolphin extracted the Japanese disc into (not the PAL one)"
                              : folderForDisc ? L"Choose the folder Dolphin extracted the disc into (it holds sys and files)"
-                                             : L"Choose where to install Shadow the Hedgehog Recompiled");
+                                             : L"Choose where to install Shadow the Hedgehog");
             // Start at the typed folder, or the nearest existing parent of it.
             fs::path start = folderInitial;
             std::error_code error;

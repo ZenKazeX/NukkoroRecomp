@@ -70,8 +70,8 @@ and `SHADOW_PREBUILT_PROGRAMS`, the only list):
 | --- | --- |
 | `shadow_runtime` (with `shadow_runtime_common`), `shadow_render`, `shadow_render_lifted`, `shadow_rwim`, `shadow_d3d12ma`, `shadow_lift`, `shadow_assets`, `shadow_mods`, `shadow_motion`, `shadow_native_execution`, `shadow_native_memory`, `shadow_native_gameplay` | `runtime/`, `thirdparty/plume/contrib/D3D12MemoryAllocator`; `shadow_render` includes the renderer's shaders, compiled by DXC from `runtime/lift/render/shaders`; `shadow_mods` is the mod loader (`runtime/mods`) |
 | `ppcrecomp.exe` | `tools/ppcrecomp/main.cpp` (the recompiler itself; it reads your DOL only when it runs on your PC) |
-| `ShadowPadConfig.exe` | `tools/padconfig/`, `runtime/lift/peripheral/gamepad_binding.cpp` |
-| `ShadowModManager.exe` | `tools/mod_manager/mod_manager.cpp`, `runtime/mods` |
+| `Settings.exe` (target `ShadowPadConfig`) | `tools/padconfig/`, `runtime/lift/peripheral/gamepad_binding.cpp` |
+| `ModManager.exe` (target `ShadowModManager`) | `tools/mod_manager/mod_manager.cpp`, `runtime/mods` |
 
 Some sources of this repository carry data taken from the game, and the scan finds their objects: they are never
 prebuilt. `SHADOW_PREBUILT_LOCAL_SOURCES` lists them (`native_audio_mixer.cpp`: the AX compressor's gain table;

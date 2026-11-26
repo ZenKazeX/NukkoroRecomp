@@ -7,8 +7,15 @@ Set-StrictMode -Version 2.0
 $script:RepoRoot = Split-Path -Parent $PSScriptRoot
 $script:Shards = 48
 $script:GameExe = 'ShadowTheHedgehog.exe'
-$script:ConfigExe = 'ShadowPadConfig.exe'
-$script:ModManagerExe = 'ShadowModManager.exe'
+$script:ConfigExe = 'Settings.exe'
+$script:ModManagerExe = 'ModManager.exe'
+# The name players see: the Start menu folder, the shortcuts, the install record's product.
+$script:ProductName = 'Shadow the Hedgehog'
+# What earlier versions called things. An update removes them (only inside the install folder, and only shortcuts that
+# still point into it), so the player is not left with two Start menu folders or two settings programs.
+$script:RetiredPrograms = @('ShadowPadConfig.exe', 'ShadowModManager.exe')
+$script:RetiredShortcuts = @('Shadow the Hedgehog Recompiled.lnk', 'Uninstall Shadow the Hedgehog Recompiled.lnk', 'Controller Buttons.lnk')
+$script:RetiredFolders = @('Shadow the Hedgehog Recompiled')
 # Everything the build puts in the install folder, in one place: the programs the build writes beside the game
 # (.build\release\bin\Release). The copy step, the install record and the uninstaller all follow this list.
 $script:InstalledPrograms = @($script:GameExe, $script:ConfigExe, $script:ModManagerExe)
@@ -20,7 +27,7 @@ function Get-RepoRoot { $script:RepoRoot }
 
 function Get-BuiltExe { Join-Path $script:RepoRoot ".build\release\bin\Release\$script:GameExe" }
 
-function Get-DefaultInstallFolder { Join-Path $env:USERPROFILE 'Games\Shadow the Hedgehog Recompiled' }
+function Get-DefaultInstallFolder { Join-Path $env:USERPROFILE 'Games\Shadow the Hedgehog' }
 
 function Format-Size([double]$bytes) {
     if ($bytes -ge 1GB) { return '{0:N1} GB' -f ($bytes / 1GB) }
@@ -868,16 +875,58 @@ function Write-InstallManifest([string]$target, [string]$discRoot, [string[]]$sh
             if ($seen.Contains([string]$entry.path) -or -not (Test-Path -LiteralPath (Join-Path $target $entry.path) -PathType Leaf)) { continue }
             [void]$files.Add($entry)
         }
-        $allShortcuts = @($allShortcuts + @($previous.shortcuts) | Where-Object { $_ } | Select-Object -Unique)
-        $allFolders = @($allFolders + @($previous.shortcut_folders) | Where-Object { $_ } | Select-Object -Unique)
+        # Earlier shortcuts and folders that are still there (Remove-RetiredItems took the renamed ones away).
+        $allShortcuts = @($allShortcuts + @($previous.shortcuts | Where-Object { $_ -and (Test-Path -LiteralPath $_) }) | Select-Object -Unique)
+        $allFolders = @($allFolders + @($previous.shortcut_folders | Where-Object { $_ -and (Test-Path -LiteralPath $_) }) | Select-Object -Unique)
     }
-    $manifest = [ordered]@{ schema = 1; product = 'Shadow the Hedgehog Recompiled'; files = @($files); shortcuts = @($allShortcuts); shortcut_folders = @($allFolders) }
+    $manifest = [ordered]@{ schema = 1; product = $script:ProductName; files = @($files); shortcuts = @($allShortcuts); shortcut_folders = @($allFolders) }
     $manifest | ConvertTo-Json -Depth 4 -Compress | Set-Content -LiteralPath $path -Encoding UTF8
+}
+
+# Removes what an earlier version installed under its old names: the settings program and mod manager (beside the
+# game), and the shortcuts and Start menu folder that it recorded in install-manifest.json and that still point into
+# this install folder. Returns what was removed.
+function Remove-RetiredItems([string]$target) {
+    $removed = @()
+    foreach ($name in $script:RetiredPrograms) {
+        $file = Join-Path $target $name
+        if (Test-Path -LiteralPath $file -PathType Leaf) {
+            Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+            if (-not (Test-Path -LiteralPath $file)) { $removed += $file }
+        }
+    }
+    $path = Join-Path $target 'install-manifest.json'
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $removed }
+    try { $previous = Get-Content -LiteralPath $path -Raw -Encoding UTF8 | ConvertFrom-Json } catch { return $removed }
+    $shell = New-Object -ComObject WScript.Shell
+    $root = [System.IO.Path]::GetFullPath($target).TrimEnd('\') + '\'
+    foreach ($link in @($previous.shortcuts)) {
+        if (-not $link) { continue }
+        $file = [string]$link
+        # A shortcut with an old name, or any shortcut in the old Start menu folder (Settings, Mod Manager there too).
+        $inOldFolder = $script:RetiredFolders -contains (Split-Path -Leaf (Split-Path -Parent $file))
+        if ($script:RetiredShortcuts -notcontains (Split-Path -Leaf $file) -and -not $inOldFolder) { continue }
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
+        $points = [string]$shell.CreateShortcut($file).TargetPath
+        if (-not $points.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) { continue }
+        Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+        if (-not (Test-Path -LiteralPath $file)) { $removed += $file }
+    }
+    foreach ($folder in @($previous.shortcut_folders)) {
+        if (-not $folder) { continue }
+        $dir = [string]$folder
+        if ($script:RetiredFolders -notcontains (Split-Path -Leaf $dir)) { continue }
+        if ((Test-Path -LiteralPath $dir -PathType Container) -and -not (Get-ChildItem -LiteralPath $dir -Force | Select-Object -First 1)) {
+            Remove-Item -LiteralPath $dir -Force -ErrorAction SilentlyContinue
+            if (-not (Test-Path -LiteralPath $dir)) { $removed += $dir }
+        }
+    }
+    return $removed
 }
 
 function New-GameShortcuts([string]$target, [bool]$desktop, [bool]$startMenu,
                            [string]$desktopDir = [Environment]::GetFolderPath('Desktop'),
-                           [string]$startMenuDir = (Join-Path ([Environment]::GetFolderPath('Programs')) 'Shadow the Hedgehog Recompiled')) {
+                           [string]$startMenuDir = (Join-Path ([Environment]::GetFolderPath('Programs')) $script:ProductName)) {
     $shell = New-Object -ComObject WScript.Shell
     $made = @()
     $places = @()
@@ -885,11 +934,11 @@ function New-GameShortcuts([string]$target, [bool]$desktop, [bool]$startMenu,
     if ($startMenu) { $places += $startMenuDir }
     foreach ($dir in $places) {
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
-        $link = $shell.CreateShortcut((Join-Path $dir 'Shadow the Hedgehog Recompiled.lnk'))
+        $link = $shell.CreateShortcut((Join-Path $dir "$($script:ProductName).lnk"))
         $link.TargetPath = Join-Path $target $script:GameExe
         $link.WorkingDirectory = $target
         $link.IconLocation = (Join-Path $target $script:GameExe) + ',0'
-        $link.Description = 'Shadow the Hedgehog Recompiled (static recompilation, work in progress)'
+        $link.Description = 'Shadow the Hedgehog, recompiled for PC (unofficial static recompilation, work in progress)'
         $link.Save()
         $made += $link.FullName
     }
@@ -909,7 +958,7 @@ function New-GameShortcuts([string]$target, [bool]$desktop, [bool]$startMenu,
         $link.Description = 'Add, remove and order mods for the game.'
         $link.Save()
         $made += $link.FullName
-        $link = $shell.CreateShortcut((Join-Path $startMenuDir 'Uninstall Shadow the Hedgehog Recompiled.lnk'))
+        $link = $shell.CreateShortcut((Join-Path $startMenuDir "Uninstall $($script:ProductName).lnk"))
         $link.TargetPath = Join-Path $target 'Uninstall.cmd'
         $link.WorkingDirectory = $target
         $link.Description = 'Removes the game. Your saves and settings are kept.'
@@ -965,7 +1014,7 @@ $script:StageNames = @('Configure the build', 'Translate and compile the game', 
 function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$jobs, [bool]$desktop, [bool]$startMenu,
                             [scriptblock]$OnEvent,
                             [string]$desktopDir = [Environment]::GetFolderPath('Desktop'),
-                            [string]$startMenuDir = (Join-Path ([Environment]::GetFolderPath('Programs')) 'Shadow the Hedgehog Recompiled'),
+                            [string]$startMenuDir = (Join-Path ([Environment]::GetFolderPath('Programs')) $script:ProductName),
                             $japanese = $null, [int]$voice = -1) {
     # $japanese: a Test-JapaneseDiscFolder result (or $null); $voice: options.cfg 'voice' to set (-1 leaves it alone).
     $log = Join-Path $script:RepoRoot '.build\install.log'
@@ -1055,6 +1104,7 @@ function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$j
         }
         Write-InstallInfo $targetPath $disc $japanese
         foreach ($name in @('Uninstall.ps1', 'Uninstall.cmd')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $targetPath -Force }
+        foreach ($old in @(Remove-RetiredItems $targetPath)) { & $OnEvent @{ type = 'log'; text = "Removed (renamed in this version): $old`n" } }
         $shortcuts = @(New-GameShortcuts $targetPath $desktop $startMenu $desktopDir $startMenuDir)
         foreach ($made in $shortcuts) { & $OnEvent @{ type = 'log'; text = "Shortcut: $made`n" } }
         Write-InstallManifest $targetPath $disc.Root $shortcuts $(if ($startMenu) { @($startMenuDir) } else { @() }) $japaneseFiles
@@ -1076,5 +1126,5 @@ Export-ModuleMember -Function Initialize-BuildQos, Set-BuildFullSpeed, Get-Pytho
     Set-SpokenLanguage, Get-FolderSize, Test-InstallFolder, Get-InstallJobs, Get-PrebuiltFolder,
     Get-BuildSteps, Get-InstallSteps, Start-Step, Test-StepSucceeded, Stop-Step, Read-LogTail, Get-StepFailureCause, New-BuildProgress,
     Update-BuildProgress, Get-PrebuiltUsed, Write-InstallInfo, Write-InstallManifest,
-    Get-SourceRevision, Get-BuildConfiguration, New-GameShortcuts,
+    Get-SourceRevision, Get-BuildConfiguration, Remove-RetiredItems, New-GameShortcuts,
     Invoke-GameInstall

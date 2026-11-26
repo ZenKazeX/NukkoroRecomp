@@ -1,6 +1,6 @@
 #pragma once
 
-// The logic of the button mapping configurator (ShadowPadConfig.exe): pad.cfg as the game reads it, without any window.
+// The logic of the button mapping configurator (the Settings program, Settings.exe): pad.cfg as the game reads it, without any window.
 // The format is defined by the game's own parser (peripheral/gamepad_binding.h), which this program links.
 
 #include <array>

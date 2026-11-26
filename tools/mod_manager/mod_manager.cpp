@@ -1,6 +1,6 @@
-// ShadowModManager: installs, enables, orders and configures mods for the PC build of Shadow the Hedgehog (a static
+// ModManager.exe (the Mod Manager): installs, enables, orders and configures mods for the PC build of Shadow the Hedgehog (a static
 // recompilation made with GekkoForge). One native Windows program: a window when started without arguments, a
-// command line for scripts and tests when given a command (ShadowModManager.exe help).
+// command line for scripts and tests when given a command (ModManager.exe help).
 //
 // It edits only <mods dir>/mods.json and the mod folders; the game reads them at start-up (shadow/mods/mods.h).
 // Why a separate program and not a game menu: docs/mods/DESIGN.md ("The manager").
@@ -72,11 +72,21 @@ std::wstring crlf(const std::wstring& s) {
     return out;
 }
 
-fs::path executable_dir() {
+// This program's own file (ModManager.exe, or whatever it is called) and its folder.
+fs::path executable_path() {
     std::wstring buf(32768, L'\0');
     const DWORD n = GetModuleFileNameW(nullptr, buf.data(), static_cast<DWORD>(buf.size()));
     buf.resize(n);
-    return fs::path(buf).parent_path();
+    return fs::path(buf);
+}
+
+fs::path executable_dir() { return executable_path().parent_path(); }
+
+// The window's title and the title of its messages. Kept as UTF-8 and widened when used: the game's name as a UTF-16
+// literal would be the same bytes as the game's own font files, which the release's content scan refuses.
+const wchar_t* window_title() {
+    static const std::wstring title = wide("Mod Manager - Shadow the Hedgehog");
+    return title.c_str();
 }
 
 // The game data root the way the game finds it (runtime/src/native_bootstrap.cpp): GameData/ or the folder itself,
@@ -691,7 +701,7 @@ void print_issues(const std::vector<mods::Issue>& issues, bool infos) {
 }
 
 const char kHelp[] =
-    "ShadowModManager - mods for Shadow the Hedgehog (PC, a static recompilation made with GekkoForge)\n"
+    "ModManager - mods for Shadow the Hedgehog (PC, a static recompilation made with GekkoForge)\n"
     "\n"
     "Without arguments: the window. Commands (state is saved to <mods dir>/mods.json):\n"
     "  list                          installed mods in priority order (highest first)\n"
@@ -1416,7 +1426,7 @@ void changed() {
                     wide("This change was NOT saved: " + why +
                          "\n\nThe game will not see it. Close the program that uses mods.json and try again.")
                         .c_str(),
-                    L"Shadow Mod Manager", MB_OK | MB_ICONERROR);
+                    window_title(), MB_OK | MB_ICONERROR);
     }
     g->model.replan();
     fill_list();
@@ -1428,7 +1438,7 @@ void refresh_all() {
         const std::wstring text = wide("The mod list file could not be read:\n\n" + g->model.state_error +
                                        "\n\nStart a new list? (Every mod will be switched off; the old file is "
                                        "replaced.)");
-        if (MessageBoxW(g->window, text.c_str(), L"Shadow Mod Manager", MB_YESNO | MB_ICONWARNING) == IDYES)
+        if (MessageBoxW(g->window, text.c_str(), window_title(), MB_YESNO | MB_ICONWARNING) == IDYES)
             g->model.reset_state();
     }
     fill_list();
@@ -1443,7 +1453,7 @@ bool read_only_refused() {
                 wide("The mod list file is damaged, so changes cannot be saved:\n\n" + g->model.state_error +
                      "\n\nFix or delete mods.json, then press Refresh.")
                     .c_str(),
-                L"Shadow Mod Manager", MB_OK | MB_ICONWARNING);
+                window_title(), MB_OK | MB_ICONWARNING);
     fill_list();  // put the controls back as stored
     SetWindowTextW(g->status, L"mods.json is damaged - read only. Fix or delete it, then press Refresh.");
     return true;
@@ -1453,10 +1463,10 @@ void start_install(std::vector<fs::path> sources, bool replace = false) {
     if (g->busy || sources.empty() || read_only_refused()) return;
     if (g->model.game.empty()) {
         MessageBoxW(g->window, wide("The game's files were not found (" + g->model.game_error +
-                                    "), so downloads cannot be placed.\nPut ShadowModManager.exe beside "
+                                    "), so downloads cannot be placed.\nPut ModManager.exe beside "
                                     "ShadowTheHedgehog.exe.")
                                    .c_str(),
-                    L"Shadow Mod Manager", MB_OK | MB_ICONERROR);
+                    window_title(), MB_OK | MB_ICONERROR);
         return;
     }
     set_busy(true);
@@ -1528,7 +1538,7 @@ void finish_install(InstallJob* job) {
     }
     fill_list();
     if (!report.empty())
-        MessageBoxW(g->window, crlf(wide(report)).c_str(), L"Shadow Mod Manager",
+        MessageBoxW(g->window, crlf(wide(report)).c_str(), window_title(),
                     MB_OK | (any_failed ? (any_ok ? MB_ICONWARNING : MB_ICONERROR) : MB_ICONINFORMATION));
     if (!updates.empty()) {
         std::string list;
@@ -1550,7 +1560,7 @@ void on_check_changed(int row, bool checked) {
             g->filling = true;
             ListView_SetCheckState(g->list, row, FALSE);
             g->filling = false;
-            MessageBoxW(g->window, L"This folder is not a usable mod; see its notes.", L"Shadow Mod Manager",
+            MessageBoxW(g->window, L"This folder is not a usable mod; see its notes.", window_title(),
                         MB_OK | MB_ICONINFORMATION);
         }
         return;
@@ -1566,7 +1576,7 @@ void on_check_changed(int row, bool checked) {
             if (MessageBoxW(g->window, crlf(wide("These enabled mods need it and will not load without it:\n" + list +
                                                  "\nSwitch them off too?"))
                                            .c_str(),
-                            L"Shadow Mod Manager", MB_YESNO | MB_ICONQUESTION) == IDYES)
+                            window_title(), MB_YESNO | MB_ICONQUESTION) == IDYES)
                 for (const std::string& d : dependents) g->model.entry(d)->enabled = false;
         }
     }
@@ -1578,14 +1588,14 @@ void on_check_changed(int row, bool checked) {
             MessageBoxW(g->window, crlf(wide("This mod needs mods that are not installed:\n" + list +
                                              "\nIt stays enabled but will not load until they are installed."))
                                        .c_str(),
-                        L"Shadow Mod Manager", MB_OK | MB_ICONWARNING);
+                        window_title(), MB_OK | MB_ICONWARNING);
         }
         const std::vector<std::string> off = g->model.disabled_dependencies(key);
         if (!off.empty()) {
             std::string list;
             for (const std::string& d : off) list += "  " + g->model.find(d)->manifest.name + " (" + d + ")\n";
             if (MessageBoxW(g->window, crlf(wide("This mod needs:\n" + list + "\nEnable them too?")).c_str(),
-                            L"Shadow Mod Manager", MB_YESNO | MB_ICONQUESTION) == IDYES)
+                            window_title(), MB_YESNO | MB_ICONQUESTION) == IDYES)
                 for (const std::string& d : off) g->model.entry(d)->enabled = true;
         }
     }
@@ -1726,7 +1736,7 @@ void start_code_build(HWND owner) {
     save_toolchain(t);
     const std::wstring script = (t.repo / "tools" / "mods" / "codemods" / "build_variant.py").wstring();
     std::wstring cmd = L"\"" + t.python + L"\" -I \"" + script + L"\" --repo \"" + t.repo.wstring() + L"\" --manager \"" +
-                       (executable_dir() / "ShadowModManager.exe").wstring() + L"\" --mods-dir \"" +
+                       executable_path().wstring() + L"\" --mods-dir \"" +
                        g->model.mods_dir.wstring() + L"\" --game \"" + g->model.game_root.wstring() +
                        L"\" --src-dol \"" + t.src_dol.wstring() + L"\"";
     const fs::path log = g->model.mods_dir / ".variants" / "build-output.txt";
@@ -1940,7 +1950,7 @@ void play() {
     std::error_code ec;
     if (!fs::is_regular_file(g->game_exe, ec)) {
         MessageBoxW(g->window, (L"ShadowTheHedgehog.exe was not found beside the manager:\n" + g->game_exe.wstring()).c_str(),
-                    L"Shadow Mod Manager", MB_OK | MB_ICONERROR);
+                    window_title(), MB_OK | MB_ICONERROR);
         return;
     }
     if (!g->model.resolution.skipped.empty()) {
@@ -1949,7 +1959,7 @@ void play() {
         if (MessageBoxW(g->window,
                         crlf(wide("These enabled mods cannot load and will be left out:\n" + list + "\nPlay anyway?"))
                             .c_str(),
-                        L"Shadow Mod Manager", MB_YESNO | MB_ICONWARNING) != IDYES)
+                        window_title(), MB_YESNO | MB_ICONWARNING) != IDYES)
             return;
     }
     std::wstring args;
@@ -2854,7 +2864,7 @@ LRESULT CALLBACK window_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         }
         case WM_CLOSE:
             if (g->busy) {
-                MessageBoxW(w, L"An installation is still running.", L"Shadow Mod Manager", MB_OK | MB_ICONINFORMATION);
+                MessageBoxW(w, L"An installation is still running.", window_title(), MB_OK | MB_ICONINFORMATION);
                 return 0;
             }
             if (g->snapshot.empty()) save_placement();
@@ -2907,7 +2917,7 @@ int run_gui(const std::vector<std::string>& args) {
     wc.hIcon = LoadIconW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(1));
     if (!wc.hIcon) wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
     RegisterClassExW(&wc);
-    HWND w = CreateWindowExW(0, wc.lpszClassName, L"Shadow Mod Manager", WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
+    HWND w = CreateWindowExW(0, wc.lpszClassName, window_title(), WS_OVERLAPPEDWINDOW, CW_USEDEFAULT,
                              CW_USEDEFAULT, 1180, 720, nullptr, nullptr, wc.hInstance, nullptr);
     const UINT dpi = GetDpiForWindow(w);
     SetWindowPos(w, nullptr, 0, 0, MulDiv(1180, static_cast<int>(dpi), 96), MulDiv(720, static_cast<int>(dpi), 96),
@@ -2915,9 +2925,9 @@ int run_gui(const std::vector<std::string>& args) {
     refresh_all();
     if (g->model.game.empty())
         MessageBoxW(w, wide("The game's files were not found: " + g->model.game_error +
-                            ".\nInstalling needs them; put ShadowModManager.exe beside ShadowTheHedgehog.exe.")
+                            ".\nInstalling needs them; put ModManager.exe beside ShadowTheHedgehog.exe.")
                            .c_str(),
-                    L"Shadow Mod Manager", MB_OK | MB_ICONWARNING);
+                    window_title(), MB_OK | MB_ICONWARNING);
     layout();
     bool snapshot_run = false;
     for (const std::string& a : args) snapshot_run |= a == "--snapshot";

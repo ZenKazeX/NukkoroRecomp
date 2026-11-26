@@ -1450,7 +1450,7 @@ void print_usage() {
                  "\n"
                  "  --game-data <directory>   Root holding sys/ and files/ from the original disc\n"
                  "  --mods-dir <directory>    Installed mods and their load order (default: mods/ beside\n"
-                 "                            the executable; ShadowModManager.exe manages it)\n"
+                 "                            the executable; ModManager.exe manages it)\n"
                  "  --no-mods                 Load no mod this run\n"
                  "  --code-ini <file.ini>     Data-writing Gecko codes from a Dolphin game ini ([Gecko_Enabled] ones,\n"
                  "                            plus --code-enable <name> / --code-enable-all); --code-lines <file> one\n"

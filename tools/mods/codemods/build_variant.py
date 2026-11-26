@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Apply the chosen code mods: a PAL patch set, a patched DOL, a recompiled variant executable (docs/mods/codemods/README.md).
 
-    python -I tools/mods/codemods/build_variant.py --repo <source tree> --manager <ShadowModManager.exe> \
+    python -I tools/mods/codemods/build_variant.py --repo <source tree> --manager <ModManager.exe> \
         --mods-dir <mods> --game <game data> --src-dol <NTSC-U main.dol> [--prepare-only] [--jobs 3]
 
 1. Reads the chosen code items of the enabled mods from the manager (`code-plan`: one source of truth).

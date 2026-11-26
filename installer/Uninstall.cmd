@@ -1,6 +1,6 @@
 @echo off
 setlocal
-rem Removes this install of Shadow the Hedgehog Recompiled. Saves and settings are kept unless -RemoveSaves is given.
+rem Removes this install of Shadow the Hedgehog. Saves and settings are kept unless -RemoveSaves is given.
 set "HERE=%~dp0"
 cd /d "%TEMP%"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%HERE%Uninstall.ps1" -InstallPath "%HERE%." -Launcher %*

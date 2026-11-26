@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """End-to-end mod tests that prove what they claim (docs/mods/TESTING.md).
 
-Each scenario installs real downloads with the real manager (ShadowModManager.exe, command line), runs the real
+Each scenario installs real downloads with the real manager (ModManager.exe, command line), runs the real
 game headless on a fixed input tape, and checks the result from three independent sides:
 
   plan      the manager's resolved plan (`plan`, JSON)

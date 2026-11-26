@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "note": "The part of tools/mods/map_region_diff.py's map that ShadowModManager reads (insight.cpp RegionData::load). The full map quotes the discs' own texts, so it is made on a PC that has both discs and is not kept here.",
+ "note": "The part of tools/mods/map_region_diff.py's map that the Mod Manager (ModManager.exe) reads (insight.cpp RegionData::load). The full map quotes the discs' own texts, so it is made on a PC that has both discs and is not kept here.",
  "generator": "tools/mods/map_region_diff.py",
  "paths": {
   "csdFiles/SelectMode_GE.txd": {

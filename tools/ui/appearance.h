@@ -1,7 +1,7 @@
 #pragma once
 
-// The look of the game's two Windows programs, the Settings program (ShadowPadConfig.exe) and the Mod Manager
-// (ShadowModManager.exe): their theme (colours), and their zoom (how large everything is). Both keep the choice in appearance.cfg
+// The look of the game's two Windows programs, the Settings program (Settings.exe) and the Mod Manager
+// (ModManager.exe): their theme (colours), and their zoom (how large everything is). Both keep the choice in appearance.cfg
 // beside them, so a choice made in one is used by the other the next time it opens. The game does not read the file.
 //
 //   theme = system      # system (the same as Windows' app mode), light, dark, or shadow (black with red)

@@ -1,6 +1,6 @@
 #pragma once
 
-// The controller pictures in ShadowPadConfig: the game's controller rendered from above and tilted, each of its buttons
+// The controller pictures in the Settings program: the game's controller rendered from above and tilted, each of its buttons
 // labelled with the button on the player's own controller that presses it. A button on the picture can be clicked.
 
 #include <windows.h>

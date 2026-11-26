@@ -12,7 +12,7 @@ RELOADED_RESEARCH.md. Texture packs: TEXTURE_PACKS.md. Status and evidence: HAND
 | Game hook | `runtime/src/shadow_main.cpp` (block "mods"), `storage_backends.cpp` (`add_overlays`) | `prepare_runtime()` at start-up; the result becomes `StorageOptions::overlays` and the texture-pack list. |
 | Host-side readers | `gekko/mod_overlay.h` | Services that open disc files by path (switchable voice archive, native asset prefetcher) see the same files. |
 | Texture packs | `gekko/texture_packs.h` (lifted renderer) | Dolphin-named replacement textures. |
-| Manager | `tools/mod_manager/mod_manager.cpp` → `ShadowModManager.exe` | Window + command line. |
+| Manager | `tools/mod_manager/mod_manager.cpp` → `ModManager.exe` | Window + command line. |
 | Tests | `runtime/tests/mod_loader_tests.cpp` (106 checks), `runtime/tests/texture_packs_tests.cpp` | Run without game data. |
 
 ## Folder layout
@@ -120,7 +120,7 @@ complete).
 
 ## The manager
 
-A separate native Win32 program (`ShadowModManager.exe`, placed beside `ShadowTheHedgehog.exe`) rather than a game
+A separate native Win32 program (`ModManager.exe`, *Mod Manager* in the Start menu, placed beside `ShadowTheHedgehog.exe`) rather than a game
 menu: the in-game Options menu is the only menu we restyle, mods must be chosen before the game mounts its files (a
 storage tree cannot be swapped under a running game without changing its timing), and installing needs file dialogs,
 drag-and-drop and archive handling that belong to the desktop. It uses only Windows components (common controls v6,
@@ -155,7 +155,7 @@ Window:
   and kept in `appearance.cfg` beside the manager.
 - `--snapshot <png> [--select <id>]` writes a picture of the window (documentation).
 
-Command line (`ShadowModManager.exe help`): `list`, `info`, `install [--replace] [--name]`, `enable`, `disable`,
+Command line (`ModManager.exe help`): `list`, `info`, `install [--replace] [--name]`, `enable`, `disable`,
 `enable-all`, `disable-all`, `remove`, `move <id> <pos>`, `option <id> <option> <choice>`, `master on|off`,
 `profile list|save|load|delete [<name>]`, `set-info <id> <field> <value>`, `check` (exit 1 when an enabled mod
 cannot load), `plan` (JSON), `validate <folder>`; `--mods-dir`, `--game-data`.

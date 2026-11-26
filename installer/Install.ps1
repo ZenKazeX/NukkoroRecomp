@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Installs Shadow the Hedgehog Recompiled (static recompilation, work in progress) from the console.
+    Installs Shadow the Hedgehog (an unofficial static recompilation for PC, work in progress) from the console.
 
 .DESCRIPTION
     The scripted counterpart of the setup window (Install.cmd opens the window). It validates the extracted PAL
@@ -14,10 +14,10 @@
     existing install with -JapaneseDiscPath adds the voices later; saves and settings are kept.
 
 .EXAMPLE
-    .\installer\Install.ps1 -DiscPath "D:\Dumps\Shadow PAL" -InstallPath "D:\Games\Shadow the Hedgehog Recompiled"
+    .\installer\Install.ps1 -DiscPath "D:\Dumps\Shadow PAL" -InstallPath "D:\Games\Shadow the Hedgehog"
 
 .EXAMPLE
-    .\installer\Install.ps1 -DiscPath "D:\Dumps\Shadow PAL" -JapaneseDiscPath "D:\Dumps\Shadow JP" -InstallPath "D:\Games\Shadow the Hedgehog Recompiled"
+    .\installer\Install.ps1 -DiscPath "D:\Dumps\Shadow PAL" -JapaneseDiscPath "D:\Dumps\Shadow JP" -InstallPath "D:\Games\Shadow the Hedgehog"
 #>
 param(
     [string]$DiscPath = '',
@@ -28,7 +28,7 @@ param(
     [switch]$GetTools,  # install every missing build tool first (unattended; Windows asks once for permission)
     [ValidateRange(0, 64)][int]$Jobs = 0,  # 0 = chosen from this PC's processors and free memory
     [string]$DesktopFolder = [Environment]::GetFolderPath('Desktop'),
-    [string]$StartMenuFolder = (Join-Path ([Environment]::GetFolderPath('Programs')) 'Shadow the Hedgehog Recompiled')
+    [string]$StartMenuFolder = (Join-Path ([Environment]::GetFolderPath('Programs')) 'Shadow the Hedgehog')
 )
 
 $ErrorActionPreference = 'Stop'
