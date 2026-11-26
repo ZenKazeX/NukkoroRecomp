@@ -138,6 +138,11 @@ struct App {
     // The layout for the window's present width (choose_columns()), in units.
     int layout_w = 0;     // the width laid out for
     bool narrow_nav = false;  // the navigation list shows only its icons; the zoom and theme are in the bottom bar
+    // The navigation column stays where it is while the page scrolls, as in Windows 11's Settings, when the window is
+    // tall enough to show all of it (otherwise it scrolls with the page, so that all of it can be reached).
+    bool nav_pinned = false;
+    bool making_pinned = false;  // make() and move() are placing a pinned control: not scrolled
+    std::vector<HWND> pinned;
     int page_x = kNavW - 8, page_w = 1094;  // where a page's x = 0 is, and its width
     int top = 72;         // where a page's content starts, below its title
     RECT picture{};       // the controller pictures, in pixels (before scrolling)
@@ -198,6 +203,10 @@ bool on_card(HWND h) { return std::find(g.on_card.begin(), g.on_card.end(), h) !
 // Pixels to units, at the present screen and zoom.
 int units(int pixels) { return MulDiv(pixels, 96 * 100, g.dpi * g.look.text_size); }
 
+// How far the control being placed is moved up by the scrolling: not at all when it is pinned.
+int scroll_offset() { return g.making_pinned ? 0 : g.scroll_y; }
+bool is_pinned(HWND h) { return std::find(g.pinned.begin(), g.pinned.end(), h) != g.pinned.end(); }
+
 // Moves the content so that y of it is at the window's top, as Windows' own windows scroll: what is on screen is moved
 // as it is drawn (one copy of the whole picture, cards and controls together, so nothing flickers or leaves ghosts)
 // and only the strip that comes into view is drawn. ScrollWindowEx moves the controls it sees; those it leaves (off
@@ -220,11 +229,16 @@ void scroll_to(int y) {
     for (HWND c = GetWindow(g.window, GW_CHILD); c != nullptr; c = GetWindow(c, GW_HWNDNEXT)) before.emplace_back(c, where(c));
     UpdateWindow(g.window);  // what is copied must be drawn first
     HRGN exposed = CreateRectRgn(0, 0, 0, 0);
-    ScrollWindowEx(g.window, 0, dy, nullptr, nullptr, exposed, nullptr, SW_SCROLLCHILDREN | SW_INVALIDATE | SW_ERASE);
+    // With the navigation pinned, only the page right of it moves.
+    const RECT page{px(g.page_x), 0, client.right, client.bottom};
+    const RECT* area = g.nav_pinned ? &page : nullptr;
+    ScrollWindowEx(g.window, 0, dy, area, nullptr, exposed, nullptr, SW_SCROLLCHILDREN | SW_INVALIDATE | SW_ERASE);
+    HDWP moves = BeginDeferWindowPos(static_cast<int>(before.size()));
     for (const auto& [c, r] : before)
-        if (where(c).top == r.top)
-            SetWindowPos(c, nullptr, r.left, r.top + dy, 0, 0,
-                         SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_NOREDRAW);
+        if (moves != nullptr && !is_pinned(c) && where(c).top == r.top)
+            moves = DeferWindowPos(moves, c, nullptr, r.left, r.top + dy, 0, 0,
+                                   SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_NOREDRAW);
+    if (moves != nullptr) EndDeferWindowPos(moves);
     RedrawWindow(g.window, nullptr, exposed, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
     DeleteObject(exposed);
 }
@@ -275,7 +289,7 @@ void show_focus() {
     if (focus == g.last_focus) return;
     g.last_focus = focus;
     while (focus != nullptr && GetParent(focus) != g.window) focus = GetParent(focus);
-    if (focus == nullptr) return;
+    if (focus == nullptr || is_pinned(focus)) return;  // a pinned control is always in view
     RECT r, client;
     GetWindowRect(focus, &r);
     MapWindowPoints(nullptr, g.window, reinterpret_cast<POINT*>(&r), 2);
@@ -694,12 +708,12 @@ HWND make(const wchar_t* cls, const std::wstring& text, DWORD style, int x, int 
     if (g.relayout) {
         if (g.next_made >= g.made.size()) return nullptr;
         HWND c = g.made[g.next_made++];
-        SetWindowPos(c, nullptr, px(g.origin_x + x), px(y) - g.scroll_y, px(w), px(h), SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(c, nullptr, px(g.origin_x + x), px(y) - scroll_offset(), px(w), px(h), SWP_NOZORDER | SWP_NOACTIVATE);
 
         return c;
     }
     HWND c = CreateWindowExW(0, cls, text.c_str(), WS_CHILD | (g.building < 0 ? WS_VISIBLE : 0) | style, px(g.origin_x + x),
-                             px(y) - g.scroll_y, px(w), px(h), g.window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
+                             px(y) - scroll_offset(), px(w), px(h), g.window, reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
                              GetModuleHandleW(nullptr), nullptr);
     SendMessageW(c, WM_SETFONT, reinterpret_cast<WPARAM>(font != nullptr ? font : g.font), TRUE);
     g.made.push_back(c);
@@ -711,7 +725,7 @@ HWND make(const wchar_t* cls, const std::wstring& text, DWORD style, int x, int 
 // Moves a control already made, in units.
 void move(HWND c, int x, int y, int w, int h) {
     if (c != nullptr)
-        SetWindowPos(c, nullptr, px(g.origin_x + x), px(y) - g.scroll_y, px(w), px(h), SWP_NOZORDER | SWP_NOACTIVATE);
+        SetWindowPos(c, nullptr, px(g.origin_x + x), px(y) - scroll_offset(), px(w), px(h), SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 // A card behind controls of the page being built, in page units (kept in pixels).
@@ -1233,6 +1247,9 @@ void choose_columns() {
     // Without an icon font the navigation keeps its words, and the page takes what is left, however narrow: it must
     // never run past the window's side.
     g.page_w = g.narrow_nav || *ui::icon_face() != L'\0' ? std::max(kSmallestPage, total - g.page_x) : std::max(120, total - g.page_x);
+    // The navigation's end: the list, and the zoom and theme under it when it has its words.
+    const int nav_end = g.narrow_nav ? 16 + kPageCount * kNavItemH + 4 + 12 : 16 + kPageCount * kNavItemH + 24 + 40 + 30 + 12;
+    g.nav_pinned = nav_end <= units(static_cast<int>(client.bottom));
 }
 
 // The bar at the bottom, on every page: what is going on, on the left, and the buttons on the right; or the buttons
@@ -1302,11 +1319,21 @@ void build() {
     g.origin_x = 0;
     for (auto& cards : g.cards) cards.clear();
     const int nav_w = g.narrow_nav ? kNarrowNavW : kNavW;
+    g.making_pinned = g.nav_pinned;
     g.tabs = make(L"LISTBOX", L"", LBS_OWNERDRAWFIXED | LBS_HASSTRINGS | LBS_NOTIFY | LBS_NOINTEGRALHEIGHT | WS_TABSTOP,
                   12, 16, nav_w - 24, kPageCount * kNavItemH + 4, kTabs);
     const int look_y = 16 + kPageCount * kNavItemH + 24;
     HWND sizes = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | kDrawn | WS_TABSTOP | WS_VSCROLL, 16, look_y, kLookW, 300, kTextSize);
     HWND themes = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | kDrawn | WS_TABSTOP | WS_VSCROLL, 16, look_y + 40, kLookW, 300, kColours);
+    g.making_pinned = false;
+    g.pinned.clear();
+    if (g.nav_pinned) {
+        g.pinned.push_back(g.tabs);
+        if (!g.narrow_nav) {  // with the narrow navigation the zoom and theme are in the bottom bar, which scrolls
+            g.pinned.push_back(sizes);
+            g.pinned.push_back(themes);
+        }
+    }
     if (!g.relayout) {
         for (int i = 0; i < kPageCount; ++i) SendMessageW(g.tabs, LB_ADDSTRING, 0, reinterpret_cast<LPARAM>(kPageNames[i].c_str()));
         SendMessageW(g.tabs, LB_SETITEMHEIGHT, 0, px(kNavItemH));
