@@ -170,7 +170,9 @@ others = [o for o in scene.objects if o.type == 'MESH' and o not in caps.values(
 # only in the area round the stick: sticks/<main|c>_0.png (the middle) and sticks/<main|c>_<ring>_<direction>.png. The
 # rest of the controller is a shadow catcher: not drawn, but it hides what tilts under the shell, and the cap's shadow
 # on it is in the frame (drawn over the body without caps, the stick casts its shadow as it moves).
-# "sticks-test": a few of those frames only.
+# Each frame in two layers: <key>_<ring>_<direction>.png the dome and the shadows, cap_<...>.png the cap alone; and
+# sticks/tops.txt. "sticks-test": a few of those frames only. "sticks-tops": no render; writes sticks/tops.txt, where the top of the cap
+# (its middle, at its highest point) is in the picture's pixels in each frame, for art/hotspots.inc (kStickTops).
 DIRECTIONS, RINGS, MOST_TILT = 16, 4, 25.0
 
 def dome_centre(cap):
@@ -254,6 +256,18 @@ def stick_frames():
             part.matrix_world = world  # stays where it is; follows the bone from now on
     rig.hide_render = True
     os.makedirs(os.path.join(out, "sticks"), exist_ok=True)
+    # The top of each cap, in the cap's own coordinates: its middle, at its highest point.
+    top_local, tops = {}, []
+    for key, cap in caps.items():
+        # The middle of the top disc (the vertices within 0.3 units of the highest), measured in the world at rest (the
+        # import turned the mesh's own axes): the mesh's average would lean to whichever side has more vertices.
+        world = [cap.matrix_world @ v.co for v in cap.data.vertices]
+        hi = max(c.z for c in world)
+        disc = [c for c in world if c.z > hi - 0.3]
+        top = Vector(((min(c.x for c in disc) + max(c.x for c in disc)) / 2.0,
+                      (min(c.y for c in disc) + max(c.y for c in disc)) / 2.0, hi))
+        top_local[key] = cap.matrix_world.inverted() @ top
+        print("TOP", key, tuple(round(v, 2) for v in top), len(disc), "vertices")
     scene.render.use_border = True
     scene.render.use_crop_to_border = True
     for key, cap in caps.items():
@@ -284,13 +298,31 @@ def stick_frames():
             else:
                 pose.rotation_quaternion = Quaternion()
             bpy.context.view_layer.update()
-            scene.render.filepath = os.path.join(out, "sticks", name)
-            bpy.ops.render.render(write_still=True)
+            from bpy_extras.object_utils import world_to_camera_view
+            p = world_to_camera_view(scene, scene.camera, cap.matrix_world @ top_local[key])
+            tops.append("%s %s %.3f %.3f" % (key, name[:-4], p.x * scene.render.resolution_x,
+                                             (1.0 - p.y) * scene.render.resolution_y))
+            if only == "sticks-tops":
+                continue
+            # Two layers, so the program can move the cap onto the stick's top while the dome below stays where it is:
+            # the dome (the cap unseen, casting no shadow), then the cap with its shadow on the body (the dome a holdout:
+            # where it is in front, the dome layer shows through).
+            for layer in ("dome", "cap"):
+                cap.visible_camera = cap.visible_shadow = layer == "cap"
+                domes[key].is_holdout = layer == "cap"
+                domes[key].visible_shadow = layer == "dome"
+                scene.render.filepath = os.path.join(out, "sticks", name if layer == "dome" else "cap_" + name)
+                bpy.ops.render.render(write_still=True)
+            domes[key].is_holdout = False
+            domes[key].visible_shadow = cap.visible_shadow = True
+            cap.visible_camera = domes[key].visible_camera = True
         pose.rotation_quaternion = Quaternion()
+    with open(os.path.join(out, "sticks", "tops.txt"), "w") as fh:
+        fh.write("\n".join(tops) + "\n")
     print("WROTE sticks")
 if only in ("all", "full"):
     render("top_full.png")
-if only in ("sticks", "sticks-test"):
+if only in ("sticks", "sticks-test", "sticks-tops"):
     stick_frames()
 if only in ("all", "layers"):
     render("top_body.png", hide=list(caps.values()))

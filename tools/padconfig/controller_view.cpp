@@ -124,33 +124,6 @@ REAL gate_at(REAL angle) {
     return std::cos(kSector) / std::cos(off - kSector);
 }
 
-// The geometry the stick frames were rendered with (art/render_top.py): the camera of the picture from above (looking
-// straight down from kCameraZ over (kCameraX, kCameraY), kFocal pixels of focal length, the picture 1000 x 659), and
-// each stick's root (the centre of its dome, where its bone turns) and the height of its cap's top, in model units.
-// The cap turns up to kMostTilt degrees at a notch.
-constexpr REAL kCameraX = 0.08f, kCameraY = -4.19f, kCameraZ = 195.5f, kFocal = 19.35f * (195.5f - 22.0f);
-constexpr REAL kMostTilt = 25.0f;
-struct StickGeometry {
-    REAL root_x, root_y, root_z, top_z;
-};
-constexpr StickGeometry kStickGeometry[] = {{-15.0f, 0.0f, 14.68f, 23.92f}, {7.57f, -11.25f, 13.2f, 21.23f}};
-
-// Where a stick's cap top is in the picture from above (its pixels) with the stick at (x, y) in its gate: the top turned
-// on the root towards (x, y) by kMostTilt degrees for each 1 of the way, then seen by the camera.
-PointF stick_top(int stick, REAL x, REAL y) {
-    const StickGeometry& s = kStickGeometry[stick];
-    const REAL h = s.top_z - s.root_z, length = std::sqrt(x * x + y * y);
-    REAL px = 0.0f, py = 0.0f, pz = h;
-    if (length > 0.0f) {
-        const REAL turn = kMostTilt * length * kPi / 180.0f;
-        px = x / length * h * std::sin(turn);
-        py = y / length * h * std::sin(turn);
-        pz = h * std::cos(turn);
-    }
-    const REAL depth = kCameraZ - (s.root_z + pz);
-    return PointF(500.0f + (s.root_x + px - kCameraX) * kFocal / depth, 329.5f - (s.root_y + py - kCameraY) * kFocal / depth);
-}
-
 // Where things are, in view units: the label columns `f` times their normal width (and the labels f times their normal
 // size) on both sides of the pictures, the whole scaled by `scale` to the area and centred across it.
 struct Geometry {
@@ -249,66 +222,100 @@ struct Painter {
         return at(tilted_rect(m), h->cx, h->cy);
     }
 
-    // A stick cap as the stick is held (x, y: in its gate, stick_in_gate()): the frame of its sheet nearest that
-    // position, moved so that the cap's top is exactly where the stick puts it (computed from the render's geometry), so
-    // the top glides with the stick and never jumps when the frame changes; with a red ring like a pressed button's round
-    // its top, stronger the further it is tilted.
+    // A stick cap as the stick is held (x, y: in its gate, stick_in_gate()). The sheets have frames at 4 tilts in 16
+    // directions; the stick is mostly between them, so the (up to) four frames round it are blended by how near each is:
+    // first the dome below the cap, where it is (it turns in place), then the cap, every frame moved so that its top
+    // (kStickTops, measured in the render) lands on the same point. The top glides with the stick and the shading turns
+    // smoothly, with no step from one frame to the next and nothing doubled. A red ring
+    // like a pressed button's rounds the top, stronger the further the stick is tilted.
     void draw_cap(const CapArt& cap, int index, float x, float y) {
-        Bitmap* sheet = art(cap.id);
+        Bitmap* dome_sheet = art(cap.id);
+        Bitmap* cap_sheet = art(cap.cap_id);
         Bitmap* picture = art(101);
-        if (sheet == nullptr || picture == nullptr) return;
-        // The frame nearest the stick; the one drawn last is kept until another is clearly nearer, so a stick resting
-        // between two frames does not flicker from one to the other.
-        const auto frame_tilt = [](int ring, int direction, REAL& fx, REAL& fy) {
-            const REAL fa = direction * 2.0f * kPi / kStickDirections;
-            const REAL fl = static_cast<REAL>(ring) / kStickRings * gate_at(fa);
-            fx = fl * std::cos(fa);
-            fy = fl * std::sin(fa);
-        };
+        if (dome_sheet == nullptr || cap_sheet == nullptr || picture == nullptr) return;
         const REAL length = std::sqrt(x * x + y * y);
-        int ring = 0, direction = 0;
+        // Where the stick is between the frames: tilt in rings (0 to kStickRings), direction in frame steps.
+        REAL ring_at = 0.0f, direction_at = 0.0f;
         if (length > 0.0f) {
-            const REAL angle = std::atan2(y, x);
-            ring = std::clamp(static_cast<int>(std::lround(length / gate_at(angle) * kStickRings)), 0, kStickRings);
-            direction = static_cast<int>(std::lround(angle / (2.0f * kPi) * kStickDirections));
-            direction = ((direction % kStickDirections) + kStickDirections) % kStickDirections;
+            REAL angle = std::atan2(y, x);
+            if (angle < 0.0f) angle += 2.0f * kPi;
+            ring_at = std::clamp(length / gate_at(angle) * kStickRings, 0.0f, static_cast<REAL>(kStickRings));
+            direction_at = angle / (2.0f * kPi) * kStickDirections;
         }
-        static int last_ring[2] = {}, last_direction[2] = {};
-        {
-            REAL bx, by, lx, ly;
-            frame_tilt(ring, direction, bx, by);
-            frame_tilt(last_ring[index], last_direction[index], lx, ly);
-            const REAL best = std::hypot(x - bx, y - by), kept = std::hypot(x - lx, y - ly);
-            if (kept < best + 0.05f) {
-                ring = last_ring[index];
-                direction = last_direction[index];
-            }
-            if (ring == 0) direction = 0;
-            last_ring[index] = ring;
-            last_direction[index] = direction;
+        const int r0 = std::min(static_cast<int>(ring_at), kStickRings - 1), d0 = static_cast<int>(direction_at);
+        const REAL tr = ring_at - r0, td = direction_at - d0;
+        struct Frame {
+            int ring, direction;
+            REAL weight;
+        };
+        Frame frames[4];
+        int count = 0;
+        const auto add = [&](int ring, int direction, REAL weight) {
+            if (weight <= 1.0f / 256.0f) return;
+            direction = ring == 0 ? 0 : direction % kStickDirections;
+            for (int i = 0; i < count; ++i)
+                if (frames[i].ring == ring && frames[i].direction == direction) {
+                    frames[i].weight += weight;
+                    return;
+                }
+            frames[count++] = {ring, direction, weight};
+        };
+        add(r0, d0, (1.0f - tr) * (1.0f - td));
+        add(r0, d0 + 1, (1.0f - tr) * td);
+        add(r0 + 1, d0, tr * (1.0f - td));
+        add(r0 + 1, d0 + 1, tr * td);
+        if (count == 0) add(0, 0, 1.0f);
+        std::sort(frames, frames + count, [](const Frame& a, const Frame& b) { return a.weight > b.weight; });
+        // The top now: the frames' own tops, blended the same way.
+        const auto top_of = [&](const Frame& f) {
+            const float* p = kStickTops[index][f.ring][f.direction];
+            return PointF(p[0], p[1]);
+        };
+        REAL total = 0.0f;
+        PointF now(0.0f, 0.0f);
+        for (int i = 0; i < count; ++i) {
+            const PointF p = top_of(frames[i]);
+            now.X += p.X * frames[i].weight;
+            now.Y += p.Y * frames[i].weight;
+            total += frames[i].weight;
         }
-        REAL fx, fy;
-        frame_tilt(ring, direction, fx, fy);
-        // Where the cap's top is in the picture's pixels: now, and in the frame drawn.
-        const PointF now = stick_top(index, x, y), in_frame = stick_top(index, fx, fy);
+        now.X /= total;
+        now.Y /= total;
         const REAL art_w = static_cast<REAL>(picture->GetWidth()), art_h = static_cast<REAL>(picture->GetHeight());
-        const REAL cell_w = static_cast<REAL>(sheet->GetWidth()) / kStickDirections;
-        const REAL cell_h = static_cast<REAL>(sheet->GetHeight()) / (kStickRings + 1);
+        const REAL cell_w = static_cast<REAL>(cap_sheet->GetWidth()) / kStickDirections;
+        const REAL cell_h = static_cast<REAL>(cap_sheet->GetHeight()) / (kStickRings + 1);
         const RectF r = top_rect(m);
         const REAL sx = r.Width / art_w, sy = r.Height / art_h;  // the picture's pixels to view units
-        // A frame's size from the sheet itself, at the picture's scale, so a sheet rendered again is never drawn at
-        // another size than its own.
-        const RectF box(r.X + (cap.x * art_w + now.X - in_frame.X) * sx, r.Y + (cap.y * art_h + now.Y - in_frame.Y) * sy,
-                        cell_w * sx, cell_h * sy);
-        g.DrawImage(sheet, box, direction * cell_w, ring * cell_h, cell_w, cell_h, UnitPixel);
+        // The heaviest frame opaque, each next one over it by its share of the weight drawn so far: together, each frame
+        // by its weight. A frame's size comes from the sheet itself, at the picture's scale.
+        const auto blend = [&](Bitmap* sheet, bool on_top) {
+            REAL drawn = 0.0f;
+            for (int i = 0; i < count; ++i) {
+                const Frame& f = frames[i];
+                drawn += f.weight;
+                const PointF own = top_of(f);
+                const REAL dx = on_top ? now.X - own.X : 0.0f, dy = on_top ? now.Y - own.Y : 0.0f;
+                const RectF box(r.X + (cap.x * art_w + dx) * sx, r.Y + (cap.y * art_h + dy) * sy, cell_w * sx, cell_h * sy);
+                const REAL source_x = f.direction * cell_w, source_y = f.ring * cell_h;
+                if (i == 0) {
+                    g.DrawImage(sheet, box, source_x, source_y, cell_w, cell_h, UnitPixel);
+                    continue;
+                }
+                ColorMatrix fade = {{{1, 0, 0, 0, 0}, {0, 1, 0, 0, 0}, {0, 0, 1, 0, 0}, {0, 0, 0, f.weight / drawn, 0}, {0, 0, 0, 0, 1}}};
+                ImageAttributes attributes;
+                attributes.SetColorMatrix(&fade);
+                g.DrawImage(sheet, box, source_x, source_y, cell_w, cell_h, UnitPixel, &attributes);
+            }
+        };
+        blend(dome_sheet, false);
+        blend(cap_sheet, true);
         if (length == 0.0f) return;
         const REAL amount = std::min(1.0f, length);
         const REAL radius = r.Width * cap.top;
         const PointF top(r.X + now.X * sx, r.Y + now.Y * sy);
         Pen ring_pen(Color(static_cast<BYTE>(90 + 120 * amount), 235, 45, 35), 3.0f);
         g.DrawEllipse(&ring_pen, top.X - radius, top.Y - radius, radius * 2.0f, radius * 2.0f);
-    }
-    void draw_pictures() {
+    }    void draw_pictures() {
         g.SetInterpolationMode(InterpolationModeHighQualityBicubic);
         g.SetPixelOffsetMode(PixelOffsetModeHalf);
         // Still sticks: the whole picture. A tilted one: the body without its caps, and the caps where the sticks are.

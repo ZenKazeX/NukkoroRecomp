@@ -4713,7 +4713,7 @@ elseif(WIN32 AND (TARGET ShadowTheHedgehog OR SHADOW_PREBUILT_EXPORT))
     target_compile_features(ShadowPadConfig PRIVATE cxx_std_20)
     target_link_libraries(ShadowPadConfig PRIVATE comctl32 gdiplus dwmapi uxtheme)
     set_source_files_properties(tools/padconfig/padconfig.rc PROPERTIES OBJECT_DEPENDS
-        "${CMAKE_CURRENT_SOURCE_DIR}/tools/padconfig/art/top.png;${CMAKE_CURRENT_SOURCE_DIR}/tools/padconfig/art/tilted.png;${CMAKE_CURRENT_SOURCE_DIR}/tools/padconfig/art/top_body.png;${CMAKE_CURRENT_SOURCE_DIR}/tools/padconfig/art/top_stick_main.png;${CMAKE_CURRENT_SOURCE_DIR}/tools/padconfig/art/top_stick_c.png")
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/padconfig/art/top.png;${CMAKE_CURRENT_SOURCE_DIR}/tools/padconfig/art/tilted.png;${CMAKE_CURRENT_SOURCE_DIR}/tools/padconfig/art/top_body.png;${CMAKE_CURRENT_SOURCE_DIR}/tools/padconfig/art/top_stick_main.png;${CMAKE_CURRENT_SOURCE_DIR}/tools/padconfig/art/top_stick_c.png;${CMAKE_CURRENT_SOURCE_DIR}/tools/padconfig/art/top_stick_cap_main.png;${CMAKE_CURRENT_SOURCE_DIR}/tools/padconfig/art/top_stick_cap_c.png")
     # Beside the game (bin/<config>, the game's RUNTIME_OUTPUT_DIRECTORY).
     set_target_properties(ShadowPadConfig PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin" OUTPUT_NAME Settings)
     if(MSVC)

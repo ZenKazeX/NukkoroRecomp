@@ -4,6 +4,8 @@
 103 RCDATA "art/top_body.png"
 104 RCDATA "art/top_stick_main.png"
 105 RCDATA "art/top_stick_c.png"
+106 RCDATA "art/top_stick_cap_main.png"
+107 RCDATA "art/top_stick_cap_c.png"
 200 RCDATA "art/mask_top_a.png"
 201 RCDATA "art/mask_top_b.png"
 202 RCDATA "art/mask_top_x.png"
