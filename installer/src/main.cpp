@@ -3,6 +3,11 @@
 // the Windows folder chooser, the PowerShell backend (installer/Backend.ps1, whitelisted commands
 // only) and the install itself, which runs in a Job object so Cancel or closing the window stops
 // the whole build. Derived from the approved installer demo (Native_Demo/src/main.cpp).
+//
+// The same program is the uninstaller: copied into the game folder as Uninstall.exe (or started with --uninstall
+// <install folder>), it shows installer/uninstall, styled by installer/web and the art pack, and runs Uninstall.ps1.
+// It first copies itself and those files into a new folder in Temp and runs from there, so the game folder can be
+// removed completely; that copy deletes its folder after it closes.
 #include <windows.h>
 #include <shobjidl.h>
 #include <shlobj.h>
@@ -32,14 +37,19 @@ constexpr UINT CloseWindowMessage = WM_APP + 2;
 constexpr UINT BackendDoneMessage = WM_APP + 3;
 constexpr UINT InstallLineMessage = WM_APP + 4;
 constexpr UINT InstallExitMessage = WM_APP + 5;
+constexpr UINT UninstallLineMessage = WM_APP + 6;
+constexpr UINT UninstallExitMessage = WM_APP + 7;
 constexpr DWORD WindowStyle = WS_OVERLAPPEDWINDOW;
 constexpr DWORD WindowExStyle = WS_EX_APPWINDOW;
 constexpr int DesignWidth = 1265;
 constexpr int DesignHeight = 648;
 constexpr wchar_t PageHost[] = L"setup.nukkoro.local";
 constexpr wchar_t ArtHost[] = L"art.nukkoro.local";
+constexpr wchar_t WebHost[] = L"web.nukkoro.local";  // the uninstaller's pages take the setup's styles and fonts from here
 constexpr wchar_t PageUrl[] = L"https://setup.nukkoro.local/index.html";
-constexpr wchar_t Title[] = L"Shadow the Hedgehog Setup";
+constexpr wchar_t SetupTitle[] = L"Shadow the Hedgehog Setup";
+constexpr wchar_t UninstallTitle[] = L"Shadow the Hedgehog Uninstall";
+const wchar_t* Title = SetupTitle;
 constexpr wchar_t GameExe[] = L"ShadowTheHedgehog.exe";
 
 // ---- small helpers ----------------------------------------------------------------
@@ -188,6 +198,14 @@ std::wstring PowerShellLine(const fs::path& installer, const std::vector<std::ws
     return line;
 }
 
+// Uninstall.ps1 in the uninstaller's files, on the install folder.
+std::wstring UninstallCommand(const fs::path& files, const fs::path& target, const std::vector<std::wstring>& arguments) {
+    std::wstring line = L"powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File " +
+                        QuoteArgument((files / L"Uninstall.ps1").wstring()) + L" -InstallPath " + QuoteArgument(target.wstring());
+    for (const auto& argument : arguments) line += L" " + QuoteArgument(argument);
+    return line;
+}
+
 // ---- music ----------------------------------------------------------------------------------
 
 // Plays the art pack's music from this process, so Windows lists it under the setup's name in the Volume Mixer.
@@ -272,7 +290,7 @@ private:
             FAILED(devices->GetDefaultAudioEndpoint(eRender, eConsole, &device)) ||
             FAILED(device->Activate(__uuidof(IAudioSessionManager), CLSCTX_ALL, nullptr, reinterpret_cast<void**>(manager.GetAddressOf()))) ||
             FAILED(manager->GetAudioSessionControl(nullptr, 0, &session))) return;
-        session->SetDisplayName(L"Shadow the Hedgehog Setup", nullptr);
+        session->SetDisplayName(Title, nullptr);
         wchar_t exe[MAX_PATH];
         if (GetModuleFileNameW(nullptr, exe, MAX_PATH)) session->SetIconPath((std::wstring(exe) + L",0").c_str(), nullptr);
     }
@@ -282,6 +300,48 @@ private:
     float volume = 0.25f;
     int loops = 0;
 };
+
+// ---- the uninstaller's copy in Temp -------------------------------------------------------------
+
+// A new, empty folder in Temp for the uninstaller's copy.
+fs::path NewTempFolder() {
+    std::vector<wchar_t> buffer(MAX_PATH + 1);
+    const DWORD count = GetTempPathW(static_cast<DWORD>(buffer.size()), buffer.data());
+    const fs::path temp = fs::path(std::wstring(buffer.data(), count));
+    for (int attempt = 0; attempt < 100; ++attempt) {
+        const fs::path folder = temp / (L"NukkoroUninstall-" + std::to_wstring(GetCurrentProcessId()) + L"-" + std::to_wstring(GetTickCount64() % 100000 + attempt));
+        std::error_code error;
+        if (fs::create_directory(folder, error)) return folder;
+    }
+    return {};
+}
+// Copies a folder, if it is there (the art pack may not be).
+bool CopyFolder(const fs::path& from, const fs::path& to) {
+    std::error_code error;
+    if (!fs::is_directory(from, error)) return true;
+    fs::copy(from, to, fs::copy_options::recursive | fs::copy_options::overwrite_existing, error);
+    return !error;
+}
+// Deletes the copy's folder once this process and its browser have gone: a hidden cmd waits a few seconds, then
+// removes it (a running program cannot delete its own file). After a finished uninstall (its record is gone), also the
+// Uninstall.exe it was started from, if that was still running then, and the game folder when that leaves it empty.
+void DeleteFolderLater(const fs::path& folder, const fs::path& uninstalled) {
+    std::vector<wchar_t> buffer(MAX_PATH + 1);
+    const DWORD count = GetTempPathW(static_cast<DWORD>(buffer.size()), buffer.data());
+    const std::wstring temp(buffer.data(), count);
+    std::wstring line = L"cmd.exe /d /c ping -n 8 127.0.0.1 >nul & rmdir /s /q " + QuoteArgument(folder.wstring());
+    if (!uninstalled.empty()) {
+        const std::wstring record = QuoteArgument((uninstalled / L"install-manifest.json").wstring());
+        line += L" & if not exist " + record + L" del /f /q " + QuoteArgument((uninstalled / L"Uninstall.exe").wstring()) +
+                L" & rmdir " + QuoteArgument(uninstalled.wstring()) + L" 2>nul";
+    }
+    STARTUPINFOW startup{sizeof(startup)};
+    PROCESS_INFORMATION process{};
+    if (CreateProcessW(nullptr, line.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW | DETACHED_PROCESS, nullptr, temp.c_str(), &startup, &process)) {
+        CloseHandle(process.hProcess);
+        CloseHandle(process.hThread);
+    }
+}
 
 // ---- the host -------------------------------------------------------------------------------
 
@@ -307,11 +367,18 @@ public:
     std::wstring installTarget;       // as requested; launch/open only after it succeeded
     std::wstring installedTarget;
 
+    // The uninstaller: the install folder it removes, and the running uninstall.
+    bool uninstall = false;
+    fs::path uninstallTarget;
+    bool uninstallRunning = false;
+    bool uninstalled = false;  // finished: the clean-up may take what was left of the uninstaller in the game folder
+
     // Self-test: hidden window, scripted pages, snapshots into selftestDir.
     bool selftest = false;
     fs::path selftestDir;
     std::wstring selftestDisc, selftestTarget, selftestJapaneseDisc;
     bool selftestInstall = false;
+    fs::path userDataOverride;  // the uninstaller's copy in Temp keeps its browser data there, deleted with it
 
     void Fail(HRESULT result, const wchar_t* operation) {
         exitCode = 2;
@@ -476,6 +543,108 @@ public:
         return false;
     }
 
+    // The uninstall: Uninstall.ps1 -Json, its events forwarded to the page like the install's. Never stopped half way
+    // (a half-removed game is worse than either), so it runs outside the install's Job object and Cancel does not exist.
+    void StartUninstall(const std::wstring& id, const std::wstring& data) {
+        if (uninstallRunning) { Reply(id, L"\"error\":\"The uninstall is already running.\""); return; }
+        if (data.find_first_not_of(L"abcdefghijklmnopqrstuvwxyz,") != std::wstring::npos) { Reply(id, L"\"error\":\"Bad uninstall request.\""); return; }
+        std::vector<std::wstring> arguments{L"-Yes", L"-Json"};
+        if (!data.empty()) { arguments.push_back(L"-RemoveData"); arguments.push_back(data); }
+        PROCESS_INFORMATION process{};
+        HANDLE readPipe = nullptr;
+        if (!StartPiped(UninstallCommand(installer, uninstallTarget, arguments), installer, nullptr, process, readPipe)) {
+            Reply(id, L"\"error\":\"Could not start the uninstall.\"");
+            return;
+        }
+        uninstallRunning = true;
+        Reply(id, L"\"started\":true");
+        const HWND target = window;
+        std::thread([target, process, readPipe] {
+            std::string pending;
+            char buffer[8192];
+            DWORD read = 0;
+            const auto flush = [&](bool all) {
+                size_t newline;
+                while ((newline = pending.find('\n')) != std::string::npos || (all && !pending.empty())) {
+                    const size_t end = newline == std::string::npos ? pending.size() : newline;
+                    auto* text = new std::wstring(Wide(std::string_view(pending).substr(0, end)));
+                    pending.erase(0, newline == std::string::npos ? pending.size() : newline + 1);
+                    if (!PostMessageW(target, UninstallLineMessage, 0, reinterpret_cast<LPARAM>(text))) delete text;
+                }
+            };
+            while (ReadFile(readPipe, buffer, sizeof(buffer), &read, nullptr) && read) { pending.append(buffer, read); flush(false); }
+            flush(true);
+            DWORD code = 1;
+            WaitForSingleObject(process.hProcess, INFINITE);
+            GetExitCodeProcess(process.hProcess, &code);
+            CloseHandle(process.hProcess); CloseHandle(process.hThread); CloseHandle(readPipe);
+            PostMessageW(target, UninstallExitMessage, code, 0);
+        }).detach();
+    }
+    void UninstallLine(std::wstring* text) {
+        std::wstring line = *text;
+        delete text;
+        while (!line.empty() && (line.back() == L'\r' || line.back() == L' ')) line.pop_back();
+        if (LooksLikeJson(line)) Post(L"{\"type\":\"uninstall\",\"event\":" + line + L"}");
+        else if (!line.empty()) Post(L"{\"type\":\"uninstall\",\"event\":{\"type\":\"log\",\"text\":" + JsonString(line + L"\n") + L"}}");
+    }
+    void UninstallExit(DWORD code) {
+        uninstallRunning = false;
+        if (code == 0) uninstalled = true;
+        Post(L"{\"type\":\"uninstall-exit\",\"code\":" + std::to_wstring(code) + L"}");
+    }
+    // The uninstall plan (Uninstall.ps1 -Plan), on a worker thread, answered like a backend request.
+    void RunPlan(const std::wstring& id) {
+        const HWND target = window;
+        const std::wstring line = UninstallCommand(installer, uninstallTarget, {L"-Plan"});
+        const fs::path directory = installer;
+        std::thread([target, id, line, directory] {
+            auto* result = new BackendResult{id};
+            PROCESS_INFORMATION process{};
+            HANDLE readPipe = nullptr;
+            if (StartPiped(line, directory, nullptr, process, readPipe)) {
+                std::string bytes;
+                char buffer[4096];
+                DWORD read = 0;
+                while (ReadFile(readPipe, buffer, sizeof(buffer), &read, nullptr) && read) bytes.append(buffer, read);
+                WaitForSingleObject(process.hProcess, INFINITE);
+                GetExitCodeProcess(process.hProcess, &result->exitCode);
+                CloseHandle(process.hProcess); CloseHandle(process.hThread); CloseHandle(readPipe);
+                result->output = Wide(bytes);
+            } else {
+                result->output = L"Could not start PowerShell.";
+            }
+            if (!PostMessageW(target, BackendDoneMessage, 0, reinterpret_cast<LPARAM>(result))) delete result;
+        }).detach();
+    }
+    // The uninstaller's commands: the plan, the uninstall, the install folder (to see what was kept), and closing.
+    void UninstallMessage(const std::wstring& command, const std::wstring& id, const std::wstring& payload) {
+        if (command == L"ping") {
+            Reply(id, std::wstring(L"\"native\":true,\"version\":2,\"mode\":\"uninstall\",\"art\":") + (artPresent ? L"true" : L"false") +
+                      L",\"selftest\":" + (selftest ? L"true" : L"false") + L",\"target\":" + JsonString(uninstallTarget.wstring()));
+        } else if (command == L"music") {
+            MusicCommand(id, payload);
+        } else if (command == L"uninstall-plan") {
+            RunPlan(id);
+        } else if (command == L"uninstall") {
+            StartUninstall(id, payload);
+        } else if (command == L"open-folder") {
+            std::error_code error;
+            if (uninstallRunning || !fs::is_directory(uninstallTarget, error)) { Reply(id, L"\"error\":\"The folder is not there any more.\""); return; }
+            const auto result = ShellExecuteW(window, L"open", uninstallTarget.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+            Reply(id, reinterpret_cast<INT_PTR>(result) > 32 ? L"\"ok\":true" : L"\"error\":\"Windows could not open it.\"");
+        } else if (selftest && command == L"selftest-snapshot" && !payload.empty() && payload.size() <= 40 &&
+                   payload.find_first_not_of(L"abcdefghijklmnopqrstuvwxyz0123456789-") == std::wstring::npos) {
+            Snapshot(id, payload);
+        } else if (selftest && command == L"selftest-config") {
+            Reply(id, std::wstring(L"\"install\":") + (selftestInstall ? L"true" : L"false"));
+        } else if (selftest && command == L"selftest-done") {
+            WriteText(selftestDir / "selftest.json", Utf8(payload));
+            exitCode = payload.find(L"\"passed\":true") != std::wstring::npos ? 0 : 1;
+            PostMessageW(window, CloseWindowMessage, 0, 0);
+        }
+    }
+
     void Snapshot(const std::wstring& id, const std::wstring& name) {
         ComPtr<IStream> stream;
         const auto file = selftestDir / (name + L".png");
@@ -513,7 +682,12 @@ public:
         const std::wstring message(raw ? raw : L"");
         CoTaskMemFree(raw);
         if (message.size() > 65536) return;
-        if (message == L"close") { CancelInstall(); PostMessageW(window, CloseWindowMessage, 0, 0); return; }
+        if (message == L"close") {
+            if (uninstallRunning) return;  // the page waits for the end; this is only a guard
+            CancelInstall();
+            PostMessageW(window, CloseWindowMessage, 0, 0);
+            return;
+        }
 
         const auto first = message.find(L'|');
         const auto second = first == std::wstring::npos ? std::wstring::npos : message.find(L'|', first + 1);
@@ -522,6 +696,7 @@ public:
         const auto id = message.substr(first + 1, second - first - 1);
         const auto payload = message.substr(second + 1);
         if (id.empty() || id.size() > 9 || id.find_first_not_of(L"0123456789") != std::wstring::npos) return;
+        if (uninstall) { UninstallMessage(command, id, payload); return; }
 
         if (command == L"ping") {
             Reply(id, std::wstring(L"\"native\":true,\"version\":2,\"art\":") + (artPresent ? L"true" : L"false") +
@@ -606,9 +781,13 @@ public:
         }
         PWSTR appData = nullptr;
         fs::path userData;
-        if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &appData))) { Fail(E_FAIL, L"Find the user data folder"); return; }
-        userData = fs::path(appData) / "NukkoroSetup" / "WebView2";
-        CoTaskMemFree(appData);
+        if (!userDataOverride.empty()) {
+            userData = userDataOverride;
+        } else {
+            if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &appData))) { Fail(E_FAIL, L"Find the user data folder"); return; }
+            userData = fs::path(appData) / "NukkoroSetup" / "WebView2";
+            CoTaskMemFree(appData);
+        }
         hr = CreateCoreWebView2EnvironmentWithOptions(nullptr, userData.c_str(), nullptr,
             Callback<ICoreWebView2CreateCoreWebView2EnvironmentCompletedHandler>([this](HRESULT result, ICoreWebView2Environment* environment) -> HRESULT {
                 if (FAILED(result)) { Fail(result, L"Create the WebView2 environment"); return S_OK; }
@@ -624,9 +803,11 @@ public:
                         }
                         ComPtr<ICoreWebView2_3> mapping;
                         if (FAILED(webview.As(&mapping)) ||
-                            FAILED(mapping->SetVirtualHostNameToFolderMapping(PageHost, (installer / "web").c_str(), COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY))) {
+                            FAILED(mapping->SetVirtualHostNameToFolderMapping(PageHost, (installer / (uninstall ? "uninstall" : "web")).c_str(), COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY))) {
                             Fail(E_FAIL, L"Map the setup pages"); return S_OK;
                         }
+                        // The setup's styles and fonts (a font is a cross-origin request: allowed, for these static files only).
+                        if (uninstall) mapping->SetVirtualHostNameToFolderMapping(WebHost, (installer / "web").c_str(), COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW);
                         // The optional art pack: images the page may embed, nothing else.
                         if (artPresent) mapping->SetVirtualHostNameToFolderMapping(ArtHost, (installer / "art").c_str(), COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS);
                         ComPtr<ICoreWebView2Settings> settings;
@@ -687,6 +868,8 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wParam, LPARA
     case BackendDoneMessage: host->BackendDone(reinterpret_cast<BackendResult*>(lParam)); return 0;
     case InstallLineMessage: host->InstallLine(reinterpret_cast<std::wstring*>(lParam)); return 0;
     case InstallExitMessage: host->InstallExit(static_cast<DWORD>(wParam)); return 0;
+    case UninstallLineMessage: host->UninstallLine(reinterpret_cast<std::wstring*>(lParam)); return 0;
+    case UninstallExitMessage: host->UninstallExit(static_cast<DWORD>(wParam)); return 0;
     case CloseWindowMessage: host->closing = true; DestroyWindow(window); return 0;
     // The page asks before closing (and stops a running install); without a page, just close.
     case WM_CLOSE:
@@ -715,28 +898,90 @@ LRESULT CALLBACK WindowProcedure(HWND window, UINT message, WPARAM wParam, LPARA
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     if (FAILED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) return 2;
-    SetCurrentProcessExplicitAppUserModelID(L"Nukkoro.ShadowRecompiled.Setup");
     SetupHost host;
 
     // --installer-dir <dir>; --selftest <out dir> --disc <dir> [--jpdisc <dir>] --target <dir> [--install]
+    // The uninstaller: --uninstall <install folder> (or this program named Uninstall.exe, in that folder), and the copy
+    // in Temp it starts: --from-temp <its folder>, --installer-dir <its files>.
     int argc = 0;
     LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    fs::path fromTemp;
+    std::wstring selftestArguments;
     for (int i = 1; i < argc; ++i) {
         const std::wstring argument = argv[i];
         const bool hasValue = i + 1 < argc;
         if (argument == L"--installer-dir" && hasValue) host.installer = argv[++i];
-        else if (argument == L"--selftest" && hasValue) { host.selftest = true; host.selftestDir = argv[++i]; }
+        else if (argument == L"--selftest" && hasValue) { host.selftest = true; host.selftestDir = fs::absolute(argv[++i]); selftestArguments += L" --selftest " + QuoteArgument(host.selftestDir.wstring()); }
         else if (argument == L"--disc" && hasValue) host.selftestDisc = argv[++i];
         else if (argument == L"--target" && hasValue) host.selftestTarget = argv[++i];
         else if (argument == L"--jpdisc" && hasValue) host.selftestJapaneseDisc = argv[++i];
-        else if (argument == L"--install") host.selftestInstall = true;
+        else if (argument == L"--install") { host.selftestInstall = true; selftestArguments += L" --install"; }
+        else if (argument == L"--uninstall" && hasValue) { host.uninstall = true; host.uninstallTarget = argv[++i]; }
+        else if (argument == L"--from-temp" && hasValue) fromTemp = argv[++i];
     }
     LocalFree(argv);
-    if (host.installer.empty()) host.installer = FindInstallerDirectory();
-    if (host.installer.empty() || !fs::is_regular_file(host.installer / "web" / "index.html") || !fs::is_regular_file(host.installer / "Backend.ps1")) {
-        MessageBoxW(nullptr, L"The setup files were not found. Start the installer with Install.cmd from the source folder.", Title, MB_OK | MB_ICONERROR);
-        CoUninitialize();
-        return 2;
+    std::vector<wchar_t> self(32768);
+    const fs::path selfPath(std::wstring(self.data(), GetModuleFileNameW(nullptr, self.data(), static_cast<DWORD>(self.size()))));
+    if (!host.uninstall && _wcsicmp(selfPath.stem().c_str(), L"Uninstall") == 0) { host.uninstall = true; host.uninstallTarget = selfPath.parent_path(); }
+
+    if (host.uninstall) {
+        Title = UninstallTitle;
+        SetCurrentProcessExplicitAppUserModelID(L"Nukkoro.ShadowRecompiled.Uninstall");
+        std::error_code error;
+        host.uninstallTarget = fs::absolute(host.uninstallTarget, error);
+        // Its files: the installed layout (<install>\uninstall\web, uninstall, art; Uninstall.ps1 beside the game), or a
+        // source tree's installer folder (web, uninstall, art, Uninstall.ps1).
+        if (host.installer.empty()) host.installer = host.uninstallTarget / "uninstall";
+        const fs::path script = fs::is_regular_file(host.installer / "Uninstall.ps1", error) ? host.installer / "Uninstall.ps1" : host.uninstallTarget / "Uninstall.ps1";
+        if (!fs::is_regular_file(host.installer / "uninstall" / "index.html", error) || !fs::is_regular_file(host.installer / "web" / "setup.css", error) ||
+            !fs::is_regular_file(script, error)) {
+            MessageBoxW(nullptr, L"The uninstaller's files are missing. Run Uninstall.cmd in the game folder instead.", Title, MB_OK | MB_ICONERROR);
+            CoUninitialize();
+            return 2;
+        }
+        if (fromTemp.empty()) {
+            // Run from a copy in Temp, so every file in the game folder can be removed.
+            const fs::path temp = NewTempFolder();
+            const fs::path files = temp / "files";
+            bool copied = !temp.empty() && fs::create_directory(files, error);
+            if (copied) copied = fs::copy_file(selfPath, temp / "Uninstall.exe", error) && fs::copy_file(script, files / "Uninstall.ps1", error) &&
+                                 CopyFolder(host.installer / "uninstall", files / "uninstall") && CopyFolder(host.installer / "web", files / "web") &&
+                                 CopyFolder(host.installer / "art", files / "art");
+            if (!copied) {
+                if (!temp.empty()) fs::remove_all(temp, error);
+                MessageBoxW(nullptr, L"The uninstaller could not copy itself to the Temp folder. Check that the drive has free space, or run Uninstall.cmd in the game folder.", Title, MB_OK | MB_ICONERROR);
+                CoUninitialize();
+                return 2;
+            }
+            std::wstring command = QuoteArgument((temp / "Uninstall.exe").wstring()) + L" --uninstall " + QuoteArgument(host.uninstallTarget.wstring()) +
+                                   L" --installer-dir " + QuoteArgument(files.wstring()) + L" --from-temp " + QuoteArgument(temp.wstring()) + selftestArguments;
+            STARTUPINFOW startup{sizeof(startup)};
+            PROCESS_INFORMATION process{};
+            if (!CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, 0, nullptr, temp.c_str(), &startup, &process)) {
+                fs::remove_all(temp, error);
+                MessageBoxW(nullptr, L"The uninstaller could not start its copy in the Temp folder. Run Uninstall.cmd in the game folder instead.", Title, MB_OK | MB_ICONERROR);
+                CoUninitialize();
+                return 2;
+            }
+            DWORD code = 0;
+            if (host.selftest) {  // a self-test's result is the copy's
+                WaitForSingleObject(process.hProcess, INFINITE);
+                GetExitCodeProcess(process.hProcess, &code);
+            }
+            CloseHandle(process.hProcess);
+            CloseHandle(process.hThread);
+            CoUninitialize();
+            return static_cast<int>(code);
+        }
+        host.userDataOverride = fromTemp / "WebView2";
+    } else {
+        SetCurrentProcessExplicitAppUserModelID(L"Nukkoro.ShadowRecompiled.Setup");
+        if (host.installer.empty()) host.installer = FindInstallerDirectory();
+        if (host.installer.empty() || !fs::is_regular_file(host.installer / "web" / "index.html") || !fs::is_regular_file(host.installer / "Backend.ps1")) {
+            MessageBoxW(nullptr, L"The setup files were not found. Start the installer with Install.cmd from the source folder.", Title, MB_OK | MB_ICONERROR);
+            CoUninitialize();
+            return 2;
+        }
     }
     std::error_code error;
     host.artPresent = fs::is_directory(host.installer / "art", error);
@@ -745,7 +990,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     WNDCLASSEXW windowClass{sizeof(windowClass)};
     windowClass.hInstance = instance;
     windowClass.lpfnWndProc = WindowProcedure;
-    windowClass.lpszClassName = L"NukkoroSetupWindow";
+    windowClass.lpszClassName = host.uninstall ? L"NukkoroUninstallWindow" : L"NukkoroSetupWindow";
     windowClass.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     windowClass.hIcon = static_cast<HICON>(LoadImageW(instance, MAKEINTRESOURCEW(IDI_APP), IMAGE_ICON, 0, 0, LR_DEFAULTSIZE | LR_SHARED));
     if (!windowClass.hIcon) windowClass.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
@@ -778,5 +1023,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCommand) {
     if (host.installJob) CloseHandle(host.installJob);  // kills anything still running (KILL_ON_JOB_CLOSE)
     DeleteObject(windowClass.hbrBackground);
     CoUninitialize();
+    if (!fromTemp.empty() && _wcsnicmp(fromTemp.filename().c_str(), L"NukkoroUninstall-", 17) == 0) DeleteFolderLater(fromTemp, host.uninstalled ? host.uninstallTarget : fs::path());
     return host.exitCode;
 }

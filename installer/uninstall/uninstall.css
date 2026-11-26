@@ -1,0 +1,20 @@
+/* The uninstaller's pages: the setup's look (installer/web/setup.css, loaded first), plus the few things only these
+   pages have. Coordinates are the setup's 1265 x 648 design stage. */
+
+/* Three steps instead of five. */
+.step[data-step="1"] { top: 14px; } .step[data-step="2"] { top: 70px; } .step[data-step="3"] { top: 126px; }
+
+/* What is removed or kept: one row each, its size on the right. */
+.items { margin-top: 10px; font-size: 16px; line-height: 22px; }
+.items div { display: flex; gap: 10px; padding: 2px 0; }
+.items .mark { width: 18px; text-align: center; flex-shrink: 0; }
+.items .what { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.items .bytes { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.items .remove { color: var(--bad); } .items .keep { color: var(--ok); }
+
+/* The data choices: a tick box per kind, its size beside it. */
+.check .bytes { margin-left: auto; color: var(--muted); font-size: 15px; font-variant-numeric: tabular-nums; }
+.data .check { margin-top: 9px; }
+.path { color: var(--text-strong); word-break: break-all; }
+.link { color: var(--accent); cursor: pointer; text-decoration: underline; }
+.card .link { margin-left: 4px; }

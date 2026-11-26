@@ -145,6 +145,81 @@ Start-Sleep -Milliseconds 300
 Check (Test-Path (Join-Path $r 'save-data\card.gci')) 'Uninstall.cmd: saves stay and the folder with them'
 Check (-not (Test-Path (Join-Path $r 'Uninstall.cmd'))) 'Uninstall.cmd: removed itself'
 
+# 8. -Plan: changes nothing, and says what goes and what stays.
+$r = New-FakeInstall 'plan'
+Put (Join-Path $r 'voice_jp\a.adx') 'voice'
+Put (Join-Path $r 'mods\cream\mod.json') '{}'
+Write-Manifest $r (@(Files $r) + @(Entry $r 'voice_jp\a.adx'))
+$plan = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $r 'Uninstall.ps1') -Plan | Select-Object -Last 1 | ConvertFrom-Json
+Check ($plan.ok -and $plan.game.files -eq 3 -and $plan.voices.files -eq 1) 'plan: the game''s files and the voices counted'
+$kinds = @{}; foreach ($d in $plan.data) { $kinds[$d.key] = $d }
+Check ($kinds.saves.present -and $kinds.settings.present -and $kinds.mods.present -and -not $kinds.snapshots.present) 'plan: which data is there'
+Check ($kinds.saves.bytes -eq 7) 'plan: the size of the saves'
+Check ($plan.other.files -eq 2) 'plan: the player''s own files counted (they stay)'
+Check (Test-Path (Join-Path $r 'ShadowTheHedgehog.exe')) 'plan: nothing removed'
+
+# 9. -RemoveData settings,mods -Json: only those go; progress is JSON lines ending with done.
+$lines = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $r 'Uninstall.ps1') -Yes -Json -RemoveData 'settings,mods')
+$events = @($lines | ForEach-Object { $_ | ConvertFrom-Json })
+Check ($LASTEXITCODE -eq 0) 'remove data: exit 0'
+Check (@($events | Where-Object { $_.type -eq 'progress' }).Count -gt 2) 'json: progress events'
+$done = @($events | Where-Object { $_.type -eq 'done' })
+Check ($done.Count -eq 1 -and @($done[0].left) -contains 'Saves' -and @($done[0].left) -notcontains 'Settings') 'json: done says what data is left'
+Check (Test-Path (Join-Path $r 'save-data\card.gci')) 'remove data: the saves stay'
+Check (-not (Test-Path (Join-Path $r 'options.cfg')) -and -not (Test-Path (Join-Path $r 'mods'))) 'remove data: settings and mods gone'
+Check (-not (Test-Path (Join-Path $r 'voice_jp'))) 'remove data: the Japanese voices gone with the game'
+$r = New-FakeInstall 'unknown-kind'
+Write-Manifest $r (Files $r)
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $r 'Uninstall.ps1') -Yes -RemoveData 'everything' | Out-Null
+Check ($LASTEXITCODE -eq 1 -and (Test-Path (Join-Path $r 'ShadowTheHedgehog.exe'))) 'remove data: an unknown kind is refused, nothing removed'
+
+# 10. The install side: Copy-Uninstaller puts the window in, Register-InstalledApp lists the game for this user, and the
+# uninstall takes both away (the entry only when it still names this folder).
+Import-Module (Join-Path $PSScriptRoot '..\InstallCore.psm1') -Force
+$r = New-FakeInstall 'window'
+$copied = @(Copy-Uninstaller $r)
+$setupProgram = Find-SetupProgram
+if ($setupProgram) {
+    Check (Test-Path (Join-Path $r 'Uninstall.exe')) 'install: Uninstall.exe copied in'
+    Check (Test-Path (Join-Path $r 'uninstall\uninstall\index.html')) 'install: the uninstall pages copied in'
+    Check (Test-Path (Join-Path $r 'uninstall\web\setup.css')) 'install: the setup''s styles copied in'
+} else { Write-Host 'skip no NukkoroSetup.exe built: the window''s files are not copied' }
+$entry = Register-InstalledApp $r
+$key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$entry"
+try {
+    Check ($entry -match '^NukkoroShadowTheHedgehog_[0-9a-f]{8}$' -and (Test-Path -LiteralPath $key)) 'install: listed in Installed apps'
+    $props = Get-ItemProperty -LiteralPath $key
+    Check ($props.InstallLocation -eq $r -and $props.DisplayName -eq 'Shadow the Hedgehog') 'install: the entry names the game and its folder'
+    Check ($props.UninstallString -like "*$(if ($setupProgram) { 'Uninstall.exe' } else { 'Uninstall.cmd' })*") 'install: Uninstall opens the right uninstaller'
+    $list = @(Files $r) + @($copied | ForEach-Object { Entry $r $_ })
+    $m = [ordered]@{ schema = 1; product = 'Shadow the Hedgehog'; files = @($list); shortcuts = @(); shortcut_folders = @(); apps_entry = $entry }
+    [System.IO.File]::WriteAllText((Join-Path $r 'install-manifest.json'), ($m | ConvertTo-Json -Depth 4))
+    $plan = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $r 'Uninstall.ps1') -Plan | Select-Object -Last 1 | ConvertFrom-Json
+    Check ($plan.apps_entry -eq $true) 'plan: sees its Installed apps entry'
+    $rc = Run-Uninstall $r
+    Check ($rc -eq 0) 'window install: exit 0'
+    Check (-not (Test-Path -LiteralPath $key)) 'uninstall: the Installed apps entry is gone'
+    Check (-not (Test-Path (Join-Path $r 'uninstall')) -and -not (Test-Path (Join-Path $r 'Uninstall.exe'))) 'uninstall: the window''s files are gone'
+    Check (Test-Path (Join-Path $r 'save-data\card.gci')) 'uninstall: the saves stay'
+} finally {
+    if ($entry -match '^NukkoroShadowTheHedgehog_[0-9a-f]{8}$' -and (Test-Path -LiteralPath $key)) { Remove-Item -LiteralPath $key -Recurse -Force }
+}
+
+# 11. An entry another folder owns is never removed.
+$r = New-FakeInstall 'foreign-entry'
+$other = Join-Path $base 'elsewhere'
+New-Item -ItemType Directory -Force -Path $other | Out-Null
+$entry = Register-InstalledApp $other
+$key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$entry"
+Check ($entry -match '^NukkoroShadowTheHedgehog_[0-9a-f]{8}$') 'install: an empty folder is listed too'
+try {
+    $m = [ordered]@{ schema = 1; product = 'Shadow the Hedgehog'; files = @(Files $r); shortcuts = @(); shortcut_folders = @(); apps_entry = $entry }
+    [System.IO.File]::WriteAllText((Join-Path $r 'install-manifest.json'), ($m | ConvertTo-Json -Depth 4))
+    $rc = Run-Uninstall $r
+    Check ($rc -eq 0 -and (Test-Path -LiteralPath $key)) 'uninstall: another folder''s Installed apps entry stays'
+} finally {
+    if ($entry -match '^NukkoroShadowTheHedgehog_[0-9a-f]{8}$' -and (Test-Path -LiteralPath $key)) { Remove-Item -LiteralPath $key -Recurse -Force }
+}
 if ($script:failures) { Write-Host "$script:failures checks failed" -ForegroundColor Red; exit 1 }
 Write-Host 'all uninstaller checks passed' -ForegroundColor Green
 exit 0

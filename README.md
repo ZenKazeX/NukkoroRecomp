@@ -158,9 +158,15 @@ releases can be imported with `--memory-card <file>` the first time you start th
 
 ## Uninstall
 
-Run `Uninstall.cmd` in the install folder, or use the uninstall shortcut in the Start menu. It removes only what the
-setup installed, the mod manager and the Japanese voices included, and keeps your saves, settings and mods. `Uninstall.cmd -RemoveSaves`
-deletes those as well.
+Open Windows Settings > Apps > Installed apps, choose *Shadow the Hedgehog* and *Uninstall*, or use *Uninstall Shadow
+the Hedgehog* in the Start menu, or run `Uninstall.exe` in the install folder. The uninstaller looks like the setup and
+goes in three steps: what will be removed, what happens to your data, and the uninstall itself. It removes only what
+the setup installed: the game, Settings and the Mod Manager, the Japanese voices, the shortcuts and the Installed apps
+entry. Your saves, settings, mods and snapshots are kept unless you tick them, each with its size shown, and files the
+setup did not put in the folder always stay.
+
+From a console, `Uninstall.cmd` in the install folder does the same without the window (`Uninstall.cmd -RemoveSaves`
+deletes your saves, settings, mods and snapshots as well; `-RemoveData saves,mods` only those named).
 
 ## Known limitations
 

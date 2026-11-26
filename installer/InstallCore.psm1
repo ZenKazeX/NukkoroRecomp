@@ -512,7 +512,9 @@ function Set-SpokenLanguage([string]$target, [int]$voice) {
 }
 
 function Get-FolderSize([string]$path) {
-    $sum = (Get-ChildItem -LiteralPath $path -Recurse -File -Force -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum
+    # An empty folder gives Measure-Object no input, and then no Sum property (an error under strict mode).
+    $measure = Get-ChildItem -LiteralPath $path -Recurse -File -Force -ErrorAction SilentlyContinue | Measure-Object Length -Sum
+    $sum = if ($measure -and $measure.PSObject.Properties['Sum']) { $measure.Sum } else { $null }
     if ($null -eq $sum) { return 0 }
     return [double]$sum
 }
@@ -844,7 +846,7 @@ function Write-InstallInfo([string]$target, $disc, $japanese = $null) {
 # are listed, so anything else in the folder (saves, settings, the player's own files) is never in the record. Entries
 # from an earlier install that are still on disk are carried over, so an update cannot orphan them.
 function Write-InstallManifest([string]$target, [string]$discRoot, [string[]]$shortcuts, [string[]]$shortcutFolders,
-                               [string[]]$copiedFiles = @()) {
+                               [string[]]$copiedFiles = @(), [string]$appsEntry = '') {
     $path = Join-Path $target 'install-manifest.json'
     $files = New-Object System.Collections.ArrayList
     $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
@@ -888,6 +890,7 @@ function Write-InstallManifest([string]$target, [string]$discRoot, [string[]]$sh
         $allFolders = @($allFolders + @($previous.shortcut_folders | Where-Object { $_ -and (Test-Path -LiteralPath $_) }) | Select-Object -Unique)
     }
     $manifest = [ordered]@{ schema = 1; product = $script:ProductName; files = @($files); shortcuts = @($allShortcuts); shortcut_folders = @($allFolders) }
+    if ($appsEntry) { $manifest.apps_entry = $appsEntry }
     $manifest | ConvertTo-Json -Depth 4 -Compress | Set-Content -LiteralPath $path -Encoding UTF8
 }
 
@@ -970,13 +973,85 @@ function New-GameShortcuts([string]$target, [bool]$desktop, [bool]$startMenu,
         $link.Save()
         $made += $link.FullName
         $link = $shell.CreateShortcut((Join-Path $startMenuDir "Uninstall $($script:ProductName).lnk"))
-        $link.TargetPath = Join-Path $target 'Uninstall.cmd'
+        # The uninstall window when this setup could copy it in (Copy-Uninstaller), else the console one.
+        $window = Join-Path $target $script:UninstallExe
+        $link.TargetPath = if (Test-Path -LiteralPath $window -PathType Leaf) { $window } else { Join-Path $target 'Uninstall.cmd' }
+        if (Test-Path -LiteralPath $window -PathType Leaf) { $link.IconLocation = "$window,0" }
         $link.WorkingDirectory = $target
-        $link.Description = 'Removes the game. Your saves and settings are kept.'
+        $link.Description = 'Removes the game. Your saves, settings and mods are kept unless you choose otherwise.'
         $link.Save()
         $made += $link.FullName
     }
     return $made
+}
+
+# ---- the uninstaller ---------------------------------------------------------------
+#
+# The uninstall window is the setup program itself (NukkoroSetup.exe), copied in as Uninstall.exe: named so, it shows
+# installer/uninstall with the setup's styles (installer/web) and art (installer/art), which go into the uninstall
+# folder of the game. Returns the files it put there (for the install record), or none when there is no setup program
+# to copy (a console install from a source tree that never built it): the Start menu then offers Uninstall.cmd.
+$script:UninstallExe = 'Uninstall.exe'
+function Find-SetupProgram {
+    foreach ($candidate in @((Join-Path $script:RepoRoot 'NukkoroSetup.exe'), (Join-Path $script:RepoRoot '.build\setup\Release\NukkoroSetup.exe'))) {
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
+    }
+    return $null
+}
+function Copy-Uninstaller([string]$target) {
+    $program = Find-SetupProgram
+    if (-not $program) { return @() }
+    $pages = Join-Path $target 'uninstall'
+    # An earlier install's copy goes first (only when it is one: its own page is in it).
+    if (Test-Path -LiteralPath (Join-Path $pages 'uninstall\index.html') -PathType Leaf) { Remove-Item -LiteralPath $pages -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $pages | Out-Null
+    foreach ($name in 'web', 'uninstall', 'art') {
+        $source = Join-Path $PSScriptRoot $name
+        if (-not (Test-Path -LiteralPath $source -PathType Container)) { continue }
+        Copy-Item -LiteralPath $source -Destination (Join-Path $pages $name) -Recurse -Force
+    }
+    Copy-Item -LiteralPath $program -Destination (Join-Path $target $script:UninstallExe) -Force
+    $copied = @($script:UninstallExe)
+    foreach ($file in @(Get-ChildItem -LiteralPath $pages -Recurse -File -Force)) { $copied += 'uninstall' + $file.FullName.Substring($pages.Length) }
+    return $copied
+}
+
+# The game in Windows Settings > Apps > Installed apps, for this user (no administrator needed): one entry per install
+# folder, whose Uninstall opens the uninstall window. Returns the entry's key name (kept in the install record, so the
+# uninstaller removes exactly this one), or '' when it could not be written.
+function Register-InstalledApp([string]$target) {
+    $root = [System.IO.Path]::GetFullPath($target).TrimEnd('\')
+    $sha = [System.Security.Cryptography.SHA1]::Create()
+    $hash = -join ($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($root.ToLowerInvariant()))[0..3] | ForEach-Object { $_.ToString('x2') })
+    $name = "NukkoroShadowTheHedgehog_$hash"
+    $path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$name"
+    try {
+        $key = New-Item -Path $path -Force
+        $window = Join-Path $root $script:UninstallExe
+        $uninstall = if (Test-Path -LiteralPath $window -PathType Leaf) { "`"$window`"" } else { "cmd.exe /c `"$(Join-Path $root 'Uninstall.cmd')`"" }
+        $values = [ordered]@{
+            DisplayName = $script:ProductName
+            DisplayIcon = (Join-Path $root $script:GameExe) + ',0'
+            Publisher = 'Nukkoro Recompiled (unofficial fan project)'
+            InstallLocation = $root
+            InstallDate = (Get-Date).ToString('yyyyMMdd')
+            UninstallString = $uninstall
+            QuietUninstallString = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$(Join-Path $root 'Uninstall.ps1')`" -Yes"
+            URLInfoAbout = 'https://github.com/ZenKazeX/NukkoroRecomp'
+        }
+        # The version of the package this setup came from (its folder: %PUBLIC%\NukkoroRecomp\<version>).
+        if ((Split-Path -Leaf $script:RepoRoot) -match '^\d+\.\d+\.\d+') { $values.DisplayVersion = Split-Path -Leaf $script:RepoRoot }
+        foreach ($entry in $values.GetEnumerator()) { New-ItemProperty -LiteralPath $key.PSPath -Name $entry.Key -Value $entry.Value -PropertyType String -Force | Out-Null }
+        $kilobytes = [Math]::Floor([double](Get-FolderSize $root) / 1024.0)
+        if ($kilobytes -gt [int]::MaxValue) { $kilobytes = [int]::MaxValue }
+        New-ItemProperty -LiteralPath $key.PSPath -Name EstimatedSize -Value ([int]$kilobytes) -PropertyType DWord -Force | Out-Null
+        foreach ($flag in 'NoModify', 'NoRepair') { New-ItemProperty -LiteralPath $key.PSPath -Name $flag -Value 1 -PropertyType DWord -Force | Out-Null }
+        return $name
+    } catch {
+        # Half written: take it away again rather than leave an entry the install record does not name.
+        Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue
+        return ''
+    }
 }
 
 # ---- the build files ------------------------------------------------------------
@@ -1115,10 +1190,14 @@ function Invoke-GameInstall($disc, [string]$targetPath, [string]$python, [int]$j
         }
         Write-InstallInfo $targetPath $disc $japanese
         foreach ($name in @('Uninstall.ps1', 'Uninstall.cmd')) { Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $targetPath -Force }
+        $uninstallerFiles = @(Copy-Uninstaller $targetPath)
+        if ($uninstallerFiles.Count) { & $OnEvent @{ type = 'log'; text = "Uninstaller: $(Join-Path $targetPath $script:UninstallExe)`n" } }
         foreach ($old in @(Remove-RetiredItems $targetPath $desktop)) { & $OnEvent @{ type = 'log'; text = "Removed (renamed in this version): $old`n" } }
         $shortcuts = @(New-GameShortcuts $targetPath $desktop $startMenu $desktopDir $startMenuDir)
         foreach ($made in $shortcuts) { & $OnEvent @{ type = 'log'; text = "Shortcut: $made`n" } }
-        Write-InstallManifest $targetPath $disc.Root $shortcuts $(if ($startMenu) { @($startMenuDir) } else { @() }) $japaneseFiles
+        $appsEntry = Register-InstalledApp $targetPath
+        if ($appsEntry) { & $OnEvent @{ type = 'log'; text = "Listed in Windows' Installed apps.`n" } }
+        Write-InstallManifest $targetPath $disc.Root $shortcuts $(if ($startMenu) { @($startMenuDir) } else { @() }) (@($japaneseFiles) + @($uninstallerFiles)) $appsEntry
         Copy-Item -LiteralPath $log -Destination (Join-Path $targetPath 'install.log') -Force
         $freed = Remove-BuildFiles
         if ($freed -gt 0) { & $OnEvent @{ type = 'log'; text = "Removed the temporary build files ($(Format-Size $freed)).`n" } }
@@ -1137,5 +1216,5 @@ Export-ModuleMember -Function Initialize-BuildQos, Set-BuildFullSpeed, Get-Pytho
     Set-SpokenLanguage, Get-FolderSize, Test-InstallFolder, Get-InstallJobs, Get-PrebuiltFolder,
     Get-BuildSteps, Get-InstallSteps, Start-Step, Test-StepSucceeded, Stop-Step, Read-LogTail, Get-StepFailureCause, New-BuildProgress,
     Update-BuildProgress, Get-PrebuiltUsed, Write-InstallInfo, Write-InstallManifest,
-    Get-SourceRevision, Get-BuildConfiguration, Remove-RetiredItems, New-GameShortcuts,
+    Get-SourceRevision, Get-BuildConfiguration, Remove-RetiredItems, New-GameShortcuts, Find-SetupProgram, Copy-Uninstaller, Register-InstalledApp,
     Invoke-GameInstall
