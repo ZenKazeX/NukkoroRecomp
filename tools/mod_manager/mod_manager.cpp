@@ -2730,6 +2730,16 @@ LRESULT popup_colors(UINT msg, WPARAM wp, LPARAM lp, HWND w, bool* handled) {
     return 0;
 }
 
+// Scrolls the selected mod's card to `pos`: its controls moved without drawing, then the card drawn once, whole (no
+// ghosts of the moved controls).
+void scroll_card(int pos) {
+    SendMessageW(g->card, WM_SETREDRAW, FALSE, 0);
+    g->card_scroll = pos;
+    layout();
+    SendMessageW(g->card, WM_SETREDRAW, TRUE, 0);
+    RedrawWindow(g->card, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW | RDW_FRAME);
+}
+
 // The selected mod's panel: on the card's colour; what its controls tell goes to the main window, as if they were its
 // own; it scrolls up and down when they are taller than it.
 LRESULT CALLBACK card_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
@@ -2758,10 +2768,8 @@ LRESULT CALLBACK card_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
                 int scroll = g->card_scroll;
                 if (r.top < 0) scroll += r.top - g->px(8);
                 else if (r.bottom > box.bottom) scroll += std::min(static_cast<int>(r.top) - g->px(8), static_cast<int>(r.bottom - box.bottom) + g->px(8));
-                if (scroll != g->card_scroll) {
-                    g->card_scroll = scroll;
-                    layout();
-                }
+                if (scroll != g->card_scroll) scroll_card(scroll);
+
             }
             return SendMessageW(GetParent(h), msg, wp, lp);
         case WM_VSCROLL: {
@@ -2782,14 +2790,12 @@ LRESULT CALLBACK card_proc(HWND h, UINT msg, WPARAM wp, LPARAM lp) {
                 case SB_BOTTOM: pos = info.nMax; break;
                 default: return 0;
             }
-            g->card_scroll = pos;
-            layout();
+            scroll_card(pos);
             return 0;
         }
         case WM_MOUSEWHEEL:
             if ((GetWindowLongW(h, GWL_STYLE) & WS_VSCROLL) == 0) break;
-            g->card_scroll -= GET_WHEEL_DELTA_WPARAM(wp) * g->px(48) / WHEEL_DELTA;
-            layout();
+            scroll_card(g->card_scroll - GET_WHEEL_DELTA_WPARAM(wp) * g->px(48) / WHEEL_DELTA);
             return 0;
     }
     return DefWindowProcW(h, msg, wp, lp);

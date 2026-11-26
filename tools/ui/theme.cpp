@@ -551,6 +551,10 @@ void place_edit(HWND h) {
 }
 
 LRESULT CALLBACK dropdown_proc(HWND h, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR, DWORD_PTR) {
+    // The mouse wheel over a closed list scrolls the page it is on, as in Windows 11's Settings; it does not change
+    // the choice (scrolling past a list must not change a setting). An open list still scrolls itself.
+    if (message == WM_MOUSEWHEEL && SendMessageW(h, CB_GETDROPPEDSTATE, 0, 0) == FALSE)
+        return SendMessageW(GetParent(h), message, wparam, lparam);
     if (!g_palette.custom) return DefSubclassProc(h, message, wparam, lparam);
     switch (message) {
         case WM_SIZE:
@@ -600,6 +604,13 @@ LRESULT CALLBACK dropdown_proc(HWND h, UINT message, WPARAM wparam, LPARAM lpara
             RemoveWindowSubclass(h, dropdown_proc, 2);
             break;
     }
+    return DefSubclassProc(h, message, wparam, lparam);
+}
+
+// A slider: the mouse wheel scrolls the page it is on instead of moving the slider (the keys still move it).
+LRESULT CALLBACK wheel_to_parent_proc(HWND h, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR, DWORD_PTR) {
+    if (message == WM_MOUSEWHEEL) return SendMessageW(GetParent(h), message, wparam, lparam);
+    if (message == WM_NCDESTROY) RemoveWindowSubclass(h, wheel_to_parent_proc, 3);
     return DefSubclassProc(h, message, wparam, lparam);
 }
 
@@ -860,6 +871,14 @@ void apply_to_control(HWND h) {
         SetWindowSubclass(h, tab_proc, 1, 0);
     } else if (is_class(h, WC_LISTBOXW)) {
         set_theme(h, dark, L"DarkMode_Explorer");
+    } else if (is_class(h, TRACKBAR_CLASSW)) {
+        SetWindowSubclass(h, wheel_to_parent_proc, 3, 0);
+        // TBS_FIXEDLENGTH: the knob as large as the zoom makes the slider, centred on its height.
+        if ((GetWindowLongW(h, GWL_STYLE) & TBS_FIXEDLENGTH) != 0) {
+            RECT r;
+            GetClientRect(h, &r);
+            SendMessageW(h, TBM_SETTHUMBLENGTH, static_cast<WPARAM>(std::max(12L, r.bottom * 2 / 3)), 0);
+        }
     } else if ((GetWindowLongW(h, GWL_EXSTYLE) & WS_EX_CONTROLPARENT) != 0) {
         set_theme(h, dark, L"DarkMode_Explorer");  // a program's own panel of controls: its scroll bar
     }

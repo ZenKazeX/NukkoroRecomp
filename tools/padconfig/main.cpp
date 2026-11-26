@@ -131,7 +131,8 @@ struct App {
     HWND window = nullptr, tabs = nullptr;  // tabs: the navigation list
     HFONT font = nullptr, caption = nullptr, title = nullptr, icons = nullptr;
     int origin_x = 0;     // what make() adds to x: page_x for the pages and the bottom bar, 0 for the navigation
-    int bottom = 0;       // where the bar at the bottom starts (below the tallest page)
+    int bottom = 0;       // where the bar at the bottom starts: below the page shown
+    std::array<int, kPageCount> page_ends{};  // where each page ends (the bar moves to the shown one's: show_page())
     int bar_h = 70;       // the bar's height
 
     // The layout for the window's present width (choose_columns()), in units.
@@ -215,6 +216,9 @@ void scroll_to(int y) {
     if (dy == 0) return;
     g.scroll_y = y;
     SetScrollPos(g.window, SB_VERT, y, TRUE);
+    // Moved without drawing, then drawn once, whole: a control moved with its old picture (Windows copies it along)
+    // would leave ghosts of the card edges and texts behind it.
+    SendMessageW(g.window, WM_SETREDRAW, FALSE, 0);
     int children = 0;
     for (HWND c = GetWindow(g.window, GW_CHILD); c != nullptr; c = GetWindow(c, GW_HWNDNEXT)) ++children;
     HDWP moves = BeginDeferWindowPos(children);
@@ -222,10 +226,12 @@ void scroll_to(int y) {
         RECT r;
         GetWindowRect(c, &r);
         MapWindowPoints(nullptr, g.window, reinterpret_cast<POINT*>(&r), 2);
-        moves = DeferWindowPos(moves, c, nullptr, r.left, r.top + dy, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+        moves = DeferWindowPos(moves, c, nullptr, r.left, r.top + dy, 0, 0,
+                               SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_NOREDRAW);
     }
     if (moves != nullptr) EndDeferWindowPos(moves);
-    InvalidateRect(g.window, nullptr, TRUE);
+    SendMessageW(g.window, WM_SETREDRAW, TRUE, 0);
+    RedrawWindow(g.window, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_UPDATENOW);
 }
 
 // The scroll bar for the window's present size: none when everything fits. The layout keeps the bar's room either
@@ -699,7 +705,7 @@ HWND make(const wchar_t* cls, const std::wstring& text, DWORD style, int x, int 
         SetWindowPos(c, nullptr, px(g.origin_x + x), px(y) - g.scroll_y, px(w), px(h), SWP_NOZORDER | SWP_NOACTIVATE);
         if (g.building == kPadButtons) {  // the controller page's scale may have changed with the window
             SendMessageW(c, WM_SETFONT, reinterpret_cast<WPARAM>(font != nullptr ? font : page_font()), FALSE);
-            ui::fit_dropdown(c);  // a drop-down list's heights follow its font (nothing for other controls)
+            ui::apply_to_control(c);  // a drop-down list's heights and a slider's knob follow the new scale
         }
         return c;
     }
@@ -770,7 +776,7 @@ int place_card(Field& f, int y) {
             f.control = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | kDrawn | WS_TABSTOP | WS_VSCROLL, control_x, cy + 1, control_w, 300, f.id);
             break;
         case Kind::Slider:
-            f.control = make(TRACKBAR_CLASSW, L"", TBS_HORZ | TBS_NOTICKS | WS_TABSTOP, control_x, cy, control_w - 100, 30, f.id);
+            f.control = make(TRACKBAR_CLASSW, L"", TBS_HORZ | TBS_NOTICKS | TBS_FIXEDLENGTH | WS_TABSTOP, control_x, cy, control_w - 100, 30, f.id);
             if (!g.relayout)
                 SendMessageW(f.control, TBM_SETRANGE, TRUE, MAKELPARAM(static_cast<int>(f.low), static_cast<int>(f.high)));
             f.value = make(L"STATIC", L"", SS_LEFT | SS_CENTERIMAGE, control_x + control_w - 94, cy, 94, 30, -1);
@@ -809,7 +815,7 @@ int place(Field& f, int x, int y, int w) {
             f.control = make(L"COMBOBOX", L"", CBS_DROPDOWNLIST | kDrawn | WS_TABSTOP | WS_VSCROLL, cx, cy, control_w, 300, f.id);
             break;
         case Kind::Slider:
-            f.control = make(TRACKBAR_CLASSW, L"", TBS_HORZ | TBS_NOTICKS | WS_TABSTOP, cx, cy, control_w - 96, 26, f.id);
+            f.control = make(TRACKBAR_CLASSW, L"", TBS_HORZ | TBS_NOTICKS | TBS_FIXEDLENGTH | WS_TABSTOP, cx, cy, control_w - 96, 26, f.id);
             if (!g.relayout)
                 SendMessageW(f.control, TBM_SETRANGE, TRUE, MAKELPARAM(static_cast<int>(f.low), static_cast<int>(f.high)));
             f.value = make(L"STATIC", L"", SS_LEFT | SS_CENTERIMAGE, cx + control_w - 90, cy, 90, 26, -1);
@@ -1085,7 +1091,7 @@ int lay_out_pad_page(int page_w, int top, HFONT font) {
     }
     const int slider_x = name_beside ? kLeft + 142 : kLeft;
     const int slider_w = name_beside ? std::min(180, inner_w - 142 - 42) : inner_w - 42;
-    HWND slider = make(TRACKBAR_CLASSW, L"", TBS_HORZ | TBS_NOTICKS | WS_TABSTOP, slider_x, y, slider_w, 30, kThreshold);
+    HWND slider = make(TRACKBAR_CLASSW, L"", TBS_HORZ | TBS_NOTICKS | TBS_FIXEDLENGTH | WS_TABSTOP, slider_x, y, slider_w, 30, kThreshold);
     if (!g.relayout) SendMessageW(slider, TBM_SETRANGE, TRUE, MAKELPARAM(0, 255));
     make(L"STATIC", L"", SS_LEFT | SS_CENTERIMAGE, slider_x + slider_w + 6, y, 36, 30, kThresholdValue);
     y += 34;
@@ -1359,35 +1365,41 @@ void build() {
         "Controller buttons page."_w,
         {},
         "Whether the game saves your progress by itself."_w};
-    g.bottom = 0;
+    // Each page's end; the bar at the bottom goes under the page shown, so a short page does not scroll through the
+    // room a taller one needs.
     for (int p = 0; p < kPageCount; ++p) {
         g.building = p;
+        int& end = g.page_ends[static_cast<std::size_t>(p)];
         if (p == kPadButtons) {
-            g.bottom = std::max(g.bottom, build_pad_page() + 12);
-            continue;
+            end = build_pad_page() + 12;
+        } else if (p == kKeyboard) {
+            end = build_keyboard_page() + 12;
+        } else {
+            int y = g.top + intro(intros[p]) + 14;
+            for (Field& f : g.fields) {
+                if (f.page != p) continue;
+                y += place_card(f, y) + 4;
+            }
+            end = y + 12;
         }
-        if (p == kKeyboard) {
-            g.bottom = std::max(g.bottom, build_keyboard_page() + 12);
-            continue;
-        }
-        int y = g.top + intro(intros[p]) + 14;
-        for (Field& f : g.fields) {
-            if (f.page != p) continue;
-            y += place_card(f, y) + 4;
-        }
-        g.bottom = std::max(g.bottom, y + 12);
+        for (const RECT& r : g.cards[static_cast<std::size_t>(p)]) end = std::max(end, units(r.bottom) + 12);
     }
-    for (const auto& cards : g.cards)
-        for (const RECT& r : cards) g.bottom = std::max(g.bottom, units(r.bottom) + 12);
+    g.bottom = g.page_ends[static_cast<std::size_t>(g.page)];
     g.building = -1;
     build_bar(sizes, themes);
     g.origin_x = 0;
 }
 
+void relayout();
+
 void show_page(int page) {
     g.capturing = -1;
     g.key_capture = -1;
+    const bool other_page = page != g.page;
     g.page = page;
+    // Another page starts at its top, with the bar at the bottom under it.
+    if (other_page && !g.made.empty()) scroll_to(0);
+    if (!g.made.empty() && !g.rebuilding && g.page_ends[static_cast<std::size_t>(page)] != g.bottom) relayout();
     for (int p = 0; p < kPageCount; ++p)
         for (HWND h : g.page_controls[static_cast<std::size_t>(p)]) ShowWindow(h, p == page ? SW_SHOW : SW_HIDE);
     if (static_cast<int>(SendMessageW(g.tabs, LB_GETCURSEL, 0, 0)) != page)
