@@ -123,6 +123,7 @@ struct Field {
     std::function<void(double)> set;
     std::function<std::wstring(double)> show;  // Slider: the value beside it; Combo: a value set in the file
     std::function<bool()> enabled;
+    bool in_table = false;  // the keyboard page's camera mouse lists: placed in the actions table, at their action's row
     int id = 0;
     HWND control = nullptr, value = nullptr;
 };
@@ -1072,11 +1073,11 @@ void define_fields() {
     {
         const std::wstring camera_labels[sp::kCameraActionCount] = {"Camera left: mouse"_w, "Camera right: mouse"_w,
                                                                     "Camera up: mouse"_w, "Camera down: mouse"_w};
-        const std::vector<Choice> moves = {{"Moving left"_w, static_cast<double>(sp::MouseMove::Left)},
-                                           {"Moving right"_w, static_cast<double>(sp::MouseMove::Right)},
-                                           {"Moving up"_w, static_cast<double>(sp::MouseMove::Up)},
-                                           {"Moving down"_w, static_cast<double>(sp::MouseMove::Down)},
-                                           {"Not the mouse"_w, static_cast<double>(sp::MouseMove::None)}};
+        const std::vector<Choice> moves = {{"Mouse left"_w, static_cast<double>(sp::MouseMove::Left)},
+                                           {"Mouse right"_w, static_cast<double>(sp::MouseMove::Right)},
+                                           {"Mouse up"_w, static_cast<double>(sp::MouseMove::Up)},
+                                           {"Mouse down"_w, static_cast<double>(sp::MouseMove::Down)},
+                                           {"No mouse"_w, static_cast<double>(sp::MouseMove::None)}};
         for (std::size_t i = 0; i < sp::kCameraActionCount; ++i) {
             add(kKeyboard, Kind::Combo, camera_labels[i], L"",
                 [&k, i] { return static_cast<double>(camera_mouse_as_played(k)[i]); },
@@ -1086,6 +1087,7 @@ void define_fields() {
                     k.camera_mouse[i] = static_cast<sp::MouseMove>(static_cast<int>(v));
                 },
                 moves);
+            g.fields.back().in_table = true;
         }
     }
     add(kKeyboard, Kind::Check, "Keep the pointer in the game"_w, L"", [&] { return k.mouse_capture ? 1.0 : 0.0; },
@@ -1212,22 +1214,34 @@ int build_keyboard_page() {
     for (int b = 0; b < 5; ++b)
         key_w = std::max(key_w, units(ui::text_extent(g.font, bind_text(sp::mouse_bind(static_cast<sp::MouseButton>(b)))).cx));
     key_w += 28;  // the button's own edges
+    // The camera rows also have a list of the mouse movement each follows, in a fourth column (the fields marked
+    // in_table, in kCameraActions order).
+    std::vector<Field*> mouse_lists;
+    for (Field& f : g.fields)
+        if (f.page == kKeyboard && f.in_table) mouse_lists.push_back(&f);
+    int mouse_w = 0;
+    for (const Field* f : mouse_lists)
+        for (const Choice& c : f->choices) mouse_w = std::max(mouse_w, units(ui::text_extent(g.font, c.label).cx));
+    mouse_w += units(ui::dropdown_chrome(g.font)) + 16;
+    const int extra = mouse_w + 4;
     int label_w = 0;
     for (const std::wstring& label : kActionLabels) label_w = std::max(label_w, units(ui::text_extent(g.font, label).cx) + 8);
-    const int full_table = kLeft + label_w + 2 + slots * (key_w + 4) + 12;  // from the card's left edge at 12
+    const int full_table = kLeft + label_w + 2 + slots * (key_w + 4) + extra + 12;  // from the card's left edge at 12
     const bool beside = g.page_w >= 12 + full_table + 12 + 440 + 12;
     const int table_r = beside ? 12 + full_table : g.page_w - 12;
     const int inner_w = table_r - 12 - kLeft;
     // Each action's name beside its boxes; or over them, in a row; or over them, one under another.
-    const bool label_beside = inner_w >= label_w + 2 + slots * (key_w + 4);
-    const bool one_row = label_beside || inner_w >= slots * (key_w + 4);
-    const int bind_w = label_beside ? std::min(key_w + 32, (inner_w - label_w - 2) / slots - 4)
-                       : one_row    ? std::min(key_w + 32, (inner_w - (slots - 1) * 4) / slots)
+    const bool label_beside = inner_w >= label_w + 2 + slots * (key_w + 4) + extra;
+    const bool one_row = label_beside || inner_w >= slots * (key_w + 4) + extra;
+    const int bind_w = label_beside ? std::min(key_w + 32, (inner_w - label_w - 2 - extra) / slots - 4)
+                       : one_row    ? std::min(key_w + 32, (inner_w - extra - (slots - 1) * 4) / slots)
                                     : inner_w;
     const int kLabelW = label_w;
     int y = g.top + 12;
     g.card_open = true;
-    const std::wstring head = "Action"_w, hint = "Click a box, then press a key or a mouse button"_w;
+    const std::wstring head = "Action"_w,
+                       hint = "Click a box, then press a key or a mouse button. A camera action can also follow the mouse: "_w
+                              "choose which way in the list at the end of its row."_w;
     if (label_beside) {
         const int hint_h = std::max(20, text_height(hint, g.font, inner_w - kLabelW - 2));
         make(L"STATIC", head, SS_LEFT, kLeft, y, kLabelW - 8, 20, -1);
@@ -1240,30 +1254,43 @@ int build_keyboard_page() {
         y += 22 + hint_h + 6;
     }
     for (std::size_t a = 0; a < sp::kActionCount; ++a) {
+        // Its camera mouse list, if it is a camera action; its row then as tall as the list.
+        Field* list = nullptr;
+        for (std::size_t c = 0; c < sp::kCameraActionCount && c < mouse_lists.size(); ++c)
+            if (sp::kCameraActions[c] == static_cast<sp::Action>(a)) list = mouse_lists[c];
+        const int row_h = list != nullptr && one_row ? 30 : 22, dy = (row_h - 22) / 2;
         if (label_beside) {
-            make(L"STATIC", kActionLabels[a], SS_LEFT | SS_CENTERIMAGE | SS_NOPREFIX, kLeft, y, kLabelW, 22, -1);
+            make(L"STATIC", kActionLabels[a], SS_LEFT | SS_CENTERIMAGE | SS_NOPREFIX, kLeft, y + dy, kLabelW, 22, -1);
         } else {
             make(L"STATIC", kActionLabels[a], SS_LEFT | SS_CENTERIMAGE | SS_NOPREFIX, kLeft, y, inner_w, 22, -1);
             y += 23;
         }
+        const int first_x = label_beside ? kLeft + kLabelW + 2 : kLeft;
         for (int s = 0; s < slots; ++s) {
-            const int x = label_beside ? kLeft + kLabelW + 2 + s * (bind_w + 4) : one_row ? kLeft + s * (bind_w + 4) : kLeft;
-            make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, x, y, bind_w, 22,
+            const int x = one_row ? first_x + s * (bind_w + 4) : kLeft;
+            make(L"BUTTON", L"", BS_PUSHBUTTON | WS_TABSTOP, x, y + dy, bind_w, 22,
                  kFirstBind + static_cast<int>(a * sp::kMaxBinds) + s);
             if (!one_row && s + 1 < slots) y += 26;
         }
-        y += label_beside ? 24 : 30;
+        if (list != nullptr) {
+            list->id = kFirstField + static_cast<int>(list - g.fields.data());
+            if (!one_row) y += 26;
+            const int x = one_row ? first_x + slots * (bind_w + 4) : kLeft, w = one_row ? mouse_w : inner_w;
+            list->control = make(L"COMBOBOX", list->label, CBS_DROPDOWNLIST | kDrawn | WS_TABSTOP | WS_VSCROLL, x, y, w, 300, list->id);
+            if (!one_row) y += 8;
+        }
+        y += label_beside ? row_h + 2 : 30;
     }
     add_card(12, g.top, table_r, y + 12);
     const int column_l = beside ? table_r + 12 : 12, column_top = beside ? g.top : y + 12 + 16, column_r = g.page_w - 12;
     const int x = column_l + 18, w = column_r - 20 - x;
     y = column_top + 16;
     for (Field& f : g.fields)
-        if (f.page == kKeyboard) y += place(f, x, y, w);
+        if (f.page == kKeyboard && !f.in_table) y += place(f, x, y, w);
     const std::wstring note =
         "Mouse speed 1 is the normal speed; 2 turns twice as fast. Each camera action follows the mouse moving the way "_w
-        "you choose, as the GameCube's C stick does: camera left swings the camera round to the left, which turns the "_w
-        "view right, so it follows the mouse moving right by default. Walk speed is how fast you move while holding "_w
+        "chosen in its row of the table, as the GameCube's C stick does: camera left swings the camera round to the "_w
+        "left, which turns the view right, so it follows the mouse moving right by default. Walk speed is how fast you move while holding "_w
         "Walk (36 is the default). Keyboard and mouse changes also apply when you switch back to a running game."_w;
     const int note_h = text_height(note, g.caption, w);
     make(L"STATIC", note, SS_LEFT | SS_NOPREFIX, x, y + 6, w, note_h, kHelpId, g.caption);

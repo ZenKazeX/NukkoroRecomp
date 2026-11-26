@@ -305,7 +305,8 @@ In the game's menus, mouse buttons do nothing. Use the keyboard there.
 The letters in brackets are the game's own buttons, so you can match them with the button prompts the game shows.
 
 The four *Camera* actions have no key at the start, because the mouse turns the camera. Give them keys if you want to
-turn the camera from the keyboard.
+turn the camera from the keyboard. Each *Camera* row also ends in a list: the mouse movement that action follows
+(*Mouse left*, *Mouse right*, *Mouse up*, *Mouse down* or *No mouse*; see [The four camera mouse lists](#the-four-camera-mouse-lists)).
 
 ### The mouse settings
 
@@ -313,16 +314,19 @@ turn the camera from the keyboard.
 |---|---|---|---|---|
 | **Mouse speed, left and right** | How fast the camera turns sideways when you move the mouse. 1 is the normal speed. 2 turns twice as fast. | A number from 0.01 to 50, for example 1.5 | 1 | `mouse_sensitivity_x` |
 | **Mouse speed, up and down** | The same for moving the mouse up and down. | A number from 0.01 to 50 | 1 | `mouse_sensitivity_y` |
-| **Camera left: mouse** | Which mouse movement does the *Camera left* action. | Moving left, Moving right, Moving up, Moving down, Not the mouse | Moving right | `camera_left_mouse` |
-| **Camera right: mouse** | Which mouse movement does the *Camera right* action. | the same five choices | Moving left | `camera_right_mouse` |
-| **Camera up: mouse** | Which mouse movement does the *Camera up* action. | the same five choices | Moving up | `camera_up_mouse` |
-| **Camera down: mouse** | Which mouse movement does the *Camera down* action. | the same five choices | Moving down | `camera_down_mouse` |
 | **Keep the pointer in the game** | Hides the mouse pointer and keeps it inside the game while you play. | On, Off | On | `mouse_capture` |
 | **Walk speed** | How fast you move while you hold the *Walk* key. | Slider, 1 to 100 | 36 | `walk_deflection` |
 
-### The four camera mouse settings
+### The four camera mouse lists
 
-These four lists decide which way the camera goes when you move the mouse.
+The list at the end of each *Camera* row in the table of actions decides which mouse movement does that action:
+
+| Row | Choices | Default | Key in `controls.cfg` |
+|---|---|---|---|
+| **Camera left** | Mouse left, Mouse right, Mouse up, Mouse down, No mouse | Mouse right | `camera_left_mouse` |
+| **Camera right** | the same five choices | Mouse left | `camera_right_mouse` |
+| **Camera up** | the same five choices | Mouse up | `camera_up_mouse` |
+| **Camera down** | the same five choices | Mouse down | `camera_down_mouse` |
 
 The defaults for left and right look the wrong way round, but they are right. In this game, "camera left" swings the
 camera around to the left side of Shadow, and that makes the *view* turn to the right. So at the start, *Camera left*
@@ -330,11 +334,11 @@ follows the mouse moving right, and the view follows your hand.
 
 What you will usually want:
 
-- **The camera turns the wrong way sideways.** Set *Camera left: mouse* to *Moving left* and *Camera right: mouse* to
-  *Moving right*.
-- **The camera goes the wrong way up and down.** Set *Camera up: mouse* to *Moving down* and *Camera down: mouse* to
-  *Moving up*.
-- **You do not want the mouse to move the camera in one direction.** Choose *Not the mouse* for that action.
+- **The camera turns the wrong way sideways.** Choose *Mouse left* in the *Camera left* row and *Mouse right* in the
+  *Camera right* row.
+- **The camera goes the wrong way up and down.** Choose *Mouse down* in the *Camera up* row and *Mouse up* in the
+  *Camera down* row.
+- **You do not want the mouse to move the camera in one direction.** Choose *No mouse* in that row.
 
 If your `controls.cfg` comes from an older version and uses its "invert mouse" lines (`mouse_invert_x`,
 `mouse_invert_y`), the four lists already show what really happens in the game. When you choose something in one of the
