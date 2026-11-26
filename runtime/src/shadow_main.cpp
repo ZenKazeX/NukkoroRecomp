@@ -8784,7 +8784,11 @@ int run(Options options) {
             text += "If it happens again, please report it and attach the file session-report.json from the game's "
                     "folder.";
         }
-        MessageBoxA(nullptr, text.c_str(), "Shadow the Hedgehog", MB_OK | MB_ICONWARNING | MB_SETFOREGROUND);
+        // On its own thread: this thread's queue may hold the closed window's WM_QUIT, which would end the box's
+        // message loop at once and the box would never be seen.
+        std::thread([&text] {
+            MessageBoxA(nullptr, text.c_str(), "Shadow the Hedgehog", MB_OK | MB_ICONWARNING | MB_SETFOREGROUND | MB_TOPMOST);
+        }).join();
     }
 #endif
 
