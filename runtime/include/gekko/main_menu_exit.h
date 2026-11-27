@@ -12,7 +12,7 @@
 // Native addition, three parts, all built from the player's own disc (the repo holds no game data):
 //  * the picture (add_exit_picture): the language's word cut letter by letter from that language's own gamemenu
 //    sheet (with outline columns cut from the same sheet between the letters; missing letters made from its own or
-//    taken from the English sheet; the Japanese kanji made from the game's message font in the menu's style),
+//    taken from the English sheet; the Japanese kanji drawn here as pixel artwork in the menu's style),
 //    written centred into an empty corner of the same file's TitleParts texture (texture 0 of the scene). The txd keeps
 //    its size; gamemenu, which the button-glyph patch rewrites, is not touched.
 //  * the question: "Exit the game?" in the text language (JP, EN, FR, SP, GE, IT); Yes / No are the game's own
@@ -57,14 +57,12 @@ bool letters_available(const std::vector<u8>& letters_txd, std::string& error);
 
 // `txd` (honban_<language>.txd) with the language's EXIT word written into its TitleParts texture (same size): EN EXIT,
 // FR QUITTER, GE BEENDEN, IT ESCI, SP SALIR cut from the language's own gamemenu sheet - the letters the sheet lacks
-// made from its own (Q from O, B from P) or taken from the English sheet (C) - and JP SHUURYOU (U+7D42 U+4E86, 'end') made from the
-// game's message font (`japanese_font` = FONTS/ADVERTISE/Advertise_JP.txd) in the menu's style. A sheet or font page
-// that is not the PAL one gives the English word, cut from `english_txd`; `word_language` (optional) tells whose
-// word was written. Refused when the English sheet is not the PAL one or the area is not empty.
+// made from its own (Q from O, B from P) or taken from the English sheet (C) - and JP shuuryou drawn in this source as
+// pixel artwork in the menu's style. A sheet that is not the PAL one gives the English word, cut from
+// `english_txd`; `word_language` (optional) tells whose word was written. Refused when the English sheet is not the
+// PAL one or the area is not empty.
 bool add_exit_picture(const std::vector<u8>& txd, const char* language, const std::vector<u8>& english_txd,
-                      std::vector<u8>& out, std::string& error, std::string* word_language = nullptr,
-                      const std::vector<u8>* japanese_font = nullptr);
-constexpr const char* kJapaneseFontPath = "FONTS/ADVERTISE/Advertise_JP.txd";
+                      std::vector<u8>& out, std::string& error, std::string* word_language = nullptr);
 
 // `gncp` (honban.gncp, retail layout) with the EXIT cast and the Menu_Exit motion in scene Menu. Refused when the
 // scene is not the retail one (or already has EXIT).

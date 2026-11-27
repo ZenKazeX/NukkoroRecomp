@@ -1,7 +1,7 @@
 // Tests of the EXIT entry's files (gekko/main_menu_exit.h). With the game data (argument: sys/main.dol): honban.gncp
 // gets the cast "exit" before blackcover and the motion Menu_Exit, every pointer word it adds is relocated, and a
 // second addition is refused; each honban_<lang>.txd keeps its size and changes only inside the picture's area of
-// TitleParts; every language gets its own word (JP from the message font). A second argument writes the built project
+// TitleParts; every language gets its own word. A second argument writes the built project
 // there (for tools/assets/gncp_read.py), a third the built texture dictionaries into that folder.
 
 #include <bit>
@@ -111,9 +111,8 @@ void project(const std::filesystem::path& files, const char* dump) {
 }
 
 void pictures(const std::filesystem::path& files, const char* dump_pictures) {
-    std::vector<u8> letters, font;
+    std::vector<u8> letters;
     std::string error;
-    check(read_file(files / mme::kJapaneseFontPath, font), "the Japanese message font is readable");
     check(read_file(files / mme::kLetterSheetPath, letters) && mme::letters_available(letters, error),
           "the English letter sheet is the PAL one: " + error);
     for (const char* language : mme::kLanguages) {
@@ -124,7 +123,7 @@ void pictures(const std::filesystem::path& files, const char* dump_pictures) {
             continue;
         }
         std::string word;
-        check(mme::add_exit_picture(txd, language, letters, out, error, &word, &font), path + ": the picture is written: " + error);
+        check(mme::add_exit_picture(txd, language, letters, out, error, &word), path + ": the picture is written: " + error);
         const std::string expected(language);
         check(word == expected, path + ": the word is cut from the " + expected + " sheet (" + word + ")");
         check(out.size() == txd.size(), path + ": the file keeps its size");

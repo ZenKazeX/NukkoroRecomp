@@ -116,11 +116,11 @@ They are not CSD. **READ**:
   | Text language | Word | Letters from (sheet rows) | Letters made |
   |---|---|---|---|
   | EN | EXIT | EXPERT MODE (E, X, T), OPTIONS (I) | none |
-  | FR | QUITTER | JEU (U), MODE HISTOIRE (O, I, T), MODE EXPERT (E, R) | **Q derived**: HISTOIRE's O with a tail drawn over its lower right corner and one row below the baseline, in the sheet's own face / edge / outline colours (no sheet of the disc has a Q) |
+  | FR | QUITTER | JEU (U), MODE HISTOIRE (O, I, T), MODE EXPERT (E, R) | **Q derived**: HISTOIRE's O with a drawn tail: a two-pixel diagonal crossing the bowl's lower right corner (a black cut beside it inside the bowl) to two columns past the bowl and two rows below the baseline, with its own outline, in the sheet's own face / edge / outline colours (no sheet of the disc has a Q) |
   | GE | BEENDEN | EXPERTEN-MODUS (P, E, N), STORY-MODUS (D), OPTIONEN (E, N) | **B derived**: EXPERTEN's P with its bowl rows (rows 2..4 and the middle bar) repeated under the middle bar and its stem's foot closed by outline (no sheet of the disc has a B) |
   | IT | ESCI | MODALITA ESPERTO (E, S, I) | **C taken** from the English sheet (SELECT MODE's C, a real glyph of the same font), its outline trimmed by one row above and below to the Italian rows |
   | SP | SALIR | MODO SELECCIONAR (S, L, R), PARTIDA (A), MODO HISTORIA (I) | none |
-  | JP | U+7D42 U+4E86 (shuuryou, "end") | - | **both kanji made at run time** from the game's message font (Advertise_JP.txd pages JP01 / JP06, the glyphs the blue pop-ups draw), scaled to the menu's 13-row face, brightened and cut at a coverage threshold, with the menu's shading (a lighter row under each stroke, a darker one under the glyph) and its black outline; the menu sheet's kanji (the ones in ZENKAI NO TSUZUKI KARA) were the comparison. shuuryou is what Japanese game menus write for quitting; GEEMU SHUURYOU would need katakana the sheet does not have either |
+  | JP | U+7D42 U+4E86 (shuuryou, "end") | - | **both kanji drawn by hand** as pixel artwork in the source (main_menu_exit_assets.cpp kShuu / kRyou): two-pixel strokes, 13 rows high like the sheet's kana, the thread radical of U+7D42 modelled on the sheet's own U+7D9A; the sheet's face / edge / shadow colours and a black outline are applied when they are drawn. shuuryou is what Japanese game menus write for quitting; GEEMU SHUURYOU would need katakana the sheet does not have either |
 
   Joins: two black columns between letters (the sheet's own gap between straight-sided letters), three outline columns
   at a word's ends, all cut from the same sheet. The cell is 112 columns wide (the longest word, BEENDEN, is 107).

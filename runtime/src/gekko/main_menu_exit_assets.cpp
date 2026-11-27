@@ -109,13 +109,13 @@ bool transparent(u16 rgb5a3) { return (rgb5a3 & 0xF000u) == 0u; }  // top bit 0 
 //    another: B from P), or opaque black / transparent.
 //  - Over: pixels drawn over columns already placed (Q's tail over O), their colours taken from given pixels of the
 //    sheet (a face pixel, an edge pixel, an outline pixel).
-//  - Kanji: a glyph of the game's own message font (Advertise_JP.txd, 24 x 24 cells) scaled to the menu's 13-row face,
-//    brightened, cut at a coverage threshold, with the menu's shading (a darker row under every stroke, a dark row
-//    under the glyph) and its black outline. The menu sheet has no kanji for leaving the game.
+//  - Glyph: a letter drawn here (this project's own pixel artwork, not the game's): its face pixels on the menu's
+//    13-row face, in the sheet's face / edge colours, with the sheet's shading (a dark row under every stroke) and a
+//    black outline around it. Used for the Japanese kanji, which the menu sheet does not have.
 // Every sheet a word reads is recognised by FNV-1a 64 of its palette and texels; when one is not the PAL sheet the
-// English word is used, and for the Japanese word a font page that is not the PAL one does the same.
-enum class Src : u8 { Own, English, Font };
-enum class Kind : u8 { Slice, Rows, Over, Kanji };
+// English word is used.
+enum class Src : u8 { Own, English };
+enum class Kind : u8 { Slice, Rows, Over, Glyph };
 constexpr s16 kBlack = -1, kClear = -2;
 struct Tone {
     char ch;
@@ -127,10 +127,9 @@ struct Op {
     u32 face = 0, first = 0, last = 0;  // Slice / Rows: columns; Slice: face row
     const s16* rows = nullptr;          // Rows: the source row of each of the 21 rows
     u32 at = 0;                         // Over: first column (from the word's start)
-    const char* const* art = nullptr;   // Over: 21 strings, ' ' = keep
-    const Tone* tones = nullptr;        // Over: the colour of each art character
-    const char* page = nullptr;         // Kanji: font page
-    u32 x0 = 0, y0 = 0, x1 = 0, y1 = 0, width = 0, trim_left = 0, trim_right = 0;
+    const char* const* art = nullptr;   // Over: 21 strings, ' ' = keep; Glyph: 13 strings, ' ' = empty
+    const Tone* tones = nullptr;        // Over / Glyph: the colour of each art character
+    u32 trim_left = 0, trim_right = 0;  // Glyph: outline columns left out where two glyphs meet
 };
 
 // Gaps and outlines: two black columns between letters, three outline columns at a word's ends.
@@ -139,25 +138,29 @@ struct Op {
 constexpr Op kEnglish[] = {{Kind::Slice, Src::Own, 111u, 47u, 79u},
                            {Kind::Slice, Src::Own, 47u, 125u, 130u},
                            {Kind::Slice, Src::Own, 111u, 123u, 137u}};
-// FR QUITTER. The sheet has no Q: HISTOIRE's O (face 68, 165..177) with a tail drawn over its lower right corner into
-// the three gap columns after it, in the sheet's own face / edge / outline colours. U from JEU (face 4), I, T from HISTOIRE, E R from
-// MODE EXPERT (face 111); MODE's left outline 42..44, HISTOIRE's final outline 212..214; gaps 128..129 (H|I).
-constexpr const char* kQTail[21] = {"", "", "", "", "", "", "", "", "", "", "", "",
-                                    "    pp",  // rows 12..19, from the O's fourth column
-                                    "     pp",
-                                    "      pp",
-                                    "       pppp",
-                                    "        pppp",
-                                    "          ll",
-                                    "         ####",
-                                    "         ####",
-                                    ""};
+// FR QUITTER. The sheet has no Q: HISTOIRE's O (face 68, 165..177) and three gap columns, with a tail drawn over
+// them: a two-pixel diagonal from inside the bowl across its lower right corner to two rows below the baseline and
+// two columns past the bowl, a black cut beside it where it crosses the bowl, its own outline outside, all in the
+// sheet's own face / edge / outline colours. U from JEU (face 4), I, T from HISTOIRE, E R from MODE EXPERT (face 111);
+// MODE's left outline 42..44, HISTOIRE's final outline 212..214; gaps 128..129 (H|I).
+constexpr const char* kQTail[21] = {"", "", "", "", "", "", "", "", "", "",
+                                    "         pp",  // rows 10..20, from the word's first column
+                                    "          pp",
+                                    "           pp",
+                                    "          ##pp",
+                                    "           ##pp",
+                                    "            ##pp",
+                                    "             ##pp",
+                                    "              #lpp#",
+                                    "               #ll#",
+                                    "              #####",
+                                    "               ###"};
 constexpr Tone kFrenchTones[] = {{'p', 170u, 68u}, {'l', 182u, 80u}, {'#', 170u, 66u}, {0, 0u, 0u}};
 constexpr Op kFrench[] = {{Kind::Slice, Src::Own, 68u, 42u, 44u},
                           {Kind::Slice, Src::Own, 68u, 165u, 177u},
                           {Kind::Slice, Src::Own, 68u, 128u, 129u},
                           {Kind::Slice, Src::Own, 68u, 128u, 128u},  // a third gap column: room for the tail
-                          {.kind = Kind::Over, .at = 6u, .art = kQTail, .tones = kFrenchTones},
+                          {.kind = Kind::Over, .at = 0u, .art = kQTail, .tones = kFrenchTones},
                           {Kind::Slice, Src::Own, 4u, 117u, 129u},
                           {Kind::Slice, Src::Own, 68u, 128u, 129u},
                           {Kind::Slice, Src::Own, 68u, 130u, 133u},
@@ -202,13 +205,45 @@ constexpr Op kSpanish[] = {{Kind::Slice, Src::Own, 90u, 87u, 102u}, {Kind::Slice
                            {Kind::Slice, Src::Own, 90u, 119u, 128u}, {Kind::Slice, Src::Own, 47u, 153u, 155u},
                            {Kind::Slice, Src::Own, 68u, 130u, 132u}, {Kind::Slice, Src::Own, 47u, 153u, 155u},
                            {Kind::Slice, Src::Own, 90u, 225u, 239u}};
-// JP shuuryou (U+7D42 U+4E86, "end": the word Japanese menus use for quitting): the message font's U+7D42 (page JP01,
-// cell 168,96) and U+4E86 (page JP06, cell 24,24), 14 and 12 columns wide; the two outlines meet in two black columns.
+// JP shuuryou (U+7D42 U+4E86, "end": the word Japanese menus use for quitting). The sheet has no kanji for it, so both
+// are drawn here: two-pixel strokes like the sheet's own kanji, 13 rows high like its kana, the left half of U+7D42
+// (the thread radical) modelled on the sheet's U+7D9A. 'p' = face, 'h' = the grey left edge of a long vertical stroke;
+// the shadow under each stroke and the black outline are added when they are drawn. Colours from the sheet: face
+// (142, 3), edge (125, 3), shadow (142, 2), outline (135, 0) of 1P PUREI.
+constexpr const char* kShuu[13] = {
+    "   pp       pp     ",
+    "  pp  pp   ppppppp ",
+    " pp  pp   pp     pp",
+    "pppppp   pp     pp ",
+    "   pp pp    hppp   ",
+    "  pp pp    pp  pp  ",
+    "pppppppp  pp     pp",
+    "                   ",
+    "   hpp      pp     ",
+    " p hpp p     pp    ",
+    "pp hpp pp          ",
+    "   hpp      pp     ",
+    "   hpp       ppp   ",
+};
+constexpr const char* kRyou[13] = {
+    "pppppppppp  ",
+    "pppppppppp  ",
+    "       hpp  ",
+    "      hpp   ",
+    "    hppp    ",
+    "    hpp     ",
+    "    hpp     ",
+    "    hpp     ",
+    "    hpp     ",
+    "    hpp     ",
+    "    hpp     ",
+    " pp hpp     ",
+    "  ppppp     ",
+};
+constexpr Tone kJapaneseTones[] = {{'p', 142u, 3u}, {'h', 125u, 3u}, {'e', 142u, 2u}, {'#', 135u, 0u}, {0, 0u, 0u}};
 constexpr Op kJapanese[] = {
-    {.kind = Kind::Kanji, .src = Src::Font, .page = "Advertise_JP01", .x0 = 168u, .y0 = 96u, .x1 = 191u, .y1 = 119u,
-     .width = 14u, .trim_left = 0u, .trim_right = 2u},
-    {.kind = Kind::Kanji, .src = Src::Font, .page = "Advertise_JP06", .x0 = 24u, .y0 = 24u, .x1 = 47u, .y1 = 47u,
-     .width = 12u, .trim_left = 1u, .trim_right = 0u},
+    {.kind = Kind::Glyph, .art = kShuu, .tones = kJapaneseTones, .trim_left = 0u, .trim_right = 2u},
+    {.kind = Kind::Glyph, .art = kRyou, .tones = kJapaneseTones, .trim_left = 1u, .trim_right = 0u},
 };
 
 struct Word {
@@ -226,15 +261,10 @@ constexpr Word kWords[] = {
     {"SP", 0x0E95623510E88704ull, kSpanish, std::size(kSpanish)},
     {"JP", 0x1B150BEF1B601C07ull, kJapanese, std::size(kJapanese)},
 };
-// The two pages of Advertise_JP.txd the kanji come from (C4, RGB565 palette): FNV-1a 64 of palette and texels.
-struct FontPage {
-    const char* name;
-    u64 fnv;
-};
-constexpr FontPage kFontPages[] = {{"Advertise_JP01", 0xCD8DD5DDD784AAF3ull}, {"Advertise_JP06", 0x698BD132ADE66AE2ull}};
 
 constexpr u32 kBand = 21u;        // rows of a menu entry's cell
 constexpr u32 kFaceRow = 5u;      // the face starts five rows into the cell, as in the menu's own cells
+constexpr u32 kGlyphRows = 13u;   // the face's rows
 constexpr u32 kCellX = 4u;        // the cell in TitleParts (512 x 512; rows 400..511 are empty in all six languages)
 constexpr u32 kPictureY = 452u;
 constexpr u32 kCellWidth = 112u;  // the longest word (BEENDEN, 107) and margins; every word is centred in it
@@ -261,96 +291,56 @@ u16 sheet_colour(const std::vector<u8>& letters, const Texture& sheet, u32 x, u3
     return static_cast<u16>(letters[sheet.palette + 2u * index] << 8 | letters[sheet.palette + 2u * index + 1u]);
 }
 
-// A C4 font page's brightness at (x, y), 0..255: the RGB565 palette colour's mean, as tools/assets/txd_extract.py
-// decodes it (5 / 6 bits widened by repeating their top bits).
-u32 font_brightness(const std::vector<u8>& txd, const Texture& page, u32 x, u32 y) {
-    const std::size_t at = page.texels + ((y / 8u) * (page.width / 8u) + x / 8u) * 32u + (y % 8u) * 4u + (x % 8u) / 2u;
-    const u32 index = (x % 2u) == 0u ? txd[at] >> 4 : txd[at] & 0xFu;
-    const u32 v = static_cast<u32>(txd[page.palette + 2u * index] << 8 | txd[page.palette + 2u * index + 1u]);
-    const u32 r = (v >> 11) & 31u, g = (v >> 5) & 63u, b = v & 31u;
-    return ((r << 3 | r >> 2) + (g << 2 | g >> 4) + (b << 3 | b >> 2)) / 3u;
+u16 tone_of(const std::vector<u8>& bytes, const Texture& sheet, const Tone* tones, char ch, u16 otherwise) {
+    for (const Tone* t = tones; t->ch != 0; ++t)
+        if (t->ch == ch) return sheet_colour(bytes, sheet, t->x, t->y);
+    return otherwise;
 }
 
 using Column = std::array<u16, kBand>;
-u16 grey(u32 v) {
-    const u32 c = v >> 3;
-    return static_cast<u16>(kOpaqueBlack | c << 10 | c << 5 | c);
-}
 
-// A kanji in the menu's style (see the comment above kEnglish): columns `op.width` + 6, the glyph's face on the 13 rows
-// from kFaceRow. Brightened coverage (x 2.2) at or over 0.36 is face, shaded 110..255; a pixel under a stroke is a
-// shadow (light inside the glyph, dark under it); everything within the outline's reach of ink is opaque black.
-void kanji(const std::vector<u8>& font, const Texture& page, const Op& op, u16 clear, std::vector<Column>& out) {
-    constexpr u32 kFaceRows = 13u;
-    constexpr double kGain = 2.2, kThreshold = 0.36, kFull = 0.85;
-    std::vector<std::vector<double>> g(op.y1 - op.y0 + 1u, std::vector<double>(op.x1 - op.x0 + 1u));
-    u32 iy0 = ~0u, iy1 = 0u, ix0 = ~0u, ix1 = 0u;
-    for (u32 y = 0; y < g.size(); ++y)
-        for (u32 x = 0; x < g[0].size(); ++x) {
-            const u32 v = font_brightness(font, page, op.x0 + x, op.y0 + y);
-            g[y][x] = v;
-            if (v > 40u) {
-                iy0 = std::min(iy0, y);
-                iy1 = std::max(iy1, y + 1u);
-                ix0 = std::min(ix0, x);
-                ix1 = std::max(ix1, x + 1u);
-            }
-        }
-    const u32 w = op.width, width = w + 6u;
-    std::vector<std::array<bool, kBand>> face(width), shadow(width);
-    std::vector<std::array<u32, kBand>> value(width);
-    for (auto& f : face) f.fill(false);
-    for (auto& s : shadow) s.fill(false);
-    if (iy0 == ~0u) iy0 = iy1 = ix0 = ix1 = 0u;
-    for (u32 oy = 0; oy < kFaceRows; ++oy) {
-        for (u32 ox = 0; ox < w; ++ox) {
-            const double sy0 = iy0 + double(iy1 - iy0) * oy / kFaceRows, sy1 = iy0 + double(iy1 - iy0) * (oy + 1) / kFaceRows;
-            const double sx0 = ix0 + double(ix1 - ix0) * ox / w, sx1 = ix0 + double(ix1 - ix0) * (ox + 1) / w;
-            double total = 0.0, area = 0.0;
-            for (u32 y = static_cast<u32>(sy0); y < sy1; ++y) {
-                const double hy = std::min(sy1, y + 1.0) - std::max(sy0, double(y));
-                for (u32 x = static_cast<u32>(sx0); x < sx1; ++x) {
-                    const double hx = std::min(sx1, x + 1.0) - std::max(sx0, double(x));
-                    total += g[y][x] / 255.0 * hx * hy;
-                    area += hx * hy;
-                }
-            }
-            const double c = std::min(1.0, (area > 0.0 ? total / area : 0.0) * kGain);
-            if (c >= kThreshold) {
-                face[3u + ox][kFaceRow + oy] = true;
-                value[3u + ox][kFaceRow + oy] =
-                    static_cast<u32>(110.0 + 145.0 * std::min(1.0, (c - kThreshold) / (kFull - kThreshold)));
-            }
-        }
+// A drawn glyph (Kind::Glyph): its face on the kGlyphRows rows from kFaceRow, three columns of room on each side; a
+// pixel under a face pixel that is not face is shadow; any other pixel the outline reaches (two columns, three rows
+// up and two down, the far corners left out) is opaque black.
+void glyph(const std::vector<u8>& bytes, const Texture& sheet, const Op& op, u16 clear, std::vector<Column>& out) {
+    std::size_t w = 0;
+    for (u32 y = 0; y < kGlyphRows; ++y) w = std::max(w, std::string_view(op.art[y]).size());
+    const u32 width = static_cast<u32>(w) + 6u;
+    std::vector<std::array<char, kBand>> cell(width);
+    for (auto& c : cell) c.fill(' ');
+    for (u32 y = 0; y < kGlyphRows; ++y) {
+        const std::string_view line(op.art[y]);
+        for (std::size_t x = 0; x < line.size(); ++x) cell[3u + x][kFaceRow + y] = line[x];
     }
-    for (u32 x = 0; x < width; ++x)
-        for (u32 y = 1; y < kBand; ++y) shadow[x][y] = !face[x][y] && face[x][y - 1u];
+    const auto face = [&](s32 x, s32 y) {
+        return x >= 0 && y >= 0 && x < static_cast<s32>(width) && y < static_cast<s32>(kBand) && cell[x][y] != ' ';
+    };
+    const auto ink = [&](s32 x, s32 y) { return face(x, y) || (y > 0 && face(x, y - 1)); };
+    const u16 shadow = tone_of(bytes, sheet, op.tones, 'e', kOpaqueBlack);
+    const u16 black = tone_of(bytes, sheet, op.tones, '#', kOpaqueBlack);
     for (u32 x = op.trim_left; x < width - op.trim_right; ++x) {
         Column col;
         for (u32 y = 0; y < kBand; ++y) {
-            if (face[x][y]) {
-                col[y] = grey(value[x][y]);
-            } else if (shadow[x][y]) {
-                col[y] = grey(y >= kFaceRow + kFaceRows ? 70u : 120u);
+            const s32 sx = static_cast<s32>(x), sy = static_cast<s32>(y);
+            if (face(sx, sy)) {
+                col[y] = tone_of(bytes, sheet, op.tones, cell[x][y], clear);
+            } else if (ink(sx, sy)) {
+                col[y] = shadow;
             } else {
                 bool near = false;
                 for (s32 dy = -3; dy <= 2 && !near; ++dy)
-                    for (s32 dx = -2; dx <= 2 && !near; ++dx) {
-                        if ((dx == -2 || dx == 2) && (dy == -3 || dy == 2)) continue;
-                        const s32 nx = static_cast<s32>(x) + dx, ny = static_cast<s32>(y) + dy;
-                        near = nx >= 0 && ny >= 0 && nx < static_cast<s32>(width) && ny < static_cast<s32>(kBand) &&
-                               (face[nx][ny] || shadow[nx][ny]);
-                    }
-                col[y] = near ? kOpaqueBlack : clear;
+                    for (s32 dx = -2; dx <= 2 && !near; ++dx)
+                        if (!((dx == -2 || dx == 2) && (dy == -3 || dy == 2))) near = ink(sx + dx, sy + dy);
+                col[y] = near ? black : clear;
             }
         }
         out.push_back(col);
     }
 }
 
-// The word's columns, or false when a piece's source is missing.
+// The word's columns, or false when a piece does not fit.
 bool build_word(const Word& word, const std::vector<u8>& own, const Texture& own_sheet, const std::vector<u8>& english,
-                const Texture& english_sheet, const std::vector<u8>* font, u16 clear, std::vector<Column>& out) {
+                const Texture& english_sheet, u16 clear, std::vector<Column>& out) {
     for (std::size_t i = 0; i < word.count; ++i) {
         const Op& op = word.ops[i];
         const std::vector<u8>& bytes = op.src == Src::English ? english : own;
@@ -381,23 +371,13 @@ bool build_word(const Word& word, const std::vector<u8>& own, const Texture& own
                     if (line[k] == ' ') continue;
                     const std::size_t x = op.at + k;
                     if (x >= out.size()) return false;
-                    for (const Tone* t = op.tones; t->ch != 0; ++t)
-                        if (t->ch == line[k]) out[x][y] = sheet_colour(bytes, sheet, t->x, t->y);
+                    out[x][y] = tone_of(bytes, sheet, op.tones, line[k], out[x][y]);
                 }
             }
             break;
-        case Kind::Kanji: {
-            if (font == nullptr) return false;
-            const std::optional<Texture> page = find_texture(*font, op.page);
-            if (!page || page->format != 8u || page->width != 256u || page->height != 256u) return false;
-            bool known = false;
-            for (const FontPage& p : kFontPages)
-                known = known || (std::string_view(p.name) == op.page &&
-                                  fnv_of(*font, page->palette, page->palette + 32u, *page) == p.fnv);
-            if (!known) return false;
-            kanji(*font, *page, op, clear, out);
+        case Kind::Glyph:
+            glyph(bytes, sheet, op, clear, out);
             break;
-        }
         }
     }
     return true;
@@ -413,8 +393,7 @@ bool letters_available(const std::vector<u8>& letters_txd, std::string& error) {
 }
 
 bool add_exit_picture(const std::vector<u8>& txd, const char* language, const std::vector<u8>& english_txd,
-                      std::vector<u8>& out, std::string& error, std::string* word_language,
-                      const std::vector<u8>* japanese_font) {
+                      std::vector<u8>& out, std::string& error, std::string* word_language) {
     Texture english_sheet, own_sheet;
     if (!sheet_of(english_txd, kEnglishFnv, english_sheet)) {
         error = "honban_EN.txd's gamemenu sheet is not the PAL one the letters are cut from";
@@ -435,7 +414,7 @@ bool add_exit_picture(const std::vector<u8>& txd, const char* language, const st
             }
         }
     }
-    // The language's own word from its own sheet; otherwise (a sheet or a font page this table does not know) English.
+    // The language's own word from its own sheet; otherwise (a sheet this table does not know) the English one.
     std::vector<Column> columns;
     const Word* chosen = &kWords[0];
     u16 clear = sheet_colour(english_txd, english_sheet, 0u, 0u);
@@ -443,7 +422,7 @@ bool add_exit_picture(const std::vector<u8>& txd, const char* language, const st
         if (std::string_view(w.language) != language || std::string_view(language) == "EN") continue;
         if (!sheet_of(txd, w.sheet_fnv, own_sheet)) break;
         const u16 own_clear = sheet_colour(txd, own_sheet, 0u, 0u);
-        if (build_word(w, txd, own_sheet, english_txd, english_sheet, japanese_font, own_clear, columns)) {
+        if (build_word(w, txd, own_sheet, english_txd, english_sheet, own_clear, columns)) {
             chosen = &w;
             clear = own_clear;
         } else {
@@ -451,7 +430,7 @@ bool add_exit_picture(const std::vector<u8>& txd, const char* language, const st
         }
     }
     if (chosen == &kWords[0] &&
-        !build_word(kWords[0], english_txd, english_sheet, english_txd, english_sheet, nullptr, clear, columns)) {
+        !build_word(kWords[0], english_txd, english_sheet, english_txd, english_sheet, clear, columns)) {
         error = "the English word could not be built";
         return false;
     }
