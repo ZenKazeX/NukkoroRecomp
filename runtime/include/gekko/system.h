@@ -110,6 +110,7 @@
 #include "gekko/native_gcax_midi.h"
 #include "gekko/native_se_manager.h"
 #include "gekko/button_glyphs.h"
+#include "gekko/main_menu_exit.h"
 
 namespace gekko {
 
@@ -322,6 +323,11 @@ public:
     // native retrace the clock advances inside traversals, so a stop at the
     // next host service would land mid-traversal and a savestate would refuse.
     void request_stop_between_traversals(StopReason reason, std::string detail);
+
+    // EXIT in the main menu (gekko/main_menu_exit.h): set when the player answered Yes. The host then stops the game
+    // exactly as when its window is closed.
+    bool player_exit_requested() const noexcept { return player_exit_requested_.load(std::memory_order_acquire); }
+    const main_menu_exit::Stats& main_menu_exit_stats() const noexcept { return main_menu_exit_.stats; }
     GameplayScheduler* gameplay_scheduler() noexcept { return gameplay_scheduler_.get(); }
 
     void load_dol(const DolProgram& program);
@@ -1165,6 +1171,8 @@ private:
     se_manager::Services se_services_{se_manager_report_, midi_report_, sound_table_report_};
     bool voice_archive_ready_ = false;  // the switchable dialogue-voice archive is served (gekko/voice_language.h)
     button_glyphs::ButtonGlyphs button_glyphs_{};
+    main_menu_exit::State main_menu_exit_{};  // EXIT in the main menu (gekko/main_menu_exit.h)
+    std::atomic<bool> player_exit_requested_{false};
     void advance_ax_accepted_voices();
     void run_ax_mix(u32 command_list);
     MovieTraceCounts movie_counts_;

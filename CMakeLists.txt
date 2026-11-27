@@ -972,6 +972,9 @@ add_library(shadow_runtime_common OBJECT
     runtime/src/gekko/pc_settings.cpp
     runtime/src/gekko/config_file.cpp
     runtime/src/gekko/menu_backgrounds.cpp
+    # EXIT in the main menu (gekko/main_menu_exit.h; docs/re/main-menu-exit/).
+    runtime/src/gekko/main_menu_exit.cpp
+    runtime/src/gekko/main_menu_exit_assets.cpp
     runtime/src/gekko/button_glyphs.cpp
     # Dolphin-named custom texture packs (--texture-pack; docs/mods/TEXTURE_PACKS.md).
     runtime/src/gekko/texture_packs.cpp
@@ -2281,6 +2284,23 @@ if(SHADOW_BUILD_TESTS)
         add_test(NAME menu_backgrounds_tests COMMAND menu_backgrounds_tests)
     endif()
     set_tests_properties(menu_backgrounds_tests PROPERTIES TIMEOUT 60 LABELS "assets;menu")
+
+    # EXIT in the main menu (gekko/main_menu_exit.h): with the game data, the project gets the entry and each language's
+    # texture dictionary the picture, built as at mount.
+    add_executable(main_menu_exit_tests runtime/tests/main_menu_exit_tests.cpp
+                   runtime/src/gekko/main_menu_exit_assets.cpp)
+    target_include_directories(main_menu_exit_tests PRIVATE runtime/include)
+    target_compile_features(main_menu_exit_tests PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(main_menu_exit_tests PRIVATE /W4 /permissive-)
+        set_property(TARGET main_menu_exit_tests PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+    if(SHADOW_RECOMP_DOL)
+        add_test(NAME main_menu_exit_tests COMMAND main_menu_exit_tests "${SHADOW_RECOMP_DOL}")
+    else()
+        add_test(NAME main_menu_exit_tests COMMAND main_menu_exit_tests)
+    endif()
+    set_tests_properties(main_menu_exit_tests PROPERTIES TIMEOUT 60 LABELS "assets;menu")
 
     # tools/launcher.py's pure helpers and log reading: budget parsing, flag
     # splitting, per-line output decoding, the path scrubber, the classifier

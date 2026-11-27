@@ -4377,6 +4377,8 @@ int run(Options options) {
                 if (budget_due(game_ticks)) {
                     budget_reached = true;
                     system.cpu().request_stop(gekko::StopReason::HostRequest, "budget reached");
+                } else if (system.player_exit_requested()) {  // EXIT in the main menu (gekko/main_menu_exit.h)
+                    system.cpu().request_stop(gekko::StopReason::HostRequest, "the player chose Exit in the main menu");
                 }
             });
             system.run();
@@ -6215,7 +6217,8 @@ int run(Options options) {
             lifted_render.set_independent(frame_interpolation, independent_cap(options.render_rate));
             while (!game_done.load(std::memory_order_acquire)) {
                 GEKKO_PROFILE_ZONE("ui/iteration");  // the lifted present loop: messages, input, one present
-                if (!window.pump() || window.escape_pressed()) {
+                // EXIT in the main menu (gekko/main_menu_exit.h) stops the game as closing the window does.
+                if (!window.pump() || window.escape_pressed() || system.player_exit_requested()) {
                     stop_requested.store(true, std::memory_order_release);
                     if (!shutdown_posted) {
                         shutdown_posted = true;
@@ -6403,7 +6406,8 @@ int run(Options options) {
             }
 #else
             while (!game_done.load(std::memory_order_acquire)) {
-                if (!window.pump() || window.escape_pressed()) {
+                // EXIT in the main menu (gekko/main_menu_exit.h) stops the game as closing the window does.
+                if (!window.pump() || window.escape_pressed() || system.player_exit_requested()) {
                     stop_requested.store(true, std::memory_order_release);
                     if (!shutdown_posted) {
                         shutdown_posted = true;
@@ -7099,6 +7103,11 @@ int run(Options options) {
                     if (budget_due(game_ticks)) {
                         budget_reached = true;
                         system.cpu().request_stop(gekko::StopReason::HostRequest, "budget reached");
+                        return;
+                    }
+                    // EXIT in the main menu (gekko/main_menu_exit.h): the run ends as a host request, exit code 0.
+                    if (system.player_exit_requested()) {
+                        system.cpu().request_stop(gekko::StopReason::HostRequest, "the player chose Exit in the main menu");
                         return;
                     }
                     if (gekko::MeasureProbes* probes = gekko::MeasureProbes::active()) probes->on_host_service();
@@ -8939,6 +8948,11 @@ int run(Options options) {
                       << ", land pattern sets seen " << errata.land_pattern_sets << ", clocks aligned "
                       << errata.land_clocks_aligned << '\n';
             gekko::message_voice_owner::print_report(stdout);
+            const auto& exit_stats = system.main_menu_exit_stats();
+            std::cout << "main menu EXIT (gekko/main_menu_exit.h): " << (gekko::main_menu_exit::enabled() ? "on" : "off")
+                      << ", frames declined " << exit_stats.declined << ", owned " << exit_stats.owned << ", questions "
+                      << exit_stats.questions << " (yes " << exit_stats.answered_yes << ", no or B "
+                      << exit_stats.answered_no << ", text not placed " << exit_stats.text_failures << ")\n";
         }
         {
             const auto& gm = system.game_memory().stats();

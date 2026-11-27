@@ -1807,20 +1807,60 @@ bool System::mount_assets(std::unique_ptr<shadow::runtime::v1::Storage> storage,
         }
     }
     // Five menu backgrounds at full height (gekko/menu_backgrounds.h): the retail layouts leave a band at the bottom.
+    // EXIT in the main menu (gekko/main_menu_exit.h): honban.gncp's scene Menu gets the entry (after its background is
+    // filled), and each language's honban_<lang>.txd the picture, its letters cut from the English sheet.
+    const bool menu_exit = main_menu_exit::enabled();
+    main_menu_exit_.entry_ready.store(false, std::memory_order_relaxed);
     for (const menu_backgrounds::Screen& screen : menu_backgrounds::kScreens) {
         const std::string path(screen.path);
         const std::string scene(screen.scene);
-        assets_.replace(path, [path, scene](const assets::AssetSystem::TreeReader& read, std::vector<u8>& bytes,
-                                            std::string& build_error) {
+        const bool with_exit = menu_exit && path == main_menu_exit::kProjectPath;
+        assets_.replace(path, [this, path, scene, with_exit](const assets::AssetSystem::TreeReader& read,
+                                                             std::vector<u8>& bytes, std::string& build_error) {
             std::vector<u8> gncp;
             if (!read(path, gncp)) {
                 build_error = path + " is missing";
                 return false;
             }
-            if (menu_backgrounds::fill(gncp, scene, bytes, build_error)) return true;
-            build_error = path + ": " + build_error;
-            return false;
+            if (!menu_backgrounds::fill(gncp, scene, bytes, build_error)) {
+                build_error = path + ": " + build_error;
+                return false;
+            }
+            if (!with_exit) return true;
+            std::vector<u8> letters, with_entry;
+            std::string exit_error;
+            if (!read(main_menu_exit::kLetterSheetPath, letters)) {
+                exit_error = std::string(main_menu_exit::kLetterSheetPath) + " is missing";
+            } else if (main_menu_exit::letters_available(letters, exit_error) &&
+                       main_menu_exit::add_exit_entry(bytes, with_entry, exit_error)) {
+                bytes.swap(with_entry);
+                main_menu_exit_.entry_ready.store(true, std::memory_order_relaxed);
+                return true;
+            }
+            std::cerr << "[main-menu-exit] the main menu keeps its three entries: " << exit_error << '\n';
+            return true;
         });
+    }
+    if (menu_exit) {
+        for (const char* language : main_menu_exit::kLanguages) {
+            const std::string path = main_menu_exit::picture_path(language);
+            assets_.replace(path, [path, language](const assets::AssetSystem::TreeReader& read, std::vector<u8>& bytes,
+                                                   std::string& build_error) {
+                std::vector<u8> txd, english;
+                if (!read(path, txd) || !read(main_menu_exit::kLetterSheetPath, english)) {
+                    build_error = path + " or the English sheet is missing";
+                    return false;
+                }
+                std::string word;
+                if (main_menu_exit::add_exit_picture(txd, language, english, bytes, build_error, &word)) {
+                    if (word != language && std::string_view(language) != "JP")
+                        std::cerr << "[main-menu-exit] " << path << ": its sheet is not the PAL one, the English word is used\n";
+                    return true;
+                }
+                build_error = path + ": the EXIT picture: " + build_error;
+                return false;
+            });
+        }
     }
     if (!assets_.mount(std::move(storage), std::move(identity), error)) return false;
     // The prompts' controller buttons: patched into the button sheets as the game reads them.
@@ -2992,6 +3032,9 @@ void System::start() {
     stream_ring_->install();
     attached_effects_->install();
     shoe_jets::install(cpu_);  // Shadow's fourth shoe jet (gekko/native_shoe_jets.h; SHADOW_RETAIL_SHOE_JETS=1: retail)
+    // EXIT in the main menu (gekko/main_menu_exit.h; SHADOW_MAIN_MENU_EXIT=0: the original three entries).
+    main_menu_exit_.on_exit = [this] { player_exit_requested_.store(true, std::memory_order_release); };
+    main_menu_exit::install(cpu_, main_menu_exit_);
     gx_sync_->install();
     gx_state::install(cpu_);  // the GX state API (docs/agents/card-saves.md, gxA): served, nothing kept
     gx_display::install(cpu_);  // the display-copy and FIFO-setup leaves (gekko/native_gx_display.h)
