@@ -3091,7 +3091,9 @@ LRESULT CALLBACK window_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
                     case CDDS_ITEMPREPAINT: return CDRF_NOTIFYSUBITEMDRAW;
                     case CDDS_ITEMPREPAINT | CDDS_SUBITEM: {
                         const std::size_t row = cd->nmcd.dwItemSpec;
-                        cd->clrText = CLR_DEFAULT;
+                        // The theme's own text colour, named: CLR_DEFAULT here is drawn as the system's window text
+                        // (black), which cannot be read on the dark and Shadow themes.
+                        cd->clrText = ui::colors().field_text;
                         if (cd->iSubItem == 4 && row < g->row_status_color.size()) cd->clrText = g->row_status_color[row];
                         return CDRF_DODEFAULT;
                     }
