@@ -105,8 +105,8 @@ Follow the red numbers in each picture. Right-click means the right mouse button
 
 Run `Settings.exe` in the install folder, or use the *Settings* shortcut in the Start menu, and open the
 *Controller buttons* page. Click a button on the picture, press the button you want on your controller, then Save. The
-game uses the new mapping the next time it starts. The [Settings guide](docs/SETTINGS_GUIDE.md#controller-buttons)
-shows this step by step.
+game uses the new mapping the next time it starts. The [Settings tutorial](docs/SETTINGS_TUTORIAL.md#controller-buttons)
+shows this with pictures, and the [Settings guide](docs/SETTINGS_GUIDE.md#controller-buttons) step by step.
 
 By default the face buttons follow their position on a modern controller. The GameCube pad's B is on the left button
 (X on an Xbox controller) and its X is on the right button (B).
@@ -121,7 +121,8 @@ setting).
 The Options screen is the game's own. Everything a PC adds - the window and full screen, resolution, picture shape,
 frame rate and V-Sync, volumes, spoken language and subtitles, rumble, camera inversion, controller buttons, keyboard
 and mouse, autosave - is in the *Settings* program (`Settings.exe` in the install folder, *Settings* in the
-Start menu). The [Settings guide](docs/SETTINGS_GUIDE.md) explains every page and every setting. The game reads the
+Start menu). The [Settings tutorial](docs/SETTINGS_TUTORIAL.md) walks through every page with pictures, and the
+[Settings guide](docs/SETTINGS_GUIDE.md) explains every page and every setting. The game reads the
 settings when it starts, so a change takes effect the next time you start it. The
 program writes `display.cfg`, `options.cfg`, `pad.cfg` and `controls.cfg` in the install folder;
 [docs/PC_SETTINGS_FILES.md](docs/PC_SETTINGS_FILES.md) describes every line. Alt+Enter switches between a window and
@@ -136,6 +137,7 @@ share the choice. Zoom makes the text larger, never the window: the programs rea
 
 The game loads mods from the `mods` folder in the install folder. Mods that replace the game's files (models, stages,
 textures, text, sounds, movies) and Dolphin texture packs work. Mod support is experimental; the
+[Mod Manager tutorial](docs/MOD_MANAGER_TUTORIAL.md) shows the steps with pictures, and the
 [Mods guide](docs/MODS_GUIDE.md) explains every step and lists the known limitations.
 
 1. Run `ModManager.exe` in the install folder, or use the *Mod Manager* shortcut in the Start menu.

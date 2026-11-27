@@ -4,7 +4,7 @@ This guide explains the *Settings* program that comes with the game. It is where
 the sound, the language, your controller, the keyboard and mouse, and autosave.
 
 You do not need to edit any file by hand. The file and key names in this guide are only there for people who want
-them.
+them. For a walk through every page with pictures, see the [Settings tutorial](SETTINGS_TUTORIAL.md).
 
 ## Contents
 

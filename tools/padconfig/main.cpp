@@ -2,7 +2,8 @@
 // game reads when it starts, beside this program: display.cfg (screen and frame rate), options.cfg (sound, language,
 // rumble, camera, autosave), pad.cfg (which controller button does what) and controls.cfg (keyboard and mouse).
 // docs/PC_SETTINGS_FILES.md lists every key. Only the keys the player changes are written; every other line stays.
-// `--folder <dir>` edits the files of another folder (for tests).
+// `--folder <dir>` edits the files of another folder (for tests). `--snapshot <file.png>` writes the window's picture
+// and ends, `--page <0..7>` opens another page first (the tutorials' pictures, dev/render_tutorial_images.ps1).
 
 #define NOMINMAX
 #include <windows.h>
@@ -1803,6 +1804,38 @@ void on_timer() {
     refresh_status();
 }
 
+// --snapshot <file.png>: the window's pixels (PrintWindow, so it works when covered) as a PNG, for the tutorials'
+// pictures (dev/render_tutorial_images.ps1), as the Mod Manager's --snapshot does.
+constexpr UINT_PTR kSnapshotTimer = 2;
+std::filesystem::path g_snapshot;
+
+void save_snapshot(HWND w, const std::filesystem::path& file) {
+    RECT rc;
+    GetWindowRect(w, &rc);
+    const int width = rc.right - rc.left, height = rc.bottom - rc.top;
+    HDC screen = GetDC(nullptr);
+    HDC mem = CreateCompatibleDC(screen);
+    HBITMAP bmp = CreateCompatibleBitmap(screen, width, height);
+    HGDIOBJ old = SelectObject(mem, bmp);
+    PrintWindow(w, mem, PW_RENDERFULLCONTENT);
+    SelectObject(mem, old);
+    DeleteDC(mem);
+    ReleaseDC(nullptr, screen);
+    UINT count = 0, bytes = 0;
+    Gdiplus::GetImageEncodersSize(&count, &bytes);
+    std::vector<BYTE> buffer(bytes);
+    auto* encoders = reinterpret_cast<Gdiplus::ImageCodecInfo*>(buffer.data());
+    if (bytes > 0 && Gdiplus::GetImageEncoders(count, bytes, encoders) == Gdiplus::Ok) {
+        for (UINT i = 0; i < count; ++i)
+            if (std::wcscmp(encoders[i].MimeType, L"image/png") == 0) {
+                Gdiplus::Bitmap picture(bmp, nullptr);
+                picture.Save(file.c_str(), &encoders[i].Clsid, nullptr);
+                break;
+            }
+    }
+    DeleteObject(bmp);
+}
+
 LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
     case WM_ERASEBKGND: {
@@ -1876,6 +1909,11 @@ LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lpar
     }
     case WM_TIMER:
         if (wparam == kPollTimer) on_timer();
+        if (wparam == kSnapshotTimer) {
+            KillTimer(hwnd, kSnapshotTimer);
+            save_snapshot(hwnd, g_snapshot);
+            DestroyWindow(hwnd);  // a picture run never asks to save
+        }
         return 0;
     case WM_NOTIFY: {
         const auto* header = reinterpret_cast<const NMHDR*>(lparam);
@@ -2120,9 +2158,14 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     // The window at the start: as wide as the pages at zoom 100 % and as tall as their content then, as far as the
     // screen allows. Zoom never changes its size; the player may resize it, and the pages follow.
     std::filesystem::path check_file;
+    int start_page = kDisplay;  // --page <0..7>: the page shown at the start (for --snapshot)
     if (LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc)) {
-        for (int i = 1; i + 1 < argc; ++i)
-            if (std::wstring(argv[i]) == L"--check-layout") check_file = argv[i + 1];
+        for (int i = 1; i + 1 < argc; ++i) {
+            const std::wstring a = argv[i];
+            if (a == L"--check-layout") check_file = argv[i + 1];
+            if (a == L"--snapshot") g_snapshot = argv[i + 1];
+            if (a == L"--page") start_page = std::clamp(_wtoi(argv[i + 1]), 0, kPageCount - 1);
+        }
         LocalFree(argv);
     }
     RECT size{0, 0, MulDiv(kClientW, g.dpi, 96) + GetSystemMetrics(SM_CXVSCROLL), MulDiv(760, g.dpi, 96)};
@@ -2144,9 +2187,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
         Gdiplus::GdiplusShutdown(gdiplus_token);
         return problems > 0 ? 1 : 0;
     }
+    if (start_page != kDisplay) show_page(start_page);
     if (!notes.empty()) show_message(notes);
     ShowWindow(g.window, show);
     SetTimer(g.window, kPollTimer, 16, nullptr);
+    // --snapshot: written once the window has painted (and the page's controller state has been read), then it ends.
+    if (!g_snapshot.empty()) SetTimer(g.window, kSnapshotTimer, 2500, nullptr);
 
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {

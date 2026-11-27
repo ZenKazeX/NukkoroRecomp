@@ -1,6 +1,7 @@
 # Mods guide
 
-This guide explains how to add mods to the game with the *Mod Manager*.
+This guide explains how to add mods to the game with the *Mod Manager*. For a first walk through it with pictures, see
+the [Mod Manager tutorial](MOD_MANAGER_TUTORIAL.md).
 
 Mod support is **experimental**. Many mods work, some work only in part, and some kinds do not work at all. Read
 [What works and what does not](#what-works-and-what-does-not) first, and see
@@ -172,8 +173,8 @@ The manager shows you every conflict, so you do not have to guess:
 
 - The *Status* column says, for example, "Loads (3 files over others, 1 overridden)". The mod wins three files against
   other mods and loses one.
-- The *Details* list them under "File conflicts this mod wins" and "File conflicts this mod loses", with the name of
-  the other mod.
+- The *Details* list them under "File conflicts this mod wins" and "File conflicts this mod loses", with the other
+  mod's Id (the short name the *Details* show after "Id:"), for example `sng_stg0100.adx (over other-westopolis-music)`.
 - The summary line at the bottom counts the conflicts.
 
 A conflict is not an error. It only tells you that you see one mod's version of that file and not the other's. Put the
@@ -370,6 +371,7 @@ again.
 If the message says that mods are switched on, a mod is the likely cause: one that does not fit this game, or more
 mods together than the game's memory holds. Switch off some mods, or untick *Load mods*, and start again. If it also
 happens without mods, please report it with the file `session-report.json` from the game's folder.
+
 **The game misbehaves and I do not know which mod causes it.**
 Untick *Load mods* and try again. If the problem is gone, tick *Load mods* again, switch off half of your mods, and
 repeat until you find the one.
@@ -446,6 +448,7 @@ community mods switched on together first stopped the game about 50 seconds into
 with the larger memory the same 15 play the whole stage. A game without mods, or with texture packs only, runs exactly
 as before. A very large set of mods can still be too much; the game then closes and tells you: "Shadow the Hedgehog
 stopped because of an error in the game", with the number of mods that are on. Switch off some mods and start again.
+
 **Big "overhaul" mods load only in part.**
 *Shadow the Hedgehog: Reloaded* and similar projects are a mix of changed files and changed code. Their files load
 (stage changes, models, textures, text, music, voice lines). Their code features do not (for Reloaded: S rank, Red
