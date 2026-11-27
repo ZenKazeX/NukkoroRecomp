@@ -116,6 +116,12 @@ The game can also be played with keyboard and mouse. The keys and the mouse are 
 [docs/controls/KEYBOARD_MOUSE_BINDINGS.md](docs/controls/KEYBOARD_MOUSE_BINDINGS.md) lists the defaults and every
 setting).
 
+## Leaving the game
+
+The main menu has a fourth entry under *Options*: **Exit** (*Quitter*, *Beenden*, *Esci*, *Salir* or 終了, after the
+game's text language). Choose it and answer *Yes* in the pop-up; *No* or the back button returns to the menu. Closing
+the window does the same.
+
 ## Settings
 
 The Options screen is the game's own. Everything a PC adds - the window and full screen, resolution, picture shape,
