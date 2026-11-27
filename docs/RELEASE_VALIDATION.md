@@ -607,3 +607,26 @@ with 0 failed clip allocations at 64 MiB and at 256 MiB, at the same CPU time; a
 texture pack alone keep the console's range and an identical state hash. The player's build and the gate: see the
 release notes. Not shown: that behaviour with a mod is the same in the larger memory as in the console's (state
 hashes differ by the memory size words and the heap's free tail); that is piece W1 of `docs/memory/REWRITE_PLAN.md`.
+
+## The main menu's EXIT entry (2026-11-27, for 0.0.5)
+
+Branch `release-0.0.5`: the published 0.0.4 (b367453) plus three commits (the entry and its Yes / No pop-up; each
+language's own word; the drawn kanji and the clearer Q). Design and findings: `docs/re/main-menu-exit/README.md`.
+
+MEASURED on commit fed4de6, one PC (Windows 11, Visual Studio 2026):
+
+- Unit tests 302 of 306 (the new `main_menu_exit_tests` passes; the other four cannot run on this PC, as before).
+- Package, two full installs (one through the setup window) and the build made by cancel and retry: each reproduces the
+  reference states, audio and screenshots of the two recorded stages, 12 of 12. Installer tests 57 of 57, uninstaller
+  tests, the zip route, update, install over a running game (refused), the 13 mod scenarios and the layout checks pass.
+- The installed game in a real window, started the way a shortcut starts it, driven by a recorded controller tape:
+  EXIT then Yes closes the game by itself after 54 s with exit code 0 and no message box (also with a music mod and a
+  texture pack on, and with `--no-mods`); EXIT then B leaves the game running, and it then closes normally by its
+  window's close button. N, F5, F6 and F8 still do nothing and no console opens.
+- Unattended runs in the six text languages show the entry (EXIT, QUITTER, BEENDEN, ESCI, SALIR, 終了) and the question
+  in the game's blue pop-up; pictures were looked at for each.
+
+Not checked: pressing the buttons by hand on a real controller; a texture pack that replaces the title's `TitleParts`
+picture (it would hide the word); the entry with every button-prompt style side by side (seen with the Xbox style
+only); other PCs. 終了 is drawn slightly lighter than the katakana beside it. The Q, the B and both kanji are new
+artwork in the menu's style; the C is the English sheet's own.
