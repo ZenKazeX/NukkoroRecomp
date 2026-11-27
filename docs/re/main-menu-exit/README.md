@@ -108,19 +108,24 @@ They are not CSD. **READ**:
   where two straight-sided letters meet) and at its ends (a word's start / end). The 16-bit RGB5A3 palette values are
   copied as they are into an empty area of the same file's `TitleParts` texture (texture 0 of the scene, 512 x 512
   RGB5A3, rows 400..511 unused in all six languages, **MEASURED**), cell x 4..115, y 452..472, the word centred in it
-  (the cell is as wide as the longest word, TERMINA, plus margins; the menu's own cells are 224 wide and centred the
+  (the cell is as wide as the longest word plus margins; the menu's own cells are 224 wide and centred the
   same way). `gamemenu` (which the button-glyph patch rewrites) is not touched and the file keeps its size. The repo
   holds only column numbers and each sheet's FNV-1a 64 (a sheet that differs - another region, a mod - is never cut:
   the English word is used).
 
-  | Text language | Word | Letters from (sheet rows) | Why this word |
+  | Text language | Word | Letters from (sheet rows) | Letters made |
   |---|---|---|---|
-  | EN | EXIT | EXPERT MODE (E, X, T), OPTIONS (I) | the word asked for |
-  | FR | SORTIR | MODE HISTOIRE (S, O, R, T, I), outlines from MODE / MODE SELECTION | the sheet has no Q: QUITTER cannot be made |
-  | GE | ENDE | EXPERTEN-MODUS (E, N), STORY-MODUS (D), outlines from OPTIONEN | the sheet has no B: BEENDEN cannot be made |
-  | IT | TERMINA | MODALITA ESPERTO (T, E, R, M, I), NUOVA (N, A), outline from PARTITA | the sheet has no C: ESCI / USCITA cannot be made |
-  | SP | SALIR | MODO SELECCIONAR (S, L, R), PARTIDA (A), MODO HISTORIA (I), gap from OPCIONES | the word asked for |
-  | JP | EXIT (English sheet) | as EN | the Japanese sheet's kana / kanji (1P / 2P PUREI, OPUSHON, SUTOORII / SEREKUTO / HAADO MOODO, HAJIME KARA, ZENKAI NO TSUZUKI KARA) make no word for leaving; no glyph is drawn or invented |
+  | EN | EXIT | EXPERT MODE (E, X, T), OPTIONS (I) | none |
+  | FR | QUITTER | JEU (U), MODE HISTOIRE (O, I, T), MODE EXPERT (E, R) | **Q derived**: HISTOIRE's O with a tail drawn over its lower right corner and one row below the baseline, in the sheet's own face / edge / outline colours (no sheet of the disc has a Q) |
+  | GE | BEENDEN | EXPERTEN-MODUS (P, E, N), STORY-MODUS (D), OPTIONEN (E, N) | **B derived**: EXPERTEN's P with its bowl rows (rows 2..4 and the middle bar) repeated under the middle bar and its stem's foot closed by outline (no sheet of the disc has a B) |
+  | IT | ESCI | MODALITA ESPERTO (E, S, I) | **C taken** from the English sheet (SELECT MODE's C, a real glyph of the same font), its outline trimmed by one row above and below to the Italian rows |
+  | SP | SALIR | MODO SELECCIONAR (S, L, R), PARTIDA (A), MODO HISTORIA (I) | none |
+  | JP | U+7D42 U+4E86 (shuuryou, "end") | - | **both kanji made at run time** from the game's message font (Advertise_JP.txd pages JP01 / JP06, the glyphs the blue pop-ups draw), scaled to the menu's 13-row face, brightened and cut at a coverage threshold, with the menu's shading (a lighter row under each stroke, a darker one under the glyph) and its black outline; the menu sheet's kanji (the ones in ZENKAI NO TSUZUKI KARA) were the comparison. shuuryou is what Japanese game menus write for quitting; GEEMU SHUURYOU would need katakana the sheet does not have either |
+
+  Joins: two black columns between letters (the sheet's own gap between straight-sided letters), three outline columns
+  at a word's ends, all cut from the same sheet. The cell is 112 columns wide (the longest word, BEENDEN, is 107).
+  Comparison strips (word above the language's three original entries, x5): `.build/exit/strips/strip_<lang>.png`
+  (made by a scratch script from the built files; not in the repo).
 - **The entry:** `honban.gncp`'s scene `Menu` gets a cast `exit` (a copy of `options`, on the scene's unused cell 14 - the sheet's CONTINUE row - pointed at that area,
   54 + 8 pixels wide, y 0.7792 = the 31-pixel step below Options) in a new group 13 before `blackcover`, and in every
   motion a track set copied from `options`'s with y mapped as y' = 2y - 0.65 (so `MenuOpen` grows it out of the same
@@ -138,7 +143,7 @@ They are not CSD. **READ**:
 
 - **Runs from the title** (headless, scripted tape: START every 2 s until the menu, then the moves; the Westopolis
   tape's card / SRAM / cfg copied into each run folder, `options.cfg` `language = N` for the text language): the menu
-  shows the fourth entry in all six languages (EN EXIT, FR SORTIR, GE ENDE, IT TERMINA, SP SALIR, JP EXIT), selected
+  shows the fourth entry in all six languages (EN EXIT, FR QUITTER, GE BEENDEN, IT ESCI, SP SALIR, JP shuuryou), selected
   white and the others dark red like the original entries; Down from OPTIONS reaches it, Down on it stays, Up leaves it.
   Decide opens the game's blue pop-up with the question in the text language and the game's own Yes / No (6047 / 6048:
   Oui / Non, Ja / Nein, Si / No, Si / No, hai / iie) on No. No and B return to the menu on EXIT; Yes ends the run with
@@ -149,8 +154,8 @@ They are not CSD. **READ**:
 - **Tape gate** (`tools/native/gate.ps1`, Westopolis + Final Haunt with `--boot-stage`): every value equals the base
   build's (fd27fb4): Westopolis state e0a60c4f3296, audio ac085fd173059dd6, behaviour 4d900f221003, screenshots
   550fcb3c9e86, Final Haunt state f95128aae2d3, audio 09b284bc876c36ed. (Both builds differ from the gate's stored
-  dev-line references the same way.) One gate run of the final build gave screenshots 5594d30591cb: one frame with 234
-  pixels one blue level apart; the repeat gave 550fcb3c9e86 again.
+  dev-line references the same way.) The first gate run of a freshly built exe gave screenshots 5594d30591cb twice (one frame,
+  234 pixels one blue level apart); every repeat, of the base build and of this one, gives 550fcb3c9e86.
 - **CPU** (Westopolis tape, exclusive, 2 x 3 runs each, process CPU): base 19.484 / 19.500 s median, EXIT build
   19.391 / 19.516 s; cycles 58.41 / 58.40 G vs 58.32 / 58.38 G. No rise.
 

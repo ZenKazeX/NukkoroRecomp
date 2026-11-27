@@ -1851,10 +1851,13 @@ bool System::mount_assets(std::unique_ptr<shadow::runtime::v1::Storage> storage,
                     build_error = path + " or the English sheet is missing";
                     return false;
                 }
+                std::vector<u8> font;  // the Japanese word is made from the message font's kanji
+                const bool japanese = std::string_view(language) == "JP" && read(main_menu_exit::kJapaneseFontPath, font);
                 std::string word;
-                if (main_menu_exit::add_exit_picture(txd, language, english, bytes, build_error, &word)) {
-                    if (word != language && std::string_view(language) != "JP")
-                        std::cerr << "[main-menu-exit] " << path << ": its sheet is not the PAL one, the English word is used\n";
+                if (main_menu_exit::add_exit_picture(txd, language, english, bytes, build_error, &word,
+                                                     japanese ? &font : nullptr)) {
+                    if (word != language)
+                        std::cerr << "[main-menu-exit] " << path << ": its sheet (or font) is not the PAL one, the English word is used\n";
                     return true;
                 }
                 build_error = path + ": the EXIT picture: " + build_error;
